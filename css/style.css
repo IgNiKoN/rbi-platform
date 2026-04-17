@@ -1,0 +1,896 @@
+/* Файл: css/style.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+/* === БАЗОВЫЕ ПЕРЕМЕННЫЕ (СВЕТЛАЯ ТЕМА ПО УМОЛЧАНИЮ) === */
+:root {
+    --bg-main: #f8fafc;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --header-bg: rgba(255, 255, 255, 0.95);
+    --nav-bg: rgba(255, 255, 255, 0.85);
+    --hover-bg: #f1f5f9;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    
+    /* Цвета статусов (оставляем константными для узнаваемости) */
+    --color-green: #22c55e;
+    --color-red: #ef4444;
+    --color-yellow: #f59e0b;
+    --color-orange: #f97316;
+    --color-blue: #3b82f6;
+}
+
+/* === ТЕМНАЯ ТЕМА === */
+[data-theme="dark"] {
+    --bg-main: #0f172a;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --card-bg: #1e293b;
+    --card-border: #334155;
+    --header-bg: rgba(15, 23, 42, 0.95);
+    --nav-bg: rgba(30, 41, 59, 0.85);
+    --hover-bg: #334155;
+    --primary: #6366f1;
+}
+
+/* === ПРИНУДИТЕЛЬНАЯ СВЕТЛАЯ ТЕМА === */
+[data-theme="light"] {
+    --bg-main: #f8fafc;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --card-bg: #ffffff;
+    --card-border: #e2e8f0;
+    --header-bg: rgba(255, 255, 255, 0.95);
+    --nav-bg: rgba(255, 255, 255, 0.85);
+    --hover-bg: #f1f5f9;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+}
+
+/* === ГЛОБАЛЬНЫЕ СТИЛИ === */
+html {
+    scroll-behavior: smooth; /* Добавляем плавный скролл всей странице */
+}
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: var(--bg-main); 
+    color: var(--text-main);
+    padding-top: 140px; 
+    padding-bottom: 90px; 
+    transition: background 0.3s, color 0.3s; 
+    /* ИСПРАВЛЕНИЕ: Используем clip вместо hidden, чтобы липкие панели работали! */
+    overflow-x: clip !important;
+    width: 100vw;
+    max-width: 100%;
+}
+
+/* === ТРИ РЕЖИМА НАВИГАЦИИ (АВТО, СВЕРХУ, СНИЗУ) === */
+body.nav-pos-top .bottom-nav { top: 0; bottom: auto; padding-bottom: 0; height: 60px; border-top: none; border-bottom: 1px solid var(--card-border); }
+body.nav-pos-top .header-fixed { top: 60px; }
+body.nav-pos-top { padding-bottom: 20px; }
+
+body.nav-pos-bottom .bottom-nav { top: auto; bottom: 0; padding-bottom: env(safe-area-inset-bottom); border-top: 1px solid var(--card-border); border-bottom: none; }
+body.nav-pos-bottom .header-fixed { top: 0; }
+body.nav-pos-bottom { padding-bottom: 90px; }
+
+@media (min-width: 768px) {
+    body.nav-pos-auto .bottom-nav { top: 0; bottom: auto; padding-bottom: 0; height: 60px; border-top: none; border-bottom: 1px solid var(--card-border); }
+    body.nav-pos-auto .header-fixed { top: 60px; }
+    body.nav-pos-auto { padding-bottom: 20px; }
+}
+
+/* === ПЛАВНОЕ СВОРАЧИВАНИЕ ШАПКИ (iOS STYLE) === */
+.header-collapsible {
+    transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+    max-height: 400px; opacity: 1; overflow: hidden;
+}
+.header-collapsed .header-collapsible {
+    max-height: 0 !important; opacity: 0 !important; margin: 0 !important; padding: 0 !important; border-width: 0 !important; pointer-events: none;
+}
+
+/* Форсированное положение меню из Настроек */
+body.force-nav-top .bottom-nav { top: 0; bottom: auto; height: 60px; padding-bottom: 0; border-top: none; border-bottom: 1px solid var(--card-border); }
+body.force-nav-top .header-fixed { top: 60px; }
+body.force-nav-top { padding-bottom: 20px; }
+
+/* Скрытие мини-дашборда из Настроек */
+body.hide-dashboard #header-data-block { display: none !important; }
+
+/* Настройки размера шрифта */
+body.font-small { font-size: 0.9em; }
+body.font-large { font-size: 1.1em; }
+body.font-xlarge { font-size: 1.25em; }
+
+body.modal-open { overflow: hidden; height: 100vh; touch-action: none; }
+
+/* === ШАПКА === */
+.header-fixed { 
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50; 
+    background: var(--header-bg); 
+    border-bottom: 1px solid var(--card-border); 
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); 
+    backdrop-filter: blur(8px);
+    transition: all 0.3s;
+}
+
+.header-fixed.shrunk {
+    transform: translateY(-100%);
+}
+
+/* === ВКЛАДКИ (ПОКАЗ/СКРЫТИЕ) === */
+.view-section { display: none; }
+.view-section.active { display: block; animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* === НОВАЯ iOS-LIKE НАВИГАЦИЯ === */
+.bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--nav-bg); 
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--card-border);
+    display: flex; justify-content: space-around; align-items: center;
+    height: 65px; padding-bottom: env(safe-area-inset-bottom);
+    z-index: 1000; transition: transform 0.3s;
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.02);
+}
+
+.nav-item {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    width: 60px; height: 100%; color: var(--text-muted); 
+    cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-item svg { transition: transform 0.3s; width: 24px; height: 24px; stroke-width: 2; }
+
+.nav-item.active { color: var(--primary); transform: translateY(-4px); }
+.nav-item.active svg { transform: scale(1.1); stroke-width: 2.5; }
+
+.nav-text {
+    font-size: 10px; font-weight: 800; opacity: 0; transform: translateY(8px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); height: 0; overflow: hidden;
+}
+
+.nav-item.active .nav-text {
+    opacity: 1; transform: translateY(0); height: auto; margin-top: 4px;
+}
+
+/* Адаптация навигации для ПК (перенос вверх) */
+@media (min-width: 768px) {
+    .bottom-nav.nav-auto {
+        top: 0; bottom: auto; height: 60px; padding-bottom: 0;
+        border-top: none; border-bottom: 1px solid var(--card-border);
+    }
+    .bottom-nav.nav-auto ~ .header-fixed { top: 60px; }
+}
+
+/* === СВАЙПЫ (ИСПРАВЛЕНО ДЛЯ ТЕМНОЙ ТЕМЫ И ПЛАВНОСТИ) === */
+.swipe-container { 
+    position: relative; overflow: hidden; border-radius: 12px; margin-bottom: 8px; 
+    background: var(--card-bg); /* Защита от просвечивания второго слоя */
+}
+
+/* Подложки свайпов (Изначально невидимы, проявляются в JS) */
+.swipe-actions-bg { 
+    position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; 
+    padding: 0 24px; font-weight: 900; color: white; border-radius: 12px; z-index: 1;
+    opacity: 0; 
+}
+
+.swipe-bg-ok { background: var(--color-green); justify-content: flex-start; }
+.swipe-bg-fail { background: var(--color-red); justify-content: flex-end; }
+
+/* Сама карточка */
+.swipe-content { 
+    position: relative; z-index: 2; 
+    background: var(--card-bg); /* Обязательно плотный фон карточки */
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1); /* Пружинистый возврат */
+    will-change: transform;
+    border-radius: inherit;
+} 
+/* Отключаем CSS-анимацию во время пальцевого перетаскивания (чтобы не дергалось) */
+.swiping .swipe-content { transition: none !important; }
+
+/* Индикаторы */
+.indicator-3 { border-left: 5px solid var(--color-red); } 
+.indicator-2 { border-left: 5px solid var(--color-orange); } 
+.indicator-1 { border-left: 5px solid var(--color-blue); }
+.indicator-ok { border-left: 5px solid var(--color-green); }
+
+/* === iOS-STYLE СХЛОПЫВАНИЕ КАРТОЧЕК (ТОНКАЯ СТРОКА С ГАЛОЧКОЙ СПРАВА) === */
+.card-audit { 
+    transition: max-height 0.3s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s ease, padding 0.3s ease, border-color 0.3s ease, transform 0.2s; 
+    max-height: 800px; 
+    overflow: hidden; 
+    box-sizing: border-box;
+}
+
+.card-collapsed {
+    max-height: 38px !important; 
+    min-height: 38px !important;
+    padding: 0 10px 0 14px !important; 
+    display: flex; 
+    align-items: center; 
+    justify-content: flex-start; /* Изменено, чтобы текст нормально прижимался влево */
+    background: #f0fdf4 !important; 
+    border-color: #bbf7d0 !important; 
+    cursor: pointer;
+    box-shadow: none !important; 
+    position: relative; /* ВАЖНО: чтобы галочка позиционировалась абсолютно внутри карточки */
+}
+
+.swipe-content {
+    transition: opacity 0.2s ease, transform 0.2s ease-out;
+}
+.card-collapsed .swipe-content, 
+.card-collapsed .swipe-actions-bg { 
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute; 
+    height: 0; width: 0; overflow: hidden;
+}
+
+.card-collapsed .card-title-text { 
+    display: block !important; 
+    font-size: 12px; 
+    font-weight: 600; 
+    color: #166534 !important; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    flex-grow: 1; 
+    margin: 0; 
+    position: static; 
+    opacity: 1 !important;
+    padding-right: 35px !important; /* Освобождаем место справа, чтобы длинный текст не налез на галочку */
+}
+
+/* ЖЕСТКОЕ УДАЛЕНИЕ СТАРОЙ ГАЛОЧКИ СЛЕВА */
+.card-collapsed::before {
+    display: none !important;
+    content: none !important;
+}
+
+/* КРУЖОК С ГАЛОЧКОЙ ТОЧНО СПРАВА (АБСОЛЮТНОЕ ПОЗИЦИОНИРОВАНИЕ) */
+.card-collapsed::after {
+    content: '✓'; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center;
+    width: 22px; 
+    height: 22px; 
+    background: #22c55e; 
+    color: white; 
+    border-radius: 50%; 
+    font-size: 13px; 
+    font-weight: 900; 
+    position: absolute; /* Жестко отвязываем от обычного потока карточки */
+    right: 12px; /* Идеальное выравнивание под красным крестиком */
+    top: 50%;
+    transform: translateY(-50%); /* Центрирование строго по вертикали */
+}
+
+/* Прячем все остальные элементы карточки в свернутом виде */
+.card-collapsed .weight-tag, 
+.card-collapsed .norm-desc-text,
+.card-collapsed .btn-status,
+.card-collapsed .photo-thumb { 
+    display: none !important; 
+}
+
+/* Темная тема для схлопнутой */
+[data-theme="dark"] .card-collapsed { background: rgba(34, 197, 94, 0.1) !important; border-color: rgba(34, 197, 94, 0.2) !important; }
+[data-theme="dark"] .card-collapsed .card-title-text { color: #86efac !important; }
+
+/* Свернутый вид для подтвержденных FAIL */
+.card-collapsed-fail { background: rgba(239, 68, 68, 0.1) !important; border-color: rgba(239, 68, 68, 0.3) !important; }
+.card-collapsed-fail::before { content: '❌' !important; color: var(--color-red) !important; display: flex !important; }
+.card-collapsed-fail .card-title-text { color: #991b1b !important; }
+[data-theme="dark"] .card-collapsed-fail .card-title-text { color: #fca5a5 !important; }
+
+/* Быстрый режим (Скрытие нормативов) */
+.fast-mode .norm-ref, .fast-mode .norm-desc-text { display: none !important; }
+
+/* Свернутый вид для подтвержденных FAIL */
+.card-collapsed-fail { background: rgba(239, 68, 68, 0.1) !important; border-color: rgba(239, 68, 68, 0.3) !important; }
+.card-collapsed-fail::before { content: '❌' !important; color: var(--color-red) !important; }
+.card-collapsed-fail .card-title-text { color: #991b1b !important; }
+[data-theme="dark"] .card-collapsed-fail .card-title-text { color: #fca5a5 !important; }
+
+/* Быстрый режим (Скрытие нормативов) */
+.fast-mode .norm-ref, .fast-mode .norm-desc-text { display: none !important; }
+
+/* === СВАЙПЫ (НОВОЕ В v16.0) === */
+.swipe-container { position: relative; overflow: hidden; border-radius: 12px; margin-bottom: 8px; }
+
+/* НОВОЕ: opacity: 0 прячет красный и зеленый фон, пока мы не начнем свайпать */
+.swipe-actions-bg { 
+    position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; 
+    padding: 0 20px; font-weight: 900; color: white; border-radius: 12px; z-index: 1;
+    opacity: 0; 
+    transition: opacity 0.2s;
+}
+.swiping .swipe-actions-bg { opacity: 1; } /* Появляется только при свайпе */
+
+.swipe-bg-ok { background: var(--color-green); justify-content: flex-start; }
+.swipe-bg-fail { background: var(--color-red); justify-content: flex-end; }
+.swipe-content { position: relative; z-index: 2; transition: transform 0.2s ease-out; touch-action: pan-y; } 
+.swiping .swipe-content { transition: none; }
+
+/* === КНОПКИ И ТЕГИ === */
+/* === КНОПКИ И ТЕГИ === */
+.btn-status { 
+    width: 44px; height: 44px; min-width: 44px; max-width: 44px;
+    border-radius: 12px; /* Более круглые кнопки */
+    display: flex; align-items: center; justify-content: center; 
+    border: 1px solid rgba(0,0,0,0.05); /* Очень нежная граница */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04); /* Мягкая тень */
+    transition: all 0.15s cubic-bezier(0.25, 1, 0.5, 1); 
+    cursor: pointer; 
+    background: var(--card-bg); 
+    color: var(--text-muted); 
+}
+.btn-status:active { transform: scale(0.9); }
+[data-theme="dark"] .btn-status { border-color: rgba(255,255,255,0.05); }
+
+.status-tag { font-size: 10px; font-weight: 900; padding: 4px 10px; border-radius: 100px; display: inline-block; text-align: center; line-height: 1.2; cursor: help; text-transform: uppercase; letter-spacing: 0.05em; transition: transform 0.1s;}
+.tag-green { background: rgba(34, 197, 94, 0.2); color: #166534; border: 1px solid rgba(34, 197, 94, 0.4);} 
+.tag-yellow { background: rgba(234, 179, 8, 0.2); color: #854d0e; border: 1px solid rgba(234, 179, 8, 0.4);} 
+.tag-red { background: rgba(239, 68, 68, 0.2); color: #991b1b; border: 1px solid rgba(239, 68, 68, 0.4);}
+.tag-blue { background: rgba(56, 189, 248, 0.2); color: #0369a1; border: 1px solid rgba(56, 189, 248, 0.4);}
+.tag-gray { background: var(--hover-bg); color: var(--text-muted); border: 1px solid var(--card-border);}
+
+/* Теги для темной темы */
+[data-theme="dark"] .tag-green { color: #86efac; }
+[data-theme="dark"] .tag-yellow { color: #fde047; }
+[data-theme="dark"] .tag-red { color: #fca5a5; }
+[data-theme="dark"] .tag-blue { color: #7dd3fc; }
+
+.weight-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 900; letter-spacing: 0.05em; margin-right: 4px; vertical-align: middle; }
+.wt-1 { background: rgba(59, 130, 246, 0.2); color: #1d4ed8; }
+.wt-2 { background: rgba(249, 115, 22, 0.2); color: #c2410c; }
+.wt-3 { background: rgba(239, 68, 68, 0.2); color: #b91c1c; }
+
+[data-theme="dark"] .wt-1 { color: #93c5fd; }
+[data-theme="dark"] .wt-2 { color: #fdba74; }
+[data-theme="dark"] .wt-3 { color: #fca5a5; }
+
+/* === БАЗОВЫЕ КОМПОНЕНТЫ INPUT/SELECT === */
+.input-base { 
+    width: 100%; background: var(--card-bg); border: 1px solid var(--card-border); 
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; 
+    color: var(--text-main); outline: none; transition: border-color 0.2s; 
+}
+.input-base:focus { border-color: var(--primary); background: var(--hover-bg); }
+
+.block-title { 
+    background: var(--bg-main); padding: 10px 4px; font-size: 11px; font-weight: 800; 
+    color: var(--text-muted); text-transform: uppercase; 
+    border-bottom: 2px solid var(--card-border); margin-bottom: 10px; margin-top: 16px; scroll-margin-top: 130px;
+}
+
+/* === УВЕДОМЛЕНИЯ (TOAST) iOS GLASS === */
+#toast-container { 
+    position: fixed; 
+    bottom: 85px; 
+    left: 50%; 
+    transform: translateX(-50%); 
+    z-index: 9999; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 10px; 
+    pointer-events: none; 
+    width: 90%; 
+    max-width: 400px; 
+}
+
+.toast { 
+    background: rgba(15, 23, 42, 0.85); 
+    color: white; 
+    padding: 14px 20px; 
+    border-radius: 16px; 
+    font-size: 12px; 
+    font-weight: 700; 
+    text-align: center; 
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255,255,255,0.1) inset; 
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    animation: toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards, toastOut 0.4s ease forwards 2.5s; 
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 0.02em;
+}
+
+[data-theme="dark"] .toast { 
+    background: rgba(255, 255, 255, 0.85); 
+    color: #0f172a; 
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0,0,0,0.05) inset;
+}
+
+@keyframes toastIn { from { opacity: 0; transform: translateY(30px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(20px) scale(0.95); } }
+/* === МОДАЛЬНЫЕ ОКНА === */
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.7); z-index: 1500; display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
+.modal-content { background: var(--card-bg); color: var(--text-main); border-radius: 24px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto; position: relative; }
+
+/* === TOGGLE SWITCH (ДЛЯ НАСТРОЕК) === */
+.toggle-switch {
+    position: relative; display: inline-block; width: 40px; height: 24px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--card-border); transition: .3s; border-radius: 24px;
+}
+.toggle-slider:before {
+    position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+    background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+input:checked + .toggle-slider { background-color: var(--primary); }
+input:checked + .toggle-slider:before { transform: translateX(16px); }
+
+/* === ДЕМО РЕЖИМ (АДАПТИРОВАНО ДЛЯ ТЕМНОЙ ТЕМЫ) === */
+body.demo-mode::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    border: 3px solid rgba(239, 68, 68, 0.3); /* Аккуратная красная рамка вместо заливки */
+    z-index: 9999;
+}
+body.demo-mode #demo-banner { 
+    display: flex; background: var(--color-red); color: white; text-align: center; 
+    font-size: 11px; font-weight: 900; padding: 6px 10px; text-transform: uppercase; 
+    justify-content: space-between; align-items: center; z-index: 100;
+}
+@keyframes pulseHint {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 5px rgba(234, 179, 8, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+}
+/* Скрытие ползунка для горизонтальной навигации */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+/* === ПЛАВНЫЕ АНИМАЦИИ (iOS STYLE) === */
+
+/* Пружинящие кнопки и карточки */
+.btn-status, .card-audit, .nav-item {
+    transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1), background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.btn-status:active, .card-audit:active, .nav-item:active {
+    transform: scale(0.96);
+}
+
+/* Анимация появления модальных окон (Fade + Scale) */
+.modal-overlay {
+    transition: opacity 0.3s ease;
+    opacity: 0;
+}
+
+.modal-overlay[style*="display: flex"] {
+    opacity: 1;
+}
+
+.modal-content {
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.15), opacity 0.3s ease; /* Эффект небольшого "выпрыгивания" */
+    transform: scale(0.9) translateY(20px);
+    opacity: 0;
+}
+
+.modal-overlay[style*="display: flex"] .modal-content {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+}
+
+/* Плавный переход для вкладок */
+.view-section {
+    transition: opacity 0.3s ease; /* Убрали transform, чтобы не ломать fixed */
+    opacity: 0;
+}
+
+.view-section.active {
+    opacity: 1;
+    transform: none !important; /* КРИТИЧЕСКАЯ ПРАВКА: разрешает position: fixed внутри вкладки */
+    animation: none; 
+}
+
+/* Схлопывание карточек (OK-состояние) */
+.card-collapsed {
+    transition: max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), padding 0.3s ease;
+}
+
+/* Мягкие тени как в iOS (Исправлено) */
+.card-audit, .shadow-ios {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .card-audit, [data-theme="dark"] .shadow-ios {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* Динамическое позиционирование меню Аналитики */
+.analytics-nav-container {
+    position: sticky;
+    z-index: 40;
+    transition: top 0.3s, bottom 0.3s;
+}
+
+body.nav-pos-bottom .analytics-nav-container {
+    top: auto;
+    bottom: 70px; /* Прилипает над нижней навигацией */
+    margin-bottom: 20px;
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.05);
+}
+
+body.nav-pos-top .analytics-nav-container,
+body.nav-pos-auto .analytics-nav-container {
+    top: 70px; /* Прилипает под верхней навигацией/шапкой */
+    margin-bottom: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* Оптимизация кликов (убирает 300ms задержку на старых iOS) */
+button, input, select, .card-audit, .nav-item {
+    touch-action: manipulation;
+}
+
+/* Ограничение ширины навигации на широких экранах (ПК) */
+.bottom-nav {
+    max-width: 56rem; /* Совпадает с max-w-4xl основного контента */
+    margin: 0 auto;
+    border-radius: 20px 20px 0 0; /* Закругляем верхние углы на ПК */
+}
+body.nav-pos-top .bottom-nav,
+body.nav-pos-auto .bottom-nav {
+    border-radius: 0 0 20px 20px; /* Закругляем нижние углы, если меню сверху */
+}
+@media (max-width: 896px) {
+    .bottom-nav { border-radius: 0; } /* На телефонах на всю ширину */
+}
+
+/* Динамическое позиционирование подвкладок (Аналитика / Фильтры / История) */
+.sticky-subnav {
+    position: sticky;
+    z-index: 40;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: top 0.3s, box-shadow 0.3s;
+    /* Независимо от того, где находится главное меню, фильтры всегда прилипают сверху! */
+    top: 70px; 
+    box-shadow: 0 4px 15px -3px rgba(0,0,0,0.05);
+}
+
+/* Принудительно отменяем прилипание к низу, если меню внизу */
+body.nav-pos-bottom .sticky-subnav {
+    top: 70px;
+    bottom: auto;
+    margin-bottom: 20px;
+}
+
+/* Исправление для вылезающих кнопок на узких экранах */
+#tab-history .sticky-subnav .flex {
+    flex-wrap: wrap; 
+}
+#tab-history .sticky-subnav {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+/* === ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ (FAB) === */
+#fab-download-btn {
+    bottom: 80px;
+    right: 16px;
+}
+
+
+/* На широких экранах (ПК) — прижимаем к правому краю контейнера */
+@media (min-width: 896px) {
+    #fab-download-btn {
+        right: calc(50vw - 26rem + 16px);
+    }
+}
+
+/* Анимация появления FAB */
+#fab-download-btn.fab-visible {
+    display: flex !important;
+    animation: fabIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes fabIn {
+    from { opacity: 0; transform: scale(0.5) translateY(20px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* === ПЛАВНЫЕ ПЕРЕХОДЫ ДЛЯ СВОРАЧИВАЕМЫХ ПАНЕЛЕЙ ПОИСКА === */
+#hist-panel-body,
+#ref-panel-body {
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.3s ease,
+                margin 0.3s ease;
+}
+
+/* Иконка-стрелка поворачивается при сворачивании */
+#hist-panel-toggle-icon,
+#ref-panel-toggle-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-style: normal;
+}
+
+/* === ИДЕАЛЬНОЕ ПОЗИЦИОНИРОВАНИЕ ЛИПКИХ ПАНЕЛЕЙ (ФИЛЬТРОВ И ВКЛАДОК) === */
+
+/* 1. ОБЩАЯ БАЗА: Панели фильтров (История, Аналитика, Справочник) */
+#hist-sticky-panel,
+#analytics-filters-block,
+#ref-filters-block,
+#ref-docs-filters {
+    position: sticky !important;
+    z-index: 40 !important;
+    /* Фон, блюр и рамки теперь работают через классы Tailwind в HTML */
+    transition: top 0.3s ease;
+    
+    /* ЗАДАННЫЙ ЗАЗОР 10px + ЧЕЛКА */
+    top: calc(10px + env(safe-area-inset-top)) !important; 
+    margin-top: -6px !important;
+    margin-bottom: 10px !important;
+    border-radius: 16px !important;
+}
+
+/* 2. ЕСЛИ ГЛАВНОЕ МЕНЮ СВЕРХУ (top) ИЛИ НА ПК (auto > 768px) */
+/* 
+   Панели опускаются под Главную шапку (60px).
+   60px (меню) + 10px (зазор) = 70px.
+*/
+body.nav-pos-top #hist-sticky-panel,
+body.nav-pos-top #analytics-filters-block,
+body.nav-pos-top #ref-filters-block,
+body.nav-pos-top #ref-docs-filters {
+    top: calc(70px + env(safe-area-inset-top)) !important; 
+    margin-top: 10px !important; /* Возвращаем стартовый зазор под Главным меню */
+}
+
+@media (min-width: 768px) {
+    body.nav-pos-auto #hist-sticky-panel,
+    body.nav-pos-auto #analytics-filters-block,
+    body.nav-pos-auto #ref-filters-block,
+    body.nav-pos-auto #ref-docs-filters {
+        top: 70px !important; /* На ПК челки нет */
+        margin-top: 10px !important;
+    }
+}
+
+/* 3. ПОДВКЛАДКИ (Кнопки-переключатели в Аналитике и Справочнике) */
+
+/* По умолчанию (мобилки, меню снизу): Плавают над нижней навигацией */
+#analytics-subtabs-block,
+#reference-subtabs-block {
+    position: fixed !important;
+    /* 65px (Нижнее меню) + 10px (Зазор) = 75px от низа */
+    bottom: calc(75px + env(safe-area-inset-bottom)) !important;
+    top: auto !important;
+    left: 0; right: 0; 
+    z-index: 45 !important;
+    padding: 0 16px;
+}
+
+/* 
+   Если меню сверху: Подвкладки улетают наверх, прямо под Главную шапку.
+   60px (меню) + 10px (зазор) = 70px.
+*/
+body.nav-pos-top #analytics-subtabs-block,
+body.nav-pos-top #reference-subtabs-block {
+    position: sticky !important;
+    top: calc(70px + env(safe-area-inset-top)) !important;
+    bottom: auto !important;
+    padding: 0 !important;
+    margin-top: 10px !important; /* Стартовый зазор */
+    margin-bottom: 10px !important;
+}
+
+@media (min-width: 768px) {
+    body.nav-pos-auto #analytics-subtabs-block,
+    body.nav-pos-auto #reference-subtabs-block {
+        position: sticky !important;
+        top: 70px !important;
+        bottom: auto !important;
+        padding: 0 !important;
+        margin-top: 10px !important;
+        margin-bottom: 10px !important;
+    }
+}
+
+/* 4. КОРРЕКТИРОВКА ФИЛЬТРОВ (РЕШЕНИЕ ПРОБЛЕМЫ "ГАРМОШКИ") */
+/* 
+   Когда подвкладки улетели наверх, фильтры должны прилипнуть ПОД НИМИ.
+   Естественная высота подвкладок ~60px.
+   Считаем: 60px (Главное меню) + 10px (Зазор) + 60px (Подвкладки) + 10px (Зазор) = 140px.
+   Теперь Фильтры остановятся ровно на 140px, и между ними и Подвкладками останется красивый зазор 10px!
+*/
+body.nav-pos-top #analytics-filters-block,
+body.nav-pos-top #ref-filters-block,
+body.nav-pos-top #ref-docs-filters {
+    top: calc(140px + env(safe-area-inset-top)) !important; 
+}
+
+@media (min-width: 768px) {
+    body.nav-pos-auto #analytics-filters-block,
+    body.nav-pos-auto #ref-filters-block,
+    body.nav-pos-auto #ref-docs-filters {
+        top: 140px !important;
+    }
+}
+
+/* 5. ОТСТУПЫ КОНТЕНТА (Чтобы списки не прятались за нижними панелями) */
+#tab-analytics, 
+#tab-reference { 
+    padding-bottom: 100px; /* Большой отступ снизу для плавающих подвкладок */
+}
+
+/* Если меню сверху, внизу ничего нет — убираем гигантский отступ */
+body.nav-pos-top #tab-analytics, 
+body.nav-pos-top #tab-reference { 
+    padding-bottom: 20px !important; 
+}
+
+@media (min-width: 768px) {
+    body.nav-pos-auto #tab-analytics, 
+    body.nav-pos-auto #tab-reference { 
+        padding-bottom: 20px !important; 
+    }
+}
+
+/* Плавная iOS-анимация сворачивания фильтров при нажатии на заголовок */
+#hist-panel-body,
+#ref-panel-body,
+#analytics-panel-body {
+    transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease, margin 0.3s ease;
+}
+
+/* ИСПРАВЛЕНИЕ: Кнопка PDF не должна перекрывать нижнее меню подвкладок */
+body.nav-pos-bottom #fab-download-btn {
+    /* Навигация (65px) + Подвкладки (около 50px) + Зазоры */
+    bottom: 165px !important; 
+}
+/* === ИНТЕРАКТИВНЫЙ ТУТОРИАЛ === */
+.tut-relative {
+    position: relative !important;
+}
+.tut-highlight {
+    z-index: 10001 !important;
+    box-shadow: 0 0 0 4px var(--primary), 0 15px 30px rgba(0,0,0,0.4) !important;
+    background-color: var(--card-bg) !important;
+    border-radius: 12px !important;
+    transition: box-shadow 0.3s ease, background-color 0.3s ease;
+}
+/* === ЖЕЛЕЗОБЕТОННЫЕ ПРАВИЛА ДЛЯ МЕНЮ СНИЗУ === */
+body.nav-pos-bottom #analytics-subtabs-block,
+body.nav-pos-bottom #reference-subtabs-block {
+    top: auto !important; /* Принудительно отменяем прилипание к верху */
+    bottom: calc(65px + env(safe-area-inset-bottom) + 10px) !important;
+    position: fixed !important;
+}
+
+body.nav-pos-bottom #analytics-filters-block,
+body.nav-pos-bottom #ref-filters-block,
+body.nav-pos-bottom #ref-docs-filters {
+    top: 10px !important; /* Эти панели всегда липнут к верху, даже если меню внизу */
+    position: sticky !important;
+    z-index: 40 !important;
+}
+
+/* === ОГРАНИЧЕНИЕ ШАПКИ НА ПК === */
+@media (min-width: 896px) {
+    .header-fixed {
+        max-width: 56rem; /* 896px - как max-w-4xl в Tailwind */
+        margin: 0 auto;
+        left: 0; right: 0;
+        border-left: 1px solid var(--card-border);
+        border-right: 1px solid var(--card-border);
+        border-radius: 0 0 20px 20px;
+        box-sizing: border-box; /* ИСПРАВЛЕНО: чтобы padding не растягивал шапку */
+    }
+    /* ИСПРАВЛЕНО: Внутренний контейнер шапки не должен вылезать за края */
+    #header-inner {
+        padding-left: 20px;
+        padding-right: 20px;
+        box-sizing: border-box;
+    }
+    body.nav-pos-bottom .header-fixed {
+        border-radius: 0 0 20px 20px;
+    }
+}
+
+/* === МАСШТАБИРОВАНИЕ ИНТЕРФЕЙСА (МЯГКОЕ) === */
+/* Tailwind использует 1rem = 16px по умолчанию. 
+   Мы делаем шаги меньше, чтобы отступы не раздувались до гигантских размеров */
+html.font-small { font-size: 14px !important; }
+html.font-medium { font-size: 16px !important; }
+html.font-large { font-size: 17px !important; }
+html.font-xlarge { font-size: 18.5px !important; }
+
+/* === ЗАЩИТА КАРКАСА ОТ РАЗРУШЕНИЯ ПРИ КРУПНОМ ШРИФТЕ === */
+
+/* 1. Нижняя панель навигации: фиксируем высоту, чтобы иконки не вылезали */
+.bottom-nav {
+    height: 65px !important;
+}
+.nav-item svg {
+    width: 24px !important; 
+    height: 24px !important;
+}
+
+/* 2. Кнопки статуса (OK/FAIL) и фото: фиксируем размер */
+.btn-status {
+    width: 44px !important; 
+    height: 44px !important; 
+    min-width: 44px !important;
+    max-width: 44px !important;
+}
+.btn-status svg {
+    width: 24px !important;
+    height: 24px !important;
+}
+
+/* 3. Карточки осмотра: запрещаем тексту выталкивать кнопки за экран */
+.card-audit {
+    word-break: break-word; /* Переносить длинные слова */
+    overflow-wrap: anywhere;
+}
+.card-body-content {
+    align-items: flex-start !important; /* Если текст длинный, кнопки остаются сверху */
+}
+
+/* 4. Защита инпутов шапки от раздувания */
+#header-data-block .input-base {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
+}
+
+/* Сброс стилей старой подсветки туториала (нам они больше не нужны) */
+.tut-relative { position: relative !important; }
+.tut-highlight { z-index: auto !important; box-shadow: none !important; }
+
+/* ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ PDF - ПОЗИЦИИ */
+/* ========================================= */
+
+/* Если явно включено меню СВЕРХУ (все устройства) */
+body.nav-pos-top #fab-download-btn {
+    bottom: 24px !important;
+}
+
+/* Если явно включено меню СНИЗУ (все устройства) */
+body.nav-pos-bottom #fab-download-btn {
+    bottom: 165px !important; /* Учитывает меню + подвкладки */
+}
+
+/* УМНАЯ НАСТРОЙКА "АВТО" */
+@media (max-width: 767px) {
+    /* На телефоне АВТО работает как меню СНИЗУ -> поднимаем кнопку над подвкладками */
+    body.nav-pos-auto #fab-download-btn {
+        bottom: 165px !important; 
+    }
+}
+@media (min-width: 768px) {
+    /* На ПК (планшете) АВТО работает как меню СВЕРХУ -> опускаем кнопку вниз */
+    body.nav-pos-auto #fab-download-btn {
+        bottom: 24px !important;
+    }
+}
+
+/* Скрываем системные стрелочки у нативных селектов, если мы наложили их поверх кнопок */
+.relative select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+/* Фикс для опций выпадающих списков в темной теме */
+select option, select optgroup {
+    background-color: var(--card-bg);
+    color: var(--text-main);
+}
