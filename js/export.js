@@ -34,7 +34,11 @@ function exportPdfOnePager(data) {
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
     
     const groupedC = {};
-    data.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
+    data.forEach(item => { 
+        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
+        groupedC[cKey] = groupedC[cKey] || []; 
+        groupedC[cKey].push(item); 
+    });
     const currContractorsCount = Object.keys(groupedC).length;
 
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
@@ -96,31 +100,35 @@ function exportPdfOnePager(data) {
     };
 
     // 4. Фотографии дефектов
-    let b3Map = {}; let b2Map = {}; 
+    let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
         if(i.state && i.details) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
-                if(s === 'fail' || s === 'fail_escalated') {
-                    let defName = "Дефект";
-                    const tType = i.templateKey.split('_')[0];
-                    const tKey = i.templateKey.replace(tType + '_', '');
-                    const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                    const foundItem = getFlatList(cl).find(x => x.id == id);
-                    if(foundItem) defName = foundItem.n;
+                let defName = "Дефект";
+                const tType = i.templateKey.split('_')[0];
+                const tKey = i.templateKey.replace(tType + '_', '');
+                const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                const foundItem = getFlatList(cl).find(x => x.id == id);
+                if(foundItem) defName = foundItem.n;
+                const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
 
-                    const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
+                if(s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
 
                     if (isB3) {
-                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
-                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
                     }
+                } else if (s === 'ok' && photo) {
+                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                    okMap[defName].count++;
+                    if (photo) okMap[defName].photo = photo;
                 }
             });
         }
@@ -128,20 +136,19 @@ function exportPdfOnePager(data) {
 
     const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
     const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
+    const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
     // Спец-рендер для сетки 5x2 (огромные фото, минимум текста)
-    const renderPhotoGridRow = (arr, isCrit) => {
+    const renderPhotoGridRow = (arr, type) => {
         while(arr.length < 5) { arr.push({ empty: true }); }
-        const badgeColor = isCrit ? '#dc2626' : '#d97706';
+        let badgeColor = type === 'b3' ? '#dc2626' : (type === 'b2' ? '#d97706' : '#16a34a');
         return `<div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; height:100%;">
             ${arr.slice(0, 5).map(d => {
                 if (d.empty) return `<div style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:100%;"></div>`;
-                const imgHtml = d.photo ? `<img src="${d.photo}" style="width:100%; height:100%; object-fit:cover; position:absolute; inset:0;">` : `<div style="width:100%; height:100%; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#cbd5e1; font-size:12px; font-weight:bold;">НЕТ ФОТО</div>`;
+                const imgHtml = d.photo ? `<img src="${d.photo}" style="width:100%; height:100%; object-fit:contain; background-color:#f1f5f9; position:absolute; inset:0;">` : `<div style="width:100%; height:100%; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#cbd5e1; font-size:12px; font-weight:bold;">НЕТ ФОТО</div>`;
                 return `
                 <div style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:white; box-shadow:0 2px 4px rgba(0,0,0,0.05); position:relative;">
-                    <!-- Блок фото тянется на всю высоту -->
-                    <div style="position:relative; flex:1; min-height: 180px;">${imgHtml}</div>
-                    <!-- Текст снизу (очень компактный) -->
+                    <div style="position:relative; flex:1; min-height: 120px;">${imgHtml}</div>
                     <div style="padding:6px 8px; height: 50px; background: white; border-top:2px solid ${badgeColor}; display:flex; flex-direction:column; justify-content:center; z-index: 2;">
                         <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${d.name}</div>
                         <div style="font-size:9px; color:#64748b; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:bold;">👤 ${d.contr} (${d.count} шт)</div>
@@ -199,8 +206,11 @@ function exportPdfOnePager(data) {
     const content = `
         <style>
             .header { display: none !important; } 
-            @page { margin: 8mm; } 
-            .main-wrapper { display: flex; flex-direction: column; width: 100%; height: 280mm; box-sizing: border-box; } 
+            @page { margin: 5mm; size: A3 landscape; } 
+            .main-wrapper { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 270mm; box-sizing: border-box; page-break-inside: avoid; } 
+            @media print {
+                html, body { height: 100vh; max-height: 100vh; overflow: hidden; }
+            }
         </style>
         
         <div class="main-wrapper">
@@ -281,26 +291,23 @@ function exportPdfOnePager(data) {
                 <!-- ПРАВАЯ КОЛОНКА (72%) - Фото и Выводы -->
                 <div style="width: 72%; display: flex; flex-direction: column; gap: 15px;">
                     
-                    <!-- БЛОК ФОТО (2 РЯДА x 5 ФОТО) -->
+                    <!-- БЛОК ФОТО (3 РЯДА x 5 ФОТО) -->
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
                         <div style="flex: 1; background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
                             <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
-                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB3, true)}</div>
+                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB3, 'b3')}</div>
                         </div>
 
                         <div style="flex: 1; background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
                             <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
-                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB2, false)}</div>
+                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB2, 'b2')}</div>
+                        </div>
+                        
+                        <div style="flex: 1; background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
+                            <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
+                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topOK, 'ok')}</div>
                         </div>
                     </div>
-
-                    <!-- УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ (На всю ширину правой колонки) -->
-                    <div style="background: ${parseFloat(mData.IKO) >= 0.60 || sumB3 > 0 ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${parseFloat(mData.IKO) >= 0.60 || sumB3 > 0 ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; flex-shrink: 0; page-break-inside: avoid;">
-                        <h3 style="margin: 0 0 6px 0; font-size: 12px; color: ${parseFloat(mData.IKO) >= 0.60 || sumB3 > 0 ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${parseFloat(mData.IKO) >= 0.60 || sumB3 > 0 ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
-                        <div style="font-size: 13px; line-height: 1.4; color: #1e293b; white-space: pre-wrap; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
-                    </div>
-
-                </div>
 
             </div>
         </div>
@@ -822,9 +829,9 @@ function exportPdfFullObjectReport(data) {
                     ${paddedArr.map(p => {
                         if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:6px; background:#f8fafc; height:100%;"></td>`;
                         return `<td style="border:2px solid ${borderCell}; border-radius:6px; background:${bgCell}; vertical-align:top; overflow:hidden; padding:0; height:100%;">
-                            <img src="${p.src}" style="width:100%; height:75%; object-fit:cover; display:block;">
-                            <div style="padding:4px; font-size:8px; font-weight:bold; color:#0f172a; line-height:1.1; height:25%; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${p.name}</div>
-                        </td>`;
+    <img src="${p.src}" style="width:100%; height:75%; object-fit:contain; background-color:#f1f5f9; display:block;">
+    <div style="padding:4px; font-size:8px; font-weight:bold; color:#0f172a; line-height:1.1; height:25%; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${p.name}</div>
+</td>`;
                     }).join('')}
                     </tr>
                 </table>
@@ -1175,9 +1182,10 @@ function printPdfShell(title, content, formatSize = 'A4') {
         
         @media print { 
             .print-controls { display: none !important; } 
-            body { padding: 0; background: white; } 
-            .preview-container { box-shadow: none; margin: 0; padding: 0; max-width: none; }
+            html, body { margin: 0; padding: 0; background: white; width: 100%; } 
+            .preview-container { box-shadow: none; margin: 0; padding: 0; max-width: 100% !important; width: 100%; page-break-after: avoid; }
             .avoid-break { page-break-inside: avoid !important; } 
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
         
         .header { border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end; }

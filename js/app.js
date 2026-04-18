@@ -2521,6 +2521,10 @@ function startDemoMode(silent = false) {
     document.getElementById('audit-items').style.display = 'block';
     document.getElementById('audit-actions').style.display = 'grid';
     
+    // Обновляем фильтры, чтобы они увидели демо-объекты
+    updateDatalists(); 
+    updateAllDynamicFilters();
+    
     render(); updateUI(); renderHistoryTab(); renderCurrentAnalyticsTab(); renderTwiList();
     
     if(!silent) {
@@ -2885,7 +2889,11 @@ function buildTrendChartData(data, fieldName, allowedCats = [], period = 'MONTH'
         else if (period === 'WEEK') tLabel = `Нед.${getWeekNumber(d)} '${d.getFullYear().toString().slice(-2)}`;
         else tLabel = d.toLocaleString('ru-RU', { month: 'short', year: '2-digit' });
 
-        const cat = fieldName === 'TOTAL' ? 'Общий УрК' : (item[fieldName] || 'Неизвестно');
+        // УМНОЕ ИМЯ: Подрядчик + Объект
+        let cat = fieldName === 'TOTAL' ? 'Общий УрК' : (item[fieldName] || 'Неизвестно');
+        if (fieldName === 'contractorName') {
+            cat = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
+        }
         categoriesTotal[cat] = (categoriesTotal[cat] || 0) + 1;
 
         if (!timeMap[tLabel]) timeMap[tLabel] = {};

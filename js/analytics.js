@@ -581,7 +581,7 @@ function renderOnePagerSubTab(data) {
     
     const groupedC = {};
     data.forEach(item => { 
-        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
+        const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
         groupedC[cKey] = groupedC[cKey] || []; 
         groupedC[cKey].push(item); 
     });
@@ -652,7 +652,6 @@ function renderOnePagerSubTab(data) {
         sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
     }
 
-    // --- ПОДГОТОВКА ДАННЫХ ДЛЯ ЛИНЕЙНОГО ГРАФИКА (10 ПОДРЯДЧИКОВ) ---
     let defaultChartContrs = [];
     if (ratingData.length <= 10) {
         defaultChartContrs = ratingData.map(r => r.name);
@@ -663,31 +662,36 @@ function renderOnePagerSubTab(data) {
     if (!selectedChartFilters.onepager) selectedChartFilters.onepager = [];
     const activeLineFilters = selectedChartFilters.onepager.length > 0 ? selectedChartFilters.onepager : defaultChartContrs;
 
-    let b3Map = {}; let b2Map = {}; 
+    // Сбор всех фото (B3, B2, OK)
+    let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
-        if(i.state && i.details) {
+        if(i.state && i.details && i.templateKey) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
+                let defName = "Дефект";
+                const tType = i.templateKey.split('_')[0];
+                const tKey = i.templateKey.replace(tType + '_', '');
+                const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                const foundItem = getFlatList(cl).find(x => x.id == id);
+                if(foundItem) defName = foundItem.n;
+
+                const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
+
                 if(s === 'fail' || s === 'fail_escalated') {
-                    let defName = "Дефект";
-                    const tType = i.templateKey.split('_')[0];
-                    const tKey = i.templateKey.replace(tType + '_', '');
-                    const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                    const foundItem = getFlatList(cl).find(x => x.id == id);
-                    if(foundItem) defName = foundItem.n;
-
-                    const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
-
                     if (isB3) {
-                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
-                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
                     }
+                } else if (s === 'ok' && photo) {
+                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                    okMap[defName].count++;
+                    if (photo) okMap[defName].photo = photo;
                 }
             });
         }
@@ -695,21 +699,24 @@ function renderOnePagerSubTab(data) {
 
     const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
     const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
+    const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-    const renderUIPhotoCards = (arr, isCrit) => {
-        if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">Дефектов не зафиксировано</div>`;
+    const renderUIPhotoCards = (arr, isCrit, isOk = false) => {
+        if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${isOk ? 'Эталонов нет' : 'Дефектов не зафиксировано'}</div>`;
         return `<div class="grid grid-cols-5 gap-1.5 min-[400px]:gap-2">
             ${arr.map(d => {
                 const imgHtml = d.photo ? `<img src="${d.photo}" class="w-full h-14 min-[400px]:h-20 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer(this.src)">` : `<div class="w-full h-14 min-[400px]:h-20 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[8px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
-                const badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
+                let badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
+                let badgeText = isCrit ? 'B3' : 'B2';
+                if (isOk) { badgeColor = 'text-green-700 bg-green-100 border-green-200'; badgeText = 'OK'; }
                 return `
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg overflow-hidden flex flex-col shadow-sm">
                     ${imgHtml}
                     <div class="p-1 flex-1 flex flex-col justify-between">
-                        <div class="text-[7px] min-[400px]:text-[8px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1">${d.name}</div>
+                        <div class="text-[7px] min-[400px]:text-[8px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1" title="${d.name}">${d.name}</div>
                         <div>
-                            <div class="text-[6px] min-[400px]:text-[7px] text-[var(--text-muted)] mb-0.5 truncate w-full">👤 ${d.contr}</div>
-                            <div class="flex justify-between items-center"><span class="${badgeColor} text-[6px] min-[400px]:text-[7px] font-black px-1 rounded border">${isCrit ? 'B3' : 'B2'}</span><span class="text-[7px] font-black text-[var(--text-muted)]">${d.count} шт</span></div>
+                            <div class="text-[6px] min-[400px]:text-[7px] text-[var(--text-muted)] mb-0.5 truncate w-full" title="${d.contr}">👤 ${d.contr}</div>
+                            <div class="flex justify-between items-center"><span class="${badgeColor} text-[6px] min-[400px]:text-[7px] font-black px-1 rounded border">${badgeText}</span><span class="text-[7px] font-black text-[var(--text-muted)]">${d.count} шт</span></div>
                         </div>
                     </div>
                 </div>`;
@@ -839,6 +846,15 @@ function renderOnePagerSubTab(data) {
                         ${renderUIPhotoCards(topB2, false)}
                     </div>
                 </div>
+
+                <div class="flex-1 bg-green-50 dark:bg-green-900/10 border-2 border-green-200 dark:border-green-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                    <h3 class="margin-0 mb-3 font-black text-[10px] text-green-700 dark:text-green-500 uppercase border-b border-green-200 dark:border-green-800 pb-2">
+                        ✅ ТОП-5 Эталонных работ (OK)
+                    </h3>
+                    <div class="flex-1 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+                        ${renderUIPhotoCards(topOK, false, true)}
+                    </div>
+                </div>
                 ` : ''}
 
                 <div class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border-2 rounded-xl p-3 shadow-sm flex-none relative">
@@ -871,7 +887,6 @@ function renderOnePagerSubTab(data) {
         const ctxLine = document.getElementById('op-line-chart');
         if (ctxLine) {
             const trendData = buildTrendChartData(data, 'contractorName', activeLineFilters, trendGroupings.onepager || 'MONTH');
-            // Делаем линии тоньше для лучшей читаемости 10 графиков
             trendData.datasets.forEach(ds => { ds.borderWidth = 2; ds.pointRadius = 2; });
             
             if (chartInstances['op-line-chart']) chartInstances['op-line-chart'].destroy();
