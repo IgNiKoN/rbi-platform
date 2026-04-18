@@ -147,8 +147,9 @@ function renderContractorsSubTab(data) {
             sumB2 += i.metrics.n_B2_fail;
             sumB3 += i.metrics.n_B3_fail;
         }
-        groupedC[i.contractorName] = groupedC[i.contractorName] || []; 
-        groupedC[i.contractorName].push(i);
+        const cKey = i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']';
+        groupedC[cKey] = groupedC[cKey] || []; 
+        groupedC[cKey].push(i);
 
         if(i.state && i.details) {
             Object.keys(i.state).forEach(id => {
@@ -235,36 +236,40 @@ function renderContractorsSubTab(data) {
     });
 
     if (newMagicCandidates.length > 0) {
-        // Если блок свернут (по классу) - рисуем компактную мигающую полоску
         magicTwiHtml = `
-            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-4 shadow-md mb-4 text-white transition-all overflow-hidden relative">
-                <button onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="absolute top-3 right-3 text-white/50 hover:text-white/100 transition-colors">
-                    <svg class="w-5 h-5 magic-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
-                </button>
-                
-                <div class="flex items-center gap-2 font-black uppercase tracking-widest text-[11px] drop-shadow-md">
-                    <span class="text-xl animate-pulse">✨</span> Магия TWI (Найдено ${newMagicCandidates.length} пар)
+            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-md mb-4 text-white overflow-hidden relative magic-collapsed" style="transition: padding 0.3s ease;">
+                <div onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="cursor-pointer p-4 pb-3">
+                    <button class="absolute top-3 right-3 text-white/50 hover:text-white/100 transition-colors pointer-events-none">
+                        <svg class="w-5 h-5 magic-arrow transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                    </button>
+                    <div class="flex items-center gap-2 font-black uppercase tracking-widest text-[11px] drop-shadow-md">
+                        <span class="text-xl animate-pulse">✨</span> Магия TWI (Найдено ${newMagicCandidates.length} пар)
+                    </div>
                 </div>
                 
-                <div class="magic-content transition-all duration-300 origin-top mt-2">
-                    <div class="text-[11px] font-medium text-indigo-100 mb-3 leading-snug">
-                        Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Огромный бонус XP!</b>
-                    </div>
-                    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                        ${newMagicCandidates.map((m, i) => `
-                            <div class="bg-white/10 border border-white/20 p-2 rounded-lg shrink-0 w-48 flex flex-col justify-between">
-                                <div class="text-[9px] font-bold leading-tight line-clamp-2 mb-2" title="${m.title}">${m.title}</div>
-                                <button onclick="window.createMagicTwi('${m.tmplKey}', '${m.itemId}', '${m.ok}', '${m.fail}', '${m.title.replace(/'/g, "\\'")}')" class="w-full bg-white text-indigo-600 py-1.5 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Создать (+100 XP)</button>
-                            </div>
-                        `).join('')}
+                <div class="magic-content-wrapper px-4">
+                    <div class="magic-content">
+                        <div class="text-[11px] font-medium text-indigo-100 mb-3 leading-snug">
+                            Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Огромный бонус XP!</b>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-4 pt-1">
+                            ${newMagicCandidates.map((m, i) => `
+                                <div class="bg-white/10 border border-white/20 p-2 rounded-lg shrink-0 w-48 flex flex-col justify-between">
+                                    <div class="text-[9px] font-bold leading-tight line-clamp-2 mb-2" title="${m.title}">${m.title}</div>
+                                    <button onclick="window.createMagicTwi('${m.tmplKey}', '${m.itemId}', '${m.ok}', '${m.fail}', '${m.title.replace(/'/g, "\\'")}')" class="w-full bg-white text-indigo-600 py-1.5 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Создать (+100 XP)</button>
+                                </div>
+                            `).join('')}
+                        </div>
                     </div>
                 </div>
             </div>
             <style>
-                #twi-magic-block.magic-collapsed { padding: 10px 16px; cursor: pointer; }
-                #twi-magic-block.magic-collapsed .magic-content { max-height: 0; opacity: 0; overflow: hidden; margin-top: 0; }
+                #twi-magic-block.magic-collapsed { padding-bottom: 0px; }
                 #twi-magic-block.magic-collapsed .magic-arrow { transform: rotate(180deg); }
-                #twi-magic-block:not(.magic-collapsed) .magic-content { max-height: 200px; opacity: 1; }
+                /* Магия CSS Grid для плавной анимации высоты без зависаний */
+                .magic-content-wrapper { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s ease-out; }
+                #twi-magic-block.magic-collapsed .magic-content-wrapper { grid-template-rows: 0fr; }
+                .magic-content { overflow: hidden; }
             </style>
         `;
     }
@@ -455,7 +460,11 @@ function renderContractorsListOnly(data) {
     if (!listContainer) return;
 
     const groupedC = {};
-    data.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
+    data.forEach(item => { 
+        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
+        groupedC[cKey] = groupedC[cKey] || []; 
+        groupedC[cKey].push(item); 
+    });
 
     const cList = [];
     for(let cName in groupedC) {
@@ -494,9 +503,12 @@ function renderContractorsListOnly(data) {
         const isPrelim = m.count < 7;
         const colorClass = m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600');
         const borderClass = m.finalC < 70 ? 'border-red-300 dark:border-red-800' : 'border-[var(--card-border)]';
+        
+        // Защита от поломки HTML из-за кавычек в названиях
+        const safeName = c.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
 
         html += `
-        <div class="bg-[var(--card-bg)] border ${borderClass} rounded-xl p-3 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform flex flex-col justify-between" onclick="showContractorDetailView('${c.name.replace(/'/g, "\\'")}')">
+        <div class="bg-[var(--card-bg)] border ${borderClass} rounded-xl p-3 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform flex flex-col justify-between" onclick="showContractorDetailView('${safeName}')">
             ${isPrelim ? '<div class="absolute top-0 right-0 bg-slate-200 text-slate-600 text-[8px] font-black px-2 py-1 rounded-bl-lg uppercase" title="Нужно больше проверок">Сбор</div>' : ''}
             
             <div>
@@ -568,7 +580,11 @@ function renderOnePagerSubTab(data) {
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
     
     const groupedC = {};
-    data.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
+    data.forEach(item => { 
+        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
+        groupedC[cKey] = groupedC[cKey] || []; 
+        groupedC[cKey].push(item); 
+    });
     const currContractorsCount = Object.keys(groupedC).length;
 
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
@@ -664,11 +680,11 @@ function renderOnePagerSubTab(data) {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
 
                     if (isB3) {
-                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
-                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
                     }
@@ -990,7 +1006,7 @@ function showContractorDetailView(contractorName) {
     window.scrollTo(0,0);
 
     const container = document.getElementById('contractor-detail-content');
-    const data = getFilteredAnalyticsData().filter(c => c.contractorName === contractorName);
+    const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
     
     if (data.length === 0) { container.innerHTML = 'Ошибка данных'; return; }
 

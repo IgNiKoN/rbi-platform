@@ -1513,6 +1513,16 @@ function updateGroupCounters() {
         }
     });
 }
+// Функция принудительного разворачивания карточки без потери статуса OK
+window.expandCard = function(id, event) {
+    if(event) event.stopPropagation();
+    const flatList = getFlatList(currentChecklist);
+    const itemData = flatList.find(x => x.id === id);
+    if(itemData) {
+        itemData._forceExpand = true; // Ставим метку, что юзер хочет видеть ее развернутой
+        updateCardDOM(id, itemData);
+    }
+};
 
 function updateCardDOM(id, itemData = null) {
     const wrapper = document.getElementById(`card_wrapper_${id}`);
@@ -1535,7 +1545,7 @@ function updateCardDOM(id, itemData = null) {
     let indicatorClass = `indicator-${s ? (okActive ? 'ok' : (isEscalated ? 3 : i.w)) : i.w}`;
     
     let collapseClass = '';
-    if (okActive && appSettings.autoCollapseOk) {
+    if (okActive && appSettings.autoCollapseOk && !itemData._forceExpand) {
         collapseClass = 'card-collapsed';
         cardBgClass = ''; 
     }
@@ -1675,7 +1685,7 @@ function updateCardDOM(id, itemData = null) {
     }
 
     const cardHtml = `
-    <div class="card-audit swipe-container ${indicatorClass} ${cardBgClass} ${collapseClass}" data-id="${id}" onclick="if(this.classList.contains('card-collapsed')) toggleOk(${id})">
+    <div class="card-audit swipe-container ${indicatorClass} ${cardBgClass} ${collapseClass}" data-id="${id}" onclick="if(this.classList.contains('card-collapsed')) expandCard(${id}, event)">
         <div class="swipe-actions-bg swipe-bg-ok"><span class="ml-4">OK</span></div>
         <div class="swipe-actions-bg swipe-bg-fail"><span class="mr-4">FAIL</span></div>
         <div class="swipe-content p-2.5 bg-inherit border-inherit rounded-inherit h-full w-full bg-[var(--card-bg)] dark:bg-slate-800 transition-colors">
@@ -2100,7 +2110,6 @@ function renderHistoryTab() {
     const fPhoto = document.getElementById('hist-filter-photo')?.checked;
     const fB3 = document.getElementById('hist-filter-b3')?.checked;
 
-    // Берем данные из мульти-фильтров
     const fProj = activeMultiFilters.history.project || [];
     const fContr = activeMultiFilters.history.contractor || [];
     const fInsp = activeMultiFilters.history.inspector || [];
@@ -2117,12 +2126,10 @@ function renderHistoryTab() {
         );
     }
     
-    // МУЛЬТИФИЛЬТРЫ (РАБОТАЮТ КОРРЕКТНО)
     if (fProj.length > 0) filteredArr = filteredArr.filter(i => fProj.includes(i.projectName));
     if (fContr.length > 0) filteredArr = filteredArr.filter(i => fContr.includes(i.contractorName));
     if (fInsp.length > 0) filteredArr = filteredArr.filter(i => fInsp.includes(i.inspectorName));
     
-    // ПЕРИОД И ЧЕКБОКСЫ
     if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.date).toDateString() === now.toDateString());
     else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate()-7); filteredArr = filteredArr.filter(i => new Date(i.date) >= w); }
     else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate()-30); filteredArr = filteredArr.filter(i => new Date(i.date) >= m); }
@@ -2139,7 +2146,8 @@ function renderHistoryTab() {
 
     const grouped = {};
     filteredArr.forEach(item => {
-        const cName = item.contractorName || 'Не указан'; 
+        // УМНАЯ СВЯЗКА: Подрядчик + Объект
+        const cName = `${item.contractorName || 'Не указан'} [${item.projectName || 'Без объекта'}]`; 
         const tTitle = item.templateTitle || 'Неизвестный вид работ';
         if (!grouped[cName]) grouped[cName] = {}; 
         if (!grouped[cName][tTitle]) grouped[cName][tTitle] = [];
@@ -2150,30 +2158,43 @@ function renderHistoryTab() {
     let groupIndex = 0;
     for (let cName in grouped) {
         const safeGroupName = `hist-group-${groupIndex++}`;
-        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-xs mt-4 mb-2 uppercase tracking-tight pl-2 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
-            <span>🏗️ ${cName}</span><span class="text-[10px] text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">СВЕРНУТЬ</span>
-        </div><div id="${safeGroupName}" class="transition-all duration-300 origin-top">`; 
+        // По умолчанию группы СВЕРНУТЫ (добавлен класс hidden во второй div)
+        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-xs mt-4 mb-2 uppercase tracking-tight pl-2 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-r-lg shadow-sm" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
+            <span class="truncate pr-2">🏗️ ${cName}</span><span class="text-[10px] text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 shrink-0">РАЗВЕРНУТЬ</span>
+        </div><div id="${safeGroupName}" class="hidden transition-all duration-300 origin-top">`; 
         
         for (let tTitle in grouped[cName]) {
             html += `<div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-2 ml-2 mt-2">${tTitle} (${grouped[cName][tTitle].length} изд.)</div>`;
             const reversed = [...grouped[cName][tTitle]].sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            html += reversed.map((item) => {
+            // ПАГИНАЦИЯ: Показываем 15, остальные прячем
+            const visibleItems = reversed.slice(0, 15);
+            const hiddenItems = reversed.slice(15);
+            
+            const renderRow = (item) => {
                 const photoIcon = (item.photos && Object.keys(item.photos).length > 0) ? `📸` : '';
                 return `
                 <div class="flex items-center gap-2 mb-2">
                     <input type="checkbox" class="hist-checkbox w-5 h-5 accent-indigo-600 rounded shrink-0" value="${item.id}">
                     <div class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${item.id})">
                         <div class="flex justify-between items-start mb-1">
-                            <div>
-                                <div class="text-[11px] font-bold text-slate-800 dark:text-white">${item.location} <span class="text-[10px] ml-1">${photoIcon}</span></div>
-                                <div class="text-[9px] text-slate-400 mt-0.5">${new Date(item.date).toLocaleString('ru-RU')} | Инсп: ${item.inspectorName || 'Не указан'}</div>
+                            <div class="min-w-0 pr-2">
+                                <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${item.location} <span class="text-[10px] ml-1">${photoIcon}</span></div>
+                                <div class="text-[9px] text-slate-400 mt-0.5 truncate">${new Date(item.date).toLocaleString('ru-RU')} | Инсп: ${item.inspectorName || 'Не указан'}</div>
                             </div>
-                            <span class="status-tag ${item.metrics.statusCls}">${item.metrics.final}%</span>
+                            <span class="status-tag ${item.metrics.statusCls} shrink-0">${item.metrics.final}%</span>
                         </div>
                     </div>
-                </div>`
-            }).join('');
+                </div>`;
+            };
+
+            html += visibleItems.map(renderRow).join('');
+            
+            if (hiddenItems.length > 0) {
+                const hiddenGroupId = `${safeGroupName}-hidden-${tTitle.replace(/\W/g, '')}`;
+                html += `<div id="${hiddenGroupId}" class="hidden">${hiddenItems.map(renderRow).join('')}</div>`;
+                html += `<button onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 py-2 mt-1 mb-3 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-slate-300 dark:border-slate-600">Показать еще (${hiddenItems.length})</button>`;
+            }
         }
         html += `</div>`; 
     }
@@ -2455,45 +2476,45 @@ function startDemoMode(silent = false) {
     
     contractorArray = generateDemoHistory();
 
-    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='400' height='300' fill='%23dcfce7'/><path d='M150 150 L190 190 L270 100' stroke='%2316a34a' stroke-width='20' fill='none'/><text x='200' y='260' font-family='Arial' font-size='20' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ПРАВИЛЬНО)</text></svg>";
-    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='400' height='300' fill='%23fee2e2'/><path d='M130 100 L270 200 M130 200 L270 100' stroke='%23dc2626' stroke-width='20' fill='none'/><text x='200' y='260' font-family='Arial' font-size='20' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НЕПРАВИЛЬНО)</text></svg>";
-    const demoPdf = "data:application/pdf;base64,JVBERi0xLjQKJcOkwsgKMSAwIG9iago8PAovVGl0bGUgKP7/AEQAZQBtAG8AIABQAEQARikKLUNyZWF0b3IgKP7/AEQAZQBtAG8pCi9Qcm9kdWNlciAo/v8ARABlAG0AbykKLUNyZWF0aW9uRGF0ZSAoRDoyMDI0MDEwMTAwMDAwMFopCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAzIDAgUgo+PgplbmRvYmoKMyAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9ibjQgMCBvYmoKPDwKL1R5cGUgL0QKL1BhcmVudCAzIDAgUgovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA1IDAgUgo+Pgo+PgovTWVkaWFCb3ggWyAwIDAgNTk1LjI4IDg0MS44OSBdCi9Db250ZW50cyA2IDAgUgo+PgplbmRvYmoKNSAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTUKL0Jhc2VGb250IC9IZWx2ZXRpY2EKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL0xlbmd0aCA0NAo+PgpzdHJlYW0KQlQKNzAgNzAwIFRkCi9GMSAyNCBUZgooRGVtbyBQREYgRG9jdW1lbnQpIFRqCkVUCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDcKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDAxNDEgMDAwMDAgbiAKMDAwMDAwMDE5MCAwMDAwMCBuIAowMDAwMDAwMjQ3IDAwMDAwIG4gCjAwMDAwMDAzNTUgMDAwMDAgbiAKMDAwMDAwMDQ0MyAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDcKL1Jvb3QgMiAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjUzOAolJUVPRgo=";
+    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
+    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
 
-    // ИСПРАВЛЕНИЕ: Четкая привязка itemId в демо-картах
     customTwiCards = [
         {
-            id: "demo_twi_1", title: "Контроль шага арматуры", checklistKey: "sys_armature", checklistName: "Арматурные работы", type: "INSPECTOR", itemId: "204", // 204 - это ID пункта "Отклонение в расстоянии"
-            whyImportant: "Снижение несущей способности пилона. При заливке бетоном вибратор не пройдет между стержнями.",
-            howToCheck: "Приложить рулетку от оси до оси стержня. Допуск ±10 мм.", photoGood: demoPhotoGood, photoBad: demoPhotoBad
-        },
-        {
-            // Эта карта привязана ко всему чек-листу Фасадов
-            id: "demo_twi_2", title: "Монтаж стартового кронштейна", checklistKey: "sys_nvf_facade", checklistName: "Навесной вентилируемый фасад", type: "WORKER", itemId: "ALL", totalTime: 15,
-            steps: [
-                {order: 1, text: "Разметить оси установки по нивелиру.", time: 5, photo: null},
-                {order: 2, text: "Установить терморазрывную прокладку под кронштейн.", time: 5, photo: demoPhotoGood},
-                {order: 3, text: "Затянуть анкер.", time: 5, photo: null}
-            ]
-        },
-        {
-            // Эта карта привязана ко всему чек-листу Арматуры
-            id: "demo_twi_3", title: "Техкарта: Укладка бетона", checklistKey: "sys_armature", checklistName: "Арматурные работы", type: "PDF", itemId: "ALL", pdfData: demoPdf, pdfName: "tech_carta.pdf", pdfSize: "0.5 MB"
+            id: "demo_twi_1", title: "Контроль установки кронштейнов", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "INSPECTOR", itemId: "109", 
+            whyImportant: "Превышение допуска приводит к перекосу подсистемы и невозможности ровно смонтировать облицовку.",
+            howToCheck: "Замерять рулеткой отклонение от оси. Допуск ±10 мм.", photoGood: demoPhotoGood, photoBad: demoPhotoBad
         }
     ];
 
     document.getElementById('inp-project').value = 'ЖК "Демонстрационный"';
     document.getElementById('inp-inspector').value = 'Иванов И.И. (Демо)';
-    document.getElementById('inp-contractor').value = 'ООО "Монолит-Строй"';
-    document.getElementById('inp-location').value = 'Секция 2, Пилон П-10';
+    document.getElementById('inp-contractor').value = 'ООО "Фасад-Мастер"';
+    document.getElementById('inp-location').value = 'Секция 2, Ось А-В';
 
-    currentTemplateKey = 'sys_armature';
+    currentTemplateKey = 'sys_nvf_facade'; // Выбрали Вент.Фасад
     if(document.getElementById('checklist-selector')) document.getElementById('checklist-selector').value = currentTemplateKey;
-    currentChecklist = SYSTEM_TEMPLATES['armature'].groups;
+    currentChecklist = SYSTEM_TEMPLATES['nvf_facade'].groups;
     
     state = {}; details = {}; photos = {};
-    state['201'] = 'ok';
-    state['204'] = 'fail'; details['204'] = { causeCode: 'C04', comment: '[Персонал] Отклонение превышает допуск на 5мм' };
-    state['210'] = 'fail_escalated'; details['210'] = { causeCode: 'C01', comment: '[Технология] Жесткое нарушение, арматура торчит' };
+    
+    // Пункт 108 (Краевая зона) - OK и фото эталона
+    state['108'] = 'ok'; photos['108'] = demoPhotoGood; 
+    
+    // Пункт 109 (Отклонение кронштейнов, B2) - Брак, есть 1.5х, есть фото
+    state['109'] = 'fail'; details['109'] = { causeCode: 'C01', comment: '[Технология] Отклонение кронштейна на 18мм' }; photos['109'] = demoPhotoBad; 
+    
+    // Пункт 110 - Оставляем пустым для демонстрации свайпа
+    state['110'] = null; 
+    
+    if (typeof gameActionLogs !== 'undefined') {
+        gameActionLogs = [
+            { id: 'l1', date: new Date().toISOString(), inspector: 'Иванов И.И. (Демо)', action: 'create_twi' },
+            { id: 'l2', date: new Date().toISOString(), inspector: 'Иванов И.И. (Демо)', action: 'ai_generate' },
+            { id: 'l3', date: new Date().toISOString(), inspector: 'Иванов И.И. (Демо)', action: 'comment_written' },
+            { id: 'l4', date: new Date().toISOString(), inspector: 'Иванов И.И. (Демо)', action: 'comment_written' }
+        ];
+    }
 
     updateDataSummary();
     document.getElementById('empty-checklist-state').style.display = 'none';
@@ -2509,22 +2530,18 @@ function startDemoMode(silent = false) {
 }
 
 function exitDemoMode() {
-    // ЖЕСТКАЯ ОЧИСТКА ВСЕГО
-    state = {};
-    details = {};
-    photos = {};
+    state = {}; details = {}; photos = {};
     
-    // Возвращаем реальные данные
     state = JSON.parse(JSON.stringify(realState));
     details = JSON.parse(JSON.stringify(realDetails));
     photos = JSON.parse(JSON.stringify(realPhotos));
     contractorArray = JSON.parse(JSON.stringify(realContractorArray));
     customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
+    if (typeof gameActionLogs !== 'undefined') gameActionLogs = [];
     
     isDemoMode = false;
     document.body.classList.remove('demo-mode');
     
-    // Прячем кнопку Выхода
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit) { fabExit.classList.add('hidden'); fabExit.style.display = 'none'; }
     
@@ -2547,90 +2564,81 @@ function generateDemoHistory() {
     let mockArray = [];
     const now = new Date();
     
-    const demoPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='400' height='300' fill='%23f1f5f9'/><path d='M150 100 L250 100 L200 200 Z' fill='%23cbd5e1'/><circle cx='200' cy='80' r='20' fill='%23fbbf24'/><text x='200' y='250' font-family='Arial' font-size='20' font-weight='bold' fill='%23475569' text-anchor='middle'>ФОТО НАРУШЕНИЯ</text></svg>";
+    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
+    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
 
     const randomDay = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
     const createRecord = (id, daysAgo, proj, insp, contr, tmplKey, tmplTitle, loc, stageId, stageName, states, detailsData, photoData, m) => {
-        let d = new Date(now); 
-        d.setDate(now.getDate() - daysAgo);
-        
+        let d = new Date(now); d.setDate(now.getDate() - daysAgo);
         return {
-            id: id + Math.floor(Math.random() * 1000), 
-            date: d.toISOString(), 
-            projectName: proj, 
-            inspectorName: insp,
+            id: id + Math.floor(Math.random() * 1000), date: d.toISOString(), projectName: proj, inspectorName: insp,
             contractorName: contr, templateKey: tmplKey, templateTitle: tmplTitle, location: loc,
             stageId, stageName, isCompleted: true, state: states, details: detailsData, photos: photoData, metrics: m
         };
     };
 
     const metric = (f, b1, b2, b3) => ({
-        final: f, baseUrkPerc: f, checkedCount: 5, totalCount: 5, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, 
-        kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0
+        final: f, baseUrkPerc: f, checkedCount: 6, totalCount: 6, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0
     });
 
-    // 1. ЖК "Северный" | Инспектор: Иванов И.И.
-    // Подрядчик ОТЛИЧНИК (ООО "Альфа-Отделка") - Улучшался от 85 до 100
-    for(let i=0; i<15; i++) {
-        let day = randomDay(5, 85);
-        let hasDefect = day > 60; // Ошибался только 2 месяца назад
-        mockArray.push(createRecord(100+i, day, 'ЖК "Северный"', 'Иванов И.И.', 'ООО "Альфа-Отделка"', 'sys_nvf_facade', 'Вент. фасад', `Секция 1, Ось ${i+1}`, 
-            1, "2. Подготовка", {'106':hasDefect?'fail':'ok', '107':'ok'}, 
-            hasDefect ? {'106': {causeCode: 'C06', comment: '[Спешка] Пыль на основании'}} : {}, {}, 
+    // --- ОБЪЕКТ 1: ЖК "Демонстрационный" ---
+    
+    // Подрядчик 1: Отличник (ООО "Фасад-Мастер") - Стабильно зеленый, много проверок
+    for(let i=0; i<35; i++) {
+        let day = randomDay(2, 110);
+        let hasDefect = (i % 7 === 0); // Редкий брак
+        mockArray.push(createRecord(100+i, day, 'ЖК "Демонстрационный"', 'Иванов И.И. (Демо)', 'ООО "Фасад-Мастер"', 'sys_nvf_facade', 'Вент. фасад', `Секция 1, Ось ${i+1}`, 
+            2, "3. Монтаж кронштейнов", {'108':'ok', '109':hasDefect?'fail':'ok', '110':'ok', '111':'ok', '112':'ok'}, 
+            hasDefect ? {'109': {causeCode: 'C06', comment: '[Спешка] Смещение'}} : {}, 
+            hasDefect ? {'109': demoPhotoBad} : {'108': demoPhotoGood}, // Магия TWI
             metric(hasDefect?80:100, 0, hasDefect?1:0, 0)));
     }
 
-    // Подрядчик ХОРОШИСТ (СМУ-7) - Стабильно на 80-90
+    // Подрядчик 2: Середнячок, скатывающийся в желтую зону (ООО "Окна-Про")
+    for(let i=0; i<28; i++) {
+        let day = randomDay(2, 100);
+        let hasDefect = day < 40; // Последний месяц начал косячить
+        mockArray.push(createRecord(200+i, day, 'ЖК "Демонстрационный"', 'Смирнов А.А. (Демо)', 'ООО "Окна-Про"', 'sys_okna_pvh', 'Окна ПВХ', `Секция 2, Кв. ${i+1}`, 
+            1, "2. Монтаж окон", {'1610':hasDefect?'fail':'ok', '1615':'ok', '1617':'ok'}, 
+            hasDefect ? {'1610': {causeCode: 'C04', comment: '[Персонал] Отклонение рамы'}} : {}, 
+            hasDefect ? {'1610': demoPhotoBad} : {}, 
+            metric(hasDefect?75:100, 0, hasDefect?1:0, 0)));
+    }
+
+    // Подрядчик 3: Двоечник с критическими ошибками (ИП Петров)
     for(let i=0; i<18; i++) {
-        let day = randomDay(2, 90);
-        let hasDefect = (i % 3 === 0); 
-        mockArray.push(createRecord(200+i, day, 'ЖК "Северный"', 'Иванов И.И.', 'СМУ-7', 'sys_armature', 'Арматура', `Секция 2, Перекрытие ${i+1}`, 
-            1, "2. Монтаж", {'204':hasDefect?'fail':'ok', '206':'ok', '210':'ok'}, 
-            hasDefect ? {'204': {causeCode: 'C04', comment: '[Персонал] Шаг нарушен на 10мм'}} : {}, hasDefect ? {'204': demoPhoto} : {}, 
-            metric(hasDefect?75:100, 1, hasDefect?2:0, 0)));
+        let day = randomDay(5, 90);
+        let hasB3 = (day < 60 && i % 2 === 0); // Постоянные B3 дефекты
+        mockArray.push(createRecord(300+i, day, 'ЖК "Демонстрационный"', 'Иванов И.И. (Демо)', 'ИП Петров (Бетон)', 'sys_monolit', 'Монолитные работы', `Пилон П-${i+1}`, 
+            2, "2. Стены", {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, 
+            hasB3 ? {'1014': {causeCode: 'C01', comment: '[Технология] Обнажение арматуры'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, 
+            hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, 
+            metric(hasB3?45:80, 0, 1, hasB3?1:0)));
     }
 
-    // 2. ЖК "Восточный" | Инспектор: Смирнов А.А.
-    // Подрядчик СРЕДНЯК (ООО "Монолит-Строй") - Качество падает!
+    // --- ОБЪЕКТ 2: БЦ "Восточный" ---
+
+    // Подрядчик 4: Прорыв недели (ООО "Кровля-Инвест") - был двоечником, стал отличником
     for(let i=0; i<20; i++) {
-        let day = randomDay(1, 90);
-        let hasDefect = day < 40; // Недавно начал косячить
-        mockArray.push(createRecord(300+i, day, 'ЖК "Восточный"', 'Смирнов А.А.', 'ООО "Монолит-Строй"', 'sys_armature', 'Арматура', `Пилон П-${i+1}`, 
+        let day = randomDay(1, 100);
+        let hasDefect = day > 30; // Раньше косячил, последний месяц идеален
+        mockArray.push(createRecord(400+i, day, 'БЦ "Восточный"', 'Смирнов А.А. (Демо)', 'ООО "Кровля-Инвест"', 'sys_krovlya', 'Устройство кровли', `Участок К-${i+1}`, 
+            2, "3. Пароизоляция", {'909':hasDefect?'fail':'ok', '910':'ok'}, 
+            hasDefect ? {'909': {causeCode: 'C01', comment: 'Нет нахлеста'}} : {}, 
+            hasDefect ? {'909': demoPhotoBad} : {'909': demoPhotoGood}, // Магия TWI
+            metric(hasDefect?70:100, 0, hasDefect?2:0, 0)));
+    }
+
+    // Подрядчик 5: Стабильный хорошист (СМУ-15)
+    for(let i=0; i<40; i++) {
+        let day = randomDay(1, 120);
+        let hasDefect = (i % 5 === 0);
+        mockArray.push(createRecord(500+i, day, 'БЦ "Восточный"', 'Петров В.В. (Демо)', 'СМУ-15', 'sys_armature', 'Арматура', `Перекрытие ${i+1}`, 
             1, "2. Монтаж", {'204':hasDefect?'fail':'ok', '206':'ok', '210':'ok'}, 
-            hasDefect ? {'204': {causeCode: 'C05', comment: '[Организация] Нет контроля'}} : {}, hasDefect ? {'204': demoPhoto} : {}, 
-            metric(hasDefect?70:100, 1, hasDefect?3:0, 0)));
-    }
-
-    // Подрядчик ТРОЕЧНИК (ВентФасадПро) - Случайные скачки
-    for(let i=0; i<12; i++) {
-        let day = randomDay(10, 90);
-        let isBad = (i % 2 === 0); 
-        mockArray.push(createRecord(400+i, day, 'ЖК "Восточный"', 'Смирнов А.А.', 'ВентФасадПро', 'sys_nvf_facade', 'Вент. фасад', `Секция 3, Этаж ${i+1}`, 
-            2, "3. Монтаж кронштейнов", {'109':isBad?'fail':'ok', '112':'fail'}, 
-            isBad ? {'109': {causeCode: 'C01', comment: 'Смещение >15мм'}, '112': {causeCode: 'C04', comment: 'Не чистят отверстия'}} : {}, isBad ? {'109': demoPhoto} : {}, 
-            metric(isBad?65:80, 0, isBad?4:2, 0)));
-    }
-
-    // 3. БЦ "Сити-Плаза" | Инспектор: Петров В.В.
-    // Подрядчик ДВОЕЧНИК (ИП Петров) - Стабильный брак B3
-    for(let i=0; i<10; i++) {
-        let day = randomDay(1, 80);
-        let hasB3 = (i % 3 === 0); 
-        mockArray.push(createRecord(500+i, day, 'БЦ "Сити-Плаза"', 'Петров В.В.', 'ИП Петров (Вентблоки)', 'sys_vent_stairs', 'Вент. блоки', `Секция 3, Эт ${i+1}`, 
-            1, "2. Вент. блоки", {'305':'fail', '310':hasB3?'fail_escalated':'ok'}, 
-            hasB3 ? {'310': {causeCode: 'C03', comment: '[Материалы] Трещины >0.2мм в массиве'}} : {'305': {causeCode: 'C01', comment: '[Технология] Смещение осей'}}, hasB3 ? {'310': demoPhoto} : {}, 
-            metric(hasB3?45:82, 0, 1, hasB3?1:0)));
-    }
-
-    // Подрядчик КАТАСТРОФА (СК Эталон) - Деградация в ноль
-    for(let i=0; i<8; i++) {
-        let day = randomDay(1, 60);
-        let hasB3 = (day < 30); // Последний месяц гонят сплошной B3
-        mockArray.push(createRecord(600+i, day, 'БЦ "Сити-Плаза"', 'Петров В.В.', 'СК Эталон', 'sys_vent_stairs', 'Вент. блоки', `Лестница ЛК-${i+1}`, 
-            2, "3. Лестничные марши", {'316':'fail', '319':hasB3?'fail_escalated':'ok'}, 
-            hasB3 ? {'319': {causeCode: 'C03', comment: 'Сломан марш при монтаже'}} : {'316': {causeCode: 'C04', comment: 'Ступени кривые'}}, hasB3 ? {'319': demoPhoto} : {}, 
-            metric(hasB3?30:75, 0, 2, hasB3?1:0)));
+            hasDefect ? {'204': {causeCode: 'C04', comment: 'Шаг нарушен'}} : {}, 
+            hasDefect ? {'204': demoPhotoBad} : {}, 
+            metric(hasDefect?84:100, 0, hasDefect?1:0, 0)));
     }
 
     return mockArray.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -3088,91 +3096,122 @@ function initCollapsiblePanel(panelId, bodyId, headerId, iconId) {
         else if (y < 40 && collapsed) setCollapsed(false);
     }, { passive: true });
 }
+// === НОВЫЙ ПОЛНОЦЕННЫЙ ТУТОРИАЛ ===
 let currentTutStep = 0;
 let tutOverlay, tutHighlightBox, tutTooltip, tutText, tutStepNum, tutNextBtn;
 
 const tutorialSteps = [
-    // --- 1. ВКЛАДКА ОСМОТР ---
     {
-        // ИСПРАВЛЕНИЕ: Новый первый шаг туториала (Селектор чек-листов)
-        text: "Добро пожаловать в <b>RBI Quality!</b> 👋<br><br>Я загрузил для вас <b>Демо-данные</b>, чтобы показать приложение в действии.<br><br>Самый первый шаг инженера на стройке — выбрать <b>вид работ</b>, который он собирается проверять. Это делается здесь.",
-        targetSelector: ".header-top-row .relative.flex", // Это селектор кнопки "📋 Чек-лист ▼"
+        text: "Добро пожаловать в <b>RBI Quality 16.5!</b> 👋<br><br>Я загрузил мощную базу <b>Демо-данных</b> на 130 проверок, чтобы показать весь масштаб аналитики.<br><br>Первый шаг инженера на стройке — выбрать <b>вид работ</b>. Это делается здесь.",
+        targetSelector: ".header-top-row .relative.flex", 
         action: () => { switchTab('tab-audit'); window.scrollTo({top: 0, behavior: 'smooth'}); }
     },
     {
-        text: "Затем мы заполняем шапку: <b>Объект, Проверяющий, Подрядчик и Локация</b>.<br><br><i>Лайфхак: система запоминает 15 последних вводов, чтобы вам не приходилось каждый раз печатать одно и то же.</i>",
+        text: "Заполняем шапку: <b>Объект, Подрядчик и Локация</b>.<br><i>Система сама запоминает последние вводы, чтобы вы не печатали одно и то же.</i>",
         targetId: "header-data-block",
         action: () => { }
     },
     {
-        text: "Это <b>Умный Дашборд</b>. Он в реальном времени считает <b>УрК</b> (Уровень Качества). Если нажать на него, откроется формула с учетом всех штрафов (за критичность и системный брак).",
+        text: "Это <b>Умный Дашборд</b>. Он в реальном времени считает <b>УрК (Уровень Качества)</b> осмотра и выводит Надежность Подрядчика. Кликните по нему, чтобы увидеть формулы штрафов.",
         targetId: "header-dashboard",
         action: () => { document.getElementById('dash-expand-icon').click(); }
     },
     {
-        text: "Так выглядит карточка контроля.<br>Свайп вправо или зеленая кнопка ставит <b>OK</b>. Карточка автоматически сжимается, убирая лишний текст СНиПа.",
-        targetId: "card_wrapper_201",
+        text: "Смотрите, вот карточка контроля.<br>Свайп вправо или зеленая кнопка ставит <b>OK</b>. Карточка моментально сжимается в тонкую полоску, убирая текст СНиПа.",
+        targetId: "card_wrapper_110", 
         action: () => {
-            const el = document.getElementById('card_wrapper_201');
+            const el = document.getElementById('card_wrapper_110');
             if(el) el.scrollIntoView({block: 'center', behavior: 'smooth'});
         }
     },
     {
-        text: "В Демо-режиме мы уже зафиксировали брак в этом пункте. Справа появилась панель управления дефектом. Здесь можно загрузить фото дефекта, оставить коментарий или выбрать причину дефекта из списка. А желтая кнопка <b>>1.5</b> эскалирует дефект до критического (B3).",
-        targetId: "card_wrapper_204",
+        text: "<b>Важная фишка: Эталон!</b><br>Фото можно прикреплять не только к браку, но и к эталонным работам (<b>OK</b>)! Это нужно для обучения рабочих.<br>Мы уже прикрепили зеленое демо-фото к пункту 108.",
+        targetId: "card_wrapper_108",
         action: () => {
-            const el = document.getElementById('card_wrapper_204');
+            const el = document.getElementById('card_wrapper_108');
             if(el) el.scrollIntoView({block: 'center', behavior: 'smooth'});
         }
     },
     {
-        text: "💡 <b>СВЯЗЬ СО СПРАВОЧНИКОМ:</b><br>Обратите внимание на <b>синюю кнопку</b>. Если кнопка синяя — значит к этому пункту привязана наглядная <b>TWI-карта</b>.<br><br>Нажав её, инспектор увидит эталонное фото, фото брака и методику проверки конкретно для этого дефекта.",
-        targetSelector: "#card_wrapper_204 .btn-status.text-blue-600",
+        text: "А вот так выглядит <b>Брак (FAIL)</b>.<br>Открылась нижняя панель. Здесь можно выбрать причину дефекта (💬) или загрузить фото. Мы заранее поставили красный крест на пункт 109.",
+        targetId: "card_wrapper_109",
+        action: () => {
+            const el = document.getElementById('card_wrapper_109');
+            if(el) el.scrollIntoView({block: 'center', behavior: 'smooth'});
+        }
+    },
+    {
+        text: "Обратите внимание на желтую кнопку <b>>1.5</b> в карточке 109!<br>Если дефект значимый (B2), но допуск сильно превышен — вы обязаны нажать её. Это <b>Эскалация</b>: дефект перейдет в статус Критического (B3).",
+        targetSelector: "#card_wrapper_109 button.text-orange-500",
+        action: () => { }
+    },
+    {
+        text: "💡 <b>СВЯЗЬ СО СПРАВОЧНИКОМ:</b><br>Если кнопка Справки <b>синяя</b> — значит к пункту привязана <b>TWI-карта</b>. Нажмите её, и рабочий сразу увидит эталон, фото брака и методику проверки.",
+        targetSelector: "#card_wrapper_109 .btn-status.text-blue-600",
         action: () => { } 
     },
-    // --- 2. ВКЛАДКА ИСТОРИЯ ---
     {
-        text: "После осмотра нажимаем <b>Сохранить</b>.<br>Акт улетает в базу, а мы переходим во вкладку <b>История</b>.",
+        text: "После осмотра нажимаем Сохранить. Акт улетает в базу устройства.<br>Переходим во вкладку <b>История</b>.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-history']",
         action: () => { switchTab('tab-history'); }
     },
     {
-        text: "В Истории хранятся все инспекции. Умная липкая панель позволяет фильтровать акты по объектам, подрядчикам, датам и наличию дефектов B3.",
+        text: "В Истории хранятся все 130 демо-проверок. Группы автоматически свернуты по <b>Подрядчикам и Объектам</b>. Внутри работает пагинация (Показать еще), чтобы телефон не зависал.",
         targetId: "hist-sticky-panel",
         action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); }
     },
-    // --- 3. ВКЛАДКА АНАЛИТИКА ---
     {
-        text: "Переходим в <b>Аналитику</b>. Посмотрите, система уже проанализировала демо-данные, построила графики, рейтинги и написала смарт-заключения.",
+        text: "Переходим в <b>Аналитику</b>. Здесь система сама обрабатывает сырые проверки, строит графики и пишет выводы.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-analytics']",
         action: () => { switchTab('tab-analytics'); }
     },
     {
-        text: "<b>Глобальные фильтры</b> управляют всеми дашбордами. Выберите период или подрядчика, и все графики мгновенно перестроятся.",
-        targetId: "analytics-filters-block",
-        action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); }
+        text: "✨ <b>Магия TWI!</b><br>Система заметила, что в базе есть и фото Эталона, и фото Брака для одного и того же узла. Она сама предлагает в 1 клик сгенерировать обучающую инструкцию (TWI). За это дают огромный бонус XP!",
+        targetId: "twi-magic-block",
+        action: () => { 
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            if(btns[0]) switchAnalyticsSubTab('sub-contractors', btns[0]);
+            window.scrollTo({top: 0, behavior: 'smooth'}); 
+            const magicBlock = document.getElementById('twi-magic-block');
+            if (magicBlock && magicBlock.classList.contains('magic-collapsed')) magicBlock.classList.remove('magic-collapsed');
+        }
     },
     {
-        text: "В Аналитике 4 уровня отчетов:<br><b>Рейтинг</b> (сравнение), <b>Инженерия</b> (глубокий анализ), <b>Сводка</b> (One-Pager для шефа) и сырая <b>База</b>.",
-        targetId: "analytics-subtabs-block",
-        action: () => {}
+        text: "Откроем <b>Сводку</b>. Это готовый отчет для директора. Здесь собраны главные риски: Индекс ИКО, Динамика и ТОП-5 самых частых дефектов.",
+        targetSelector: "button[onclick=\"switchAnalyticsSubTab('sub-onepager', this)\"]",
+        action: () => { 
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            if(btns[1]) switchAnalyticsSubTab('sub-onepager', btns[1]);
+        }
     },
     {
-        text: "Кнопка <b>Скачать PDF</b> выгружает готовый к печати управленческий отчет со всеми метриками, графиками и фото брака.",
+        text: "Перейдем в раздел <b>Инженеры (HR)</b>. Это модуль вашей личной эффективности и геймификации.",
+        targetSelector: "button[onclick=\"switchAnalyticsSubTab('sub-engineer-rating', this)\"]",
+        action: () => { 
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            if(btns[2]) switchAnalyticsSubTab('sub-engineer-rating', btns[2]);
+        }
+    },
+    {
+        text: "Проводя качественные проверки, вы зарабатываете <b>XP (Опыт)</b>, открываете достижения и растете от Стажера до Эксперта. Система сама формирует вам план задач на неделю.",
+        targetId: "game-tab-profile",
+        action: () => { }
+    },
+    {
+        text: "Любой дашборд можно в 1 клик превратить в красивый отчет. Кнопка <b>Скачать PDF</b> вызовет меню выгрузки. Попробуйте выгрузить <b>Плакат Качества А3</b> для штаба стройки!",
         targetId: "fab-download-btn",
         action: () => {
             const fab = document.getElementById('fab-download-btn');
             if(fab) { fab.style.display = 'flex'; window.scrollTo({top: 200, behavior: 'smooth'}); }
         }
     },
-    // --- 4. ВКЛАДКА СПРАВОЧНИК ---
     {
-        text: "Заглянем в <b>Справочник</b>. Это единая база знаний инженера: от ГОСТов до инструкций.",
+        text: "В <b>Справочнике</b> находится вся База Знаний: ГОСТы, Конструктор Чек-листов (можно грузить из Excel!) и Конструктор TWI-карт.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-reference']",
         action: () => { switchTab('tab-reference'); }
     },
     {
-        text: "В <b>Чек-листах</b> можно создавать свои шаблоны в Конструкторе, массово загружать их из <b>Excel</b> и выгружать обратно для коллег.",
+        text: "В <b>Чек-листах</b> можно собирать свои шаблоны. А при импорте бэкапа система теперь умно связывает <b>Подрядчика и Объект</b>, чтобы аналитика не смешивалась.",
         targetId: "ref-filters-block",
         action: () => { 
             const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
@@ -3183,26 +3222,8 @@ const tutorialSteps = [
         }
     },
     {
-        text: "В <b>TWI Картах</b> создаются визуальные стандарты. Мы уже добавили пару демо-карт для примера.",
-        targetSelector: "#ref-sub-twi .bg-\\[var\\(--card-border\\)\\]\\/80",
-        action: () => { 
-            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
-            if(btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); 
-        }
-    },
-    {
-        text: "Давайте откроем <b>Конструктор TWI</b>. Здесь вы собираете инструкцию и жестко привязываете её к конкретному пункту чек-листа.",
-        targetSelector: "button[onclick='openTwiConstructor()']",
-        action: () => { openTwiConstructor(); window.scrollTo({top: 0, behavior: 'smooth'}); }
-    },
-    {
-        text: "Вы можете создать 3 типа карт:<br>🕵️‍♂️ <b>Технадзор</b> (Фото Правильно/Брак)<br>🛠 <b>TWI Рабочего</b> (Пошаговый алгоритм)<br>📄 <b>PDF</b> (Готовый регламент).",
-        targetId: "twi-type-btn-worker",
-        action: () => { }
-    },
-    {
-        text: "А если вы забудете, как именно считаются проценты — загляните в обновленную вкладку <b>FAQ / Логика</b>.<br><br>Это полноценный учебник: от формул штрафов до философии управления качеством и работы в офлайне.",
-        targetSelector: "#ref-sub-faq .text-center", 
+        text: "Если забудете логику работы или формулы — откройте вкладку <b>FAQ</b>. Там подробно расписана вся методология.<br><br>🚀 <b>Обучение завершено! Можете продолжить изучать демо-режим.</b>",
+        targetSelector: "button[onclick=\"switchReferenceSubTab('ref-sub-faq', this)\"]", 
         action: () => { 
             closeTwiConstructor(); 
             setTimeout(() => { 
@@ -3210,24 +3231,150 @@ const tutorialSteps = [
                 if(btns[4]) switchReferenceSubTab('ref-sub-faq', btns[4]); 
                 window.scrollTo({top: 0, behavior: 'smooth'});
             }, 300); 
-        }
-    },
-    // --- 5. ВКЛАДКА НАСТРОЙКИ ---
-    {
-        text: "И напоследок — <b>Настройки</b>. Здесь можно кастомизировать интерфейс под себя.",
-        targetSelector: ".bottom-nav .nav-item[data-tab='tab-settings']",
-        action: () => { 
-            switchTab('tab-settings'); 
-            window.scrollTo({top: 0, behavior: 'smooth'});
-        }
-    },
-    {
-        text: "Меняйте масштаб шрифтов, темную тему, свайпы, отображение графиков, управляйте памятью.<br><br>🚀 <b>Обучение завершено! Можете продолжить изучать демо-режим.</b>",
-        targetSelector: "#tab-settings .bg-\\[var\\(--card-bg\\)\\]", 
-        action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); },
+        },
         isEnd: true
     }
 ];
+
+function startInteractiveTutorial() {
+    if (!isDemoMode && typeof startDemoMode === 'function') {
+        startDemoMode(true); 
+    }
+
+    setTimeout(() => {
+        currentTutStep = 0;
+        tutOverlay = document.getElementById('tutorial-overlay');
+        tutHighlightBox = document.getElementById('tut-highlight-box');
+        tutTooltip = document.getElementById('tutorial-tooltip');
+        tutText = document.getElementById('tut-text');
+        tutStepNum = document.getElementById('tut-step');
+        tutNextBtn = document.getElementById('tut-next-btn');
+        
+        document.getElementById('tut-total').innerText = tutorialSteps.length;
+
+        tutOverlay.classList.remove('hidden');
+        tutTooltip.classList.remove('hidden');
+        
+        showTutorialStep();
+    }, 500);
+}
+
+function showTutorialStep() {
+    const step = tutorialSteps[currentTutStep];
+    if(!step) return stopTutorial();
+
+    if(step.action) step.action();
+
+    setTimeout(() => {
+        let target = step.targetId ? document.getElementById(step.targetId) : document.querySelector(step.targetSelector);
+        
+        if(target) {
+            const rect = target.getBoundingClientRect();
+            tutHighlightBox.style.top = `${rect.top - 4}px`;
+            tutHighlightBox.style.left = `${rect.left - 4}px`;
+            tutHighlightBox.style.width = `${rect.width + 8}px`;
+            tutHighlightBox.style.height = `${rect.height + 8}px`;
+        } else {
+            tutHighlightBox.style.width = '0px';
+            tutHighlightBox.style.height = '0px';
+        }
+
+        tutStepNum.innerText = currentTutStep + 1;
+        tutText.innerHTML = step.text;
+        
+        requestAnimationFrame(() => {
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+            
+            tutTooltip.style.left = '50%';
+            tutTooltip.style.transform = 'translate(-50%, 0)';
+            const tRect = tutTooltip.getBoundingClientRect();
+            
+            if(target) {
+                const targetRect = target.getBoundingClientRect();
+                if (targetRect.top > screenH / 2) {
+                    let topPos = targetRect.top - tRect.height - 20;
+                    if (topPos < 10) topPos = 10; 
+                    tutTooltip.style.top = `${topPos}px`;
+                } else {
+                    let topPos = targetRect.bottom + 20;
+                    if (topPos + tRect.height > screenH - 10) topPos = screenH - tRect.height - 10; 
+                    tutTooltip.style.top = `${topPos}px`;
+                }
+            } else {
+                tutTooltip.style.top = `${(screenH - tRect.height) / 2}px`;
+            }
+            
+            if (tRect.width > screenW - 20) {
+                tutTooltip.style.width = `${screenW - 20}px`; 
+            }
+
+            if(step.isEnd) {
+                tutNextBtn.innerText = "Завершить 🚀";
+                tutNextBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500');
+                tutNextBtn.classList.add('bg-green-600', 'hover:bg-green-500');
+            } else {
+                tutNextBtn.innerText = "Далее ➔";
+                tutNextBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+                tutNextBtn.classList.remove('bg-green-600', 'hover:bg-green-500');
+            }
+
+            tutTooltip.classList.remove('scale-90', 'opacity-0');
+        });
+    }, 700);
+}
+
+function nextTutorialStep() {
+    const step = tutorialSteps[currentTutStep];
+    tutTooltip.classList.add('scale-90', 'opacity-0');
+    
+    setTimeout(() => {
+        if(step.isEnd) {
+            stopTutorial();
+        } else {
+            currentTutStep++;
+            showTutorialStep();
+        }
+    }, 300);
+}
+
+function stopTutorial() {
+    tutTooltip.classList.add('scale-90', 'opacity-0');
+    tutOverlay.style.opacity = '0';
+    
+    const expView = document.getElementById('dash-expanded-view');
+    if (expView && !expView.classList.contains('hidden')) {
+        expView.classList.add('hidden');
+    }
+    const dashIcon = document.getElementById('dash-expand-icon');
+    if (dashIcon) dashIcon.innerText = '▼';
+    
+    switchTab('tab-audit');
+    
+    setTimeout(() => { 
+        tutOverlay.classList.add('hidden'); 
+        tutTooltip.classList.add('hidden');
+        tutOverlay.style.opacity = '1'; 
+        
+        const fab = document.getElementById('fab-download-btn');
+        if(fab) fab.style.display = 'none';
+
+        if (isDemoMode) {
+            const fabExit = document.getElementById('fab-exit-demo');
+            if (fabExit) {
+                fabExit.classList.remove('hidden');
+                fabExit.style.display = 'flex';
+            }
+        }
+        
+        const manageBody = document.getElementById('ref-manage-body');
+        if (manageBody && manageBody.style.maxHeight !== '0px') toggleManagePanel();
+        
+        if (typeof updateBodyPadding === 'function') updateBodyPadding();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    }, 500);
+}
+
 // === БЫСТРЫЙ ПЕРЕХОД В FAQ С ГЛАВНОГО ЭКРАНА ===
 function goToFAQ() {
     switchTab('tab-reference');

@@ -396,7 +396,7 @@ function generatePosterData() {
 function exportPdfCurrentScreen(data) {
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
-        const cData = data.filter(c => c.contractorName === currentDetailedContractor);
+        const cData = data.filter(c => `${c.contractorName} [${c.projectName || 'Без объекта'}]` === currentDetailedContractor);
         if (cData.length === 0) return showToast('Нет данных по этому подрядчику');
         
         const m = getContractorMetrics(cData, userTemplates);
@@ -486,7 +486,11 @@ function exportPdfCurrentScreen(data) {
         const avgUrkProd = data.length > 0 ? Math.round(sumUrkProd / data.length) : 0;
 
         const grouped = {};
-        data.forEach(item => { grouped[item.contractorName] = grouped[item.contractorName] || []; grouped[item.contractorName].push(item); });
+        data.forEach(item => { 
+            const cKey = `${item.contractorName} [${item.projectName || 'Без объекта'}]`;
+            grouped[cKey] = grouped[cKey] || []; 
+            grouped[cKey].push(item); 
+        });
 
         const cList = [];
         let validContrCount = 0;
@@ -622,10 +626,22 @@ function exportPdfFullObjectReport(data) {
     let sumUrk = 0; data.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
     const avgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
 
+    // Умная группировка: если объект не выбран, добавляем его название к подрядчику, чтобы данные не склеились
+    const isSingleProject = activeMultiFilters.analytics.project.length === 1;
+    
     const grouped = {};
-    data.forEach(c => { if(!grouped[c.contractorName]) grouped[c.contractorName] = []; grouped[c.contractorName].push(c); });
+    data.forEach(c => { 
+        const cKey = c.contractorName + (isSingleProject ? '' : ` [${c.projectName || 'Без объекта'}]`);
+        if(!grouped[cKey]) grouped[cKey] = []; 
+        grouped[cKey].push(c); 
+    });
+    
     const pGrouped = {};
-    prevData.forEach(c => { if(!pGrouped[c.contractorName]) pGrouped[c.contractorName] = []; pGrouped[c.contractorName].push(c); });
+    prevData.forEach(c => { 
+        const cKey = c.contractorName + (isSingleProject ? '' : ` [${c.projectName || 'Без объекта'}]`);
+        if(!pGrouped[cKey]) pGrouped[cKey] = []; 
+        pGrouped[cKey].push(c); 
+    });
 
     let content = '';
 
@@ -634,7 +650,7 @@ function exportPdfFullObjectReport(data) {
     <div style="page-break-after: always; padding-top: 50px;">
         <div style="text-align:center; margin-bottom: 60px;">
             <h1 style="font-size: 48px; color:#0f172a; text-transform:uppercase; font-weight:900; margin:0;">Еженедельный отчет по качеству</h1>
-            <div style="font-size: 24px; color:#4f46e5; font-weight:bold; margin-top:10px;">${document.getElementById('inp-project')?.value || 'Объект не указан'}</div>
+            <div style="font-size: 24px; color:#4f46e5; font-weight:bold; margin-top:10px;">${isSingleProject ? activeMultiFilters.analytics.project[0] : 'Сводный отчет по всем объектам'}</div>
             <div style="font-size: 16px; color:#64748b; font-weight:bold; margin-top:20px;">Период формирования: ${new Date().toLocaleDateString('ru-RU')}</div>
         </div>
 
@@ -1143,6 +1159,7 @@ function printPdfShell(title, content, formatSize = 'A4') {
     
     const html = `
     <!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title}</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -1151,7 +1168,9 @@ function printPdfShell(title, content, formatSize = 'A4') {
         
         .preview-container { width: 100%; max-width: ${maxWidth}; margin: 0 auto; background: white; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); min-height: 100vh; }
         
-        .print-controls { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 10000; }
+        /* Кнопки перенесены наверх, чтобы не прятались за интерфейсом iPhone */
+        .print-controls { position: fixed; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 10000; opacity: 0.8; transition: opacity 0.3s; }
+        .print-controls:hover { opacity: 1; }
         .btn { width: 50px; height: 50px; border-radius: 25px; display: flex; justify-content: center; align-items: center; cursor: pointer; border: none; box-shadow: 0 10px 15px rgba(0,0,0,0.2); font-size: 20px; outline: none; }
         
         @media print { 
@@ -1204,8 +1223,20 @@ function exportFilteredCsv() {
 }
 
 function getTenderData() {
-    const proj = document.getElementById('tender-project-select')?.value;
-    if (!proj) { showToast('Сначала выберите объект из списка!'); return null; }
+    let proj = document.getElementById('tender-project-select')?.value;
+    
+    // Автовыбор объекта (починит демо-режим, если пользователь забыл выбрать объект в списке)
+    if (!proj) {
+        const allProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
+        if (allProjects.length > 0) {
+            proj = allProjects[0]; 
+            const selectEl = document.getElementById('tender-project-select');
+            if(selectEl) selectEl.value = proj;
+        } else {
+            showToast('Нет доступных объектов для выгрузки!'); 
+            return null;
+        }
+    }
 
     const objChecks = contractorArray.filter(c => c.projectName === proj);
     const grouped = {};
@@ -1218,6 +1249,7 @@ function getTenderData() {
     for(let cName in grouped) {
         const cData = grouped[cName];
         if (cData.length >= 3) {
+            // ВАЖНО: передаем 'false' третьим аргументом, чтобы отключить плавающее окно (берем всю историю!)
             const m = getContractorMetrics(cData, userTemplates, false); 
             if (m) {
                 const causes = {}; let totalFails = 0;
@@ -1233,7 +1265,7 @@ function getTenderData() {
                     }
                 });
 
-                let rec = "РЕКОМЕНДОВАН"; let recClass = "text-green-600"; let recDesc = "Подрядчик стабилен и показывает высокое качество работ.";
+                let rec = "РЕКОМЕНДОВАН"; let recClass = "text-green-600"; let recDesc = "Подрядчик стабилен и показывает высокое качество работ за весь период.";
                 if (m.finalC < 70 || m.rateB3 >= 20) {
                     rec = "НЕ РЕКОМЕНДОВАН"; recClass = "text-red-600"; 
                     recDesc = "Подрядчик имеет недопустимый уровень критического брака и низкую оценку. Высокие риски для компании.";
@@ -1242,21 +1274,14 @@ function getTenderData() {
                     recDesc = "Подрядчик выполняет работы удовлетворительно, но имеет нестабильный процесс или допускал критические дефекты B3.";
                 }
 
-                const monthlyData = {};
-                cData.forEach(c => {
-                    const mName = new Date(c.date).toLocaleString('ru-RU', { month:'short', year:'2-digit'});
-                    if(!monthlyData[mName]) monthlyData[mName] = {sum:0, cnt:0};
-                    monthlyData[mName].sum += c.metrics.final;
-                    monthlyData[mName].cnt++;
-                });
-                const spark = Object.keys(monthlyData).map(k => ({ month: k, val: Math.round(monthlyData[k].sum/monthlyData[k].cnt) }));
-
+                const sortedDates = cData.map(c => new Date(c.date)).sort((a,b) => a - b);
+                
                 tenderData.push({
                     name: cName, proj: proj,
                     metrics: m, causes: causes, totalFails: totalFails,
-                    rec: rec, recClass: recClass, recDesc: recDesc, spark: spark,
-                    periodStart: new Date(cData.sort((a,b)=>new Date(a.date)-new Date(b.date))[0].date).toLocaleDateString('ru-RU'),
-                    periodEnd: new Date(cData.sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date).toLocaleDateString('ru-RU')
+                    rec: rec, recClass: recClass, recDesc: recDesc,
+                    periodStart: sortedDates[0].toLocaleDateString('ru-RU'),
+                    periodEnd: sortedDates[sortedDates.length - 1].toLocaleDateString('ru-RU')
                 });
             }
         }
@@ -1288,10 +1313,90 @@ function exportTenderPDF() {
     if (!data) return;
     if (data.length === 0) return showToast("Недостаточно данных по подрядчикам на этом объекте.");
 
-    // Здесь мы просто используем новую универсальную функцию exportPdfFullObjectReport, 
-    // передав ей проверки, относящиеся только к выбранному объекту
-    const projChecks = contractorArray.filter(c => c.projectName === data[0].proj);
-    exportPdfFullObjectReport(projChecks);
+    const projName = data[0].proj;
+    let content = '';
+
+    // Генерируем по одной странице на каждого подрядчика
+    data.forEach(d => {
+        const m = d.metrics;
+        
+        // Сортируем причины дефектов по убыванию (Топ-5)
+        const sortedCauses = Object.keys(d.causes).sort((a,b) => d.causes[b] - d.causes[a]).slice(0, 5);
+        let causesHtml = sortedCauses.map(code => {
+            const cName = DEFECT_CAUSES.find(x => x.code === code)?.name || 'Иное';
+            return `
+                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding:8px 0;">
+                    <span style="color:#334155; font-size:12px;">${cName}</span>
+                    <span style="font-weight:bold; color:#0f172a;">${d.causes[code]} шт.</span>
+                </div>`;
+        }).join('');
+        
+        if(!causesHtml) causesHtml = '<div style="color:#64748b; font-size:12px; padding:8px 0; text-align:center;">Дефектов не зафиксировано</div>';
+
+        content += `
+        <div style="page-break-after: always; padding-top: 20px;">
+            <div style="text-align:center; border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 30px;">
+                <h1 style="font-size: 28px; color:#0f172a; text-transform:uppercase; font-weight:900; margin:0;">ПАСПОРТ КАЧЕСТВА ПОДРЯДЧИКА</h1>
+                <div style="font-size: 16px; color:#64748b; font-weight:bold; margin-top:8px;">Итоговая историческая справка для тендерного отдела</div>
+            </div>
+
+            <table style="width: 100%; border-spacing: 0; margin-bottom: 30px;">
+                <tr>
+                    <td style="width: 60%; vertical-align: top;">
+                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Организация</div>
+                        <div style="font-size: 24px; font-weight: 900; color: #0f172a; margin-bottom: 15px;">${d.name}</div>
+                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Объект выполнения работ</div>
+                        <div style="font-size: 16px; font-weight: bold; color: #334155; margin-bottom: 15px;">${projName}</div>
+                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Глубина исторической оценки</div>
+                        <div style="font-size: 14px; font-weight: bold; color: #334155;">с ${d.periodStart} по ${d.periodEnd}</div>
+                    </td>
+                    <td style="width: 40%; vertical-align: top;">
+                        <div style="background: ${m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4')}; border: 2px solid ${m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0')}; border-radius: 12px; padding: 20px; text-align: center;">
+                            <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Надежность (ИУрК)</div>
+                            <div style="font-size: 64px; font-weight: 900; color: ${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')}; line-height: 1; margin: 10px 0;">${m.finalC}%</div>
+                            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">База: ${m.count} проверок</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Ср. УрК Изделий</div>
+                    <div style="font-size: 24px; font-weight: 900; color: #0f172a; margin-top: 5px;">${m.baseUrkContrPerc}%</div>
+                </div>
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Стабильность</div>
+                    <div style="font-size: 24px; font-weight: 900; color: ${m.stabColor}; margin-top: 5px;">${m.stabilityIndex}</div>
+                </div>
+                <div style="background: ${m.ks < 1 ? '#fffbeb' : '#f8fafc'}; border: 1px solid ${m.ks < 1 ? '#fde68a' : '#cbd5e1'}; border-radius: 8px; padding: 15px; text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Системность (Ks)</div>
+                    <div style="font-size: 24px; font-weight: 900; color: ${m.ks < 1 ? '#d97706' : '#0f172a'}; margin-top: 5px;">${m.ks.toFixed(2)}</div>
+                </div>
+                <div style="background: ${m.n_изделий_с_B3 > 0 ? '#fef2f2' : '#f8fafc'}; border: 1px solid ${m.n_изделий_с_B3 > 0 ? '#fca5a5' : '#cbd5e1'}; border-radius: 8px; padding: 15px; text-align: center;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Аварии (B3)</div>
+                    <div style="font-size: 24px; font-weight: 900; color: ${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'}; margin-top: 5px;">${m.n_изделий_с_B3} шт</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; margin-bottom: 30px;">
+                <div style="flex: 1; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px;">
+                    <h3 style="margin: 0 0 15px 0; font-size: 14px; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Коренные причины дефектов</h3>
+                    ${causesHtml}
+                </div>
+            </div>
+
+            <div style="background: ${m.finalC < 70 || m.rateB3 >= 20 ? '#fef2f2' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fffbeb' : '#f0fdf4')}; border: 2px solid ${m.finalC < 70 || m.rateB3 >= 20 ? '#fca5a5' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fde68a' : '#bbf7d0')}; border-radius: 8px; padding: 20px; page-break-inside: avoid;">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: ${m.finalC < 70 || m.rateB3 >= 20 ? '#991b1b' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#b45309' : '#166534')}; text-transform: uppercase;">ЗАКЛЮЧЕНИЕ: ${d.rec}</h3>
+                <p style="font-size: 14px; color: #1e293b; line-height: 1.5; margin: 0; font-weight: bold;">
+                    ${d.recDesc}
+                </p>
+            </div>
+        </div>
+        `;
+    });
+
+    printPdfShell(`Паспорта Подрядчиков | ${projName}`, content, "A4");
 }
 
 // ============================================================================
