@@ -21,6 +21,7 @@ function handleFabExportAction(actionType) {
 }
 
 // 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
+// 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
 function exportPdfOnePager(data) {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
@@ -35,14 +36,14 @@ function exportPdfOnePager(data) {
     
     const groupedC = {};
     data.forEach(item => { 
-        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
+        const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
         groupedC[cKey] = groupedC[cKey] || []; 
         groupedC[cKey].push(item); 
     });
     const currContractorsCount = Object.keys(groupedC).length;
 
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-    const mData = currIntMetrics || { redZonePerc: 0, IKO: "0.00", ikoColor: "text-slate-500" };
+    const mData = currIntMetrics || { redZonePerc: 0, IKO: "0.00", ikoStatus: "Мало данных", ikoColor: "text-slate-500" };
     
     let pdfIkoColor = "#64748b";
     if (mData.ikoColor.includes('red')) pdfIkoColor = "#dc2626";
@@ -53,7 +54,7 @@ function exportPdfOnePager(data) {
     for(let cName in groupedC) {
         if (groupedC[cName].length >= 3) {
             const m = getContractorMetrics(groupedC[cName], userTemplates);
-            if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, isPrelim: m.count < 7 });
+            if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
         }
     }
     ratingData.sort((a,b) => b.val - a.val);
@@ -74,6 +75,8 @@ function exportPdfOnePager(data) {
         const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-30);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. мес.";
+    } else if (selPeriod === 'CUSTOM') {
+        trendLabel = "к пред. периоду";
     } else {
         const half = Math.floor(data.length / 2);
         const sortedData = [...data].sort((a,b) => new Date(a.date) - new Date(b.date));
@@ -90,19 +93,30 @@ function exportPdfOnePager(data) {
         if(pInt) prevIko = pInt.IKO;
     }
 
-    const renderPdfTrend = (curr, prev, label, inverse = false) => {
+    const renderTrend = (curr, prev, label, inverse = false) => {
         if (prev === undefined || prev === null || prev === "" || isNaN(prev)) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:10px; font-weight:bold; background:#f1f5f9; padding:2px 4px; border-radius:4px;">Нет базы</span></div>`;
-        let diff = parseFloat(curr) - parseFloat(prev);
+        let diff = (parseFloat(curr) - parseFloat(prev));
         if (Math.abs(diff) < 0.01) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:14px; font-weight:900;">▬ 0</span><div style="font-size:8px; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
-        const color = (inverse ? diff < 0 : diff > 0) ? '#16a34a' : '#dc2626'; 
+        const isGood = inverse ? diff < 0 : diff > 0;
+        const color = isGood ? '#16a34a' : '#dc2626';
         const sign = diff > 0 ? '▲' : '▼';
         return `<div style="text-align:right;"><span style="color:${color}; font-size:16px; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:8px; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
     };
 
+    const sparkLabels = []; const sparkData = [];
+    for(let i=5; i>=0; i--) {
+        const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
+        const dEnd = new Date(); dEnd.setDate(now.getDate() - (i*7));
+        const weekChecks = contractorArray.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
+        let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
+        sparkLabels.push(`-${i}н`);
+        sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
+    }
+
     // 4. Фотографии дефектов
     let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
-        if(i.state && i.details) {
+        if(i.state && i.details && i.templateKey) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
                 let defName = "Дефект";
@@ -115,18 +129,17 @@ function exportPdfOnePager(data) {
 
                 if(s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
-
                     if (isB3) {
-                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
-                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
                     }
                 } else if (s === 'ok' && photo) {
-                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                     okMap[defName].count++;
                     if (photo) okMap[defName].photo = photo;
                 }
@@ -138,24 +151,28 @@ function exportPdfOnePager(data) {
     const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
     const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-    // Спец-рендер для сетки 5x2 (огромные фото, минимум текста)
+    // КОМПАКТНЫЙ РЕНДЕР ФОТО (Жесткая высота 140px)
+    // Спец-рендер для сетки 5x3 (жесткая табличная верстка для PDF)
     const renderPhotoGridRow = (arr, type) => {
         while(arr.length < 5) { arr.push({ empty: true }); }
         let badgeColor = type === 'b3' ? '#dc2626' : (type === 'b2' ? '#d97706' : '#16a34a');
-        return `<div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; height:100%;">
+        return `
+        <table style="width: 100%; border-spacing: 8px; table-layout: fixed; margin-left: -8px; margin-top: -4px;">
+            <tr>
             ${arr.slice(0, 5).map(d => {
-                if (d.empty) return `<div style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:100%;"></div>`;
-                const imgHtml = d.photo ? `<img src="${d.photo}" style="width:100%; height:100%; object-fit:contain; background-color:#f1f5f9; position:absolute; inset:0;">` : `<div style="width:100%; height:100%; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#cbd5e1; font-size:12px; font-weight:bold;">НЕТ ФОТО</div>`;
+                if (d.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:155px;"></td>`;
+                const imgHtml = d.photo ? `<img src="${d.photo}" style="width:100%; height:95px; object-fit:contain; background-color:#f1f5f9; display:block;">` : `<div style="width:100%; height:95px; background:#f1f5f9; color:#cbd5e1; font-size:12px; font-weight:bold; display:flex; align-items:center; justify-content:center;">НЕТ ФОТО</div>`;
                 return `
-                <div style="border:1px solid #cbd5e1; border-radius:8px; overflow:hidden; display:flex; flex-direction:column; background:white; box-shadow:0 2px 4px rgba(0,0,0,0.05); position:relative;">
-                    <div style="position:relative; flex:1; min-height: 120px;">${imgHtml}</div>
-                    <div style="padding:6px 8px; height: 50px; background: white; border-top:2px solid ${badgeColor}; display:flex; flex-direction:column; justify-content:center; z-index: 2;">
-                        <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${d.name}</div>
-                        <div style="font-size:9px; color:#64748b; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:bold;">👤 ${d.contr} (${d.count} шт)</div>
+                <td style="border:1px solid #cbd5e1; border-radius:8px; background:white; vertical-align:top; overflow:hidden; padding:0; height:155px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
+                    ${imgHtml}
+                    <div style="padding:6px 8px; height:60px; background:white; border-top:2px solid ${badgeColor};">
+                        <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:3px;">${d.name}</div>
+                        <div style="font-size:9px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:bold;">👤 ${d.contr} (${d.count} шт)</div>
                     </div>
-                </div>`;
+                </td>`;
             }).join('')}
-        </div>`;
+            </tr>
+        </table>`;
     };
 
     // 5. Забираем графики
@@ -163,10 +180,10 @@ function exportPdfOnePager(data) {
     const imgSpark = cSpark ? `<img style="width:100%; height:55px; object-fit:fill; opacity:0.8;" src="${cSpark.toDataURL('image/png')}">` : '';
 
     const cLine = document.getElementById('op-line-chart');
-    const imgLine = cLine ? `<img style="max-width:100%; height:180px; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '';
+    const imgLine = cLine ? `<img style="width:100%; height:100%; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '';
 
     const pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
-    const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>').replace(/\n/g, '<br>');
+    const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
     let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
     if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
@@ -176,6 +193,7 @@ function exportPdfOnePager(data) {
             periodText = `с ${fmt(dFrom)} по ${fmt(dTo)}`;
         }
     }
+    const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
     // 6. Рейтинг (Диаграмма)
     let ratingHtml = '';
@@ -202,118 +220,102 @@ function exportPdfOnePager(data) {
         }
     }
 
-    // 7. СБОРКА СТРАНИЦЫ (ЛЕВАЯ КОЛОНКА 28% И ПРАВАЯ 72%)
+    // 7. СБОРКА СТРАНИЦЫ
+    // Мы задаем жесткую высоту 860px для контента, чтобы он идеально влез на лист А3
     const content = `
-        <style>
-            .header { display: none !important; } 
-            @page { margin: 5mm; size: A3 landscape; } 
-            .main-wrapper { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 270mm; box-sizing: border-box; page-break-inside: avoid; } 
-            @media print {
-                html, body { height: 100vh; max-height: 100vh; overflow: hidden; }
-            }
-        </style>
-        
-        <div class="main-wrapper">
-            <!-- ШАПКА -->
-            <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid #1e293b; padding-bottom:8px; margin-bottom:15px; flex-shrink: 0;">
-                <div>
-                    <h1 style="font-size:26px; margin:0; color:#0f172a; text-transform:uppercase; letter-spacing: -0.5px;">Сводный статус объекта: ${projName}</h1>
-                    <div style="font-size:14px; font-weight:bold; color:#4f46e5; margin-top:4px;">Инженер: ${inspName} | Период: ${periodText}</div>
+        <div style="display: flex; gap: 20px; height: 880px;">
+            
+            <!-- ЛЕВАЯ КОЛОНКА (30%) -->
+            <div style="width: 30%; display: flex; flex-direction: column; gap: 12px; height: 100%;">
+                
+                <!-- KPI (Сетка 2x3) -->
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; flex-shrink: 0;">
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
+                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</span>
+                            ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
+                        </div>
+                    </div>
+                    <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
+                            <span style="font-size: 26px; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</span>
+                            ${renderTrend(mData.IKO, prevIko, trendLabel, true)}
+                        </div>
+                    </div>
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
+                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</span>
+                            ${renderTrend(data.length, prevChecks, trendLabel)}
+                        </div>
+                    </div>
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
+                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</span>
+                            ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
+                        </div>
+                    </div>
+                    <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; position: relative;">
+                        <div style="font-size: 9px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
+                        <div style="font-size: 8px; color: #b91c1c; margin-top: 2px; font-weight:bold;">ОТ ОБЪЕМА</div>
+                    </div>
+                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative; overflow:hidden;">
+                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900; z-index: 10; position: relative;">Тренд УрК (6 нед)</div>
+                        <div style="position: absolute; bottom: 0; left: 0; right: 0;">${imgSpark}</div>
+                    </div>
                 </div>
-                <div style="text-align:right; font-size:12px; color:#64748b; line-height:1.4;">
-                    Сформировано: <b>${new Date().toLocaleString('ru-RU')}</b><br>
-                    База: <b>${data.length} независимых проверок</b>
+
+                <!-- График Линии -->
+                <div style="flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
+                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков (Средний УРк)</div>
+                    <div style="flex: 1; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center;">
+                        ${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}
+                    </div>
+                </div>
+
+                <!-- Рейтинг -->
+                <div style="flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; overflow: hidden;">
+                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
+                    <div style="flex: 1; overflow: hidden;">
+                        ${ratingHtml}
+                    </div>
                 </div>
             </div>
-            
-            <!-- ОСНОВНАЯ СЕТКА -->
-            <div style="display: flex; gap: 20px; flex: 1; align-items: stretch; overflow: hidden;">
+
+            <!-- ПРАВАЯ КОЛОНКА (70%) - Фото и Выводы -->
+            <div style="width: 70%; display: flex; flex-direction: column; gap: 12px; height: 100%;">
                 
-                <!-- ЛЕВАЯ КОЛОНКА (28%) -->
-                <div style="width: 28%; display: flex; flex-direction: column; gap: 12px;">
-                    
-                    <!-- KPI (Сетка 2x3) -->
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; flex-shrink: 0;">
-                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                                <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</span>
-                                ${renderPdfTrend(currAvgUrk, prevAvgUrk, trendLabel)}
-                            </div>
-                        </div>
-                        <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; display:flex; flex-direction:column; justify-content:space-between;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                                <span style="font-size: 26px; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</span>
-                                ${renderPdfTrend(mData.IKO, prevIko, trendLabel, true)}
-                            </div>
-                        </div>
-                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                                <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</span>
-                                ${renderPdfTrend(data.length, prevChecks, trendLabel)}
-                            </div>
-                        </div>
-                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                                <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</span>
-                                ${renderPdfTrend(currContractorsCount, prevContrsCount, trendLabel)}
-                            </div>
-                        </div>
-                        <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; position: relative;">
-                            <div style="font-size: 9px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                            <div style="font-size: 26px; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
-                            <div style="font-size: 8px; color: #b91c1c; margin-top: 2px; font-weight:bold;">ОТ ОБЪЕМА</div>
-                        </div>
-                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative; overflow:hidden;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900; z-index: 10; position: relative;">Тренд УрК (6 нед)</div>
-                            <div style="position: absolute; bottom: 0; left: 0; right: 0;">${imgSpark}</div>
-                        </div>
-                    </div>
-
-                    <!-- График Линии -->
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; text-align: center; flex-shrink: 0;">
-                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px;">📈 Динамика Подрядчиков (Среднний УРк)</div>
-                        ${imgLine ? `<img style="max-width:100%; height:180px; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}
-                    </div>
-
-                    <!-- Рейтинг -->
-                    <div style="flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; overflow: hidden;">
-                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                        <div style="flex: 1; overflow: hidden;">
-                            ${ratingHtml}
-                        </div>
-                    </div>
+                <!-- БЛОК ФОТО (Жесткие 3 ряда) -->
+                <div style="background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; flex-shrink: 0;">
+                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
+                    ${renderPhotoGridRow(topB3, 'b3')}
                 </div>
 
-                <!-- ПРАВАЯ КОЛОНКА (72%) - Фото и Выводы -->
-                <div style="width: 72%; display: flex; flex-direction: column; gap: 15px;">
-                    
-                    <!-- БЛОК ФОТО (3 РЯДА x 5 ФОТО) -->
-                    <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
-                        <div style="flex: 1; background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-                            <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
-                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB3, 'b3')}</div>
-                        </div>
+                <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; flex-shrink: 0;">
+                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
+                    ${renderPhotoGridRow(topB2, 'b2')}
+                </div>
+                
+                <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; flex-shrink: 0;">
+                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
+                    ${renderPhotoGridRow(topOK, 'ok')}
+                </div>
 
-                        <div style="flex: 1; background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-                            <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
-                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topB2, 'b2')}</div>
-                        </div>
-                        
-                        <div style="flex: 1; background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-                            <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
-                            <div style="flex: 1; min-height: 0;">${renderPhotoGridRow(topOK, 'ok')}</div>
-                        </div>
-                    </div>
+                <!-- УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ (Занимает всё оставшееся место) -->
+                <div style="flex: 1; background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
+                    <h3 style="margin: 0 0 8px 0; font-size: 14px; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+                    <div style="font-size: 13px; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+                </div>
 
             </div>
         </div>
     `;
-    
-    printPdfShell("Сводка для Руководства", content, "A3");
+
+    printPdfShell("Сводка для Руководства", content, "A3", "landscape");
 }
 
 
@@ -1153,68 +1155,71 @@ function exportPdfData(data) {
 
 
 // 9. Универсальная печатная оболочка (A3/A4)
-function printPdfShell(title, content, formatSize = 'A4') {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return alert('Разрешите всплывающие окна в браузере для выгрузки PDF.');
+// 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
+// 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
+function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait') {
+    // Включаем лоадер, чтобы пользователь понимал, что процесс идет
+    const loader = document.getElementById('global-loader');
+    const loaderText = document.getElementById('global-loader-text');
+    if(loader && loaderText) {
+        loaderText.innerText = "Рендеринг PDF...";
+        loader.style.display = 'flex';
+        setTimeout(() => loader.classList.remove('opacity-0'), 10);
+    }
 
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
-    
-    // Если A3 - делаем альбомную ориентацию, если A4 - книжную
-    const pageOrientation = formatSize === 'A3' ? 'landscape' : 'portrait';
-    const maxWidth = formatSize === 'A3' ? '1200px' : '800px';
-    
-    const html = `
-    <!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title}</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        @page { size: ${formatSize} ${pageOrientation}; margin: 10mm; }
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 15px; background: #e2e8f0; font-size: 13px; line-height: 1.5; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        
-        .preview-container { width: 100%; max-width: ${maxWidth}; margin: 0 auto; background: white; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); min-height: 100vh; }
-        
-        /* Кнопки перенесены наверх, чтобы не прятались за интерфейсом iPhone */
-        .print-controls { position: fixed; top: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 10000; opacity: 0.8; transition: opacity 0.3s; }
-        .print-controls:hover { opacity: 1; }
-        .btn { width: 50px; height: 50px; border-radius: 25px; display: flex; justify-content: center; align-items: center; cursor: pointer; border: none; box-shadow: 0 10px 15px rgba(0,0,0,0.2); font-size: 20px; outline: none; }
-        
-        @media print { 
-            .print-controls { display: none !important; } 
-            html, body { margin: 0; padding: 0; background: white; width: 100%; } 
-            .preview-container { box-shadow: none; margin: 0; padding: 0; max-width: 100% !important; width: 100%; page-break-after: avoid; }
-            .avoid-break { page-break-inside: avoid !important; } 
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        }
-        
-        .header { border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end; }
-        .header-title { font-size: 20px; font-weight: 900; text-transform: uppercase; margin: 0; }
-        .header-meta { font-size: 10px; color: #64748b; text-align: right; }
-        .section-title { font-size: 16px; background: #1e293b; color: white; padding: 10px 15px; border-radius: 6px; text-transform: uppercase; margin-bottom: 20px; }
-        
-        .data-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 25px; }
-        .data-table th { background: #f1f5f9; padding: 10px; border: 1px solid #cbd5e1; color: #475569; text-transform: uppercase; }
-        .data-table td { padding: 10px; border: 1px solid #cbd5e1; }
-        
-    </style></head><body>
-    <div class="print-controls">
-        <button class="btn" style="background:#4f46e5; color:white;" onclick="window.print()" title="Печать / Сохранить в PDF">🖨️</button>
-        <button class="btn" style="background:#475569; color:white;" onclick="window.close()" title="Закрыть">✖️</button>
-    </div>
-    <div class="preview-container">
-        <div class="header avoid-break">
-            <div>
-                <h1 class="header-title">${title}</h1>
-                <div style="font-size: 12px; margin-top: 4px; font-weight: bold; color: #475569;">Объект: ${projName} | Ваш инспектор: ${inspName}</div>
+
+    // Задаем жесткую ширину контента под формат бумаги
+    // Чтобы элементы (графики, фото) знали, как им растягиваться
+    let widthPx = '750px'; // A4 портрет
+    if (formatSize === 'A3' && orientation === 'landscape') widthPx = '1500px';
+    if (formatSize === 'A4' && orientation === 'landscape') widthPx = '1050px';
+
+    // Формируем чистую HTML-строку. Библиотека сама загрузит её в виртуальный фрейм.
+    const htmlString = `
+        <div style="width: ${widthPx}; background: white; color: black; font-family: 'Inter', sans-serif, Arial; box-sizing: border-box;">
+            <div style="border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h1 style="font-size: 24px; font-weight: 900; text-transform: uppercase; margin: 0; color: #0f172a;">${title}</h1>
+                    <div style="font-size: 14px; margin-top: 4px; font-weight: bold; color: #475569;">Объект: ${projName} | Ваш инспектор: ${inspName}</div>
+                </div>
+                <div style="font-size: 12px; color: #64748b; text-align: right; font-weight: bold;">
+                    Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality
+                </div>
             </div>
-            <div class="header-meta">Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality Pro</div>
+            ${content}
         </div>
-        ${content}
-    </div>
-    </body></html>`;
-    
-    printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
+    `;
+
+    // Настройки для идеального рендера
+    const opt = {
+        margin:       10, 
+        filename:     `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
+        image:        { type: 'jpeg', quality: 1.0 }, // Качество сжатия 100%
+        // scale: 4 увеличивает разрешение "скриншота" в 4 раза. Текст и графики будут идеально резкими при печати на бумаге.
+        html2canvas:  { scale: 4, useCORS: true, letterRendering: true }, 
+        jsPDF:        { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation }
+    };
+
+    // Запускаем генерацию с небольшой задержкой (чтобы лоадер успел появиться)
+    setTimeout(() => {
+        html2pdf().set(opt).from(htmlString).save().then(() => {
+            // Выключаем лоадер после успешного скачивания
+            if(loader) {
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.style.display = 'none', 300);
+            }
+            showToast("✅ PDF успешно скачан!");
+        }).catch(err => {
+            console.error(err);
+            if(loader) {
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.style.display = 'none', 300);
+            }
+            showToast("❌ Ошибка при генерации PDF");
+        });
+    }, 150);
 }
 
 // 10. Выгрузка в Excel (Сырая база и Тендер)

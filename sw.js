@@ -1,6 +1,6 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ, чтобы браузер понял, что вышел новый код!
-const CACHE_NAME = 'rbi-quality-v16.6.2'; 
+const CACHE_NAME = 'rbi-quality-v16.6.8'; 
 
 // Оставляем ЗДЕСЬ ТОЛЬКО ЛОКАЛЬНЫЕ ФАЙЛЫ (чтобы установка SW никогда не падала)
 const urlsToCache = [
@@ -17,7 +17,8 @@ const urlsToCache = [
   './js/analytics.js', 
   './js/export.js',    
   './js/game.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
 ];
 
 // 1. УСТАНОВКА: Скачиваем локальные файлы в память
