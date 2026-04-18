@@ -48,7 +48,8 @@ const COMPETENCIES = [
     { id: "know_all", group: "Охват", name: "Глубокий охват", desc: "Проведены проверки по всем активным видам работ.", maxProgress: 1 },
     { id: "perfection", group: "Редкие", name: "Внимание к деталям", desc: "Оценка 100%, но честно зафиксирован 1 мелкий дефект (B1).", maxProgress: 1 },
     { id: "quality_guru", group: "Редкие", name: "Аудитор качества", desc: "Собраны: Win-Win, Аналитик, Наставничество, Беспристрастность.", maxProgress: 4 },
-    { id: "crisis_man", group: "Редкие", name: "Управление рисками", desc: "Снижен ИКО объекта с опасного до нормы.", maxProgress: 1 }
+    { id: "crisis_man", group: "Редкие", name: "Управление рисками", desc: "Снижен ИКО объекта с опасного до нормы.", maxProgress: 1 },
+    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Создано 5 TWI-карт с использованием функции Магия TWI (фото с объекта).", maxProgress: 5 }
 ];
 
 document.addEventListener("DOMContentLoaded", async () => {

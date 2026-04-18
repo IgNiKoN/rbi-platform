@@ -286,15 +286,6 @@ body.modal-open { overflow: hidden; height: 100vh; touch-action: none; }
 
 /* Свернутый вид для подтвержденных FAIL */
 .card-collapsed-fail { background: rgba(239, 68, 68, 0.1) !important; border-color: rgba(239, 68, 68, 0.3) !important; }
-.card-collapsed-fail::before { content: '❌' !important; color: var(--color-red) !important; display: flex !important; }
-.card-collapsed-fail .card-title-text { color: #991b1b !important; }
-[data-theme="dark"] .card-collapsed-fail .card-title-text { color: #fca5a5 !important; }
-
-/* Быстрый режим (Скрытие нормативов) */
-.fast-mode .norm-ref, .fast-mode .norm-desc-text { display: none !important; }
-
-/* Свернутый вид для подтвержденных FAIL */
-.card-collapsed-fail { background: rgba(239, 68, 68, 0.1) !important; border-color: rgba(239, 68, 68, 0.3) !important; }
 .card-collapsed-fail::before { content: '❌' !important; color: var(--color-red) !important; }
 .card-collapsed-fail .card-title-text { color: #991b1b !important; }
 [data-theme="dark"] .card-collapsed-fail .card-title-text { color: #fca5a5 !important; }

@@ -67,8 +67,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         // РАДАР ВЫСОТЫ ШАПКИ
         const headerEl = document.getElementById('main-header');
-        // Наблюдатель (Observer) удален, так как он вызывал рывки при скролле.
-        // Оставляем только реакцию на смену ориентации экрана:
         window.addEventListener('resize', updateBodyPadding);
         
         let lastScroll = 0;
@@ -82,8 +80,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             lastScroll = currentScroll;
         }, { passive: true });
 
-        const storedTmpls = await dbGet(STORES.TEMPLATES, 'custom');
-        userTemplates = storedTmpls ? storedTmpls.data : JSON.parse(localStorage.getItem('rbi_audit_user_templates_ent_v12') || '{}');
+        // ИСПРАВЛЕНИЕ: Правильная загрузка ВСЕХ созданных шаблонов из базы
+        const storedTmpls = await dbGetAll(STORES.TEMPLATES);
+        if (storedTmpls && storedTmpls.length > 0) {
+            userTemplates = {};
+            storedTmpls.forEach(t => { userTemplates[t.slug] = t.data; });
+        } else {
+            userTemplates = JSON.parse(localStorage.getItem('rbi_audit_user_templates_ent_v12') || '{}');
+        }
         
         renderSelector();
         await restoreSession();
@@ -91,16 +95,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         if(!currentTemplateKey) {
             document.getElementById('empty-checklist-state').style.display = 'block';
             document.getElementById('audit-items').style.display = 'none';
-            document.getElementById('audit-actions').style.display = 'none'; // Скрываем кнопки
+            document.getElementById('audit-actions').style.display = 'none';
         } else {
             document.getElementById('empty-checklist-state').style.display = 'none';
             document.getElementById('audit-items').style.display = 'block';
-            document.getElementById('audit-actions').style.display = 'grid'; // ПОКАЗЫВАЕМ КНОПКИ при запуске!
+            document.getElementById('audit-actions').style.display = 'grid';
             if (typeof render === 'function') render(); 
         }
         
         setupNavigation();
-
+     initHorizontalMouseScroll();
     } catch (error) { console.error("Ошибка при загрузке:", error); }
 });
 
@@ -1106,97 +1110,6 @@ function closeItemHelpMenu() {
     }, 300);
 }
 
-// === МЕНЮ СПРАВКИ В КАРТОЧКЕ ДЕФЕКТА ===
-function openItemHelpMenu(id, event) {
-    if (event) event.stopPropagation();
-
-    const flat = getFlatList(currentChecklist);
-    const itemData = flat.find(x => x.id === id);
-    if (!itemData) return;
-
-    document.getElementById('help-modal-title').innerText = itemData.n;
-
-    // Ищем инструкции
-    // Карта технадзора (привязана строго к пункту)
-    const inspectorCard = customTwiCards.find(c => c.type === 'INSPECTOR' && String(c.itemId) === String(id));
-    
-    // Общие инструкции (WORKER или PDF), которые привязаны ЛИБО к этому пункту, ЛИБО ко всему чек-листу ("ALL")
-    const generalCards = customTwiCards.filter(c => 
-        (c.type === 'WORKER' || c.type === 'PDF') && 
-        c.checklistKey === currentTemplateKey && 
-        (String(c.itemId) === String(id) || c.itemId === 'ALL' || !c.itemId)
-    );
-
-    const listContainer = document.getElementById('help-modal-list');
-    let html = '';
-
-    // 1. Выводим Карту Технадзора (если есть)
-    if (inspectorCard) {
-        html += `
-            <div class="bg-white dark:bg-slate-800 border-2 border-blue-500 rounded-xl p-3 shadow-md flex items-center justify-between cursor-pointer active:scale-95 transition-transform mb-4" 
-                 onclick="closeItemHelpMenu(); setTimeout(() => openTwiViewer('${inspectorCard.id}'), 300)">
-                <div class="flex items-center gap-3">
-                    <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-2xl font-black shrink-0">🕵️‍♂️</div>
-                    <div>
-                        <div class="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-0.5">Карта Технадзора</div>
-                        <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight">Эталон и примеры брака</div>
-                    </div>
-                </div>
-                <div class="text-blue-500 font-black">➔</div>
-            </div>
-        `;
-    }
-
-    // 2. Выводим общие инструкции для всего чек-листа
-    if (generalCards.length > 0) {
-        html += `<div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 pl-1 border-b border-slate-200 dark:border-slate-700 pb-2">Инструкции к виду работ</div>`;
-        
-        generalCards.forEach(c => {
-            const icon = c.type === 'PDF' ? '📄' : '🛠';
-            const color = c.type === 'PDF' ? 'text-red-500 bg-red-50 dark:bg-red-900/30' : 'text-orange-500 bg-orange-50 dark:bg-orange-900/30';
-            const typeName = c.type === 'PDF' ? 'Внешний PDF-Регламент' : 'Пошаговое руководство (TWI)';
-            
-            html += `
-                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex items-center justify-between cursor-pointer active:scale-95 transition-transform" 
-                     onclick="closeItemHelpMenu(); setTimeout(() => openTwiViewer('${c.id}'), 300)">
-                    <div class="flex items-center gap-3 min-w-0 pr-2">
-                        <div class="w-10 h-10 ${color} rounded-lg flex items-center justify-center text-xl font-black shrink-0">${icon}</div>
-                        <div class="min-w-0">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">${typeName}</div>
-                            <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight truncate">${c.title}</div>
-                        </div>
-                    </div>
-                    <div class="text-slate-400 font-black shrink-0">➔</div>
-                </div>
-            `;
-        });
-    }
-
-    listContainer.innerHTML = html;
-
-    const overlay = document.getElementById('item-help-modal-overlay');
-    const content = document.getElementById('item-help-modal-content');
-    
-    overlay.style.display = 'flex';
-    document.body.classList.add('modal-open');
-    
-    // Плавное выезжание снизу
-    setTimeout(() => {
-        content.classList.remove('translate-y-full');
-    }, 10);
-}
-
-function closeItemHelpMenu() {
-    const overlay = document.getElementById('item-help-modal-overlay');
-    const content = document.getElementById('item-help-modal-content');
-    
-    content.classList.add('translate-y-full');
-    setTimeout(() => {
-        overlay.style.display = 'none';
-        document.body.classList.remove('modal-open');
-    }, 300);
-}
-
 // === ВКЛАДКА: ИСТОРИЯ (С ФИЛЬТРАМИ v16.0) ===
 
 // --- УМНОЕ ОБНОВЛЕНИЕ ФИЛЬТРОВ (ЧТОБЫ НЕ СБРАСЫВАЛСЯ ВЫБОР) ---
@@ -1280,7 +1193,7 @@ function showHistoryDetail(id) {
         if (item.state[i.id] === 'fail') { stTxt = 'FAIL'; stCls = 'tag-red'; }
         if (item.state[i.id] === 'fail_escalated') { stTxt = '>1.5x (B3)'; stCls = 'tag-red shadow-sm'; cat = 'B3'; }
         
-        let photoHtml = (item.photos && item.photos[i.id]) ? `<img src="${item.photos[i.id]}" class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer" onclick="openPhotoViewer('${item.photos[i.id]}')">` : '';
+        let photoHtml = (item.photos && item.photos[i.id]) ? `<img src="${item.photos[i.id]}" class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer" onclick="openPhotoViewer(this.src)">` : '';
         
         let extraData = '';
         if(item.details && item.details[i.id]) {
@@ -1467,14 +1380,20 @@ function toggleDataBlock(forceOpen = false) {
 
 // === ЛОГИКА ВЗАИМОДЕЙСТВИЯ (ОТКАЗ ОТ ПОЛНОЙ ПЕРЕРИСОВКИ) ===
 function toggleOk(id) {
-    if (state[id] === 'ok') state[id] = null;
-    else { state[id] = 'ok'; delete photos[id]; delete details[id]; }
-    updateCardDOM(id); updateUI(); scheduleSessionSave(); /* Заменили прямое сохранение на отложенное */
+    if (state[id] === 'ok') { 
+        state[id] = null; delete photos[id]; delete details[id]; 
+    } else { 
+        state[id] = 'ok'; delete details[id]; // Фото не удаляем!
+    }
+    updateCardDOM(id); updateUI(); scheduleSessionSave();
 }
 
 function toggleFail(id) {
-    if (state[id] === 'fail' || state[id] === 'fail_escalated') { state[id] = null; delete photos[id]; delete details[id]; } 
-    else { state[id] = 'fail'; delete photos[id]; delete details[id]; }
+    if (state[id] === 'fail' || state[id] === 'fail_escalated') { 
+        state[id] = null; delete photos[id]; delete details[id]; 
+    } else { 
+        state[id] = 'fail'; delete details[id]; // Фото не удаляем!
+    }
     updateCardDOM(id); updateUI(); scheduleSessionSave();
 }
 
@@ -1716,17 +1635,21 @@ function updateCardDOM(id, itemData = null) {
             </div>
         `;
     } 
-    // === 2. МАКЕТ ПРИ OK (Нормы скрыты) ===
+    // === 2. МАКЕТ ПРИ OK (Нормы скрыты, добавлено фото эталона) ===
     else if (okActive) {
+        let photoBtnOk = photos[id] ? 
+            `<div class="relative shrink-0"><img src="${photos[id]}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-green-300 shadow-sm object-cover" onclick="openPhotoViewer('${photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` : 
+            `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm text-green-600 bg-green-50 border-green-200" title="Добавить фото эталона"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
+
         contentHtml = `
             <div class="flex justify-between items-center w-full min-h-[44px]">
                 <div class="flex-1 mr-3 min-w-0 pointer-events-none">
                     <div class="text-[13px] font-bold leading-snug card-title-text text-slate-800 dark:text-white">
                         <span class="weight-tag wt-${i.w}">B${i.w}</span> ${i.n}
                     </div>
-                    <!-- Нормы скрыты -->
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
+                    ${photoBtnOk}
                     ${helpBtnHtml}
                     ${mainBtnsHtml}
                 </div>
@@ -2139,177 +2062,6 @@ function renderAnalyticsTab() {
     });
 
     container.innerHTML = html;
-}
-
-// === ИМПОРТ И ЭКСПОРТ ДАННЫХ (v16.0) ===
-// === ИМПОРТ И ЭКСПОРТ ДАННЫХ (ЕДИНЫЙ СУПЕР-БЭКАП) ===
-
-// === ИМПОРТ И ЭКСПОРТ ДАННЫХ (ЕДИНЫЙ СУПЕР-БЭКАП) ===
-
-function handleDataExport(type) {
-    if (type === 'json') {
-        showToast("⚙️ Сборка полной базы данных...");
-        
-        // Отделяем только пользовательские документы, чтобы не дублировать системные
-        const userDocsToExport = customDocs.filter(d => !String(d.id).startsWith('sys_'));
-
-        // Собираем АБСОЛЮТНО ВСЁ в один гигантский объект
-        const fullBackup = {
-            type: "RBI_FULL_BACKUP",
-            version: "16.3",
-            timestamp: new Date().toISOString(),
-            data: {
-                history: contractorArray,
-                templates: userTemplates,
-                twi: customTwiCards,
-                docs: userDocsToExport, // <-- ДОБАВЛЕНО: База НД
-                expert: customExpertConclusions,
-                gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] // <-- ДОБАВЛЕНЫ ЛОГИ ГЕЙМИФИКАЦИИ
-            }
-        };
-        
-        const dataStr = JSON.stringify(fullBackup);
-        downloadFile(dataStr, `rbi_full_backup_${new Date().toLocaleDateString('ru-RU')}.json`, 'application/json');
-        showToast("✅ Полный бэкап скачан!");
-        
-    } else if (type === 'csv') {
-        const csv = exportToCSV(contractorArray);
-        if(csv) downloadFile(csv, `rbi_report_${new Date().toLocaleDateString()}.csv`, 'text/csv');
-        else showToast('Нет данных для выгрузки');
-    }
-}
-
-function triggerDataImport() { 
-    document.getElementById('db-import-input').click(); 
-}
-
-function processDataImport(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    showToast("⚙️ Чтение файла и слияние баз...");
-    const reader = new FileReader();
-    
-    reader.onload = async (e) => {
-        try {
-            const parsed = JSON.parse(e.target.result);
-            let addedHist = 0, addedTmpl = 0, addedTwi = 0, addedDocs = 0;
-
-            // 1. ЕСЛИ ЭТО НОВЫЙ СУПЕР-БЭКАП (Сборка всего)
-            if (parsed.type === "RBI_FULL_BACKUP" && parsed.data) {
-                
-                // А. СЛИЯНИЕ ИСТОРИИ ПРОВЕРОК
-                if (parsed.data.history && Array.isArray(parsed.data.history)) {
-                    for(const item of parsed.data.history) {
-                        if(!contractorArray.find(x => x.id === item.id)) {
-                            contractorArray.push(item);
-                            await dbPut(STORES.HISTORY, item);
-                            addedHist++;
-                        }
-                    }
-                    contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
-                }
-                
-                // Б. СЛИЯНИЕ ЧЕК-ЛИСТОВ (Добавляем только те, которых нет)
-                if (parsed.data.templates) {
-                    for(const key in parsed.data.templates) {
-                        if(!userTemplates[key]) { 
-                            userTemplates[key] = parsed.data.templates[key];
-                            await dbPut(STORES.TEMPLATES, { slug: key, data: parsed.data.templates[key] });
-                            addedTmpl++;
-                        }
-                    }
-                }
-
-                // В. СЛИЯНИЕ TWI КАРТ И ПРАВИЛ
-                if (parsed.data.twi && Array.isArray(parsed.data.twi)) {
-                    for(const item of parsed.data.twi) {
-                        if(!customTwiCards.find(x => x.id === item.id)) {
-                            customTwiCards.push(item);
-                            addedTwi++;
-                        }
-                    }
-                    const userCardsToSave = customTwiCards.filter(c => !String(c.id).startsWith('sys_'));
-                    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
-                }
-
-                // Г. СЛИЯНИЕ БАЗЫ НОРМАТИВНЫХ ДОКУМЕНТОВ (НД)
-                if (parsed.data.docs && Array.isArray(parsed.data.docs)) {
-                    for(const item of parsed.data.docs) {
-                        if(!customDocs.find(x => x.id === item.id)) {
-                            customDocs.push(item);
-                            addedDocs++;
-                        }
-                    }
-                    // Сохраняем объединенный массив пользовательских документов
-                    const userDocsToSave = customDocs.filter(d => !String(d.id).startsWith('sys_'));
-                    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: userDocsToSave });
-                }
-
-                // Д. СЛИЯНИЕ ЭКСПЕРТНЫХ ЗАКЛЮЧЕНИЙ (Тексты ИИ)
-                if (parsed.data.expert) {
-                    customExpertConclusions = { ...customExpertConclusions, ...parsed.data.expert };
-                    scheduleSessionSave(); // Записываем в хранилище сессии
-                }
-
-                // ---> НАЧАЛО ВСТАВКИ ДЛЯ ГЕЙМИФИКАЦИИ <---
-                // Е. СЛИЯНИЕ ЛОГОВ АКТИВНОСТИ ИНЖЕНЕРОВ
-                if (parsed.data.gameLogs && Array.isArray(parsed.data.gameLogs) && typeof gameActionLogs !== 'undefined') {
-                    let addedLogs = 0;
-                    for (const log of parsed.data.gameLogs) {
-                        if (!gameActionLogs.find(x => x.id === log.id)) {
-                            gameActionLogs.push(log);
-                            addedLogs++;
-                        }
-                    }
-                    if (addedLogs > 0 && typeof gameSaveLogs === 'function') gameSaveLogs();
-                }
-                // ---> КОНЕЦ ВСТАВКИ <---
-
-                showToast(`✅ Базы слиты!\nПроверок: +${addedHist} | Шаблонов: +${addedTmpl}\nTWI: +${addedTwi} | Нормативов: +${addedDocs}`);
-
-            } 
-            // 2. ЕСЛИ ЭТО СТАРЫЙ БЭКАП (Только массив истории) - обратная совместимость
-            else if (Array.isArray(parsed)) {
-                for(const item of parsed) {
-                    if(!contractorArray.find(x => x.id === item.id)) {
-                        contractorArray.push(item);
-                        await dbPut(STORES.HISTORY, item);
-                        addedHist++;
-                    }
-                }
-                contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
-                showToast(`✅ История объединена! Добавлено: ${addedHist} шт.`);
-            } else {
-                throw new Error("Неизвестный формат файла");
-            }
-            
-            
-            // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ ВЕСЬ ИНТЕРФЕЙС
-            updateAllDynamicFilters();
-            renderSelector(); // Обновит списки чек-листов в шапке
-            renderSettingsTab(); // Обновит список шаблонов в настройках
-            
-            if (document.getElementById('tab-history').classList.contains('active')) {
-                renderHistoryTab();
-            } else if (document.getElementById('tab-analytics').classList.contains('active')) {
-                updateAnalyticsFilters(); 
-                renderCurrentAnalyticsTab();
-            } else if (document.getElementById('tab-reference').classList.contains('active')) {
-                const activeSub = document.querySelector('.ref-sub-section:not(.hidden)');
-                if (activeSub && activeSub.id === 'ref-sub-checklists') renderReferenceTab();
-                else if (activeSub && activeSub.id === 'ref-sub-twi') renderTwiList();
-                else if (activeSub && activeSub.id === 'ref-sub-docs') renderDocsList(); // <-- Рендерим базу НД
-            }
-            
-        } catch (err) { 
-            console.error(err);
-            alert("Ошибка файла бэкапа. Проверьте формат."); 
-        }
-    };
-    
-    reader.readAsText(file);
-    event.target.value = '';
 }
 
 // === УМНЫЕ МУЛЬТИ-ФИЛЬТРЫ И ИСТОРИЯ ===
@@ -3098,8 +2850,10 @@ function closeFabExportMenu() {
 
 // --- ЯДРО ГРАФИКОВ ТРЕНДОВ И ФИЛЬТРОВ ---
 
-let trendGroupings = { contrs: 'MONTH', works: 'MONTH', global: 'MONTH' }; 
-let selectedChartFilters = { contrs: [], works: [] }; // Пустой массив = Авто (ТОП-5)
+// --- ЯДРО ГРАФИКОВ ТРЕНДОВ И ФИЛЬТРОВ ---
+
+let trendGroupings = { contrs: 'MONTH', works: 'MONTH', global: 'MONTH', onepager: 'MONTH' }; 
+let selectedChartFilters = { contrs: [], works: [], onepager: [] }; // Пустой массив = Авто
 
 function getWeekNumber(d) {
     d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -3182,7 +2936,7 @@ function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
 
     // Скролл — авто-сворачивание
     window.addEventListener('scroll', () => {
-        const currentYF = window.scrollY;
+        const currentY = window.scrollY; // ИСПРАВЛЕНО: убрана опечатка currentYF
         if (currentY > lastScrollY + 10 && currentY > 60 && !isCollapsed) {
             isCollapsed = true;
             applyPanelState(body, true);
@@ -4013,35 +3767,7 @@ function exportAllTemplatesJson() {
     showToast("✅ Готовый код для templates.js скачан!");
 }
 
-function exportAllTemplatesJson() {
-    showToast("⚙️ Формирование JSON...");
-    
-    // Объединяем чек-листы
-    const allTemplates = { ...SYSTEM_TEMPLATES, ...userTemplates };
-    
-    // Делаем глубокую копию, чтобы случайно не сломать текущий интерфейс при очистке тегов
-    const cleanTemplates = JSON.parse(JSON.stringify(allTemplates));
-    
-    // Очищаем нормативы от HTML-разметки (позже в коде formatNorms() снова их добавит)
-    for (let key in cleanTemplates) {
-        if (cleanTemplates[key].groups) {
-            cleanTemplates[key].groups.forEach(g => {
-                if (g.items) {
-                    g.items.forEach(i => {
-                        i.t = stripHtmlTags(i.t);
-                    });
-                }
-            });
-        }
-    }
 
-    // Форматируем JSON с отступами (4 пробела) для красивого кода
-    const dataStr = JSON.stringify(cleanTemplates, null, 4);
-    
-    // Скачиваем файл (функция downloadFile уже есть в storage.js)
-    downloadFile(dataStr, `RBI_Templates_Code_${new Date().toLocaleDateString('ru-RU')}.json`, 'application/json');
-    showToast("✅ JSON-код скачан!");
-}
 // ==========================================
 // БЛОК: БАЗА НОРМАТИВНЫХ ДОКУМЕНТОВ (НД)
 // ==========================================
@@ -4219,6 +3945,10 @@ let currentTwiType = 'INSPECTOR';
 // Сюда ты можешь вставлять код карт, выгруженных через кнопку "В код (Экспорт)"
 
 // Загрузка TWI карт при старте и слияние с системными
+// === 1. ВШИТЫЕ СИСТЕМНЫЕ TWI КАРТЫ (ИХ НЕЛЬЗЯ УДАЛИТЬ) ===
+// Сюда ты можешь вставлять код карт, выгруженных через кнопку "В код (Экспорт)"
+
+// Загрузка TWI карт при старте и слияние с системными
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         let loadedCards = [];
@@ -4231,11 +3961,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         
         // СЛИЯНИЕ БАЗ: Системные + Пользовательские
-        // Фильтруем пользовательские, чтобы они случайно не задублировали системные (по ID)
         const systemIds = SYSTEM_TWI_CARDS.map(c => c.id);
         const filteredUserCards = loadedCards.filter(c => !systemIds.includes(c.id));
         
         customTwiCards = [...SYSTEM_TWI_CARDS, ...filteredUserCards];
+
+        // ИСПРАВЛЕНИЕ: Принудительно отрисовываем карты после загрузки
+        if (typeof renderTwiList === 'function') {
+            renderTwiList();
+        }
 
     } catch (e) { console.error("Ошибка загрузки TWI", e); }
 });
@@ -4700,9 +4434,14 @@ async function saveTwiCard() {
         showToast("✅ Инструкция успешно сохранена!");
         
         // ---> НАЧАЛО ВСТАВКИ ДЛЯ ГЕЙМИФИКАЦИИ <---
-        if (typeof gameLogAction === 'function' && !currentEditingTwiId) {
-            // Даем баллы только за создание новой карты, а не за редактирование старой
-            gameLogAction('create_twi', cardData.id);
+         if (typeof gameLogAction === 'function' && !currentEditingTwiId) {
+            // Проверяем, была ли это Магия TWI (если в id есть слово magic)
+            if (cardData.id.includes('magic')) {
+                gameLogAction('magic_creator', cardData.id); // Бонусная ачивка!
+                gameLogAction('create_twi', cardData.id);    // И обычная
+            } else {
+                gameLogAction('create_twi', cardData.id);
+            }
         }
         // ---> КОНЕЦ ВСТАВКИ <---
 
@@ -4922,5 +4661,54 @@ function printCurrentTwi() {
     }
 
     printPdfShell(`ИНСТРУКЦИЯ: ${card.title} (${card.checklistName})`, content);
+}
+
+// === ГОРИЗОНТАЛЬНЫЙ СКРОЛЛ МЫШКОЙ (ДЛЯ ПК) ===
+function initHorizontalMouseScroll() {
+    let isDown = false;
+    let startX;
+    let scrollLeft;
+    let slider = null;
+
+    // Вешаем слушатели на весь документ, но фильтруем цели
+    document.addEventListener('mousedown', (e) => {
+        // Ищем ближайший контейнер со скроллом
+        slider = e.target.closest('.overflow-x-auto, .custom-scrollbar, .no-scrollbar');
+        
+        // Запрещаем скролл мышкой, если кликнули по кнопке, инпуту или фото (чтобы не блокировать их нажатие)
+        if (!slider || e.target.closest('button, input, select, a, img')) {
+            slider = null;
+            return;
+        }
+
+        isDown = true;
+        slider.style.cursor = 'grabbing';
+        slider.style.userSelect = 'none'; // Запрет выделения текста при скролле
+        
+        startX = e.pageX - slider.offsetLeft;
+        scrollLeft = slider.scrollLeft;
+    });
+
+    document.addEventListener('mouseleave', () => {
+        if (!isDown || !slider) return;
+        isDown = false;
+        slider.style.cursor = '';
+        slider.style.userSelect = '';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isDown || !slider) return;
+        isDown = false;
+        slider.style.cursor = '';
+        slider.style.userSelect = '';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDown || !slider) return;
+        e.preventDefault(); // Останавливает стандартные браузерные события
+        const x = e.pageX - slider.offsetLeft;
+        const walk = (x - startX) * 1.5; // Скорость прокрутки (1.5x)
+        slider.scrollLeft = scrollLeft - walk;
+    });
 }
 
