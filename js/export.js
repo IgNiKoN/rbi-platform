@@ -177,7 +177,11 @@ function exportPdfOnePager(data) {
 
     // 5. Забираем графики
     const cSpark = document.getElementById('op-sparkline-chart');
-    const imgSpark = cSpark ? `<img style="width:100%; height:55px; object-fit:fill; opacity:0.8;" src="${cSpark.toDataURL('image/png')}">` : '';
+let imgSpark = '';
+if (cSpark && cSpark.width > 0 && cSpark.height > 0) {
+    try { imgSpark = `<img style="width:100%; height:55px; object-fit:fill;" src="${cSpark.toDataURL('image/png')}">`;
+    } catch(e) { console.warn('Canvas toDataURL failed', e); }
+}
 
     const cLine = document.getElementById('op-line-chart');
     const imgLine = cLine ? `<img style="width:100%; height:100%; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '';
@@ -1158,10 +1162,9 @@ function exportPdfData(data) {
 // 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
 // 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
 function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait') {
-    // Включаем лоадер, чтобы пользователь понимал, что процесс идет
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
-    if(loader && loaderText) {
+    if (loader && loaderText) {
         loaderText.innerText = "Рендеринг PDF...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
@@ -1170,21 +1173,31 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
-    // Задаем жесткую ширину контента под формат бумаги
-    // Чтобы элементы (графики, фото) знали, как им растягиваться
-    let widthPx = '750px'; // A4 портрет
-    if (formatSize === 'A3' && orientation === 'landscape') widthPx = '1500px';
-    if (formatSize === 'A4' && orientation === 'landscape') widthPx = '1050px';
-
-    // Формируем чистую HTML-строку. Библиотека сама загрузит её в виртуальный фрейм.
+    // scale 2 вместо 4 — ключевое исправление
+    // при scale 4 и ширине 1500px холст = 6000px, jsPDF обрезает
+    let scale = 4;
+    let widthPx = '720px';   // 794 - 75
+if (formatSize === 'A3' && orientation === 'landscape') widthPx = '1474px'; // 1587 - 113 (20мм при 150dpi scale2)
+if (formatSize === 'A4' && orientation === 'landscape') widthPx = '1048px'; // 1123 - 75
     const htmlString = `
-        <div style="width: ${widthPx}; background: white; color: black; font-family: 'Inter', sans-serif, Arial; box-sizing: border-box;">
-            <div style="border-bottom: 3px solid #1e293b; padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div style="width: ${widthPx}; background: white; color: black; 
+                    font-family: Arial, sans-serif; box-sizing: border-box; 
+                    padding: 0; margin: 0;">
+            <div style="border-bottom: 3px solid #1e293b; padding-bottom: 15px; 
+                        margin-bottom: 25px; display: flex; 
+                        justify-content: space-between; align-items: flex-end;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 900; text-transform: uppercase; margin: 0; color: #0f172a;">${title}</h1>
-                    <div style="font-size: 14px; margin-top: 4px; font-weight: bold; color: #475569;">Объект: ${projName} | Ваш инспектор: ${inspName}</div>
+                    <h1 style="font-size: 24px; font-weight: 900; 
+                               text-transform: uppercase; margin: 0; color: #0f172a;">
+                        ${title}
+                    </h1>
+                    <div style="font-size: 14px; margin-top: 4px; 
+                                font-weight: bold; color: #475569;">
+                        Объект: ${projName} | Инспектор: ${inspName}
+                    </div>
                 </div>
-                <div style="font-size: 12px; color: #64748b; text-align: right; font-weight: bold;">
+                <div style="font-size: 12px; color: #64748b; 
+                            text-align: right; font-weight: bold;">
                     Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality
                 </div>
             </div>
@@ -1192,34 +1205,71 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
         </div>
     `;
 
-    // Настройки для идеального рендера
     const opt = {
-        margin:       10, 
-        filename:     `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-        image:        { type: 'jpeg', quality: 1.0 }, // Качество сжатия 100%
-        // scale: 4 увеличивает разрешение "скриншота" в 4 раза. Текст и графики будут идеально резкими при печати на бумаге.
-        html2canvas:  { scale: 4, useCORS: true, letterRendering: true }, 
-        jsPDF:        { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation }
+        margin: 10,
+        filename: `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
+        image: { type: 'jpeg', quality: 0.92 },
+        html2canvas: {
+            scale: scale,
+            useCORS: true,
+            letterRendering: true,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: parseInt(widthPx) + 20, // чуть шире чем контент
+            onclone: (clonedDoc) => {
+                // ждём загрузки всех изображений внутри клона (твои base64 фото)
+                const images = clonedDoc.querySelectorAll('img');
+                const promises = Array.from(images).map(img => {
+                    if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+                    return new Promise((resolve) => {
+                        img.onload = resolve;
+                        img.onerror = resolve; // не блокируем если фото сломано
+                        // страховочный таймаут на одно фото
+                        setTimeout(resolve, 3000);
+                    });
+                });
+                // ждём шрифты
+                const fontPromise = clonedDoc.fonts 
+                    ? clonedDoc.fonts.ready 
+                    : Promise.resolve();
+                return Promise.all([fontPromise, ...promises]);
+            }
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: formatSize.toLowerCase(),
+            orientation: orientation,
+            compress: true
+        },
+        pagebreak: {
+            // не резать карточки подрядчиков и блоки фото посередине
+            avoid: ['.page-break-avoid', 'table', 'tr'],
+            mode: ['css', 'legacy']
+        }
     };
 
-    // Запускаем генерацию с небольшой задержкой (чтобы лоадер успел появиться)
+    // Даём браузеру время отрисовать лоадер, потом стартуем
     setTimeout(() => {
-        html2pdf().set(opt).from(htmlString).save().then(() => {
-            // Выключаем лоадер после успешного скачивания
-            if(loader) {
-                loader.classList.add('opacity-0');
-                setTimeout(() => loader.style.display = 'none', 300);
-            }
-            showToast("✅ PDF успешно скачан!");
-        }).catch(err => {
-            console.error(err);
-            if(loader) {
-                loader.classList.add('opacity-0');
-                setTimeout(() => loader.style.display = 'none', 300);
-            }
-            showToast("❌ Ошибка при генерации PDF");
-        });
-    }, 150);
+        html2pdf()
+            .set(opt)
+            .from(htmlString)
+            .save()
+            .then(() => {
+                if (loader) {
+                    loader.classList.add('opacity-0');
+                    setTimeout(() => loader.style.display = 'none', 300);
+                }
+                showToast("PDF успешно скачан!");
+            })
+            .catch(err => {
+                console.error('[PDF]', err);
+                if (loader) {
+                    loader.classList.add('opacity-0');
+                    setTimeout(() => loader.style.display = 'none', 300);
+                }
+                showToast("Ошибка при генерации PDF");
+            });
+    }, 400); // 400мс — достаточно для лоадера и первичного рендера
 }
 
 // 10. Выгрузка в Excel (Сырая база и Тендер)
