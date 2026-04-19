@@ -885,3 +885,36 @@ select option, select optgroup {
     background-color: var(--card-bg);
     color: var(--text-main);
 }
+
+/* === ПРАВИЛА ДЛЯ СИСТЕМНОЙ ПЕЧАТИ (БРАУЗЕР) === */
+@media print {
+    /* Жестко скрываем ВООБЩЕ ВСЁ, кроме контейнера печати */
+    body > *:not(#native-print-container) { display: none !important; }
+    
+    /* Дополнительно убиваем плавающие элементы */
+    #fab-download-btn, #fab-export-menu-overlay, #toast-container, 
+    #global-loader, .header-fixed, .bottom-nav, .analytics-nav-container, 
+    #tutorial-overlay, #tutorial-tooltip { 
+        display: none !important; 
+        opacity: 0 !important;
+        visibility: hidden !important;
+    }
+
+    /* Показываем только контейнер для печати */
+    #native-print-container {
+        display: block !important;
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%;
+        margin: 0; padding: 0;
+        background: white;
+    }
+
+    /* Разрешаем браузеру печатать фоновые цвета */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    
+    /* ВАЖНО: Мы убрали @page { margin: 0; }, чтобы браузер сам ставил отступы! */
+}

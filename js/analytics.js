@@ -26,9 +26,19 @@ function switchAnalyticsSubTab(tabId, btnElement) {
         btnElement.classList.remove('text-[var(--text-muted)]');
     }
 
-    // Запускаем рендер контента и обновляем кнопку скачивания PDF
-    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+    // ЖЕСТКО СКРЫВАЕМ ФИЛЬТРЫ И КНОПКУ НА ВКЛАДКЕ HR
+    const filtersBlock = document.getElementById('analytics-filters-block');
+    if (tabId === 'sub-engineer-rating') {
+        if(filtersBlock) filtersBlock.style.display = 'none';
+    } else {
+        if(filtersBlock) filtersBlock.style.display = 'block';
+    }
+
+    // Обновляем кнопку FAB
     if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
+
+    // Запускаем рендер контента
+    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
 }
 // 1. Фильтрация данных для всех вкладок аналитики
 function getFilteredAnalyticsData() {

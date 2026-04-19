@@ -2,34 +2,36 @@
 // === МОДУЛЬ ГЕНЕРАЦИИ ОТЧЕТОВ (PDF, CSV, ПАСПОРТА) ===
 
 // 1. Главный обработчик всплывающего меню выгрузки
-function handleFabExportAction(actionType) {
+// 1. Главный обработчик всплывающего меню выгрузки
+function handleFabExportAction(actionType, mode = 'script') {
     closeFabExportMenu();
     const data = getFilteredAnalyticsData();
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
-    showToast('⏳ Формируем отчет, подождите...');
+    showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к печати...');
     
     setTimeout(() => {
         if (actionType === 'current') {
-            exportPdfCurrentScreen(data);
+            exportPdfCurrentScreen(data, mode);
         } else if (actionType === 'full_report') {
-            exportPdfFullObjectReport(data);
+            exportPdfFullObjectReport(data, mode);
         } else if (actionType === 'poster') {
-            exportPdfPoster(data);
+            exportPdfPoster(data, mode);
+        } else if (actionType === 'onepager') {
+            exportPdfOnePager(data, mode);
+        } else if (actionType === 'data') {
+            exportPdfData(data, mode);
         }
     }, 500);
 }
 
 // 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
-// 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
-function exportPdfOnePager(data) {
+function exportPdfOnePager(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
-    // 1. Данные шапки
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
-    // 2. Метрики ТЕКУЩЕГО периода
     let sumUrk = 0; let sumB3 = 0;
     data.forEach(i => { if(i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
@@ -59,7 +61,6 @@ function exportPdfOnePager(data) {
     }
     ratingData.sort((a,b) => b.val - a.val);
 
-    // 3. Метрики ПРОШЛОГО периода (для трендов)
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     let prevData = [];
     const now = new Date();
@@ -113,7 +114,6 @@ function exportPdfOnePager(data) {
         sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
     }
 
-    // 4. Фотографии дефектов
     let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
         if(i.state && i.details && i.templateKey) {
@@ -130,16 +130,16 @@ function exportPdfOnePager(data) {
                 if(s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
                     if (isB3) {
-                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно'), name: defName };
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
-                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                        if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно'), name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
                     }
                 } else if (s === 'ok' && photo) {
-                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
+                    if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно'), name: defName };
                     okMap[defName].count++;
                     if (photo) okMap[defName].photo = photo;
                 }
@@ -151,23 +151,23 @@ function exportPdfOnePager(data) {
     const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
     const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-    // КОМПАКТНЫЙ РЕНДЕР ФОТО (Жесткая высота 140px)
-    // Спец-рендер для сетки 5x3 (жесткая табличная верстка для PDF)
+    // ЖЕЛЕЗОБЕТОННАЯ СЕТКА ФОТОГРАФИЙ ЧЕРЕЗ ТАБЛИЦУ
     const renderPhotoGridRow = (arr, type) => {
         while(arr.length < 5) { arr.push({ empty: true }); }
         let badgeColor = type === 'b3' ? '#dc2626' : (type === 'b2' ? '#d97706' : '#16a34a');
         return `
-        <table style="width: 100%; border-spacing: 8px; table-layout: fixed; margin-left: -8px; margin-top: -4px;">
+        <table style="width: 100%; border-collapse: separate; border-spacing: 8px 0; table-layout: fixed;">
             <tr>
             ${arr.slice(0, 5).map(d => {
                 if (d.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:155px;"></td>`;
-                const imgHtml = d.photo ? `<img src="${d.photo}" style="width:100%; height:95px; object-fit:contain; background-color:#f1f5f9; display:block;">` : `<div style="width:100%; height:95px; background:#f1f5f9; color:#cbd5e1; font-size:12px; font-weight:bold; display:flex; align-items:center; justify-content:center;">НЕТ ФОТО</div>`;
                 return `
-                <td style="border:1px solid #cbd5e1; border-radius:8px; background:white; vertical-align:top; overflow:hidden; padding:0; height:155px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">
-                    ${imgHtml}
-                    <div style="padding:6px 8px; height:60px; background:white; border-top:2px solid ${badgeColor};">
-                        <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:3px;">${d.name}</div>
-                        <div style="font-size:9px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:bold;">👤 ${d.contr} (${d.count} шт)</div>
+                <td style="border:1px solid #cbd5e1; border-radius:8px; background:white; vertical-align:top; overflow:hidden; padding:0; height:155px;">
+                    <div style="width:100%; height:95px; background:#f1f5f9; text-align:center;">
+                        ${d.photo ? `<img src="${d.photo}" style="width:100%; height:100%; object-fit:cover; display:block;">` : `<span style="color:#cbd5e1; font-size:12px; font-weight:bold; line-height:95px;">НЕТ ФОТО</span>`}
+                    </div>
+                    <div style="padding:6px; height:60px; background:white; border-top:2px solid ${badgeColor};">
+                        <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; overflow:hidden; height:24px;">${d.name}</div>
+                        <div style="font-size:9px; color:#64748b; font-weight:bold; margin-top:2px; white-space:nowrap; overflow:hidden;">👤 ${d.contr} (${d.count} шт)</div>
                     </div>
                 </td>`;
             }).join('')}
@@ -175,151 +175,120 @@ function exportPdfOnePager(data) {
         </table>`;
     };
 
-    // 5. Забираем графики
     const cSpark = document.getElementById('op-sparkline-chart');
-let imgSpark = '';
-if (cSpark && cSpark.width > 0 && cSpark.height > 0) {
-    try { imgSpark = `<img style="width:100%; height:55px; object-fit:fill;" src="${cSpark.toDataURL('image/png')}">`;
-    } catch(e) { console.warn('Canvas toDataURL failed', e); }
-}
+    let imgSpark = '';
+    if (cSpark && cSpark.width > 0 && cSpark.height > 0) {
+        try { imgSpark = `<img style="width:100%; height:55px; object-fit:fill;" src="${cSpark.toDataURL('image/png')}">`;
+        } catch(e) {}
+    }
 
     const cLine = document.getElementById('op-line-chart');
     const imgLine = cLine ? `<img style="width:100%; height:100%; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '';
 
     const pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
     const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
+    
     let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
-    if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
-        const dFrom = document.getElementById('filter-date-from')?.value;
-        const dTo = document.getElementById('filter-date-to')?.value;
-        if (dFrom || dTo) {
-            const fmt = (d) => d ? new Date(d).toLocaleDateString('ru-RU') : '...';
-            periodText = `с ${fmt(dFrom)} по ${fmt(dTo)}`;
-        }
-    }
     const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
-    // 6. Рейтинг (Диаграмма)
     let ratingHtml = '';
     if (ratingData.length === 0) {
         ratingHtml = '<div style="font-size:10px; color:#94a3b8; text-align:center; padding: 20px;">Нет данных</div>';
     } else {
         const renderRow = (r) => `
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom: 6px;">
-                <div style="width:100px; font-size:11px; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${r.name}</div>
-                <div style="flex:1; background:#e2e8f0; height:12px; border-radius:6px; overflow:hidden; border:1px solid #cbd5e1;">
-                    <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%; border-radius:6px;"></div>
-                </div>
-                <div style="width:30px; text-align:right; font-size:11px; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">
-                    ${r.isPrelim ? '<span style="font-size:8px;">⚠️</span>' : ''}${r.val}%
-                </div>
-            </div>`;
+            <table style="width:100%; margin-bottom:6px; border-collapse:collapse;">
+                <tr>
+                    <td style="width:100px; font-size:11px; font-weight:bold; color:#334155; overflow:hidden;">${r.name}</td>
+                    <td style="background:#e2e8f0; height:12px; border-radius:6px; padding:0; border:1px solid #cbd5e1; width:auto;">
+                        <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%; border-radius:6px;"></div>
+                    </td>
+                    <td style="width:30px; text-align:right; font-size:11px; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">
+                        ${r.val}%
+                    </td>
+                </tr>
+            </table>`;
             
-        if (ratingData.length <= 10) {
-            ratingHtml = ratingData.map(renderRow).join('');
-        } else {
-            ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + 
-                         `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0; text-transform:uppercase;">... Скрыто ${ratingData.length - 10} ...</div>` + 
-                         ratingData.slice(-5).map(renderRow).join('');
-        }
+        if (ratingData.length <= 10) ratingHtml = ratingData.map(renderRow).join('');
+        else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
     }
 
-    // 7. СБОРКА СТРАНИЦЫ
-    // Мы задаем жесткую высоту 860px для контента, чтобы он идеально влез на лист А3
     const content = `
-        <div style="display: flex; gap: 20px; height: 880px;">
-            
-            <!-- ЛЕВАЯ КОЛОНКА (30%) -->
-            <div style="width: 30%; display: flex; flex-direction: column; gap: 12px; height: 100%;">
-                
-                <!-- KPI (Сетка 2x3) -->
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; flex-shrink: 0;">
-                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</span>
-                            ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
-                        </div>
-                    </div>
-                    <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; display:flex; flex-direction:column; justify-content:space-between;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
-                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                            <span style="font-size: 26px; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</span>
-                            ${renderTrend(mData.IKO, prevIko, trendLabel, true)}
-                        </div>
-                    </div>
-                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</span>
-                            ${renderTrend(data.length, prevChecks, trendLabel)}
-                        </div>
-                    </div>
-                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; display:flex; flex-direction:column; justify-content:space-between;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px;">
-                            <span style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</span>
-                            ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
-                        </div>
-                    </div>
-                    <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; position: relative;">
-                        <div style="font-size: 9px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
-                        <div style="font-size: 8px; color: #b91c1c; margin-top: 2px; font-weight:bold;">ОТ ОБЪЕМА</div>
-                    </div>
-                    <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative; overflow:hidden;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900; z-index: 10; position: relative;">Тренд УрК (6 нед)</div>
-                        <div style="position: absolute; bottom: 0; left: 0; right: 0;">${imgSpark}</div>
-                    </div>
-                </div>
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+            <tr>
+                <!-- ЛЕВАЯ КОЛОНКА (30%) -->
+                <td style="width: 32%; vertical-align: top; padding-right: 15px;">
+                    
+                    <table style="width: 100%; border-spacing: 8px 8px; border-collapse: separate; margin-left:-8px; margin-top:-8px;">
+                        <tr>
+                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; width:50%;">
+                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
+                            </td>
+                            <td style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; width:50%;">
+                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
+                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
+                            </td>
+                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
+                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca;">
+                                <div style="font-size: 9px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                                <div style="font-size: 26px; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
+                            </td>
+                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative;">
+                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
+                                <div style="position:absolute; bottom:0; left:0; width:100%;">${imgSpark}</div>
+                            </td>
+                        </tr>
+                    </table>
 
-                <!-- График Линии -->
-                <div style="flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; display: flex; flex-direction: column;">
-                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков (Средний УРк)</div>
-                    <div style="flex: 1; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center;">
-                        ${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height:200px;">
+                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
+                        <div style="height:160px; text-align:center;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
                     </div>
-                </div>
 
-                <!-- Рейтинг -->
-                <div style="flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; overflow: hidden;">
-                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                    <div style="flex: 1; overflow: hidden;">
-                        ${ratingHtml}
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height:250px;">
+                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
+                        <div>${ratingHtml}</div>
                     </div>
-                </div>
-            </div>
+                </td>
 
-            <!-- ПРАВАЯ КОЛОНКА (70%) - Фото и Выводы -->
-            <div style="width: 70%; display: flex; flex-direction: column; gap: 12px; height: 100%;">
-                
-                <!-- БЛОК ФОТО (Жесткие 3 ряда) -->
-                <div style="background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; flex-shrink: 0;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
-                    ${renderPhotoGridRow(topB3, 'b3')}
-                </div>
+                <!-- ПРАВАЯ КОЛОНКА (68%) -->
+                <td style="width: 68%; vertical-align: top;">
+                    <div style="background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; margin-bottom:10px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
+                        ${renderPhotoGridRow(topB3, 'b3')}
+                    </div>
 
-                <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; flex-shrink: 0;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
-                    ${renderPhotoGridRow(topB2, 'b2')}
-                </div>
-                
-                <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; flex-shrink: 0;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
-                    ${renderPhotoGridRow(topOK, 'ok')}
-                </div>
+                    <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; margin-bottom:10px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
+                        ${renderPhotoGridRow(topB2, 'b2')}
+                    </div>
+                    
+                    <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; margin-bottom:10px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
+                        ${renderPhotoGridRow(topOK, 'ok')}
+                    </div>
 
-                <!-- УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ (Занимает всё оставшееся место) -->
-                <div style="flex: 1; background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
-                    <h3 style="margin: 0 0 8px 0; font-size: 14px; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
-                    <div style="font-size: 13px; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
-                </div>
-
-            </div>
-        </div>
+                    <div style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+                        <div style="font-size: 13px; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
     `;
 
-    printPdfShell("Сводка для Руководства", content, "A3", "landscape");
+    printPdfShell("Сводка для Руководства", content, "A3", "landscape", mode);
 }
 
 
@@ -406,7 +375,8 @@ function generatePosterData() {
 // ============================================================================
 // 1. ПЕЧАТЬ ТЕКУЩЕГО ЭКРАНА (А4 Портрет)
 // ============================================================================
-function exportPdfCurrentScreen(data) {
+// 5. Текущий экран (Детализация Подрядчика или Список А4)
+function exportPdfCurrentScreen(data, mode = 'script') {
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
         const cData = data.filter(c => `${c.contractorName} [${c.projectName || 'Без объекта'}]` === currentDetailedContractor);
@@ -435,11 +405,11 @@ function exportPdfCurrentScreen(data) {
             while(paddedArr.length < 5) paddedArr.push(null);
             
             return `
-            <table style="width: 100%; border-spacing: 10px; table-layout: fixed; margin-left: -10px; margin-bottom: 15px;">
+            <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left: -10px; margin-bottom: 15px;">
                 <tr>
                 ${paddedArr.map(src => {
                     if (!src) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:130px;"></td>`;
-                    return `<td style="border:2px solid ${color}; border-radius:8px; background:white; overflow:hidden; padding:0; height:130px;">
+                    return `<td style="border:2px solid ${color}; border-radius:8px; background:white; padding:0; height:130px;">
                         <img src="${src}" style="width:100%; height:100%; object-fit:cover; display:block;">
                     </td>`;
                 }).join('')}
@@ -448,45 +418,52 @@ function exportPdfCurrentScreen(data) {
         };
 
         const content = `
-            <div style="border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;">
+            <div style="border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;" class="no-break">
                 <h2 style="margin:0; font-size: 24px; color:#0f172a; text-transform:uppercase;">Детализация: ${currentDetailedContractor}</h2>
                 <div style="color:#64748b; font-weight:bold; margin-top:5px;">Вид работ: ${workType} | Выборка: ${m.count} проверок</div>
             </div>
-            <div style="display:flex; gap:15px; margin-bottom:20px; page-break-inside: avoid;">
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                    <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.baseUrkContrPerc}%</div>
-                    <div style="font-size:10px; font-weight:bold; color:#475569;">До штрафов</div>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                    <div style="font-size:36px; font-weight:900; color:${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')};">${m.finalC}%</div>
-                    <div style="font-size:10px; font-weight:bold; color:#475569;">Погрешность: ±${m.ci95_margin.toFixed(1)}%</div>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                    <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.stabilityIndex}</div>
-                    <div style="font-size:10px; font-weight:bold; color:#475569; text-transform:uppercase;">${m.stabText}</div>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                    <div style="font-size:36px; font-weight:900; color:#dc2626;">${m.n_изделий_с_B3} <span style="color:#d97706; font-size:24px;">/ ${photosB2.length}</span></div>
-                    <div style="font-size:10px; font-weight:bold; color:#475569;">Критичность: ${m.kcritC.toFixed(2)}</div>
-                </div>
-            </div>
+            
+            <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;" class="no-break">
+                <tr>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
+                        <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.baseUrkContrPerc}%</div>
+                        <div style="font-size:10px; font-weight:bold; color:#475569;">До штрафов</div>
+                    </td>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
+                        <div style="font-size:36px; font-weight:900; color:${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')};">${m.finalC}%</div>
+                        <div style="font-size:10px; font-weight:bold; color:#475569;">Погрешность: ±${m.ci95_margin.toFixed(1)}%</div>
+                    </td>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Стабильность</div>
+                        <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.stabilityIndex}</div>
+                        <div style="font-size:10px; font-weight:bold; color:#475569; text-transform:uppercase;">${m.stabText}</div>
+                    </td>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
+                        <div style="font-size:36px; font-weight:900; color:#dc2626;">${m.n_изделий_с_B3} <span style="color:#d97706; font-size:24px;">/ ${photosB2.length}</span></div>
+                        <div style="font-size:10px; font-weight:bold; color:#475569;">Критичность: ${m.kcritC.toFixed(2)}</div>
+                    </td>
+                </tr>
+            </table>
+
             ${expertText}
-            <div style="page-break-inside: avoid;">
+            
+            <div class="no-break">
                 <h3 style="color:#dc2626; font-size:14px; text-transform:uppercase; margin-bottom:10px;">🚨 Критические дефекты (B3)</h3>
                 ${renderPhotoStrip(photosB3, '#fca5a5')}
+            </div>
+            
+            <div class="no-break">
                 <h3 style="color:#d97706; font-size:14px; text-transform:uppercase; margin-bottom:10px;">⚠️ Значимые дефекты (B2)</h3>
                 ${renderPhotoStrip(photosB2, '#fde68a')}
             </div>
         `;
-        printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4");
+        printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4", "portrait", mode);
 
     } else {
         // --- РЕЖИМ 2: СПИСОК ВСЕХ ПОДРЯДЧИКОВ (С ВЕРХНЕЙ СВОДКОЙ) ---
-        
         let sumUrkProd = 0, sumB1 = 0, sumB2 = 0, sumB3 = 0;
         data.forEach(i => {
             if(i.metrics) {
@@ -513,16 +490,12 @@ function exportPdfCurrentScreen(data) {
             const m = getContractorMetrics(grouped[cName], userTemplates);
             if (m) {
                 cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle });
-                if (m.count >= 7) {
-                    sumIntegralUrk += m.finalC;
-                    validContrCount++;
-                }
+                if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
             }
         }
         cList.sort((a,b) => b.metrics.finalC - a.metrics.finalC);
         const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
 
-        // Достаем глобальный смарт анализ
         const globalKey = 'global_main_analysis';
         let rawSmartText = customExpertConclusions[globalKey];
         let aiHtml = '';
@@ -531,7 +504,7 @@ function exportPdfCurrentScreen(data) {
             const pdfFormattedText = rawSmartText.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>').replace(/\n/g, '<br>');
             
             aiHtml = `
-            <div style="margin-bottom: 20px; border: 1px solid ${isCustomText ? '#fde047' : '#cbd5e1'}; border-radius: 8px; background: ${isCustomText ? '#fefce8' : '#f8fafc'}; padding: 15px; page-break-inside: avoid;">
+            <div class="no-break" style="margin-bottom: 20px; border: 1px solid ${isCustomText ? '#fde047' : '#cbd5e1'}; border-radius: 8px; background: ${isCustomText ? '#fefce8' : '#f8fafc'}; padding: 15px;">
                 <h3 style="margin-top: 0; font-size: 14px; border-bottom: 2px solid ${isCustomText ? '#fef08a' : '#e2e8f0'}; padding-bottom: 8px; margin-bottom: 15px; color: ${isCustomText ? '#854d0e' : '#0f172a'};">
                     ${isCustomText ? '⚠️ АНАЛИЗ ЗОН РИСКА (С КОРРЕКТИРОВКАМИ ИНЖЕНЕРА)' : '🧠 АНАЛИЗ ЗОН РИСКА (АВТОМАТИЧЕСКИЙ)'}
                 </h3>
@@ -539,81 +512,103 @@ function exportPdfCurrentScreen(data) {
             </div>`;
         }
 
-        const rowsHtml = cList.map((c) => {
+        const renderContractorCard = (c) => {
+            if (!c) return '';
             const m = c.metrics;
             const color = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
             const borderColor = m.finalC < 70 ? '#fca5a5' : '#cbd5e1';
             const bg = m.finalC < 70 ? '#fef2f2' : 'white';
             
             return `
-            <div style="border: 2px solid ${borderColor}; border-radius: 12px; padding: 15px; background: ${bg}; page-break-inside: avoid; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                    <div style="width: 70%;">
-                        <div style="font-size: 14px; font-weight: 900; color: #0f172a; line-height: 1.2;">${c.name}</div>
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight:bold; margin-top: 4px;">${c.workType}</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight:bold;">Надежность</div>
-                        <div style="font-size: 24px; font-weight: 900; color: ${color}; line-height: 1;">${m.count < 7 ? '<span style="font-size:12px; color:#64748b;">СБОР</span>' : m.finalC + '%'}</div>
-                    </div>
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 10px;">
-                    <div style="text-align: center;">
-                        <div style="color: #64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Ср. УрК Изд.</div>
-                        <div style="font-weight: 900; font-size:14px;">${m.baseUrkContrPerc}%</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="color: #64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Проверок</div>
-                        <div style="font-weight: 900; font-size:14px;">${m.count}</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="color: #64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                        <div style="font-weight: 900; font-size:14px; color:${m.count < 7 ? '#94a3b8' : '#0f172a'};">${m.count < 7 ? '-' : m.stabilityIndex}</div>
-                    </div>
-                    <div style="text-align: center;">
-                        <div style="color: #64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Дефектов B3</div>
-                        <div style="font-weight: 900; font-size:14px; color: ${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
-                    </div>
-                </div>
+            <div class="no-break" style="border:2px solid ${borderColor}; border-radius:12px; padding:15px; background:${bg}; margin-bottom: 15px;">
+                <table style="width: 100%; border: none;">
+                    <tr>
+                        <td style="width:70%; vertical-align: top;">
+                            <div style="font-size:14px; font-weight:900; color:#0f172a; line-height:1.2;">${c.name}</div>
+                            <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold; margin-top:4px;">${c.workType}</div>
+                        </td>
+                        <td style="text-align:right; vertical-align: top;">
+                            <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность</div>
+                            <div style="font-size:24px; font-weight:900; color:${color}; line-height:1;">
+                                ${m.count < 7 ? '<span style="font-size:12px;color:#64748b;">СБОР</span>' : m.finalC + '%'}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                <table style="width: 100%; border-top:1px solid #e2e8f0; padding-top:10px; margin-top:10px; text-align: center;">
+                    <tr>
+                        <td>
+                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Ср. УрК</div>
+                            <div style="font-weight:900; font-size:14px;">${m.baseUrkContrPerc}%</div>
+                        </td>
+                        <td>
+                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Проверок</div>
+                            <div style="font-weight:900; font-size:14px;">${m.count}</div>
+                        </td>
+                        <td>
+                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Стабильность</div>
+                            <div style="font-weight:900; font-size:14px; color:${m.count < 7 ? '#94a3b8' : '#0f172a'};">${m.count < 7 ? '-' : m.stabilityIndex}</div>
+                        </td>
+                        <td>
+                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">B3</div>
+                            <div style="font-weight:900; font-size:14px; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
+                        </td>
+                    </tr>
+                </table>
             </div>`;
-        }).join('');
+        };
+
+        const tableRows = [];
+        for (let i = 0; i < cList.length; i += 2) {
+            const left  = cList[i];
+            const right = cList[i + 1];
+            tableRows.push(`
+                <tr class="no-break">
+                    <td style="width:50%; vertical-align:top; padding-right:8px;">${renderContractorCard(left)}</td>
+                    <td style="width:50%; vertical-align:top; padding-left:8px;">${right ? renderContractorCard(right) : ''}</td>
+                </tr>
+            `);
+        }
 
         const content = `
-            <div style="margin-bottom: 20px;">
+            <div class="no-break" style="margin-bottom: 20px;">
                 <h2 style="margin:0; font-size: 20px; color:#0f172a; text-transform:uppercase;">Отчет: Текущий срез подрядчиков</h2>
                 <div style="font-size: 12px; color: #64748b; font-weight:bold; margin-top:5px;">Сформировано на основе активных фильтров (Всего: ${data.length} пров.)</div>
             </div>
             
-            <div style="display:flex; gap:10px; margin-bottom:20px; page-break-inside: avoid;">
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                    <div style="font-size:24px; font-weight:900; color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                    <div style="font-size:24px; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                    <div style="font-size:24px; font-weight:900; color:#dc2626;">${sumB3} <span style="color:#d97706; font-size:16px;">/ ${sumB2}</span></div>
-                </div>
-            </div>
+            <table class="no-break" style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left: -10px; margin-bottom: 20px;">
+                <tr>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
+                        <div style="font-size:24px; font-weight:900; color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
+                    </td>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
+                        <div style="font-size:24px; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
+                    </td>
+                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
+                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
+                        <div style="font-size:24px; font-weight:900; color:#dc2626;">${sumB3} <span style="color:#d97706; font-size:16px;">/ ${sumB2}</span></div>
+                    </td>
+                </tr>
+            </table>
             
             ${aiHtml}
             
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                ${rowsHtml}
-            </div>
+            <table style="width:100%; border-collapse:collapse; border-spacing:0; table-layout: fixed;">
+                ${tableRows.join('')}
+            </table>
         `;
-        printPdfShell("Список подрядчиков", content, "A4");
+        printPdfShell("Список подрядчиков", content, "A4", "portrait", mode);
     }
 }
+
 
 // ============================================================================
 // 2. ПОЛНЫЙ ОТЧЕТ ПО ОБЪЕКТУ ДЛЯ СОВЕЩАНИЙ (А3 Альбомный, Табличная сетка)
 // ============================================================================
-function exportPdfFullObjectReport(data) {
+// 6. Выгрузка Полного отчета по объекту (Паспорта подрядчиков А3)
+function exportPdfFullObjectReport(data, mode = 'script') {
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     const now = new Date();
     let prevData = [];
@@ -639,7 +634,6 @@ function exportPdfFullObjectReport(data) {
     let sumUrk = 0; data.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
     const avgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
 
-    // Умная группировка: если объект не выбран, добавляем его название к подрядчику, чтобы данные не склеились
     const isSingleProject = activeMultiFilters.analytics.project.length === 1;
     
     const grouped = {};
@@ -656,78 +650,66 @@ function exportPdfFullObjectReport(data) {
         pGrouped[cKey].push(c); 
     });
 
-    let content = '';
+    let content = `
+    <div class="pdf-page-break"></div>
+    <div style="text-align:center; margin-bottom: 60px;">
+        <h1 style="font-size: 48px; color:#0f172a; text-transform:uppercase; font-weight:900; margin:0;">Еженедельный отчет по качеству</h1>
+        <div style="font-size: 24px; color:#4f46e5; font-weight:bold; margin-top:10px;">${isSingleProject ? activeMultiFilters.analytics.project[0] : 'Сводный отчет по всем объектам'}</div>
+        <div style="font-size: 16px; color:#64748b; font-weight:bold; margin-top:20px;">Период формирования: ${new Date().toLocaleDateString('ru-RU')}</div>
+    </div>
 
-    // --- СТРАНИЦА 1: ТИТУЛЬНЫЙ ЛИСТ ---
-    content += `
-    <div style="page-break-after: always; padding-top: 50px;">
-        <div style="text-align:center; margin-bottom: 60px;">
-            <h1 style="font-size: 48px; color:#0f172a; text-transform:uppercase; font-weight:900; margin:0;">Еженедельный отчет по качеству</h1>
-            <div style="font-size: 24px; color:#4f46e5; font-weight:bold; margin-top:10px;">${isSingleProject ? activeMultiFilters.analytics.project[0] : 'Сводный отчет по всем объектам'}</div>
-            <div style="font-size: 16px; color:#64748b; font-weight:bold; margin-top:20px;">Период формирования: ${new Date().toLocaleDateString('ru-RU')}</div>
-        </div>
+    <table style="width: 100%; border-spacing: 20px; border-collapse: separate; margin-left: -20px; margin-bottom: 40px; table-layout: fixed;">
+        <tr>
+            <td style="background:#f8fafc; border:3px solid #cbd5e1; border-radius:16px; padding:30px; text-align:center;">
+                <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Ср. УрК Объекта</div>
+                <div style="font-size:64px; font-weight:900; color:#0f172a; line-height:1;">${avgUrk}%</div>
+            </td>
+            <td style="background:${currIKO >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border:3px solid ${currIKO >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius:16px; padding:30px; text-align:center;">
+                <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Индекс Риска (ИКО)</div>
+                <div style="font-size:64px; font-weight:900; color:${currIKO >= 0.6 ? '#dc2626' : '#16a34a'}; line-height:1;">${currIKO.toFixed(2)}</div>
+            </td>
+        </tr>
+        <tr>
+            <td style="background:#f8fafc; border:3px solid #cbd5e1; border-radius:16px; padding:30px; text-align:center;">
+                <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Объем проверок</div>
+                <div style="font-size:64px; font-weight:900; color:#0f172a; line-height:1;">${data.length}</div>
+            </td>
+            <td style="background:#fef2f2; border:3px solid #fecaca; border-radius:16px; padding:30px; text-align:center;">
+                <div style="font-size:16px; color:#991b1b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">В красной зоне</div>
+                <div style="font-size:64px; font-weight:900; color:#dc2626; line-height:1;">${redZonePerc}%</div>
+            </td>
+        </tr>
+    </table>
 
-        <table style="width: 100%; border-spacing: 20px; margin-bottom: 40px;">
-            <tr>
-                <td style="width: 50%; background:#f8fafc; border:3px solid #cbd5e1; border-radius:16px; padding:30px; text-align:center;">
-                    <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Ср. УрК Объекта</div>
-                    <div style="font-size:64px; font-weight:900; color:#0f172a; line-height:1;">${avgUrk}%</div>
-                </td>
-                <td style="width: 50%; background:${currIKO >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border:3px solid ${currIKO >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius:16px; padding:30px; text-align:center;">
-                    <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Индекс Риска (ИКО)</div>
-                    <div style="font-size:64px; font-weight:900; color:${currIKO >= 0.6 ? '#dc2626' : '#16a34a'}; line-height:1;">${currIKO.toFixed(2)}</div>
-                </td>
-            </tr>
-            <tr>
-                <td style="width: 50%; background:#f8fafc; border:3px solid #cbd5e1; border-radius:16px; padding:30px; text-align:center;">
-                    <div style="font-size:16px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">Объем проверок</div>
-                    <div style="font-size:64px; font-weight:900; color:#0f172a; line-height:1;">${data.length}</div>
-                </td>
-                <td style="width: 50%; background:#fef2f2; border:3px solid #fecaca; border-radius:16px; padding:30px; text-align:center;">
-                    <div style="font-size:16px; color:#991b1b; text-transform:uppercase; font-weight:900; margin-bottom:10px;">В красной зоне</div>
-                    <div style="font-size:64px; font-weight:900; color:#dc2626; line-height:1;">${redZonePerc}%</div>
-                </td>
-            </tr>
-        </table>
-
-        <div style="background:#fffbeb; border:3px solid #fde68a; border-radius:16px; padding:30px;">
-            <h2 style="margin:0 0 10px 0; color:#b45309; font-size:20px; text-transform:uppercase;">КРАТКОЕ РЕЗЮМЕ ПО ОБЪЕКТУ</h2>
-            <p style="font-size:16px; color:#1e293b; line-height:1.5; margin:0;">
-                ${currIKO >= 0.6 ? 'На объекте наблюдается критический уровень риска. Значительный объем работ выполняется с нарушениями технологии или наличием дефектов категории B3. Требуется срочное вмешательство руководства и остановка работ проблемных подрядчиков.' : 
-                 (currIKO >= 0.3 ? 'Объект находится в зоне повышенного внимания. Рекомендуется усилить контроль за подрядчиками с нестабильным качеством и проработать повторяющиеся дефекты.' : 
-                                   'Процесс производства работ стабилен. Риски минимальны, критических отклонений на системном уровне не зафиксировано.')}
-            </p>
-        </div>
+    <div class="no-break" style="background:#fffbeb; border:3px solid #fde68a; border-radius:16px; padding:30px;">
+        <h2 style="margin:0 0 10px 0; color:#b45309; font-size:20px; text-transform:uppercase;">КРАТКОЕ РЕЗЮМЕ ПО ОБЪЕКТУ</h2>
+        <p style="font-size:16px; color:#1e293b; line-height:1.5; margin:0;">
+            ${currIKO >= 0.6 ? 'На объекте наблюдается критический уровень риска. Значительный объем работ выполняется с нарушениями технологии или наличием дефектов категории B3. Требуется срочное вмешательство руководства и остановка работ проблемных подрядчиков.' : 
+             (currIKO >= 0.3 ? 'Объект находится в зоне повышенного внимания. Рекомендуется усилить контроль за подрядчиками с нестабильным качеством и проработать повторяющиеся дефекты.' : 
+                               'Процесс производства работ стабилен. Риски минимальны, критических отклонений на системном уровне не зафиксировано.')}
+        </p>
     </div>
     `;
 
-    // Текст периода для шапки подрядчика
     let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
-    if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
-        const dFrom = document.getElementById('filter-date-from')?.value;
-        const dTo = document.getElementById('filter-date-to')?.value;
-        if (dFrom || dTo) {
-            const fmt = (d) => d ? new Date(d).toLocaleDateString('ru-RU') : '...';
-            periodText = `с ${fmt(dFrom)} по ${fmt(dTo)}`;
-        }
-    }
 
-    // Жесткая сетка для фото. Размеры рассчитаны так, чтобы 2 ряда по 5 фото занимали ~55% высоты.
-    const renderPhotoGridBox = (arr, title, titleColor) => {
+    const renderPhotoGridBox = (arr, title, titleColor, bgCell, borderCell) => {
         if (arr.length === 0) return '';
         const paddedArr = [...arr].slice(0, 5);
         while(paddedArr.length < 5) paddedArr.push({ empty: true });
         
         return `
-        <div style="margin-bottom: 15px;">
-            <h3 style="margin:0 0 5px 0; color:${titleColor}; font-size:12px; text-transform:uppercase;">${title}</h3>
-            <table style="width: 100%; border-spacing: 8px; table-layout: fixed; margin-left:-8px;">
+        <div class="no-break" style="margin-bottom: 2%;">
+            <h3 style="margin:0 0 5px 0; color:${titleColor}; font-size:11px; text-transform:uppercase;">${title}</h3>
+            <table style="width: 100%; border-spacing: 6px 0; border-collapse: separate; table-layout: fixed; margin-left:-6px;">
                 <tr>
                 ${paddedArr.map(p => {
-                    if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:180px;"></td>`;
-                    return `<td style="border:1px solid #cbd5e1; border-radius:8px; background:white; vertical-align:top; overflow:hidden; padding:0; height:180px;">
-                        <img src="${p.src}" style="width:100%; height:130px; object-fit:cover; display:block;">
-                        <div style="padding:6px; font-size:10px; font-weight:bold; color:#0f172a; line-height:1.1; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${p.name}</div>
+                    if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:6px; background:#f8fafc; height:120px;"></td>`;
+                    return `<td style="border:2px solid ${borderCell}; border-radius:6px; background:${bgCell}; vertical-align:top; padding:0; height:120px;">
+                        <div style="width:100%; height:90px; overflow:hidden; background-color:#f1f5f9;">
+                            <img src="${p.src}" style="width:100%; height:100%; object-fit:cover; display:block;">
+                        </div>
+                        <div style="padding:4px; font-size:8px; font-weight:bold; color:#0f172a; line-height:1.1; height:30px; overflow:hidden;">${p.name}</div>
                     </td>`;
                 }).join('')}
                 </tr>
@@ -735,8 +717,6 @@ function exportPdfFullObjectReport(data) {
         </div>`;
     };
 
-    // --- СЛЕДУЮЩИЕ СТРАНИЦЫ: ПО ПОДРЯДЧИКАМ ---
-    // --- СЛЕДУЮЩИЕ СТРАНИЦЫ: ПО ПОДРЯДЧИКАМ ---
     for(let cName in grouped) {
         const cData = grouped[cName];
         if (cData.length < 3) continue;
@@ -761,9 +741,8 @@ function exportPdfFullObjectReport(data) {
             trendHtml = `<span style="color:#94a3b8; font-size:14px; font-weight:bold;">Нет истории</span>`;
         }
 
-        // Собираем фото дефектов и эталонов (С УМНОЙ ЛОГИКОЙ ПАР)
         let photosB3 = []; let photosB2 = []; let photosOK = [];
-        let defectIds = new Set(); // Запоминаем ID пунктов с браком
+        let defectIds = new Set(); 
 
         cData.forEach(check => {
             if(check.state && check.photos && check.details) {
@@ -775,7 +754,7 @@ function exportPdfFullObjectReport(data) {
                     if (item) defName = item.n;
 
                     if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
-                        defectIds.add(id); // Запомнили, что тут есть брак
+                        defectIds.add(id); 
                         const comment = check.details[id]?.comment || '';
                         if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ id, src: check.photos[id], name: defName, comment });
                         else photosB2.push({ id, src: check.photos[id], name: defName, comment });
@@ -784,158 +763,104 @@ function exportPdfFullObjectReport(data) {
             }
         });
 
-        // Теперь ищем эталоны (OK) с приоритетом пар
         let okCandidates = [];
         cData.forEach(check => {
             if(check.state && check.photos) {
                 Object.keys(check.state).forEach(id => {
                     if (check.state[id] === 'ok' && check.photos[id]) {
-                        const isPair = defectIds.has(id); // Это фото к пункту, где был брак!
+                        const isPair = defectIds.has(id); 
                         let defName = "Дефект";
                         const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
                         const item = flatList.find(x => x.id == id);
                         if (item) defName = item.n;
-
                         okCandidates.push({ src: check.photos[id], name: defName, isPair });
                     }
                 });
             }
         });
 
-        // Сортируем: сначала те, у которых есть "пара" в браке
         okCandidates.sort((a,b) => (b.isPair ? 1 : 0) - (a.isPair ? 1 : 0));
         photosOK = okCandidates.slice(0, 5);
 
-        // Если не набралось 5 фото из проверок — добираем из TWI-карт этого вида работ!
-        if (photosOK.length < 5) {
-            const tmplKey = cData[0].templateKey;
-            const twiOkPhotos = customTwiCards.filter(c => c.checklistKey === tmplKey && c.type === 'INSPECTOR' && c.photoGood).map(c => ({
-                src: c.photoGood, name: c.title, isPair: false
-            }));
-            
-            // Доливаем из TWI, избегая дубликатов (уникальность по src)
-            twiOkPhotos.forEach(twi => {
-                if (photosOK.length < 5 && !photosOK.find(x => x.src === twi.src)) {
-                    photosOK.push(twi);
-                }
-            });
-        }
-
-        const renderPhotoGridBox = (arr, title, titleColor, bgCell, borderCell) => {
-            if (arr.length === 0) return '';
-            const paddedArr = [...arr].slice(0, 5);
-            while(paddedArr.length < 5) paddedArr.push({ empty: true });
-            
-            // Внимание: height теперь 31% (так как 3 ряда)
-            return `
-            <div style="height: 31%; display: flex; flex-direction: column; margin-bottom: 2%;">
-                <h3 style="margin:0 0 5px 0; color:${titleColor}; font-size:11px; text-transform:uppercase; flex-shrink: 0;">${title}</h3>
-                <table style="width: 100%; flex: 1; border-spacing: 6px; table-layout: fixed; margin-left:-6px;">
-                    <tr>
-                    ${paddedArr.map(p => {
-                        if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:6px; background:#f8fafc; height:100%;"></td>`;
-                        return `<td style="border:2px solid ${borderCell}; border-radius:6px; background:${bgCell}; vertical-align:top; overflow:hidden; padding:0; height:100%;">
-    <img src="${p.src}" style="width:100%; height:75%; object-fit:contain; background-color:#f1f5f9; display:block;">
-    <div style="padding:4px; font-size:8px; font-weight:bold; color:#0f172a; line-height:1.1; height:25%; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${p.name}</div>
-</td>`;
-                    }).join('')}
-                    </tr>
-                </table>
-            </div>`;
-        };
-
         let expertHtml = getExpertConclusion(m, cName, cData[0].templateTitle, cData.length, 'print', customExpertConclusions).pdfHtml;
-        if (!expertHtml.includes('⚠️ ЭКСПЕРТНОЕ ЗАКЛЮЧЕНИЕ (С КОРРЕКТИРОВКАМИ ИНЖЕНЕРА)')) {
-            expertHtml = expertHtml.replace('🔧 Рекомендации</div>', '🔧 Рекомендации</div><div style="font-size:11px; font-weight:bold; color:#b91c1c; margin-bottom:4px;">Обратить внимание на устранение дефектов, представленных на фото справа (Ориентир — зеленые эталоны).</div>');
-        }
 
         content += `
-        <div style="page-break-after: always; padding-top: 10px;">
-            
-            <!-- БЛОК 1: ШАПКА И МЕТРИКИ (Занимает верхние ~25%) -->
-            <div style="border-bottom: 2px solid #1e293b; padding-bottom: 6px; margin-bottom: 12px;">
-                <h1 style="margin:0 0 2px 0; font-size:24px; color:#0f172a; text-transform:uppercase;">${cName}</h1>
-                <div style="font-size:12px; font-weight:bold; color:#64748b; text-transform:uppercase;">Вид работ: ${cData[0].templateTitle} | Период: ${periodText}</div>
-            </div>
-
-            <table style="width: 100%; border-spacing: 10px; margin-left: -10px; margin-bottom: 15px;">
-                <tr>
-                    <td style="width: 30%; background:${bgMain}; border:2px solid ${borderMain}; border-radius:10px; padding:15px; text-align:center; vertical-align:middle; position:relative;">
-                        <div style="font-size:11px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:8px;">Ср. УрК Изделий</div>
-                        <div style="font-size:48px; font-weight:900; color:${colorMain}; line-height:1; display:flex; justify-content:center; align-items:center; gap:10px;">
-                            ${m.baseUrkContrPerc}% ${trendHtml}
-                        </div>
-                    </td>
-                    <td style="width: 70%; vertical-align:top; padding:0;">
-                        <table style="width: 100%; border-spacing: 10px; margin-top:-10px;">
-                            <tr>
-                                <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px; text-align:center;">
-                                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                                    <div style="font-size:24px; font-weight:900; color:#0f172a; margin-top:4px;">${m.finalC}%</div>
-                                </td>
-                                <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px; text-align:center;">
-                                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Проверок</div>
-                                    <div style="font-size:24px; font-weight:900; color:#0f172a; margin-top:4px;">${m.count}</div>
-                                </td>
-                                <td style="background:${m.maxFailRate >= 20 ? '#fffbeb' : '#f8fafc'}; border:1px solid ${m.maxFailRate >= 20 ? '#fde68a' : '#cbd5e1'}; border-radius:8px; padding:12px; text-align:center;">
-                                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Частота B2 (Ks)</div>
-                                    <div style="font-size:24px; font-weight:900; color:${m.maxFailRate >= 20 ? '#d97706' : '#0f172a'}; margin-top:4px;">${m.maxFailRate.toFixed(0)}%</div>
-                                </td>
-                                <td style="background:${m.n_изделий_с_B3 > 0 ? '#fef2f2' : '#f8fafc'}; border:1px solid ${m.n_изделий_с_B3 > 0 ? '#fca5a5' : '#cbd5e1'}; border-radius:8px; padding:12px; text-align:center;">
-                                    <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты (B3)</div>
-                                    <div style="font-size:24px; font-weight:900; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'}; margin-top:4px;">${m.n_изделий_с_B3} шт</div>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-
-            <!-- БЛОК 2: ЗАКЛЮЧЕНИЕ И ФОТО -->
-            <table style="width: 100%; border-spacing: 15px; margin-left:-15px;">
-                <tr>
-                    <!-- Левая колонка (Заключение ~25%) -->
-                    <td style="width: 25%; vertical-align: top; border-right: 2px dashed #e2e8f0; padding-right: 15px;">
-                        <div style="font-size: 0.9em;">
-                            ${expertHtml.replace(/font-size:\s*1[23]px/g, 'font-size: 11px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px')}
-                        </div>
-                    </td>
-
-                    <!-- Правая колонка (Фото ~75%) -->
-                     <td style="width: 80%; vertical-align: top; padding: 0;">
-                        <div style="display: flex; flex-direction: column; height: 100%; justify-content: space-between;">
-                            ${renderPhotoGridBox(photosB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fef2f2', '#fca5a5')}
-                            ${renderPhotoGridBox(photosB2, '⚠️ ТОП-5 Повторяющихся дефектов (B2)', '#d97706', '#fffbeb', '#fde68a')}
-                            ${renderPhotoGridBox(photosOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#f0fdf4', '#bbf7d0')}
-                        </div>
-                    </td>
-                </tr>
-            </table>
-
+        <div class="pdf-page-break"></div>
+        <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 6px; margin-bottom: 12px;">
+            <h1 style="margin:0 0 2px 0; font-size:24px; color:#0f172a; text-transform:uppercase;">${cName}</h1>
+            <div style="font-size:12px; font-weight:bold; color:#64748b; text-transform:uppercase;">Вид работ: ${cData[0].templateTitle} | Период: ${periodText}</div>
         </div>
+
+        <table class="no-break" style="width: 100%; border-spacing: 10px 0; border-collapse: separate; margin-left: -10px; margin-bottom: 15px; table-layout: fixed;">
+            <tr>
+                <td style="background:${bgMain}; border:2px solid ${borderMain}; border-radius:10px; padding:15px; text-align:center; vertical-align:middle;">
+                    <div style="font-size:11px; color:#64748b; text-transform:uppercase; font-weight:900; margin-bottom:8px;">Ср. УрК Изделий</div>
+                    <div style="font-size:48px; font-weight:900; color:${colorMain}; line-height:1;">${m.baseUrkContrPerc}% ${trendHtml}</div>
+                </td>
+                <td style="vertical-align:top; padding:0;">
+                    <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; margin-top:0; table-layout: fixed;">
+                        <tr>
+                            <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px; text-align:center;">
+                                <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
+                                <div style="font-size:24px; font-weight:900; color:#0f172a; margin-top:4px;">${m.finalC}%</div>
+                            </td>
+                            <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:12px; text-align:center;">
+                                <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Проверок</div>
+                                <div style="font-size:24px; font-weight:900; color:#0f172a; margin-top:4px;">${m.count}</div>
+                            </td>
+                            <td style="background:${m.maxFailRate >= 20 ? '#fffbeb' : '#f8fafc'}; border:1px solid ${m.maxFailRate >= 20 ? '#fde68a' : '#cbd5e1'}; border-radius:8px; padding:12px; text-align:center;">
+                                <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Частота B2 (Ks)</div>
+                                <div style="font-size:24px; font-weight:900; color:${m.maxFailRate >= 20 ? '#d97706' : '#0f172a'}; margin-top:4px;">${m.maxFailRate.toFixed(0)}%</div>
+                            </td>
+                            <td style="background:${m.n_изделий_с_B3 > 0 ? '#fef2f2' : '#f8fafc'}; border:1px solid ${m.n_изделий_с_B3 > 0 ? '#fca5a5' : '#cbd5e1'}; border-radius:8px; padding:12px; text-align:center;">
+                                <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты (B3)</div>
+                                <div style="font-size:24px; font-weight:900; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'}; margin-top:4px;">${m.n_изделий_с_B3} шт</div>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; margin-left:-15px; table-layout: fixed;">
+            <tr>
+                <!-- Левая колонка (Заключение ~30%) -->
+                <td style="vertical-align: top; padding-right: 15px;">
+                    <div style="font-size: 0.9em;">
+                        ${expertHtml.replace(/font-size:\s*1[23]px/g, 'font-size: 11px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px')}
+                    </div>
+                </td>
+
+                <!-- Правая колонка (Фото ~70%) -->
+                 <td style="vertical-align: top; padding: 0;">
+                    ${renderPhotoGridBox(photosB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fef2f2', '#fca5a5')}
+                    ${renderPhotoGridBox(photosB2, '⚠️ ТОП-5 Повторяющихся дефектов (B2)', '#d97706', '#fffbeb', '#fde68a')}
+                    ${renderPhotoGridBox(photosOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#f0fdf4', '#bbf7d0')}
+                </td>
+            </tr>
+        </table>
         `;
     }
 
-    printPdfShell("Еженедельный отчет по объекту", content, "A3", "landscape");
+    printPdfShell("Еженедельный отчет по объекту", content, "A3", "landscape", mode);
 }
 // ============================================================================
 // 3. ПЛАКАТ КАЧЕСТВА (Жесткая одностраничная верстка)
 // ============================================================================
-function exportPdfPoster(data) {
+// 3. ПЛАКАТ КАЧЕСТВА (Жесткая одностраничная верстка, красивые коллажи)
+// 4. Плакат Качества (A3 Альбом)
+function exportPdfPoster(data, mode = 'script') {
     let weekData = [];
     let periodStr = '';
 
     if (typeof isDemoMode !== 'undefined' && isDemoMode && contractorArray.length > 0) {
-        const sorted = [...contractorArray].sort((a,b) => new Date(b.date) - new Date(a.date));
-        weekData = sorted.slice(0, 25);
+        weekData = [...contractorArray].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 25);
         periodStr = 'Демонстрационный период';
     } else {
         const now = new Date();
         const lastWeekEnd = new Date(now);
-        const day = lastWeekEnd.getDay() || 7;
-        lastWeekEnd.setDate(lastWeekEnd.getDate() - day); 
+        lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7)); 
         lastWeekEnd.setHours(23, 59, 59, 999);
-        
         const lastWeekStart = new Date(lastWeekEnd);
         lastWeekStart.setDate(lastWeekEnd.getDate() - 6); 
         lastWeekStart.setHours(0, 0, 0, 0);
@@ -957,14 +882,13 @@ function exportPdfPoster(data) {
 
     const candidates = [];
     let globalUrkSum = 0; let globalB3Count = 0;
-    let allWeekPhotos = [];
+    let allDefectPhotos = []; let allOkPhotos = [];
 
     for (let cName in grouped) {
         const cData = grouped[cName];
         if (cData.length >= 3) {
             const m = getContractorMetrics(cData, userTemplates);
             if (m) {
-                let bestPhoto = null; let worstPhoto = null; let worstDefectName = '';
                 cData.forEach(check => {
                     globalUrkSum += check.metrics.final;
                     globalB3Count += check.metrics.n_B3_fail;
@@ -972,14 +896,10 @@ function exportPdfPoster(data) {
                         Object.keys(check.state).forEach(id => {
                             const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
                             const itemInfo = flatList.find(x => x.id == id);
+                            const defName = itemInfo ? itemInfo.n : 'Дефект';
 
-                            if(check.state[id] === 'ok' && check.photos[id]) bestPhoto = check.photos[id];
-                            
-                            if((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) {
-                                worstPhoto = check.photos[id];
-                                if(itemInfo) worstDefectName = itemInfo.n;
-                                allWeekPhotos.push({ src: check.photos[id], contr: cName, name: worstDefectName });
-                            }
+                            if(check.state[id] === 'ok' && check.photos[id]) allOkPhotos.push({ src: check.photos[id], contr: cName, name: defName });
+                            if((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) allDefectPhotos.push({ src: check.photos[id], contr: cName, name: defName });
                         });
                     }
                 });
@@ -988,21 +908,17 @@ function exportPdfPoster(data) {
                 if (!isDemoMode) {
                     const now = new Date();
                     const lastWeekEnd = new Date(now);
-                    const day = lastWeekEnd.getDay() || 7;
-                    lastWeekEnd.setDate(lastWeekEnd.getDate() - day); 
+                    lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7)); 
                     const prevStart = new Date(lastWeekEnd); prevStart.setDate(prevStart.getDate() - 13);
                     const prevEnd = new Date(lastWeekEnd); prevEnd.setDate(prevEnd.getDate() - 7);
                     const prevChecks = contractorArray.filter(i => i.contractorName === cName && new Date(i.date) >= prevStart && new Date(i.date) <= prevEnd);
-                    
                     if (prevChecks.length >= 3) {
                         const mPrev = getContractorMetrics(prevChecks, userTemplates);
                         if (mPrev) growth = m.finalC - mPrev.finalC;
                     }
-                } else {
-                    growth = Math.floor(Math.random() * 15) + 2; 
-                }
+                } else { growth = Math.floor(Math.random() * 15) + 2; }
 
-                candidates.push({ name: cName, workType: cData[0].templateTitle, metrics: m, bestPhoto, worstPhoto, worstDefectName, growth });
+                candidates.push({ name: cName, workType: cData[0].templateTitle, metrics: m, growth });
             }
         }
     }
@@ -1015,20 +931,13 @@ function exportPdfPoster(data) {
 
     candidates.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
     const leaders = candidates.filter(c => c.metrics.finalC >= 85).slice(0, 3);
-    
-    let antiLeaders = candidates.filter(c => c.metrics.n_изделий_с_B3 > 0 || c.metrics.finalC < 70);
-    antiLeaders.sort((a, b) => {
+    let antiLeaders = candidates.filter(c => c.metrics.n_изделий_с_B3 > 0 || c.metrics.finalC < 70).sort((a, b) => {
         if (b.metrics.n_изделий_с_B3 !== a.metrics.n_изделий_с_B3) return b.metrics.n_изделий_с_B3 - a.metrics.n_изделий_с_B3;
         return a.metrics.finalC - b.metrics.finalC;
-    });
-    antiLeaders = antiLeaders.slice(0, 3);
+    }).slice(0, 3);
 
     let breakthrough = null; let maxGrowth = 0;
-    candidates.forEach(c => {
-        if (c.growth > maxGrowth && c.metrics.finalC >= 70) {
-            maxGrowth = c.growth; breakthrough = c;
-        }
-    });
+    candidates.forEach(c => { if (c.growth > maxGrowth && c.metrics.finalC >= 70) { maxGrowth = c.growth; breakthrough = c; } });
 
     const renderPosterCard = (c, type) => {
         if (!c) return '';
@@ -1036,93 +945,110 @@ function exportPdfPoster(data) {
         let color = '#0f172a'; let bg = '#f8fafc'; let bd = '#cbd5e1'; let badge = '';
         
         if (isLeader) { color = '#16a34a'; bg = '#f0fdf4'; bd = '#bbf7d0'; }
-        if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:9px; font-weight:bold; display:inline-block; margin-bottom:2px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
+        if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin-bottom:4px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
         if (isBad) { color = '#dc2626'; bg = '#fef2f2'; bd = '#fecaca'; }
-
-        const photoHtml = (isLeader || isBreak) && c.bestPhoto ? `<img src="${c.bestPhoto}" style="width:100%; height:95px; object-fit:cover; border-radius:4px; margin-top:4px; border:1px solid ${bd}; display:block;">` : 
-                         (isBad && c.worstPhoto ? `<img src="${c.worstPhoto}" style="width:100%; height:95px; object-fit:cover; border-radius:4px; margin-top:4px; border:1px solid #ef4444; display:block;">` : '');
         
         return `
-        <div style="background: ${bg}; border: 2px solid ${bd}; padding: 6px 10px; border-radius: 8px; margin-bottom: 8px; page-break-inside: avoid; overflow:hidden;">
+        <div class="no-break" style="background: ${bg}; border: 2px solid ${bd}; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
             ${badge}
             <table style="width: 100%; border: none;">
                 <tr>
                     <td style="vertical-align: top;">
-                        <div style="font-size: 13px; font-weight: 900; color: #0f172a; margin-bottom:2px; line-height:1.1;">${c.name}</div>
-                        <div style="font-size: 8px; color: #64748b; text-transform: uppercase; font-weight:bold;">${c.workType}</div>
+                        <div style="font-size: 16px; font-weight: 900; color: #0f172a; margin-bottom:4px; line-height:1.2;">${c.name}</div>
+                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight:bold;">${c.workType}</div>
+                        ${isBad && c.metrics.n_изделий_с_B3 > 0 ? `<div style="margin-top:6px; font-size:10px; font-weight:bold; color:#991b1b; background:#fee2e2; padding:4px 6px; border-radius:4px; display:inline-block;">🚨 Аварий (B3): ${c.metrics.n_изделий_с_B3} шт</div>` : ''}
                     </td>
-                    <td style="text-align: right; width: 45px; vertical-align: top;">
-                        <div style="font-size: 22px; font-weight: 900; color: ${color}; line-height:1;">${c.metrics.finalC}%</div>
+                    <td style="text-align: right; width: 60px; vertical-align: top;">
+                        <div style="font-size: 32px; font-weight: 900; color: ${color}; line-height:1;">${c.metrics.finalC}%</div>
                     </td>
                 </tr>
             </table>
-            ${isBad && c.worstDefectName ? `<div style="margin-top:4px; font-size:8px; font-weight:bold; color:#991b1b; background:#fee2e2; padding:4px; border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">❌ Брак: ${c.worstDefectName}</div>` : ''}
-            ${photoHtml}
         </div>`;
     };
 
-    allWeekPhotos = allWeekPhotos.sort(() => 0.5 - Math.random()).slice(0, 6);
-    let collageHtml = '';
-    if (allWeekPhotos.length > 0) {
-        collageHtml = `
-            <div style="margin-top: 10px; border-top:2px solid #1e293b; padding-top: 10px;">
-                <h2 style="text-align:center; font-size:14px; color:#0f172a; text-transform:uppercase; margin-bottom:8px; margin-top:0;">ФОТОФИКСАЦИЯ НАРУШЕНИЙ НА ОБЪЕКТЕ</h2>
-                <table style="width: 100%; border-spacing: 6px; table-layout: fixed; margin-left:-6px; margin-top:-6px;">
+    allDefectPhotos = allDefectPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
+    allOkPhotos = allOkPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
+
+    const renderCollage = (arr, title, titleColor, borderColor, bgCell) => {
+        if (arr.length === 0) return `<div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Нет фотографий</div>`;
+        const paddedArr = [...arr];
+        while(paddedArr.length < 4) paddedArr.push({ empty: true });
+
+        return `
+            <div class="no-break" style="margin-bottom: 20px;">
+                <h3 style="text-align:center; font-size:16px; color:${titleColor}; text-transform:uppercase; margin:0 0 10px 0; font-weight:900;">${title}</h3>
+                <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left:-10px;">
                     <tr>
-                    ${allWeekPhotos.map(p => `
-                        <td style="border:1px solid #cbd5e1; border-radius:6px; background:white; overflow:hidden; padding:0; vertical-align:top;">
-                            <img src="${p.src}" style="width:100%; height:80px; object-fit:cover; display:block;">
-                            <div style="padding:4px; font-size:7px; font-weight:bold; color:#0f172a; text-align:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;">${p.contr}</div>
-                        </td>
-                    `).join('')}
+                    ${paddedArr.map(p => {
+                        if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:180px;"></td>`;
+                        return `
+                        <td style="border:2px solid ${borderColor}; border-radius:8px; background:${bgCell}; padding:0; height:180px; vertical-align:top;">
+                            <div style="width:100%; height:130px; background:#f1f5f9; text-align:center;">
+                                <img src="${p.src}" style="width:100%; height:100%; object-fit:cover; display:block;">
+                            </div>
+                            <div style="padding:6px; height:50px; border-top:1px solid ${borderColor};">
+                                <div style="font-size:9px; font-weight:900; color:#0f172a; line-height:1.2; overflow:hidden; height:22px;">${p.name}</div>
+                                <div style="font-size:8px; color:#475569; font-weight:bold; white-space:nowrap; overflow:hidden;">👤 ${p.contr}</div>
+                            </div>
+                        </td>`;
+                    }).join('')}
                     </tr>
                 </table>
             </div>
         `;
-    }
+    };
 
     const content = `
-        <div style="page-break-inside: avoid; display: block; box-sizing: border-box;">
-            
-            <div style="text-align: center; margin-bottom: 10px;">
-                <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing:1px;">БЮЛЛЕТЕНЬ КАЧЕСТВА СТРОИТЕЛЬСТВА</h1>
-                <div style="font-size: 12px; color: #4f46e5; font-weight: 900; margin-top: 2px; text-transform:uppercase;">Итоги: ${periodStr}</div>
-            </div>
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing:1px;">БЮЛЛЕТЕНЬ КАЧЕСТВА СТРОИТЕЛЬСТВА</h1>
+            <div style="font-size: 16px; color: #4f46e5; font-weight: 900; margin-top: 4px; text-transform:uppercase;">Итоги: ${periodStr}</div>
+        </div>
 
-            <table style="width: 100%; border-spacing: 10px; margin-left: -10px; table-layout: fixed;">
+        <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 10px;">
+            <tr>
+                <td style="vertical-align: top; width:33.3%;">
+                    <h2 style="background: #16a34a; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">🏆 Лидеры (УрК > 85%)</h2>
+                    ${leaders.length > 0 ? leaders.map(c => renderPosterCard(c, 'leader')).join('') : '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">В зеленой зоне никого нет</div>'}
+                </td>
+                <td style="vertical-align: top; width:33.3%;">
+                    <h2 style="background: #4f46e5; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">🚀 Прорыв недели</h2>
+                    ${breakthrough ? renderPosterCard(breakthrough, 'break') : '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Значительного прогресса нет</div>'}
+                    
+                    <div style="margin-top: 20px; background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: center;">
+                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                        <div style="font-size: 48px; font-weight: 900; color: #0f172a; margin-top:5px;">${avgObjectUrk}%</div>
+                    </div>
+                    <div style="margin-top: 15px; background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius: 8px; padding: 15px; text-align: center;">
+                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс риска (ИКО)</div>
+                        <div style="font-size: 48px; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'}; margin-top:5px;">${IKO}</div>
+                    </div>
+                </td>
+                <td style="vertical-align: top; width:33.3%;">
+                    <h2 style="background: #ef4444; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">⚠️ Зона внимания</h2>
+                    ${antiLeaders.length > 0 ? antiLeaders.map(c => renderPosterCard(c, 'bad')).join('') : '<div style="text-align:center; padding:20px; color:#16a34a; font-size:12px; font-weight:bold; border:1px dashed #bbf7d0; border-radius:8px; background:#f0fdf4;">Отличная работа! Отстающих нет!</div>'}
+                </td>
+            </tr>
+        </table>
+
+        <div style="border-top: 3px solid #1e293b; padding-top: 20px; margin-top: 10px;">
+            <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left:-20px;">
                 <tr>
-                    <td style="vertical-align: top; width:33.3%;">
-                        <h2 style="background: #16a34a; color: white; padding: 6px; border-radius: 6px; text-align: center; text-transform: uppercase; font-size:11px; margin-top:0; margin-bottom:8px;">🏆 Лидеры (УрК > 85%)</h2>
-                        ${leaders.length > 0 ? leaders.map(c => renderPosterCard(c, 'leader')).join('') : '<div style="text-align:center; padding:15px; color:#64748b; font-size:11px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:6px;">В зеленой зоне никого нет</div>'}
+                    <td style="vertical-align:top; width:50%;">
+                        ${renderCollage(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4')}
                     </td>
-                    <td style="vertical-align: top; width:33.3%;">
-                        <h2 style="background: #4f46e5; color: white; padding: 6px; border-radius: 6px; text-align: center; text-transform: uppercase; font-size:11px; margin-top:0; margin-bottom:8px;">🚀 Прорыв недели</h2>
-                        ${breakthrough ? renderPosterCard(breakthrough, 'break') : '<div style="text-align:center; padding:15px; color:#64748b; font-size:11px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:6px;">Значительного прогресса нет</div>'}
-                        
-                        <div style="margin-top: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; text-align: center;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                            <div style="font-size: 32px; font-weight: 900; color: #0f172a;">${avgObjectUrk}%</div>
-                        </div>
-                        <div style="margin-top: 10px; background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border: 1px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius: 6px; padding: 10px; text-align: center;">
-                            <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс риска (ИКО)</div>
-                            <div style="font-size: 32px; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'};">${IKO}</div>
-                        </div>
-                    </td>
-                    <td style="vertical-align: top; width:33.3%;">
-                        <h2 style="background: #ef4444; color: white; padding: 6px; border-radius: 6px; text-align: center; text-transform: uppercase; font-size:11px; margin-top:0; margin-bottom:8px;">⚠️ Зона внимания</h2>
-                        ${antiLeaders.length > 0 ? antiLeaders.map(c => renderPosterCard(c, 'bad')).join('') : '<div style="text-align:center; padding:15px; color:#16a34a; font-size:11px; font-weight:bold; border:1px dashed #bbf7d0; border-radius:6px; background:#f0fdf4;">Отличная работа! Отстающих нет!</div>'}
+                    <td style="vertical-align:top; width:50%;">
+                        ${renderCollage(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2')}
                     </td>
                 </tr>
             </table>
-
-            ${collageHtml}
         </div>
     `;
 
-    printPdfShell("Плакат Качества", content, "A3", "landscape");
+    printPdfShell("Плакат Качества", content, "A3", "landscape", mode);
 }
+
 // 7. Выгрузка сырой базы (Data)
-function exportPdfData(data) {
+function exportPdfData(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
     const sortedData = [...data].sort((a,b) => new Date(b.date) - new Date(a.date));
     
@@ -1132,40 +1058,51 @@ function exportPdfData(data) {
         const color = m ? (m.final < 70 ? '#dc2626' : (m.final < 85 ? '#f59e0b' : '#16a34a')) : '#475569';
         
         return `
-        <tr class="avoid-break">
-            <td style="text-align:center;">${i + 1}</td>
-            <td>${d}</td>
-            <td><b>${r.contractorName}</b></td>
-            <td>${r.location}</td>
-            <td>${r.stageName}</td>
-            <td>${r.inspectorName || '-'}</td>
-            <td style="text-align:center; font-weight:bold; color: ${color};">${m ? m.final + '%' : '-'}</td>
-            <td style="text-align:center;">B1:${m.n_B1_fail} | B2:${m.n_B2_fail} | B3:${m.n_B3_fail}</td>
+        <tr class="avoid-break" style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center;">${i + 1}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px;">${d}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px;"><b>${r.contractorName}</b></td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px;">${r.location}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px;">${r.stageName}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px;">${r.inspectorName || '-'}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center; font-weight:bold; color: ${color};">${m ? m.final + '%' : '-'}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center;">B1:${m.n_B1_fail} | B2:${m.n_B2_fail} | B3:${m.n_B3_fail}</td>
         </tr>`;
     }).join('');
 
     const content = `
-        <h2 class="section-title">Сырые данные (База проверок)</h2>
-        <div style="margin-bottom: 10px; font-size: 12px; color: #64748b;">Выгружено проверок: <b>${data.length} шт.</b></div>
-        <table class="data-table">
+        <div class="no-break">
+            <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 5px 0; text-transform: uppercase;">Сырые данные (База проверок)</h2>
+            <div style="margin-bottom: 15px; font-size: 12px; color: #64748b;">Выгружено проверок: <b>${data.length} шт.</b></div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px; color: #1e293b;">
             <thead>
-                <tr><th>#</th><th>Дата</th><th>Подрядчик</th><th>Локация</th><th>Этап</th><th>Инспектор</th><th>УрК</th><th>Дефекты</th></tr>
+                <tr style="background-color: #e2e8f0; font-weight: bold; text-transform: uppercase;">
+                    <th style="border: 1px solid #94a3b8; padding: 8px;">#</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Дата</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Подрядчик</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Локация</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Этап</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Инспектор</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px;">УрК</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px;">Дефекты</th>
+                </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
         </table>
     `;
-    printPdfShell("База проверок", content, "A4");
+    printPdfShell("База проверок", content, "A4", "portrait", mode);
 }
 
 
-// 9. Универсальная печатная оболочка (A3/A4)
-// 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
-// 9. Универсальная печатная оболочка (Генерация PDF без участия Safari)
-function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait') {
+// 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
+// 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
+function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
+    
     if (loader && loaderText) {
-        loaderText.innerText = "Рендеринг PDF...";
+        loaderText.innerText = mode === 'script' ? "Формируем PDF. Пожалуйста, подождите..." : "Подготовка к печати...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
@@ -1173,103 +1110,195 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
-    // scale 2 вместо 4 — ключевое исправление
-    // при scale 4 и ширине 1500px холст = 6000px, jsPDF обрезает
-    let scale = 4;
-    let widthPx = '720px';   // 794 - 75
-if (formatSize === 'A3' && orientation === 'landscape') widthPx = '1474px'; // 1587 - 113 (20мм при 150dpi scale2)
-if (formatSize === 'A4' && orientation === 'landscape') widthPx = '1048px'; // 1123 - 75
-    const htmlString = `
-        <div style="width: ${widthPx}; background: white; color: black; 
-                    font-family: Arial, sans-serif; box-sizing: border-box; 
-                    padding: 0; margin: 0;">
-            <div style="border-bottom: 3px solid #1e293b; padding-bottom: 15px; 
-                        margin-bottom: 25px; display: flex; 
-                        justify-content: space-between; align-items: flex-end;">
-                <div>
-                    <h1 style="font-size: 24px; font-weight: 900; 
-                               text-transform: uppercase; margin: 0; color: #0f172a;">
-                        ${title}
-                    </h1>
-                    <div style="font-size: 14px; margin-top: 4px; 
-                                font-weight: bold; color: #475569;">
-                        Объект: ${projName} | Инспектор: ${inspName}
-                    </div>
-                </div>
-                <div style="font-size: 12px; color: #64748b; 
-                            text-align: right; font-weight: bold;">
-                    Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality
-                </div>
-            </div>
-            ${content}
+    // ОТСТУПЫ В ММ — ДОЛЖНЫ СОВПАДАТЬ С MARGIN В OPT
+    const MARGIN_MM = 10;
+    const MM_TO_PX = 3.7795; // 1мм = 3.7795px при 96dpi
+
+    // Точная ширина листа в пикселях МИНУС отступы (margin) с обеих сторон
+    const pageWidths = {
+        'A4_portrait':  Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~718px
+        'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1047px
+        'A3_portrait':  Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1047px
+        'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1511px
+    };
+    const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
+
+    const header = `
+        <div class="no-break" style="border-bottom:3px solid #1e293b; padding-bottom:15px; margin-bottom:25px;">
+            <table style="width: 100%; border: none; border-spacing: 0;">
+                <tr>
+                    <td style="vertical-align: bottom;">
+                        <h1 style="font-size:24px; font-weight:900; text-transform:uppercase; margin:0; color:#0f172a;">${title}</h1>
+                        <div style="font-size:14px; margin-top:4px; font-weight:bold; color:#475569;">
+                            Объект: ${projName} | Инспектор: ${inspName}
+                        </div>
+                    </td>
+                    <td style="vertical-align: bottom; text-align: right;">
+                        <div style="font-size:12px; color:#64748b; font-weight:bold;">
+                            Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality
+                        </div>
+                    </td>
+                </tr>
+            </table>
         </div>
     `;
 
-    const opt = {
-        margin: 10,
-        filename: `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-        image: { type: 'jpeg', quality: 0.92 },
-        html2canvas: {
-            scale: scale,
-            useCORS: true,
-            letterRendering: true,
-            scrollX: 0,
-            scrollY: 0,
-            windowWidth: parseInt(widthPx) + 20, // чуть шире чем контент
-            onclone: (clonedDoc) => {
-                // ждём загрузки всех изображений внутри клона (твои base64 фото)
-                const images = clonedDoc.querySelectorAll('img');
-                const promises = Array.from(images).map(img => {
-                    if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-                    return new Promise((resolve) => {
-                        img.onload = resolve;
-                        img.onerror = resolve; // не блокируем если фото сломано
-                        // страховочный таймаут на одно фото
-                        setTimeout(resolve, 3000);
-                    });
-                });
-                // ждём шрифты
-                const fontPromise = clonedDoc.fonts 
-                    ? clonedDoc.fonts.ready 
-                    : Promise.resolve();
-                return Promise.all([fontPromise, ...promises]);
-            }
-        },
-        jsPDF: {
-            unit: 'mm',
-            format: formatSize.toLowerCase(),
-            orientation: orientation,
-            compress: true
-        },
-        pagebreak: {
-            // не резать карточки подрядчиков и блоки фото посередине
-            avoid: ['.page-break-avoid', 'table', 'tr'],
-            mode: ['css', 'legacy']
+    // 1. РЕЖИМ БРАУЗЕРА (СИСТЕМНАЯ ПЕЧАТЬ)
+    if (mode === 'browser') {
+        const printContainer = document.getElementById('native-print-container');
+        if (printContainer) {
+            const browserWidths = {
+                'A4_portrait':  '190mm', 'A4_landscape': '277mm',
+                'A3_portrait':  '277mm', 'A3_landscape': '400mm',
+            };
+            const bodyWidth = browserWidths[`${formatSize}_${orientation}`] || '190mm';
+
+            printContainer.innerHTML = `
+                <style>
+                    @page { size: ${formatSize} ${orientation}; margin: ${MARGIN_MM}mm; }
+                    #print-body { width: ${bodyWidth}; margin: 0 auto; font-family: Arial, sans-serif; color: black; background: white; box-sizing: border-box; }
+                    #print-body * { box-sizing: border-box !important; }
+                    #print-body img { max-width: 100%; display: block; }
+                    #print-body table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+                    .pdf-page-break { page-break-before: always; break-before: page; display: block; height: 0; width: 100%; }
+                    .no-break, tr, td, img { page-break-inside: avoid; break-inside: avoid; }
+                    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                </style>
+                <div id="print-body">
+                    ${header}
+                    ${content}
+                </div>
+            `;
+            
+            const images = printContainer.querySelectorAll('img');
+            const imgPromises = Array.from(images).map(img => {
+                if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+                return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 3000); });
+            });
+
+            Promise.all(imgPromises).then(() => {
+                setTimeout(() => {
+                    window.print();
+                    setTimeout(() => {
+                        printContainer.innerHTML = '';
+                        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
+                    }, 1000);
+                }, 500);
+            });
         }
+        return;
+    }
+
+    // 2. РЕЖИМ СКРИПТА (html2pdf ЧЕРЕЗ IFRAME)
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = `position: fixed; top: -10000px; left: -10000px; width: ${widthPx + 50}px; height: 100vh; border: none; background: white;`;
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    
+    // ВАЖНО: text-align: left; margin: 0; и padding: 20px;
+    // Padding в 20px работает как "бампер". Если внутри отчета таблица смещена влево на -15px, 
+    // она просто зайдет в этот бампер, но не пересечет координату X=0, и не обрежется.
+    doc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { margin: 0; padding: 0; text-align: left; background: white; -webkit-print-color-adjust: exact; font-family: Arial, sans-serif; color: black; }
+                * { box-sizing: border-box !important; }
+                #pdf-wrapper { width: ${widthPx}px !important; margin: 0 !important; padding: 20px !important; background: white; position: relative; top: 0; left: 0; overflow: hidden; }
+                img { max-width: 100%; display: block; }
+                table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+                .pdf-page-break { page-break-before: always !important; break-before: page !important; display: block; width: 100%; height: 1px; clear: both; }
+                .no-break { page-break-inside: avoid !important; break-inside: avoid !important; }
+                tr, td, img { page-break-inside: avoid !important; break-inside: avoid !important; }
+            </style>
+        </head>
+        <body>
+            <div id="pdf-wrapper">
+                ${header}
+                ${content}
+            </div>
+        </body>
+        </html>
+    `);
+    doc.close();
+
+    const cleanup = () => {
+        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
+        if (document.body.contains(iframe)) document.body.removeChild(iframe);
     };
 
-    // Даём браузеру время отрисовать лоадер, потом стартуем
-    setTimeout(() => {
-        html2pdf()
-            .set(opt)
-            .from(htmlString)
-            .save()
-            .then(() => {
-                if (loader) {
-                    loader.classList.add('opacity-0');
-                    setTimeout(() => loader.style.display = 'none', 300);
-                }
-                showToast("PDF успешно скачан!");
-            })
-            .catch(err => {
-                console.error('[PDF]', err);
-                if (loader) {
-                    loader.classList.add('opacity-0');
-                    setTimeout(() => loader.style.display = 'none', 300);
-                }
-                showToast("Ошибка при генерации PDF");
+    iframe.onload = () => {
+        if (loaderText) loaderText.innerText = "Подготовка контента...";
+
+        const images = doc.querySelectorAll('img');
+        const imagePromises = Array.from(images).map(img => {
+            if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+            return new Promise(resolve => {
+                img.onload  = resolve;
+                img.onerror = resolve;
+                setTimeout(resolve, 5000);
             });
-    }, 400); // 400мс — достаточно для лоадера и первичного рендера
+        });
+
+        const fontPromise = doc.fonts ? doc.fonts.ready : Promise.resolve();
+
+        // Дожидаемся загрузки шрифтов и картинок
+        Promise.all([fontPromise, ...imagePromises]).then(() => {
+            if (loaderText) loaderText.innerText = "Сохраняем файл...";
+
+            // Железобетонная пауза в 1 секунду для идеального применения CSS
+            setTimeout(() => {
+                const wrapper = doc.getElementById('pdf-wrapper');
+
+                const opt = {
+                    margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
+                    filename: `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
+                    image: { type: 'jpeg', quality: 1.0 },
+                    html2canvas: {
+                        scale: 2,               // ИДЕАЛЬНАЯ ЧЕТКОСТЬ (КАК ПРОСИЛ)
+                        useCORS: true,
+                        letterRendering: true,
+                        x: 0,                   // ПРИНУДИТЕЛЬНО ФОТКАЕМ С КООРДИНАТЫ X=0 (СПАСАЕТ ОТ ОБРЕЗКИ СЛЕВА)
+                        y: 0,                   // ПРИНУДИТЕЛЬНО ФОТКАЕМ С КООРДИНАТЫ Y=0
+                        scrollX: 0,
+                        scrollY: 0,
+                        width: widthPx,         // Ширина захвата
+                        windowWidth: widthPx    // Ширина виртуального окна
+                    },
+                    jsPDF: {
+                        unit: 'mm',
+                        format: formatSize.toLowerCase(),
+                        orientation: orientation,
+                        compress: true
+                    },
+                    pagebreak: {
+                        mode: ['css', 'legacy'],
+                        before: '.pdf-page-break',
+                        avoid: ['.no-break', 'tr', 'td', 'img', '.avoid-break']
+                    }
+                };
+
+                html2pdf()
+                    .set(opt)
+                    .from(wrapper)
+                    .save()
+                    .then(() => {
+                        cleanup();
+                        showToast("✅ PDF успешно сохранен!");
+                    })
+                    .catch(err => {
+                        console.error('[PDF]', err);
+                        cleanup();
+                        showToast("❌ Ошибка при генерации PDF.");
+                    });
+
+            }, 1200); // Ожидание 1200мс (Увеличил чуть-чуть для страховки)
+        });
+    };
 }
 
 // 10. Выгрузка в Excel (Сырая база и Тендер)
@@ -1449,7 +1478,7 @@ function exportTenderPDF() {
                 </div>
             </div>
 
-            <div style="background: ${m.finalC < 70 || m.rateB3 >= 20 ? '#fef2f2' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fffbeb' : '#f0fdf4')}; border: 2px solid ${m.finalC < 70 || m.rateB3 >= 20 ? '#fca5a5' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fde68a' : '#bbf7d0')}; border-radius: 8px; padding: 20px; page-break-inside: avoid;">
+            <div class="no-break" style="background: ${m.finalC < 70 || m.rateB3 >= 20 ? '#fef2f2' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fffbeb' : '#f0fdf4')}; border: 2px solid ${m.finalC < 70 || m.rateB3 >= 20 ? '#fca5a5' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#fde68a' : '#bbf7d0')}; border-radius: 8px; padding: 20px;">
                 <h3 style="margin: 0 0 10px 0; font-size: 14px; color: ${m.finalC < 70 || m.rateB3 >= 20 ? '#991b1b' : (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60 ? '#b45309' : '#166534')}; text-transform: uppercase;">ЗАКЛЮЧЕНИЕ: ${d.rec}</h3>
                 <p style="font-size: 14px; color: #1e293b; line-height: 1.5; margin: 0; font-weight: bold;">
                     ${d.recDesc}

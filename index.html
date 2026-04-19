@@ -3265,61 +3265,33 @@
             </div>
         </div>
     </div>
-    <!-- === FAB МЕНЮ ЭКСПОРТА (НОВОЕ) === -->
+    <!-- === ДИНАМИЧЕСКОЕ МЕНЮ ЭКСПОРТА (БЕЗ ЭМОДЗИ, 2 РЕЖИМА) === -->
     <div id="fab-export-menu-overlay"
         class="fixed inset-0 bg-slate-900/60 z-[9000] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
         onclick="closeFabExportMenu()">
-        <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[80px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden"
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[80px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col max-h-[80vh]"
             id="fab-export-menu-content" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)]">
-                <h3
-                    class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            
+            <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0">
+                <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
-                    Меню выгрузки
+                    Выгрузка и Печать
                 </h3>
             </div>
-            <div class="p-2">
-                <button onclick="handleFabExportAction('current')"
-                    class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95 text-left">
-                    <div
-                        class="w-10 h-10 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-xl flex items-center justify-center shrink-0">
-                        📄</div>
-                    <div>
-                        <div class="font-bold text-[12px] text-slate-800 dark:text-white">Скачать текущий экран</div>
-                        <div class="text-[9px] text-slate-500 uppercase mt-0.5">В формате PDF (А4/А3)</div>
-                    </div>
-                </button>
-                <button onclick="handleFabExportAction('full_report')"
-                    class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95 text-left">
-                    <div
-                        class="w-10 h-10 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-xl flex items-center justify-center shrink-0">
-                        📊</div>
-                    <div>
-                        <div class="font-bold text-[12px] text-slate-800 dark:text-white">Полный отчёт по объекту</div>
-                        <div class="text-[9px] text-slate-500 uppercase mt-0.5">Паспорта всех активных подрядчиков</div>
-                    </div>
-                </button>
-                <button onclick="handleFabExportAction('poster')"
-                    class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors active:scale-95 text-left">
-                    <div
-                        class="w-10 h-10 bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-xl flex items-center justify-center shrink-0">
-                        🏆</div>
-                    <div>
-                        <div class="font-bold text-[12px] text-slate-800 dark:text-white">Плакат качества (А3/А1)</div>
-                        <div class="text-[9px] text-slate-500 uppercase mt-0.5">Лидеры, аутсайдеры и коллаж B3</div>
-                    </div>
-                </button>
+            
+            <div id="fab-menu-dynamic-list" class="p-2 space-y-1 overflow-y-auto custom-scrollbar flex-1">
+                <!-- Сюда JS вставит нужные кнопки -->
             </div>
-            <div class="p-3 border-t border-slate-100 dark:border-slate-800">
-                <button onclick="closeFabExportMenu()"
-                    class="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase tracking-widest active:scale-95 transition-transform">Отмена</button>
+            
+            <div class="p-3 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <button onclick="closeFabExportMenu()" class="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase tracking-widest active:scale-95 transition-transform">Отмена</button>
             </div>
         </div>
     </div>
+    
+    <!-- СКРЫТЫЙ КОНТЕЙНЕР ДЛЯ ПЕЧАТИ ЧЕРЕЗ БРАУЗЕР -->
+    <div id="native-print-container" style="display: none;"></div>
 </body>
-
 </html>
