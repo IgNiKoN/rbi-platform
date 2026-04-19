@@ -1097,7 +1097,10 @@ function exportPdfData(data, mode = 'script') {
 
 // 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
 // 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
-function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
+async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
+    // ------------------------------------------------------------------
+    // 1. Элементы загрузчика
+    // ------------------------------------------------------------------
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
     
@@ -1107,30 +1110,34 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
+    // ------------------------------------------------------------------
+    // 2. Данные проекта и настройки качества
+    // ------------------------------------------------------------------
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
-    // ОТСТУПЫ В ММ — ДОЛЖНЫ СОВПАДАТЬ С MARGIN В OPT
     const MARGIN_MM = 10;
-    const MM_TO_PX = 3.7795; // 1мм = 3.7795px при 96dpi
+    const MM_TO_PX = 3.7795;
 
-    // Точная ширина листа в пикселях МИНУС отступы (margin) с обеих сторон
     const pageWidths = {
-        'A4_portrait':  Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~718px
-        'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1047px
-        'A3_portrait':  Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1047px
-        'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX), // ~1511px
+        'A4_portrait':  Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A3_portrait':  Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
     };
     const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
+
+    // ⭐ ВЫСОКОЕ КАЧЕСТВО: scale 2.5 (можно поставить 2 или 3)
+    const HIGH_QUALITY_SCALE = 2.5;
 
     const header = `
         <div class="no-break" style="border-bottom:3px solid #1e293b; padding-bottom:15px; margin-bottom:25px;">
             <table style="width: 100%; border: none; border-spacing: 0;">
                 <tr>
                     <td style="vertical-align: bottom;">
-                        <h1 style="font-size:24px; font-weight:900; text-transform:uppercase; margin:0; color:#0f172a;">${title}</h1>
+                        <h1 style="font-size:24px; font-weight:900; text-transform:uppercase; margin:0; color:#0f172a;">${escapeHtml(title)}</h1>
                         <div style="font-size:14px; margin-top:4px; font-weight:bold; color:#475569;">
-                            Объект: ${projName} | Инспектор: ${inspName}
+                            Объект: ${escapeHtml(projName)} | Инспектор: ${escapeHtml(inspName)}
                         </div>
                     </td>
                     <td style="vertical-align: bottom; text-align: right;">
@@ -1143,7 +1150,9 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
         </div>
     `;
 
-    // 1. РЕЖИМ БРАУЗЕРА (СИСТЕМНАЯ ПЕЧАТЬ)
+    // ------------------------------------------------------------------
+    // 3. Режим системной печати (browser) – для случаев, когда скрипт не нужен
+    // ------------------------------------------------------------------
     if (mode === 'browser') {
         const printContainer = document.getElementById('native-print-container');
         if (printContainer) {
@@ -1176,129 +1185,170 @@ function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrai
                 return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 3000); });
             });
 
-            Promise.all(imgPromises).then(() => {
+            await Promise.all(imgPromises);
+            setTimeout(() => {
+                window.print();
                 setTimeout(() => {
-                    window.print();
-                    setTimeout(() => {
-                        printContainer.innerHTML = '';
-                        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
-                    }, 1000);
-                }, 500);
-            });
+                    printContainer.innerHTML = '';
+                    if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
+                }, 1000);
+            }, 500);
         }
         return;
     }
 
-    // 2. РЕЖИМ СКРИПТА (html2pdf ЧЕРЕЗ IFRAME)
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = `position: fixed; top: -10000px; left: -10000px; width: ${widthPx + 50}px; height: 100vh; border: none; background: white;`;
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
+    // ------------------------------------------------------------------
+    // 4. Режим скрипта (html2pdf) – СКРЫТЫЙ DIV, БЕЗ IFRAME
+    // ------------------------------------------------------------------
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     
-    // ВАЖНО: text-align: left; margin: 0; и padding: 20px;
-    // Padding в 20px работает как "бампер". Если внутри отчета таблица смещена влево на -15px, 
-    // она просто зайдет в этот бампер, но не пересечет координату X=0, и не обрежется.
-    doc.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body { margin: 0; padding: 0; text-align: left; background: white; -webkit-print-color-adjust: exact; font-family: Arial, sans-serif; color: black; }
-                * { box-sizing: border-box !important; }
-                #pdf-wrapper { width: ${widthPx}px !important; margin: 0 !important; padding: 20px !important; background: white; position: relative; top: 0; left: 0; overflow: hidden; }
-                img { max-width: 100%; display: block; }
-                table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-                .pdf-page-break { page-break-before: always !important; break-before: page !important; display: block; width: 100%; height: 1px; clear: both; }
-                .no-break { page-break-inside: avoid !important; break-inside: avoid !important; }
-                tr, td, img { page-break-inside: avoid !important; break-inside: avoid !important; }
-            </style>
-        </head>
-        <body>
-            <div id="pdf-wrapper">
-                ${header}
-                ${content}
-            </div>
-        </body>
-        </html>
-    `);
-    doc.close();
+    // Создаём скрытый div
+    const hiddenDiv = document.createElement('div');
+    hiddenDiv.style.cssText = `
+        position: fixed;
+        left: -10000px;
+        top: -10000px;
+        width: ${widthPx + 100}px;
+        background: white;
+        z-index: -1;
+        display: block;
+        visibility: visible;
+        opacity: 1;
+    `;
+    document.body.appendChild(hiddenDiv);
+
+    // Стили изоляции (без all: initial)
+    const styleElem = document.createElement('style');
+    styleElem.textContent = `
+        #pdf-print-root {
+            width: ${widthPx}px !important;
+            margin: 0 auto !important;
+            padding: 20px !important;
+            background: white !important;
+            font-family: Arial, sans-serif !important;
+            color: black !important;
+            box-sizing: border-box !important;
+        }
+        #pdf-print-root * {
+            box-sizing: border-box !important;
+        }
+        #pdf-print-root img {
+            max-width: 100% !important;
+            display: block !important;
+        }
+        #pdf-print-root table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+        }
+        #pdf-print-root .pdf-page-break {
+            page-break-before: always !important;
+            break-before: page !important;
+            display: block !important;
+            height: 1px;
+            clear: both;
+        }
+        #pdf-print-root .no-break {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+        #pdf-print-root tr, #pdf-print-root td, #pdf-print-root img {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+    `;
+    hiddenDiv.appendChild(styleElem);
+
+    const rootDiv = document.createElement('div');
+    rootDiv.id = 'pdf-print-root';
+    rootDiv.innerHTML = header + content;
+    hiddenDiv.appendChild(rootDiv);
 
     const cleanup = () => {
-        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        if (loader) {
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.style.display = 'none', 300);
+        }
+        if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
 
-    iframe.onload = () => {
-        if (loaderText) loaderText.innerText = "Подготовка контента...";
-
-        const images = doc.querySelectorAll('img');
-        const imagePromises = Array.from(images).map(img => {
-            if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-            return new Promise(resolve => {
-                img.onload  = resolve;
-                img.onerror = resolve;
-                setTimeout(resolve, 5000);
-            });
+    // Дожидаемся изображений
+    const images = hiddenDiv.querySelectorAll('img');
+    const imagePromises = Array.from(images).map(img => {
+        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+        return new Promise((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(() => resolve(), 5000);
         });
+    });
 
-        const fontPromise = doc.fonts ? doc.fonts.ready : Promise.resolve();
+    const fontPromise = document.fonts ? document.fonts.ready : Promise.resolve();
+    
+    if (loaderText) loaderText.innerText = "Загрузка изображений...";
+    await Promise.all([fontPromise, ...imagePromises]);
+    
+    if (loaderText) loaderText.innerText = "Создание PDF (высокое качество)...";
+    
+    // Небольшая задержка для полного рендеринга (на iOS чуть дольше)
+    await new Promise(resolve => setTimeout(resolve, isIOS ? 500 : 200));
 
-        // Дожидаемся загрузки шрифтов и картинок
-        Promise.all([fontPromise, ...imagePromises]).then(() => {
-            if (loaderText) loaderText.innerText = "Сохраняем файл...";
-
-            // Железобетонная пауза в 1 секунду для идеального применения CSS
-            setTimeout(() => {
-                const wrapper = doc.getElementById('pdf-wrapper');
-
-                const opt = {
-                    margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
-                    filename: `${title.replace(/\W/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-                    image: { type: 'jpeg', quality: 1.0 },
-                    html2canvas: {
-                        scale: 2,               // ИДЕАЛЬНАЯ ЧЕТКОСТЬ (КАК ПРОСИЛ)
-                        useCORS: true,
-                        letterRendering: true,
-                        x: 0,                   // ПРИНУДИТЕЛЬНО ФОТКАЕМ С КООРДИНАТЫ X=0 (СПАСАЕТ ОТ ОБРЕЗКИ СЛЕВА)
-                        y: 0,                   // ПРИНУДИТЕЛЬНО ФОТКАЕМ С КООРДИНАТЫ Y=0
-                        scrollX: 0,
-                        scrollY: 0,
-                        width: widthPx,         // Ширина захвата
-                        windowWidth: widthPx    // Ширина виртуального окна
-                    },
-                    jsPDF: {
-                        unit: 'mm',
-                        format: formatSize.toLowerCase(),
-                        orientation: orientation,
-                        compress: true
-                    },
-                    pagebreak: {
-                        mode: ['css', 'legacy'],
-                        before: '.pdf-page-break',
-                        avoid: ['.no-break', 'tr', 'td', 'img', '.avoid-break']
-                    }
-                };
-
-                html2pdf()
-                    .set(opt)
-                    .from(wrapper)
-                    .save()
-                    .then(() => {
-                        cleanup();
-                        showToast("✅ PDF успешно сохранен!");
-                    })
-                    .catch(err => {
-                        console.error('[PDF]', err);
-                        cleanup();
-                        showToast("❌ Ошибка при генерации PDF.");
-                    });
-
-            }, 1200); // Ожидание 1200мс (Увеличил чуть-чуть для страховки)
-        });
+    // ------------------------------------------------------------------
+    // 5. Настройки html2pdf с ВЫСОКИМ scale
+    // ------------------------------------------------------------------
+    const opt = {
+        margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
+        filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
+        image: { type: 'jpeg', quality: 1.0 },   // максимальное качество
+        html2canvas: {
+            scale: HIGH_QUALITY_SCALE,   // 2.5 (или 2, или 3)
+            useCORS: !isIOS,             // на iOS отключаем CORS для скорости
+            letterRendering: true,
+            x: 0,
+            y: 0,
+            scrollX: 0,
+            scrollY: 0,
+            width: widthPx,
+            windowWidth: widthPx,
+            logging: false,
+            allowTaint: isIOS ? true : false,
+            backgroundColor: '#ffffff'
+        },
+        jsPDF: {
+            unit: 'mm',
+            format: formatSize.toLowerCase(),
+            orientation: orientation,
+            compress: true
+        },
+        pagebreak: {
+            mode: ['css', 'legacy'],
+            before: '.pdf-page-break',
+            avoid: ['.no-break', 'tr', 'td', 'img', '.avoid-break']
+        }
     };
+
+    try {
+        await html2pdf().set(opt).from(rootDiv).save();
+        cleanup();
+        if (typeof showToast === 'function') showToast("✅ PDF высокого качества сохранён!");
+    } catch (err) {
+        console.error('[PDF Error]', err);
+        cleanup();
+        if (typeof showToast === 'function') showToast("❌ Ошибка при генерации PDF. Попробуйте режим печати.");
+    }
+}
+
+// ------------------------------------------------------------------
+// Экранирование HTML (безопасность)
+// ------------------------------------------------------------------
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
 }
 
 // 10. Выгрузка в Excel (Сырая база и Тендер)
