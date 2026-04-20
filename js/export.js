@@ -1159,7 +1159,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
 
     // ⭐ ВЫСОКОЕ КАЧЕСТВО: scale 2.5 (можно поставить 2 или 3)
-    const HIGH_QUALITY_SCALE = 3;
+    const HIGH_QUALITY_SCALE = 2.5;
 
     const header = `
         <div class="no-break" style="border-bottom:3px solid #1e293b; padding-bottom:15px; margin-bottom:25px;">
