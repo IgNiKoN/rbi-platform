@@ -247,25 +247,25 @@ function renderContractorsSubTab(data) {
 
     if (newMagicCandidates.length > 0) {
         magicTwiHtml = `
-            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-md mb-4 text-white overflow-hidden relative magic-collapsed" style="transition: padding 0.3s ease;">
-                <div onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="cursor-pointer p-4 pb-3">
-                    <button class="absolute top-3 right-3 text-white/50 hover:text-white/100 transition-colors pointer-events-none">
-                        <svg class="w-5 h-5 magic-arrow transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-sm mb-3 text-white overflow-hidden relative magic-collapsed" style="transition: padding 0.3s ease;">
+                <div onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="cursor-pointer p-2.5 px-3">
+                    <button class="absolute top-2.5 right-3 text-white/50 hover:text-white/100 transition-colors pointer-events-none">
+                        <svg class="w-4 h-4 magic-arrow transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
                     </button>
-                    <div class="flex items-center gap-2 font-black uppercase tracking-widest text-[11px] drop-shadow-md">
-                        <span class="text-xl animate-pulse">✨</span> Магия TWI (Найдено ${newMagicCandidates.length} пар)
+                    <div class="flex items-center gap-1.5 font-black uppercase tracking-widest text-[10px] drop-shadow-md">
+                        <span class="text-sm animate-pulse">✨</span> Магия TWI (Найдено: ${newMagicCandidates.length})
                     </div>
                 </div>
                 
-                <div class="magic-content-wrapper px-4">
+                <div class="magic-content-wrapper px-3">
                     <div class="magic-content">
-                        <div class="text-[11px] font-medium text-indigo-100 mb-3 leading-snug">
-                            Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Огромный бонус XP!</b>
+                        <div class="text-[10px] font-medium text-indigo-100 mb-2 leading-snug">
+                            Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Бонус XP!</b>
                         </div>
-                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-4 pt-1">
+                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3">
                             ${newMagicCandidates.map((m, i) => `
-                                <div class="bg-white/10 border border-white/20 p-2 rounded-lg shrink-0 w-48 flex flex-col justify-between">
-                                    <div class="text-[9px] font-bold leading-tight line-clamp-2 mb-2" title="${m.title}">${m.title}</div>
+                                <div class="bg-white/10 border border-white/20 p-2 rounded-lg shrink-0 w-40 flex flex-col justify-between">
+                                    <div class="text-[8px] font-bold leading-tight line-clamp-2 mb-2" title="${m.title}">${m.title}</div>
                                     <button onclick="window.createMagicTwi('${m.tmplKey}', '${m.itemId}', '${m.ok}', '${m.fail}', '${m.title.replace(/'/g, "\\'")}')" class="w-full bg-white text-indigo-600 py-1.5 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Создать (+100 XP)</button>
                                 </div>
                             `).join('')}
@@ -276,7 +276,6 @@ function renderContractorsSubTab(data) {
             <style>
                 #twi-magic-block.magic-collapsed { padding-bottom: 0px; }
                 #twi-magic-block.magic-collapsed .magic-arrow { transform: rotate(180deg); }
-                /* Магия CSS Grid для плавной анимации высоты без зависаний */
                 .magic-content-wrapper { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s ease-out; }
                 #twi-magic-block.magic-collapsed .magic-content-wrapper { grid-template-rows: 0fr; }
                 .magic-content { overflow: hidden; }
@@ -910,78 +909,94 @@ function renderOnePagerSubTab(data) {
 }
 
 // 7. Подвкладка: База данных (Таблица)
-function renderDataSubTab(data) {
+async function renderDataSubTab(data) {
     const container = document.getElementById('sub-data');
     if(!container) return;
 
-    const allProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
-    const projOptions = allProjects.map(p => `<option value="${p}">${p}</option>`).join('');
+    // Читаем логи из IndexedDB (через обертку)
+    let logs = [];
+    try {
+        const logsObj = await dbGet(STORES.SETTINGS, 'backup_logs');
+        if (logsObj && logsObj.data) logs = logsObj.data;
+    } catch(e) {}
 
-    // Читаем логи бэкапов из памяти
-    let backupLogs = JSON.parse(localStorage.getItem('rbi_backup_logs') || '[]');
-    let logsHtml = backupLogs.length === 0 ? 
-        '<div class="text-[10px] text-slate-400 italic text-center py-2">Выгрузок еще не было</div>' : 
-        backupLogs.map(l => `<div class="text-[10px] flex justify-between border-b border-slate-100 dark:border-slate-700 py-1.5"><span class="text-slate-600 dark:text-slate-300">${l.date}</span><span class="font-bold text-indigo-600 dark:text-indigo-400">${l.type}</span></div>`).join('');
+    let logsHtml = logs.length === 0 ? 
+        `<tr><td colspan="4" class="text-center py-4 text-[10px] text-slate-400 italic">Реестр пуст</td></tr>` : 
+        logs.map(l => `
+            <tr class="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                <td class="py-2 pr-2 text-[9px] text-slate-500 whitespace-nowrap">${l.dateStr}</td>
+                <td class="py-2 px-2 text-[10px] font-bold text-slate-800 dark:text-slate-200">${l.type}</td>
+                <td class="py-2 px-2 text-[9px] text-slate-500 text-center">${l.stats?.checks || 0}</td>
+                <td class="py-2 pl-2 text-[8px] text-slate-400 truncate max-w-[100px]" title="${l.fileName}">${l.fileName}</td>
+            </tr>
+        `).join('');
+
+    // Сбор статистики для кнопок
+    const statsFull = { checks: contractorArray.length, photos: countPhotos(contractorArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
+    
+    const lastFullDate = localStorage.getItem('last_full_backup_date');
+    const incArray = lastFullDate ? contractorArray.filter(c => new Date(c.date) > new Date(lastFullDate)) : contractorArray;
+    const statsInc = { checks: incArray.length, photos: countPhotos(incArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
+
+    const filteredArray = getFilteredAnalyticsData();
+    const statsFilt = { checks: filteredArray.length, photos: countPhotos(filteredArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
+
+    const btnStyle = "flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300";
+    const iconStyle = "w-6 h-6 text-indigo-500";
 
     container.innerHTML = `
-        <div class="space-y-6 mx-1 pb-8 mt-2">
-            <!-- НОВЫЙ БЛОК БЭКАПОВ -->
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
-                <div class="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
-                    <div>
-                        <h2 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5"><span class="text-indigo-500 text-lg">💾</span> Центр Бэкапов</h2>
-                        <p class="text-[9px] text-slate-500 font-bold mt-1">Автосохранение: <span class="text-green-600">Включено (каждые 10 проверок)</span></p>
+        <div class="space-y-5 mx-1 pb-8 mt-2">
+            
+            <!-- БЛОК 1: СКАЧАТЬ БЭКАП -->
+            <div>
+                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-1">Скачать бэкап</div>
+                <div class="flex gap-2">
+                    <div onclick="handleDataExport('json', 'incremental')" class="${btnStyle} ${statsInc.checks === 0 ? 'opacity-50 pointer-events-none' : ''}">
+                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg>
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">Новое</div>
+                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsInc.checks} пров.<br>${statsInc.photos} фото</div>
+                    </div>
+                    <div onclick="handleDataExport('json', 'full')" class="${btnStyle}">
+                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"></path></svg>
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">Всё</div>
+                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsFull.checks} пров.<br>${statsFull.photos} фото</div>
+                    </div>
+                    <div onclick="handleDataExport('json', 'filtered')" class="${btnStyle}">
+                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"></path></svg>
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">По фильтру</div>
+                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsFilt.checks} пров.<br>${statsFilt.photos} фото</div>
                     </div>
                 </div>
-                
-                <div class="space-y-2 mb-4">
-                    <button onclick="handleDataExport('json', 'full')" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md flex items-center justify-center gap-2 transition-transform">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
-                        1. Скачать Полный Бэкап (Всё)
-                    </button>
-                    <button onclick="handleDataExport('json', 'filtered')" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> 
-                        2. Бэкап по фильтрам (Только выбранное)
-                    </button>
-                    <button onclick="shareBackupViaApi()" class="w-full bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                        3. Отправить в Мессенджер (Web Share)
-                    </button>
-                </div>
-                
-                <div class="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700">
-                    <div class="text-[9px] font-black uppercase text-slate-400 mb-2">Реестр последних выгрузок</div>
-                    <div class="max-h-[80px] overflow-y-auto custom-scrollbar pr-1">${logsHtml}</div>
-                </div>
+            </div>
 
-                <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                    <button onclick="triggerDataImport()" class="w-full bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
-                        📥 Загрузить базу / Слияние
+            <!-- БЛОК 2: ВОССТАНОВЛЕНИЕ И ОТПРАВКА -->
+            <div>
+                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-1">Восстановление и отправка</div>
+                <div class="flex gap-2">
+                    <button onclick="triggerDataImport()" class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-3.5 rounded-xl font-black text-[10px] text-slate-700 dark:text-slate-300 uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
+                        Загрузить файл
+                    </button>
+                    <button onclick="openShareModal()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md transition-transform flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg>
+                        Отправить бэкап
                     </button>
                 </div>
             </div>
 
-            <!-- Тендерный отдел (Остается без изменений) -->
-            <div class="bg-white dark:bg-slate-800 border-2 border-emerald-200 dark:border-emerald-800/50 rounded-2xl shadow-sm overflow-hidden">
-                <div class="bg-emerald-50 dark:bg-emerald-900/20 p-4 border-b border-emerald-100 dark:border-emerald-800/50 flex items-center gap-3">
-                    <div class="w-10 h-10 bg-emerald-100 dark:bg-emerald-800/50 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center shadow-sm shrink-0">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    </div>
-                    <div>
-                        <h2 class="font-black text-[13px] uppercase tracking-tight text-emerald-800 dark:text-emerald-400">Тендерный отдел</h2>
-                        <p class="text-[10px] text-emerald-600 dark:text-emerald-500 font-bold leading-snug mt-0.5">Выгрузка паспортов качества</p>
-                    </div>
+            <!-- БЛОК 3: РЕЕСТР -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="text-[10px] font-black uppercase text-slate-800 dark:text-white tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg> Реестр выгруженных бэкапов</div>
+                    <button onclick="clearBackupRegistry()" class="text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-800 active:scale-95 uppercase">Очистить историю</button>
                 </div>
-                <div class="p-5">
-                    <label class="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Выберите объект для выгрузки:</label>
-                    <select id="tender-project-select" class="input-base mb-5 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 !py-3">
-                        <option value="" disabled selected>-- Выберите объект --</option>
-                        ${projOptions}
-                    </select>
-                    <div class="grid grid-cols-2 gap-3">
-                        <button onclick="exportTenderPDF()" class="bg-emerald-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md flex items-center justify-center gap-2">Паспорта (PDF)</button>
-                        <button onclick="exportTenderCSV()" class="bg-white text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-2">Сводка (Excel)</button>
-                    </div>
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="border-b border-slate-200 dark:border-slate-700 text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                            <tr><th class="py-2 pr-2">Дата и время</th><th class="py-2 px-2">Тип операции</th><th class="py-2 px-2 text-center">Пров.</th><th class="py-2 pl-2">Имя файла</th></tr>
+                        </thead>
+                        <tbody>${logsHtml}</tbody>
+                    </table>
                 </div>
             </div>
         </div>

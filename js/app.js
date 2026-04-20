@@ -48,7 +48,12 @@ let appSettings = {
     anaOpLeader: true,
     anaEngAi: true, 
     anaEngPhotos: true,
-    anaOpTopDefects: true
+    anaOpTopDefects: true,
+    autoBackupEnabled: true,
+    autoBackupDay: '5', // 5 - Пятница
+    autoBackupShare: true,
+    autoManagerEnabled: true,
+    autoManagerDay: '5' // 5 - Пятница
 };
 
 // Звуковые эффекты (base64 для офлайна)
@@ -173,6 +178,7 @@ async function restoreSession() {
     }
     updateDatalists();
     updateAllDynamicFilters();
+    setTimeout(() => { if (typeof checkScheduledBackups === 'function') checkScheduledBackups(); }, 2000);
 }
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
@@ -565,21 +571,33 @@ async function saveSettings(key, value) {
 }
 
 function renderSettingsTab() {
+    // 1. Базовые селекторы оформления
     if(document.getElementById('set-theme')) document.getElementById('set-theme').value = appSettings.theme || 'auto';
     if(document.getElementById('set-fontsize')) document.getElementById('set-fontsize').value = appSettings.fontSize || 'medium';
     if(document.getElementById('set-navpos')) document.getElementById('set-navpos').value = appSettings.navPosition || 'auto';
     if(document.getElementById('set-dashmode')) document.getElementById('set-dashmode').value = appSettings.dashboardMode || 'compact';
     
+    // 2. Переключатели логики
     if(document.getElementById('set-swipe')) document.getElementById('set-swipe').checked = appSettings.swipeEnabled;
     if(document.getElementById('set-collapse')) document.getElementById('set-collapse').checked = appSettings.autoCollapseOk;
     if(document.getElementById('set-groups-col')) document.getElementById('set-groups-col').checked = appSettings.defaultGroupsCollapsed;
     if(document.getElementById('set-fast')) document.getElementById('set-fast').checked = appSettings.fastMode;
+    
+    // 3. Аналитика
     if(document.getElementById('set-ana-pareto')) document.getElementById('set-ana-pareto').checked = appSettings.anaEngPareto;
     if(document.getElementById('set-ana-trend')) document.getElementById('set-ana-trend').checked = appSettings.anaOpTrend;
     if(document.getElementById('set-ana-leader')) document.getElementById('set-ana-leader').checked = appSettings.anaOpLeader;
     if(document.getElementById('set-ana-ai')) document.getElementById('set-ana-ai').checked = appSettings.anaEngAi;
     if(document.getElementById('set-ana-photos')) document.getElementById('set-ana-photos').checked = appSettings.anaEngPhotos;
     if(document.getElementById('set-ana-top')) document.getElementById('set-ana-top').checked = appSettings.anaOpTopDefects;
+    
+    // 4. НОВЫЕ БЛОКИ: Автоматизация бэкапов
+    if(document.getElementById('set-autobackup')) document.getElementById('set-autobackup').checked = appSettings.autoBackupEnabled;
+    if(document.getElementById('set-autobackup-day')) document.getElementById('set-autobackup-day').value = appSettings.autoBackupDay || '5';
+    if(document.getElementById('set-autobackup-share')) document.getElementById('set-autobackup-share').checked = appSettings.autoBackupShare;
+    
+    if(document.getElementById('set-automanager')) document.getElementById('set-automanager').checked = appSettings.autoManagerEnabled;
+    if(document.getElementById('set-automanager-day')) document.getElementById('set-automanager-day').value = appSettings.autoManagerDay || '5';
 }
 
 function resetSettingsToDefault() {
@@ -590,7 +608,8 @@ function resetSettingsToDefault() {
         theme: 'auto', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
         autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
         soundEnabled: true, autoSave: true, aiEnabled: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
-        anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true
+        anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
+        autoBackupEnabled: true, autoBackupDay: '5', autoBackupShare: true, autoManagerEnabled: true, autoManagerDay: '5'
     };
     
     // 2. Сохраняем в базу
@@ -2197,9 +2216,10 @@ function renderHistoryTab() {
     let groupIndex = 0;
     for (let cName in grouped) {
         const safeGroupName = `hist-group-${groupIndex++}`;
-        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-xs mt-4 mb-2 uppercase tracking-tight px-3 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-[var(--card-bg)] border border-[var(--card-border)] py-3 rounded-xl shadow-sm hover:border-indigo-300 transition-colors" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
+        // Сделали панель тонкой (py-2), скругленной со всех сторон (rounded-xl) и убрали эмодзи
+        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-[11px] mt-3 mb-2 uppercase tracking-tight px-3 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-[var(--card-bg)] border border-[var(--card-border)] py-2 rounded-xl shadow-sm hover:border-indigo-300 transition-colors" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
             <span class="truncate pr-2">${cName}</span>
-            <span class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 shrink-0">РАЗВЕРНУТЬ ▼</span>
+            <span class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 shrink-0">РАЗВЕРНУТЬ ▼</span>
         </div><div id="${safeGroupName}" class="hidden transition-all duration-300 origin-top">`;
         
         for (let tTitle in grouped[cName]) {

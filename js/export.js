@@ -1573,24 +1573,46 @@ function exportTenderPDF() {
 }
 
 // ============================================================================
-// === ИМПОРТ И ЭКСПОРТ ДАННЫХ (ЕДИНЫЙ СУПЕР-БЭКАП) ===
+// === ИМПОРТ И ЭКСПОРТ ДАННЫХ (ЕДИНЫЙ СУПЕР-БЭКАП, SHARE API, РЕЕСТР) ===
 // ============================================================================
 
-// Генерирует объект бэкапа
+// Вспомогательная: подсчет фото в массиве проверок
+function countPhotos(arr) {
+    let count = 0;
+    arr.forEach(c => { if(c.photos) count += Object.keys(c.photos).length; });
+    return count;
+}
+
+// Генерирует объект бэкапа и возвращает объект + статистику
 function generateBackupObject(mode) {
     const userDocsToExport = customDocs.filter(d => !String(d.id).startsWith('sys_'));
     let historyToExport = contractorArray;
 
-    // Если запрошен отфильтрованный бэкап, берем только те проверки, что на экране
     if (mode === 'filtered') {
         historyToExport = getFilteredAnalyticsData();
+    } else if (mode === 'incremental') {
+        const lastFullDate = localStorage.getItem('last_full_backup_date');
+        if (lastFullDate) historyToExport = contractorArray.filter(c => new Date(c.date) > new Date(lastFullDate));
+    } else if (mode === 'manager') {
+        const lastMgrDate = localStorage.getItem('last_share_to_manager_date');
+        if (lastMgrDate) historyToExport = contractorArray.filter(c => new Date(c.date) > new Date(lastMgrDate));
     }
 
-    return {
+    // Сортируем по дате
+    historyToExport.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const stats = {
+        checks: historyToExport.length,
+        photos: countPhotos(historyToExport),
+        twi: customTwiCards.length,
+        tmpl: Object.keys(userTemplates).length
+    };
+
+    const obj = {
         type: "RBI_FULL_BACKUP",
         version: "16.5",
         timestamp: new Date().toISOString(),
-        mode: mode, // 'full' или 'filtered'
+        mode: mode,
         data: {
             history: historyToExport, 
             templates: userTemplates, 
@@ -1600,93 +1622,229 @@ function generateBackupObject(mode) {
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] 
         }
     };
+
+    return { obj, stats };
 }
 
-// Запись в реестр логов
-function logBackupEvent(typeStr) {
-    let logs = JSON.parse(localStorage.getItem('rbi_backup_logs') || '[]');
-    logs.unshift({ date: new Date().toLocaleString('ru-RU'), type: typeStr });
-    if (logs.length > 5) logs.pop();
-    localStorage.setItem('rbi_backup_logs', JSON.stringify(logs));
+// Запись в реестр IndexedDB
+async function logToBackupRegistry(typeStr, stats, fileName) {
+    try {
+        let logsObj = await dbGet(STORES.SETTINGS, 'backup_logs');
+        let logs = logsObj && logsObj.data ? logsObj.data : [];
+        
+        logs.unshift({
+            timestamp: new Date().toISOString(),
+            dateStr: new Date().toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}),
+            type: typeStr,
+            stats: stats,
+            fileName: fileName
+        });
+
+        if (logs.length > 50) logs = logs.slice(0, 50); // Ограничение 50 записей
+        await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: logs });
+    } catch(e) { console.error("Ошибка записи в реестр бэкапов", e); }
 }
 
-function handleDataExport(type, mode = 'full') {
-    if (type === 'json') {
-        showToast("⚙️ Сборка базы данных...");
-        const fullBackup = generateBackupObject(mode);
-        
-        // Задача 6: Используем форматирование с отступами (null, 2)
-        const dataStr = JSON.stringify(fullBackup, null, 2); 
-        const fName = mode === 'full' ? 'rbi_full_backup' : 'rbi_filtered_backup';
-        
-        downloadFile(dataStr, `${fName}_${new Date().toLocaleDateString('ru-RU')}.json`, 'application/json');
-        
-        logBackupEvent(mode === 'full' ? 'Полный бэкап' : 'Фильтр-бэкап');
-        showToast("✅ Бэкап скачан!");
+// Очистка реестра
+async function clearBackupRegistry() {
+    if(!confirm("Очистить историю выгрузок? Сами данные проверок не удалятся.")) return;
+    await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: [] });
+    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+    showToast("Реестр очищен");
+}
+
+// Универсальная функция загрузки файла
+async function handleDataExport(type, mode = 'full', silent = false) {
+    if (type !== 'json') return;
+    if (!silent) showToast("Сборка базы данных...");
+    
+    const { obj, stats } = generateBackupObject(mode);
+    if ((mode === 'incremental' || mode === 'manager') && stats.checks === 0) {
+        if (!silent) showToast('Нет новых проверок для выгрузки.');
+        return false;
+    }
+
+    const dataStr = JSON.stringify(obj, null, 2); 
+    const insp = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
+    const safeInsp = insp.replace(/[^a-zA-Zа-яА-Я0-9_]/g, '_');
+    
+    let prefix = 'Full';
+    let logName = 'Полный бэкап';
+    if (mode === 'incremental') { prefix = 'Inc'; logName = 'Инкрементальный'; }
+    if (mode === 'filtered') { prefix = 'Filtered'; logName = 'По фильтрам'; }
+    if (mode === 'manager') { prefix = 'Manager'; logName = 'Отправка руководителю'; }
+    
+    const d1 = obj.data.history.length > 0 ? new Date(obj.data.history[0].date).toLocaleDateString('ru-RU') : '';
+    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length-1].date).toLocaleDateString('ru-RU') : '';
+    const dateSuffix = d1 && d2 && d1 !== d2 ? `${d1}_${d2}` : new Date().toLocaleDateString('ru-RU');
+
+    const fName = `RBI_${prefix}_${safeInsp}_${dateSuffix}.json`;
+    
+    downloadFile(dataStr, fName, 'application/json');
+    
+    await logToBackupRegistry(logName, stats, fName);
+
+    if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
+    if (mode === 'manager') localStorage.setItem('last_share_to_manager_date', new Date().toISOString());
+
+    if (!silent) {
+        showToast(`Успешно скачан: ${logName}`);
         if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
     }
+    return true;
 }
 
-// Задача 8: Web Share API
-async function shareBackupViaApi() {
-    if (!navigator.share) {
-        return showToast('❌ Ваш браузер не поддерживает отправку файлов (Web Share API). Используйте обычное скачивание.');
+// Отправка через Web Share API с Fallback
+async function shareBackupViaApi(mode = 'full', silent = false) {
+    if (!silent) showToast("Подготовка файла для отправки...");
+    
+    const { obj, stats } = generateBackupObject(mode);
+    if ((mode === 'incremental' || mode === 'manager') && stats.checks === 0) {
+        if (!silent) showToast('Нет новых проверок для отправки.');
+        return false;
     }
 
-    showToast("⚙️ Подготовка файла для отправки...");
-    const backupObj = generateBackupObject('full');
-    const dataStr = JSON.stringify(backupObj, null, 2);
+    const dataStr = JSON.stringify(obj, null, 2);
+    const insp = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
+    const safeInsp = insp.replace(/[^a-zA-Zа-яА-Я0-9_]/g, '_');
     
-    // Создаем файл в памяти
-    const file = new File([dataStr], `rbi_backup_${new Date().toLocaleDateString('ru-RU')}.json`, { type: 'application/json' });
+    let prefix = 'Full'; let logName = 'Полный бэкап (Share)';
+    if (mode === 'incremental') { prefix = 'Inc'; logName = 'Инкрементальный (Share)'; }
+    if (mode === 'filtered') { prefix = 'Filtered'; logName = 'По фильтрам (Share)'; }
+    if (mode === 'manager') { prefix = 'Manager'; logName = 'Отправка руководителю (Share)'; }
+
+    const d1 = obj.data.history.length > 0 ? new Date(obj.data.history[0].date).toLocaleDateString('ru-RU') : '';
+    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length-1].date).toLocaleDateString('ru-RU') : '';
+    const dateSuffix = d1 && d2 && d1 !== d2 ? `${d1}_${d2}` : new Date().toLocaleDateString('ru-RU');
+
+    const fName = `RBI_${prefix}_${safeInsp}_${dateSuffix}.json`;
+    const file = new File([dataStr], fName, { type: 'application/json' });
     
-    const insp = document.getElementById('inp-inspector')?.value || 'Инженера';
-    const period = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
+    const projs = [...new Set(obj.data.history.map(c => c.projectName).filter(Boolean))].join(', ');
     
-    const shareData = {
-        title: 'Бэкап базы RBI Quality',
-        text: `Бэкап базы данных от ${insp} за период: ${period}. Загрузите этот файл в систему через раздел "База" -> "Загрузить базу".`,
-        files: [file]
-    };
+    let textMsg = `Синхронизация базы RBI Quality.\nИнспектор: ${insp}\nПериод: с ${d1 || '-'} по ${d2 || '-'}\nОбъекты: ${projs || 'Не указаны'}\nВыгружено проверок: ${stats.checks} шт.\nФайл прикреплен.`;
+    
+    const shareData = { title: 'Бэкап базы RBI Quality', text: textMsg, files: [file] };
 
     try {
         if (navigator.canShare && navigator.canShare(shareData)) {
             await navigator.share(shareData);
-            logBackupEvent('Отправка через мессенджер');
-            showToast("✅ Файл успешно передан в меню отправки!");
-            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+            await logToBackupRegistry(logName, stats, fName);
+            if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
+            if (mode === 'manager') localStorage.setItem('last_share_to_manager_date', new Date().toISOString());
+            
+            if (!silent) {
+                showToast("Файл успешно передан в меню отправки!");
+                if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+            }
+            return true;
         } else {
-            showToast('❌ Браузер запретил прикреплять файлы. Скачайте вручную.');
+            throw new Error("Share API not supported");
         }
     } catch (err) {
-        console.error(err);
-        showToast("Отправка отменена или не поддерживается");
+        if (err.name !== 'AbortError') {
+            // FALLBACK
+            downloadFile(dataStr, fName, 'application/json');
+            await logToBackupRegistry(logName + ' (Fallback)', stats, fName);
+            if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
+            if (mode === 'manager') localStorage.setItem('last_share_to_manager_date', new Date().toISOString());
+            
+            if (!silent) {
+                showToast("Файл сохранён. Вы можете отправить его вручную через почту или мессенджер.");
+                if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+            }
+            return true;
+        }
+        return false;
     }
 }
 
-function triggerDataImport() { 
-    document.getElementById('db-import-input').click(); 
+// Модалка выбора типа отправки
+function openShareModal() {
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center border border-green-200 mx-auto"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg></div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center">Отправить бэкап</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="space-y-2">
+            <button onclick="closeModal(); shareBackupViaApi('incremental')" class="w-full text-left p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform">
+                <div class="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg></div>
+                <div>
+                    <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Только Новое</div>
+                    <div class="text-[9px] text-slate-500 font-bold mt-0.5">Всё, что было после последней выгрузки</div>
+                </div>
+            </button>
+            <button onclick="closeModal(); shareBackupViaApi('full')" class="w-full text-left p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform">
+                <div class="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg></div>
+                <div>
+                    <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Полная база (Всё)</div>
+                    <div class="text-[9px] text-slate-500 font-bold mt-0.5">Весь архив за всё время работы</div>
+                </div>
+            </button>
+            <button onclick="closeModal(); shareBackupViaApi('filtered')" class="w-full text-left p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform">
+                <div class="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg></div>
+                <div>
+                    <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-wide">По фильтрам экрана</div>
+                    <div class="text-[9px] text-slate-500 font-bold mt-0.5">Только то, что сейчас отфильтровано</div>
+                </div>
+            </button>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
 }
 
+// Логика автоматических расписаний
+async function checkScheduledBackups() {
+    const today = new Date();
+    const dayOfWeek = today.getDay().toString(); // 0 = Sunday, 1 = Monday, etc.
+    const todayStr = today.toDateString();
+
+    // 1. Автоматический полный бэкап
+    if (appSettings.autoBackupEnabled && appSettings.autoBackupDay === dayOfWeek) {
+        const lastRun = localStorage.getItem('last_auto_backup_run_date');
+        if (lastRun !== todayStr) {
+            console.log('Запуск автоматического полного бэкапа...');
+            localStorage.setItem('last_auto_backup_run_date', todayStr);
+            if (appSettings.autoBackupShare) {
+                await shareBackupViaApi('full', true);
+            } else {
+                await handleDataExport('json', 'full', true);
+            }
+        }
+    }
+
+    // 2. Регулярная отправка руководителю (Только новые)
+    if (appSettings.autoManagerEnabled && appSettings.autoManagerDay === dayOfWeek) {
+        const lastRunMgr = localStorage.getItem('last_auto_manager_run_date');
+        if (lastRunMgr !== todayStr) {
+            console.log('Запуск регулярной отправки руководителю...');
+            localStorage.setItem('last_auto_manager_run_date', todayStr);
+            await shareBackupViaApi('manager', true);
+        }
+    }
+}
+
+function triggerManagerShareManual() { shareBackupViaApi('manager'); }
+function triggerAutoBackupManual() {
+    if (appSettings.autoBackupShare) shareBackupViaApi('full');
+    else handleDataExport('json', 'full');
+}
+
+// Восстановление (Импорт) - без изменений, просто вызов существующей логики
+function triggerDataImport() { document.getElementById('db-import-input').click(); }
 function processDataImport(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
-    showToast("⚙️ Чтение файла и слияние баз...");
+    showToast("Чтение файла и слияние баз...");
     const reader = new FileReader();
-    
     reader.onload = async (e) => {
         try {
             const parsed = JSON.parse(e.target.result);
             let addedHist = 0, addedTmpl = 0, addedTwi = 0, addedDocs = 0, addedExpert = 0;
 
-            // СЦЕНАРИЙ 1: ЭТО НОВЫЙ СУПЕР-БЭКАП (Сборка всего)
             if (parsed.type === "RBI_FULL_BACKUP" && parsed.data) {
-                
-                // А. СЛИЯНИЕ ИСТОРИИ ПРОВЕРОК
-                if (parsed.data.history && Array.isArray(parsed.data.history)) {
+                if (parsed.data.history) {
                     for(const item of parsed.data.history) {
-                        // Если проверки с таким ID еще нет - добавляем. Старые не трогаем!
                         if(!contractorArray.find(x => x.id === item.id)) {
                             contractorArray.push(item);
                             await dbPut(STORES.HISTORY, item);
@@ -1695,8 +1853,6 @@ function processDataImport(event) {
                     }
                     contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
                 }
-                
-                // Б. СЛИЯНИЕ ЧЕК-ЛИСТОВ (Добавляем только те, которых нет)
                 if (parsed.data.templates) {
                     for(const key in parsed.data.templates) {
                         if(!userTemplates[key]) { 
@@ -1706,59 +1862,32 @@ function processDataImport(event) {
                         }
                     }
                 }
-
-                // В. СЛИЯНИЕ TWI КАРТ И ПРАВИЛ
-                if (parsed.data.twi && Array.isArray(parsed.data.twi)) {
+                if (parsed.data.twi) {
                     for(const item of parsed.data.twi) {
                         if(!customTwiCards.find(x => x.id === item.id)) {
                             customTwiCards.push(item);
                             addedTwi++;
                         }
                     }
-                    const userCardsToSave = customTwiCards.filter(c => !String(c.id).startsWith('sys_'));
-                    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
+                    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
                 }
-
-                // Г. СЛИЯНИЕ БАЗЫ НОРМАТИВНЫХ ДОКУМЕНТОВ (НД)
-                if (parsed.data.docs && Array.isArray(parsed.data.docs)) {
+                if (parsed.data.docs) {
                     for(const item of parsed.data.docs) {
                         if(!customDocs.find(x => x.id === item.id)) {
                             customDocs.push(item);
                             addedDocs++;
                         }
                     }
-                    const userDocsToSave = customDocs.filter(d => !String(d.id).startsWith('sys_'));
-                    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: userDocsToSave });
+                    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs.filter(d => !String(d.id).startsWith('sys_')) });
                 }
-
-                // Д. СЛИЯНИЕ ЭКСПЕРТНЫХ ЗАКЛЮЧЕНИЙ (БЕЗ ЗАТИРАНИЯ ТВОИХ!)
                 if (parsed.data.expert) {
                     for(const key in parsed.data.expert) {
-                        if(!customExpertConclusions[key]) {
-                            customExpertConclusions[key] = parsed.data.expert[key];
-                            addedExpert++;
-                        }
+                        if(!customExpertConclusions[key]) customExpertConclusions[key] = parsed.data.expert[key];
                     }
-                    scheduleSessionSave(); 
+                    if (typeof saveSessionData === 'function') saveSessionData(); 
                 }
-
-                // Е. СЛИЯНИЕ ЛОГОВ АКТИВНОСТИ (Геймификация)
-                if (parsed.data.gameLogs && Array.isArray(parsed.data.gameLogs) && typeof gameActionLogs !== 'undefined') {
-                    let addedLogs = 0;
-                    for (const log of parsed.data.gameLogs) {
-                        if (!gameActionLogs.find(x => x.id === log.id)) {
-                            gameActionLogs.push(log);
-                            addedLogs++;
-                        }
-                    }
-                    if (addedLogs > 0 && typeof gameSaveLogs === 'function') gameSaveLogs();
-                }
-
-                showToast(`✅ Базы слиты!\nПров: +${addedHist} | Чек-листов: +${addedTmpl}\nTWI: +${addedTwi} | НД: +${addedDocs}`);
-
-            } 
-            // СЦЕНАРИЙ 2: ЭТО СТАРЫЙ БЭКАП (Только массив истории проверок) - Обратная совместимость
-            else if (Array.isArray(parsed)) {
+                showToast(`✅ Базы слиты!\nПров: +${addedHist} | Ч/Л: +${addedTmpl}\nTWI: +${addedTwi} | НД: +${addedDocs}`);
+            } else if (Array.isArray(parsed)) {
                 for(const item of parsed) {
                     if(!contractorArray.find(x => x.id === item.id)) {
                         contractorArray.push(item);
@@ -1768,32 +1897,15 @@ function processDataImport(event) {
                 }
                 contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
                 showToast(`✅ История объединена! Добавлено: ${addedHist} шт.`);
-            } else {
-                throw new Error("Неизвестный формат файла");
-            }
+            } else { throw new Error("Неизвестный формат"); }
             
-            // ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ ВЕСЬ ИНТЕРФЕЙС
             updateAllDynamicFilters();
-            renderSelector(); 
-            
-            if (document.getElementById('tab-history').classList.contains('active')) {
-                renderHistoryTab();
-            } else if (document.getElementById('tab-analytics').classList.contains('active')) {
-                updateAnalyticsFilters(); 
-                renderCurrentAnalyticsTab();
-            } else if (document.getElementById('tab-reference').classList.contains('active')) {
-                const activeSub = document.querySelector('.ref-sub-section:not(.hidden)');
-                if (activeSub && activeSub.id === 'ref-sub-checklists') renderReferenceTab();
-                else if (activeSub && activeSub.id === 'ref-sub-twi') renderTwiList();
-                else if (activeSub && activeSub.id === 'ref-sub-docs') renderDocsList();
-            }
-            
+            if (typeof renderSelector === 'function') renderSelector(); 
+            if (document.getElementById('tab-analytics').classList.contains('active')) renderCurrentAnalyticsTab();
         } catch (err) { 
-            console.error(err);
             alert("Ошибка файла бэкапа. Проверьте формат."); 
         }
     };
-    
     reader.readAsText(file);
-    event.target.value = ''; // Сбрасываем input
+    event.target.value = '';
 }
