@@ -531,14 +531,41 @@ window.gameForceUpdatePlan = function() {
 };
 
 window.gameStartTask = function(contractor, templateKey) {
+    // 1. Заполняем Подрядчика
     const contrInput = document.getElementById('inp-contractor');
-    if (contrInput) { contrInput.value = contractor; contrInput.dispatchEvent(new Event('input')); }
+    if (contrInput) { 
+        contrInput.value = contractor; 
+        contrInput.dispatchEvent(new Event('input')); 
+    }
+    
+    // 2. Ищем последний Объект этого подрядчика в истории и подставляем
+    const pastCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey);
+    if (pastCheck) {
+        const projInput = document.getElementById('inp-project');
+        if (projInput && !projInput.value) {
+            projInput.value = pastCheck.projectName;
+            projInput.dispatchEvent(new Event('input')); 
+        }
+    }
+    
+    // 3. Очищаем локацию для новой проверки
+    const locInput = document.getElementById('inp-location');
+    if (locInput) locInput.value = '';
+
+    // 4. Меняем чек-лист
     const selectEl = document.getElementById('checklist-selector');
     if (selectEl) selectEl.value = templateKey;
     
-    switchTab('tab-audit'); changeTemplate(templateKey);
-    showToast("📝 Задача загружена. Удачной проверки!");
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    // 5. Переходим на вкладку
+    switchTab('tab-audit'); 
+    changeTemplate(templateKey);
+    
+    // Принудительно обновляем названия в шапке
+    setTimeout(() => {
+        updateDataSummary();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        showToast("📝 Задача загружена. Данные заполнены!");
+    }, 150);
 };
 
 // === РЕНДЕР ДАШБОРДА ===

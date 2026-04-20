@@ -917,30 +917,51 @@ function renderDataSubTab(data) {
     const allProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
     const projOptions = allProjects.map(p => `<option value="${p}">${p}</option>`).join('');
 
+    // Читаем логи бэкапов из памяти
+    let backupLogs = JSON.parse(localStorage.getItem('rbi_backup_logs') || '[]');
+    let logsHtml = backupLogs.length === 0 ? 
+        '<div class="text-[10px] text-slate-400 italic text-center py-2">Выгрузок еще не было</div>' : 
+        backupLogs.map(l => `<div class="text-[10px] flex justify-between border-b border-slate-100 dark:border-slate-700 py-1.5"><span class="text-slate-600 dark:text-slate-300">${l.date}</span><span class="font-bold text-indigo-600 dark:text-indigo-400">${l.type}</span></div>`).join('');
+
     container.innerHTML = `
         <div class="space-y-6 mx-1 pb-8 mt-2">
-            <div class="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800/50 rounded-2xl p-5 shadow-sm">
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="w-10 h-10 bg-indigo-100 dark:bg-indigo-800 text-indigo-600 dark:text-indigo-300 rounded-xl flex items-center justify-center shadow-sm">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                    </div>
+            <!-- НОВЫЙ БЛОК БЭКАПОВ -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+                <div class="flex justify-between items-start mb-4 border-b border-slate-100 dark:border-slate-700 pb-3">
                     <div>
-                        <h2 class="font-black text-[14px] uppercase tracking-tight text-indigo-900 dark:text-indigo-300">Системный Бэкап</h2>
-                        <p class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold mt-0.5">Создание и загрузка резервных копий (.json)</p>
+                        <h2 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5"><span class="text-indigo-500 text-lg">💾</span> Центр Бэкапов</h2>
+                        <p class="text-[9px] text-slate-500 font-bold mt-1">Автосохранение: <span class="text-green-600">Включено (каждые 10 проверок)</span></p>
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-3 no-print mt-4">
-                    <button onclick="handleDataExport('json')" class="bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 shadow-md transition-transform">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
-                        Скачать базу
+                
+                <div class="space-y-2 mb-4">
+                    <button onclick="handleDataExport('json', 'full')" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md flex items-center justify-center gap-2 transition-transform">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
+                        1. Скачать Полный Бэкап (Всё)
                     </button>
-                    <button onclick="triggerDataImport()" class="bg-white text-indigo-700 border border-indigo-200 dark:bg-slate-800 dark:border-indigo-800/50 dark:text-indigo-300 py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 shadow-sm transition-transform">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> 
-                        Загрузить базу
+                    <button onclick="handleDataExport('json', 'filtered')" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> 
+                        2. Бэкап по фильтрам (Только выбранное)
+                    </button>
+                    <button onclick="shareBackupViaApi()" class="w-full bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                        3. Отправить в Мессенджер (Web Share)
+                    </button>
+                </div>
+                
+                <div class="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700">
+                    <div class="text-[9px] font-black uppercase text-slate-400 mb-2">Реестр последних выгрузок</div>
+                    <div class="max-h-[80px] overflow-y-auto custom-scrollbar pr-1">${logsHtml}</div>
+                </div>
+
+                <div class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                    <button onclick="triggerDataImport()" class="w-full bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-transform">
+                        📥 Загрузить базу / Слияние
                     </button>
                 </div>
             </div>
 
+            <!-- Тендерный отдел (Остается без изменений) -->
             <div class="bg-white dark:bg-slate-800 border-2 border-emerald-200 dark:border-emerald-800/50 rounded-2xl shadow-sm overflow-hidden">
                 <div class="bg-emerald-50 dark:bg-emerald-900/20 p-4 border-b border-emerald-100 dark:border-emerald-800/50 flex items-center gap-3">
                     <div class="w-10 h-10 bg-emerald-100 dark:bg-emerald-800/50 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center shadow-sm shrink-0">
@@ -948,74 +969,19 @@ function renderDataSubTab(data) {
                     </div>
                     <div>
                         <h2 class="font-black text-[13px] uppercase tracking-tight text-emerald-800 dark:text-emerald-400">Тендерный отдел</h2>
-                        <p class="text-[10px] text-emerald-600 dark:text-emerald-500 font-bold leading-snug mt-0.5">Выгрузка паспортов качества для допуска к торгам</p>
+                        <p class="text-[10px] text-emerald-600 dark:text-emerald-500 font-bold leading-snug mt-0.5">Выгрузка паспортов качества</p>
                     </div>
                 </div>
                 <div class="p-5">
                     <label class="text-[10px] font-black text-slate-400 uppercase mb-1.5 block">Выберите объект для выгрузки:</label>
                     <select id="tender-project-select" class="input-base mb-5 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-300 !py-3">
-                        <option value="" disabled selected>-- Нажмите, чтобы выбрать объект --</option>
+                        <option value="" disabled selected>-- Выберите объект --</option>
                         ${projOptions}
                     </select>
                     <div class="grid grid-cols-2 gap-3">
-                        <button onclick="exportTenderPDF()" class="bg-emerald-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md flex items-center justify-center gap-2 transition-transform">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> 
-                            Паспорта (PDF)
-                        </button>
-                        <button onclick="exportTenderCSV()" class="bg-white text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-400 py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-2 transition-transform">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> 
-                            Сводка (Excel)
-                        </button>
+                        <button onclick="exportTenderPDF()" class="bg-emerald-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md flex items-center justify-center gap-2">Паспорта (PDF)</button>
+                        <button onclick="exportTenderCSV()" class="bg-white text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-2">Сводка (Excel)</button>
                     </div>
-                </div>
-            </div>
-
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col">
-                <div class="bg-[var(--hover-bg)] p-4 border-b border-[var(--card-border)] flex justify-between items-center">
-                    <div>
-                        <h2 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
-                            Реестр проверок
-                        </h2>
-                        <div class="text-[10px] font-bold text-slate-500 mt-1">Отображено: ${data.length} записей (с учетом фильтров выше)</div>
-                    </div>
-                    <button onclick="exportFilteredCsv()" class="bg-indigo-50 text-indigo-600 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 px-3 py-2 rounded-lg font-bold text-[9px] uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
-                        В Excel
-                    </button>
-                </div>
-                
-                <div class="overflow-x-auto max-h-[400px] custom-scrollbar bg-white dark:bg-slate-800">
-                    <table class="w-full text-left text-[10px] whitespace-nowrap">
-                        <thead class="bg-slate-50 dark:bg-slate-900 text-[var(--text-muted)] border-b border-[var(--card-border)] sticky top-0 z-10 shadow-sm">
-                            <tr>
-                                <th class="p-3 pl-4 font-black uppercase tracking-wider">Дата</th>
-                                <th class="p-3 font-black uppercase tracking-wider">Подрядчик</th>
-                                <th class="p-3 font-black uppercase tracking-wider">Локация</th>
-                                <th class="p-3 font-black uppercase tracking-wider">Инспектор</th>
-                                <th class="p-3 text-center font-black uppercase tracking-wider">УрК</th>
-                                <th class="p-3 text-center font-black uppercase tracking-wider">Дефекты (B2/B3)</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-[var(--card-border)]">
-                            ${data.length === 0 ? `<tr><td colspan="6" class="p-10 text-center text-[var(--text-muted)] font-bold text-[12px]">Нет данных по выбранным фильтрам</td></tr>` : 
-                              [...data].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 100).map(r => {
-                                const m = r.metrics;
-                                const color = m ? (m.final < 70 ? 'text-red-500' : (m.final < 85 ? 'text-orange-500' : 'text-green-600')) : '';
-                                return `<tr class="hover:bg-[var(--hover-bg)] cursor-pointer transition-colors" onclick="showHistoryDetail(${r.id})">
-                                    <td class="p-3 pl-4 text-slate-500 font-medium">${new Date(r.date).toLocaleDateString('ru-RU')}</td>
-                                    <td class="p-3 max-w-[120px] truncate font-bold text-slate-800 dark:text-slate-200" title="${r.contractorName}">${r.contractorName}</td>
-                                    <td class="p-3 max-w-[120px] truncate text-slate-600 dark:text-slate-400" title="${r.location}">${r.location}</td>
-                                    <td class="p-3 max-w-[100px] truncate text-slate-500" title="${r.inspectorName || 'Не указан'}">${r.inspectorName || '-'}</td>
-                                    <td class="p-3 text-center font-black text-[12px] ${color}">${m ? m.final+'%' : '-'}</td>
-                                    <td class="p-3 text-center font-bold">
-                                        <span class="bg-orange-50 text-orange-600 border border-orange-100 dark:bg-orange-900/20 dark:border-orange-800 px-2 py-0.5 rounded mr-1" title="Дефекты B2">${m?m.n_B2_fail:'0'}</span>
-                                        <span class="bg-red-50 text-red-600 border border-red-100 dark:bg-red-900/20 dark:border-red-800 px-2 py-0.5 rounded" title="Критические дефекты B3">${m?m.n_B3_fail:'0'}</span>
-                                    </td>
-                                </tr>`;
-                            }).join('')}
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>

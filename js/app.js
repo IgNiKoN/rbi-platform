@@ -1359,6 +1359,11 @@ function changeTemplate(val) {
     if(document.getElementById('inp-location')) document.getElementById('inp-location').value = '';
 
     saveSessionData(); 
+    
+    // ИСПРАВЛЕНИЕ ЗАДАЧИ 2: Синхронизируем главный селектор перед обновлением шапки
+    if (document.getElementById('checklist-selector')) {
+        document.getElementById('checklist-selector').value = val;
+    }
     updateDataSummary();
     
     document.getElementById('empty-checklist-state').style.display = 'none';
@@ -1982,7 +1987,22 @@ function saveProductToArray() {
     
     render(); 
     updateUI();
+// АВТОБЭКАП (Раз в 10 проверок)
+    let checksSaved = parseInt(localStorage.getItem('auto_backup_counter') || '0') + 1;
+    localStorage.setItem('auto_backup_counter', checksSaved);
+    if (checksSaved >= 10 && !isDemoMode) {
+        localStorage.setItem('auto_backup_counter', '0');
+        showToast('🔄 Выполняется фоновое автосохранение...');
+        // Генерируем и кладем в IndexedDB спец. ключ
+        if (typeof generateBackupObject === 'function') {
+            const autoObj = generateBackupObject('full');
+            dbPut(STORES.SETTINGS, { key: 'auto_backup_latest', data: autoObj }).then(() => {
+                console.log('Автобэкап сохранен в БД');
+            });
+        }
+    }
 }
+
 // === ОБНОВЛЕНИЕ ПАМЯТИ ПОЛЕЙ ВВОДА (АВТОКОМПЛИТ) ===
 function updateDatalists() {
     if (!contractorArray || contractorArray.length === 0) return;
@@ -2177,10 +2197,10 @@ function renderHistoryTab() {
     let groupIndex = 0;
     for (let cName in grouped) {
         const safeGroupName = `hist-group-${groupIndex++}`;
-        // По умолчанию группы СВЕРНУТЫ (добавлен класс hidden во второй div)
-        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-xs mt-4 mb-2 uppercase tracking-tight pl-2 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded-r-lg shadow-sm" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
-            <span class="truncate pr-2">🏗️ ${cName}</span><span class="text-[10px] text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100 shrink-0">РАЗВЕРНУТЬ</span>
-        </div><div id="${safeGroupName}" class="hidden transition-all duration-300 origin-top">`; 
+        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-xs mt-4 mb-2 uppercase tracking-tight px-3 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-[var(--card-bg)] border border-[var(--card-border)] py-3 rounded-xl shadow-sm hover:border-indigo-300 transition-colors" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
+            <span class="truncate pr-2">${cName}</span>
+            <span class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 shrink-0">РАЗВЕРНУТЬ ▼</span>
+        </div><div id="${safeGroupName}" class="hidden transition-all duration-300 origin-top">`;
         
         for (let tTitle in grouped[cName]) {
             html += `<div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-2 ml-2 mt-2">${tTitle} (${grouped[cName][tTitle].length} изд.)</div>`;
