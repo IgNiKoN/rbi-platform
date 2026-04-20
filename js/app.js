@@ -170,16 +170,150 @@ async function restoreSession() {
         if(document.getElementById('inp-project')) document.getElementById('inp-project').value = data.project || '';
         if(document.getElementById('inp-inspector')) document.getElementById('inp-inspector').value = data.inspector || '';
         if(document.getElementById('inp-contractor')) document.getElementById('inp-contractor').value = data.contractor || '';
-        if(document.getElementById('inp-location')) document.getElementById('inp-location').value = data.location || '';
+        if(document.getElementById('inp-section')) document.getElementById('inp-section').value = data.section || '';
+        if(document.getElementById('inp-floor')) document.getElementById('inp-floor').value = data.floor || '';
+        if(document.getElementById('inp-room')) document.getElementById('inp-room').value = data.room || '';
+        
+        updateLocationFromStructured(); // Пересчитываем скрытый inp-location
 
         if (typeof updateDataSummary === 'function') updateDataSummary();
     } catch (e) {
         console.error('Ошибка восстановления:', e);
     }
-    updateDatalists();
     updateAllDynamicFilters();
     setTimeout(() => { if (typeof checkScheduledBackups === 'function') checkScheduledBackups(); }, 2000);
 }
+
+// === УМНАЯ СТРУКТУРИРОВАННАЯ ЛОКАЦИЯ ===
+function updateLocationFromStructured() {
+    const secInput = document.getElementById('inp-section');
+    const floorInput = document.getElementById('inp-floor');
+    const roomInput = document.getElementById('inp-room');
+    const locHidden = document.getElementById('inp-location');
+    if(!secInput || !floorInput || !roomInput || !locHidden) return;
+
+    let parts = [];
+    
+    let secVal = secInput.value.trim();
+    if (secVal) {
+        // Если только цифры/буквы (без слова Секция), добавляем префикс для отображения
+        if (/^[\dА-Яа-яA-Za-z]+$/.test(secVal) && !secVal.toLowerCase().includes('корпус/секция')) {
+            parts.push(`Корпус/секция ${secVal}`);
+        } else {
+            parts.push(secVal);
+        }
+    }
+
+    let floorVal = floorInput.value.trim();
+    if (floorVal) {
+        if (/^-?\d+$/.test(floorVal)) parts.push(`Этаж ${floorVal}`);
+        else parts.push(floorVal);
+    }
+
+    let roomVal = roomInput.value.trim();
+    if (roomVal) {
+        if (isNaN(roomVal) && !roomVal.toLowerCase().includes('оси') && !roomVal.toLowerCase().includes('пом')) {
+            parts.push(`Оси ${roomVal}`);
+        } else {
+            parts.push(roomVal);
+        }
+    }
+
+    locHidden.value = parts.join(', ');
+    scheduleSessionSave();
+    updateUI();
+     // ИСПРАВЛЕНИЕ: Пересчитываем отступ контента от шапки, чтобы чек-лист не залезал под неё
+    setTimeout(updateBodyPadding, 50); 
+}
+
+// Привязка слушателей к инпутам локации
+document.addEventListener("DOMContentLoaded", () => {
+    ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', updateLocationFromStructured);
+            el.addEventListener('blur', () => {
+                // При потере фокуса форматируем само поле для красоты
+                let val = el.value.trim();
+                if (!val) return;
+                if (id === 'inp-section' && /^[\dА-Яа-яA-Za-z]+$/.test(val) && !val.toLowerCase().includes('Корпус/секция')) el.value = `Корпус/секция ${val}`;
+                if (id === 'inp-floor' && /^-?\d+$/.test(val)) el.value = `Этаж ${val}`;
+                if (id === 'inp-room' && isNaN(val) && !val.toLowerCase().includes('оси') && !val.toLowerCase().includes('пом')) el.value = `Оси ${val}`;
+                updateLocationFromStructured();
+            });
+            el.addEventListener('focus', () => {
+                // При фокусе убираем префиксы для удобного редактирования
+                el.value = el.value.replace(/^(Секция|Этаж|Оси)\s+/i, '');
+            });
+        }
+    });
+
+    // Инициализация кастомных дропдаунов
+    initSmartInput('inp-project', 'projectName');
+    initSmartInput('inp-inspector', 'inspectorName');
+    initSmartInput('inp-contractor', 'contractorName');
+    initSmartInput('inp-section', 'section');
+    initSmartInput('inp-floor', 'floor');
+    initSmartInput('inp-room', 'room');
+});
+
+// === КАСТОМНЫЕ DROPDOWN АВТОЗАПОЛНЕНИЯ (БЕЗ DATALIST) ===
+function getSmartInputCache(field) {
+    let cache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+    if (!cache[field]) {
+        // Если кэша нет, собираем из истории
+        cache[field] = [...new Set(contractorArray.map(i => i[field]).filter(Boolean))].slice(0, 15);
+        localStorage.setItem('smart_input_cache', JSON.stringify(cache));
+    }
+    return cache[field];
+}
+
+function updateSmartInputCache(field, value) {
+    if (!value) return;
+    let cache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+    if (!cache[field]) cache[field] = [];
+    if (cache[field].includes(value)) {
+        cache[field] = cache[field].filter(v => v !== value); // Поднимаем наверх
+    }
+    cache[field].unshift(value);
+    if (cache[field].length > 15) cache[field].pop();
+    localStorage.setItem('smart_input_cache', JSON.stringify(cache));
+}
+
+function initSmartInput(inputId, dataField) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    const wrapper = input.parentElement;
+    const dropdown = document.createElement('div');
+    dropdown.className = 'absolute top-full left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-lg mt-1 z-[5000] hidden max-h-48 overflow-y-auto custom-scrollbar';
+    wrapper.appendChild(dropdown);
+
+    const renderList = (filter = '') => {
+        let items = getSmartInputCache(dataField);
+        if (filter) items = items.filter(i => String(i).toLowerCase().includes(filter.toLowerCase()));
+        
+        if (items.length === 0) {
+            dropdown.innerHTML = '';
+            dropdown.classList.add('hidden');
+            return;
+        }
+
+        dropdown.innerHTML = items.map(val => {
+            const safeVal = String(val).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            return `<div class="p-2.5 text-[11px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-700 dark:text-slate-300 transition-colors" 
+                onmousedown="document.getElementById('${inputId}').value='${safeVal}'; document.getElementById('${inputId}').dispatchEvent(new Event('input')); document.getElementById('${dropdown.id}').classList.add('hidden');">
+                ${val}
+            </div>`;
+        }).join('');
+        dropdown.classList.remove('hidden');
+    };
+
+    input.addEventListener('focus', () => renderList());
+    input.addEventListener('input', (e) => renderList(e.target.value));
+    input.addEventListener('blur', () => { setTimeout(() => dropdown.classList.add('hidden'), 200); });
+}
+
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
 function openMultiFilterModal(type, title, context) {
@@ -1892,16 +2026,20 @@ function updateUI() {
 }
 
 // === СОХРАНЕНИЕ / ОЧИСТКА ===
+// === СОХРАНЕНИЕ В ИСТОРИЮ (С ПОЛЯМИ СЕКЦИЯ/ЭТАЖ/ПОМЕЩЕНИЕ) ===
 function saveProductToArray() {
     const projInput = document.getElementById('inp-project');
     const inspInput = document.getElementById('inp-inspector');
     const contrInput = document.getElementById('inp-contractor');
-    const locInput = document.getElementById('inp-location');
+    const secInput = document.getElementById('inp-section');
+    const floorInput = document.getElementById('inp-floor');
+    const roomInput = document.getElementById('inp-room');
+    const locHidden = document.getElementById('inp-location');
 
     let hasError = false;
     
-    // Жесткая проверка: если поле пустое, красим в красный
-    [projInput, inspInput, contrInput, locInput].forEach(el => {
+    // Красим в красный если пусто (Обязательные поля)
+    [projInput, inspInput, contrInput, secInput].forEach(el => {
         if (el && !el.value.trim()) {
             el.classList.add('border-red-500', 'bg-red-50');
             setTimeout(() => el.classList.remove('border-red-500', 'bg-red-50'), 3000);
@@ -1910,12 +2048,12 @@ function saveProductToArray() {
     });
 
     if (hasError) {
-        showToast('⚠️ Заполните все поля (Объект, Проверяющий, Подрядчик, Локация)!');
+        showToast('⚠️ Заполните все поля со звездочкой (Объект, Проверяющий, Подрядчик, Секция)!');
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
         return;
     }
     // --- ЗАЩИТА ОТ ДУБЛИКАТОВ ---
-    const locVal = locInput.value.trim();
+    const locVal = locHidden.value.trim();
     const projVal = projInput.value.trim();
     const contrVal = contrInput.value.trim();
 
@@ -1964,6 +2102,10 @@ function saveProductToArray() {
     
     const selectEl = document.getElementById('checklist-selector');
     const tTitle = selectEl.options[selectEl.selectedIndex].text.replace('▼', '').trim();
+    
+    // Определяем Milestone (Экземпляр = Секция + Этаж)
+    let instanceId = "default";
+    if (secInput.value && floorInput.value) instanceId = `${secInput.value.replace(/\D/g, '')}_${floorInput.value.replace(/\D/g, '')}`;
 
     const newItem = { 
         id: Date.now() + Math.floor(Math.random() * 1000), 
@@ -1973,7 +2115,11 @@ function saveProductToArray() {
         contractorName: contrInput.value.trim(),
         templateKey: currentTemplateKey, 
         templateTitle: tTitle,
-        location: locInput.value.trim(), 
+        section: secInput.value.trim(),
+        floor: floorInput.value.trim(),
+        room: roomInput.value.trim(),
+        location: locHidden.value.trim(), 
+        instanceId: instanceId, // Идентификатор для milestone
         stageId: 0, 
         stageName: stageNameLabel,
         checkedStagesInfo: checkedStageNames, 
@@ -1988,62 +2134,32 @@ function saveProductToArray() {
     if (!isDemoMode) {
         dbPut(STORES.HISTORY, newItem); // ЗАЩИТА: не пишем в БД в демо-режиме
     }
+
+    // Обновляем кэш автозаполнения для смарт-инпутов
+    updateSmartInputCache('projectName', projInput.value.trim());
+    updateSmartInputCache('inspectorName', inspInput.value.trim());
+    updateSmartInputCache('contractorName', contrInput.value.trim());
+    updateSmartInputCache('section', secInput.value.trim());
+    updateSmartInputCache('floor', floorInput.value.trim());
+    updateSmartInputCache('room', roomInput.value.trim());
     
     // Очищаем стейт ответов
     state = {}; details = {}; photos = {}; 
     
-    // СБРОС ТОЛЬКО ПОЛЯ ЛОКАЦИЯ
-    locInput.value = '';
+    // Очищаем ТОЛЬКО локационные поля
+    secInput.value = ''; floorInput.value = ''; roomInput.value = ''; locHidden.value = '';
     
     scheduleSessionSave(); 
     
     window.scrollTo({ top: 0, behavior: "smooth" });
     showToast(`✅ Сохранено в Историю!`);
     
-    // ИСПРАВЛЕНИЕ БАГА: Принудительно обновляем память полей и фильтры сразу после сохранения!
-    updateDatalists();
-    updateAllDynamicFilters();
-    
     render(); 
     updateUI();
-// АВТОБЭКАП (Раз в 10 проверок)
-    let checksSaved = parseInt(localStorage.getItem('auto_backup_counter') || '0') + 1;
-    localStorage.setItem('auto_backup_counter', checksSaved);
-    if (checksSaved >= 10 && !isDemoMode) {
-        localStorage.setItem('auto_backup_counter', '0');
-        showToast('🔄 Выполняется фоновое автосохранение...');
-        // Генерируем и кладем в IndexedDB спец. ключ
-        if (typeof generateBackupObject === 'function') {
-            const autoObj = generateBackupObject('full');
-            dbPut(STORES.SETTINGS, { key: 'auto_backup_latest', data: autoObj }).then(() => {
-                console.log('Автобэкап сохранен в БД');
-            });
-        }
-    }
 }
 
 // === ОБНОВЛЕНИЕ ПАМЯТИ ПОЛЕЙ ВВОДА (АВТОКОМПЛИТ) ===
-function updateDatalists() {
-    if (!contractorArray || contractorArray.length === 0) return;
-    
-    // Получаем последние 15 уникальных значений для каждого поля
-    const getTopRecent = (field) => {
-        const sorted = [...contractorArray].sort((a,b) => new Date(b.date) - new Date(a.date));
-        return [...new Set(sorted.map(i => i[field]).filter(Boolean))].slice(0, 15);
-    };
 
-    const buildOptions = (arr) => arr.map(v => `<option value="${v}">`).join('');
-
-    const dlProj = document.getElementById('dl-projects');
-    const dlInsp = document.getElementById('dl-inspectors');
-    const dlContr = document.getElementById('dl-contractors');
-    const dlLoc = document.getElementById('dl-locations');
-
-    if(dlProj) dlProj.innerHTML = buildOptions(getTopRecent('projectName'));
-    if(dlInsp) dlInsp.innerHTML = buildOptions(getTopRecent('inspectorName'));
-    if(dlContr) dlContr.innerHTML = buildOptions(getTopRecent('contractorName'));
-    if(dlLoc) dlLoc.innerHTML = buildOptions(getTopRecent('location'));
-}
 
 function resetChecklist() {
     if(!confirm('Очистить только текущий чек-лист?')) return;

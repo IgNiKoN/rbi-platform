@@ -1234,3 +1234,33 @@ const SYSTEM_TEMPLATES = {
         ]
     }        
 };
+
+// === КЛАССИФИКАЦИЯ ЧАСТОТНОСТИ СИСТЕМНЫХ ЧЕК-ЛИСТОВ ===
+const FREQUENCY_MAP = {
+    nvf_facade: "continuous", armature: "continuous", vent_stairs: "milestone", blago: "milestone",
+    gazobeton: "continuous", gidro_0: "milestone", kirpich: "continuous", skc: "continuous",
+    krovlya: "milestone", monolit: "continuous", zemlya: "milestone", mk: "milestone",
+    okna_alu: "continuous", vitrazh: "continuous", dveri_met: "continuous", okna_pvh: "continuous",
+    otdelka_gkl: "continuous", otdelka_poly: "continuous", otdelka_oboi: "continuous",
+    otdelka_plitka: "continuous", otdelka_potolok: "continuous", otdelka_pokraska: "continuous",
+    otdelka_shpatlevka: "continuous", otdelka_shtukaturka: "continuous", svai_vdavlivanie: "milestone",
+    polusuhaya_styazhka: "continuous", fasad_shtukatur: "continuous"
+};
+
+for (let key in SYSTEM_TEMPLATES) {
+    SYSTEM_TEMPLATES[key].checkFrequency = FREQUENCY_MAP[key] || "continuous";
+}
+
+// === СИСТЕМНЫЙ АКТ-ЭТАЛОН ===
+SYSTEM_TEMPLATES['etalon_act'] = {
+    title: "Акт-Эталон (Первый образец)",
+    templateVersion: "1.0",
+    checkFrequency: "milestone",
+    groups: [
+        { group: "1. Фиксация эталона", items: [
+            { id: 9901, n: "Соответствие рабочей документации (РД) и ТЗ", w: 3, t: formatNorms("Материалы, привязки и геометрия полностью соответствуют РД.") },
+            { id: 9902, n: "Качество выполнения (Визуальный стандарт)", w: 3, t: formatNorms("Работа выполнена без дефектов B2/B3. Узел может служить визуальным эталоном для последующего производства.") },
+            { id: 9903, n: "Фотофиксация эталона", w: 3, t: formatNorms("Обязательно прикрепить фотографию общего вида и ключевых узлов.") }
+        ]}
+    ]
+};

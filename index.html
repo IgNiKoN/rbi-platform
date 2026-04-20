@@ -661,7 +661,7 @@
             </div>
 
             <!-- СТРОКА 3: Данные объекта -->
-            <div id="header-data-block" class="mb-1.5">
+             <div id="header-data-block" class="mb-1.5">
                 <div
                     class="flex justify-between items-center bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl px-3 py-1.5 shadow-sm mb-1.5">
                     <div class="flex items-center gap-2 flex-1 min-w-0">
@@ -675,31 +675,22 @@
                             class="text-[10px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider truncate flex-1">
                             Вид работ не выбран</div>
                     </div>
+                    </div>
+                     <div id="data-block-content" class="grid grid-cols-3 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
+                   <div class="relative"><input type="text" id="inp-inspector" class="input-base text-center" placeholder="Проверяющий *" autocomplete="off"></div> 
+                   <div class="relative"><input type="text" id="inp-contractor" class="input-base text-center" placeholder="Подрядчик *" autocomplete="off"></div>
+                   <div class="relative"><input type="text" id="inp-project" class="input-base text-center" placeholder="Объект *" autocomplete="off"></div>
+                   
+                    <div class="col-span-3 grid grid-cols-3 gap-1.5 mt-1">
+                        <div class="relative"><input type="text" id="inp-section" class="input-base text-center" placeholder="Корус/Секция *" autocomplete="off"></div>
+                        <div class="relative"><input type="text" id="inp-floor" class="input-base text-center" placeholder="Этаж*" autocomplete="off"></div>
+                        <div class="relative"><input type="text" id="inp-room" class="input-base text-center" placeholder="Оси/Пом.*" autocomplete="off"></div>
+                    </div>
+                    <input type="hidden" id="inp-location">
                 </div>
-                <div id="data-block-content"
-                    class="grid grid-cols-2 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
-                    <input type="text" id="inp-project" list="dl-projects" class="input-base" placeholder="Объект *"
-                        oninput="scheduleSessionSave()" onchange="scheduleSessionSave()" onblur="scheduleSessionSave()">
-                    <input type="text" id="inp-inspector" list="dl-inspectors" class="input-base"
-                        placeholder="Проверяющий *" oninput="scheduleSessionSave()" onchange="scheduleSessionSave()"
-                        onblur="scheduleSessionSave()">
-                    <input type="text" id="inp-contractor" list="dl-contractors" class="input-base"
-                        placeholder="Подрядчик *" oninput="scheduleSessionSave(); updateUI();"
-                        onchange="scheduleSessionSave(); updateUI();" onblur="scheduleSessionSave(); updateUI();">
-                    <input type="text" id="inp-location" list="dl-locations" class="input-base"
-                        placeholder="Корпус, этаж, оси *" oninput="scheduleSessionSave(); updateUI();"
-                        onchange="scheduleSessionSave(); updateUI();" onblur="scheduleSessionSave(); updateUI();">
-
-                    <!-- Скрытые списки для автозаполнения (Память вводов) -->
-                    <datalist id="dl-projects"></datalist>
-                    <datalist id="dl-inspectors"></datalist>
-                    <datalist id="dl-contractors"></datalist>
-                    <datalist id="dl-locations"></datalist>
-                </div>
-            </div>
 
             <!-- СТРОКА 4: Навигация -->
-            <div id="audit-group-nav" class="overflow-x-auto whitespace-nowrap pb-1 no-scrollbar flex gap-2"></div>
+            <div id="audit-group-nav" class="overflow-x-auto whitespace-nowrap mt-1.5 no-scrollbar flex gap-2"></div>
         </div>
     </header>
 
@@ -3387,6 +3378,32 @@
 
     <!-- СКРЫТЫЙ КОНТЕЙНЕР ДЛЯ ПЕЧАТИ ЧЕРЕЗ БРАУЗЕР -->
     <div id="native-print-container" style="display: none;"></div>
+
+<!-- === МОДАЛКА УПРАВЛЕНИЯ СТАТУСОМ ЗАДАЧИ === -->
+    <div id="task-status-modal" class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="this.style.display='none'">
+        <div class="bg-[var(--card-bg)] w-full max-w-xs p-5 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]" onclick="event.stopPropagation()">
+            <div class="font-black text-[13px] uppercase tracking-tight mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 text-slate-800 dark:text-white flex justify-between items-center">
+                ⚙️ Статус подрядчика
+                <button onclick="document.getElementById('task-status-modal').style.display='none'" class="text-slate-400 font-black px-2">✕</button>
+            </div>
+            <div id="task-status-actions" class="space-y-2">
+                <!-- Кнопки вставляются через JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- === МОДАЛКА ТРЕБОВАНИЯ ЭТАЛОНА === -->
+    <div id="etalon-prompt-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="this.style.display='none'">
+        <div class="bg-[var(--card-bg)] w-full max-w-sm p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] text-center" onclick="event.stopPropagation()">
+            <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-blue-200">📐</div>
+            <h3 class="font-black text-slate-800 dark:text-white text-[14px] uppercase mb-2">Требуется Акт-Эталон</h3>
+            <p class="text-[11px] text-slate-500 mb-6 leading-relaxed">Это новый подрядчик или вид работ. Перед началом массовых проверок необходимо зафиксировать эталонный образец. Выполнить сейчас?</p>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('etalon-prompt-modal').style.display='none'" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95">Позже</button>
+                <button id="btn-start-etalon" class="flex-1 bg-blue-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Да, начать</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

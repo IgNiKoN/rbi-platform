@@ -85,10 +85,25 @@ body.nav-pos-bottom { padding-bottom: 90px; }
 /* === ПЛАВНОЕ СВОРАЧИВАНИЕ ШАПКИ (iOS STYLE) === */
 .header-collapsible {
     transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
-    max-height: 400px; opacity: 1; overflow: hidden;
+    max-height: 400px; 
+    opacity: 1; 
+    /* ИСПРАВЛЕНИЕ: overflow должен быть visible, чтобы списки могли выпадать поверх других блоков */
+    overflow: visible !important; 
 }
 .header-collapsed .header-collapsible {
-    max-height: 0 !important; opacity: 0 !important; margin: 0 !important; padding: 0 !important; border-width: 0 !important; pointer-events: none;
+    max-height: 0 !important; 
+    opacity: 0 !important; 
+    margin: 0 !important; 
+    padding: 0 !important; 
+    border-width: 0 !important; 
+    pointer-events: none;
+    overflow: hidden !important; /* Скрываем только когда шапка свернута */
+}
+
+/* Добавляем красивую рамку и тень самим выпадающим спискам */
+[id^="dd-"] {
+    border: 1px solid var(--primary);
+    box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.3);
 }
 
 /* Форсированное положение меню из Настроек */

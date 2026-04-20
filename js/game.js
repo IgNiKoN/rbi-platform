@@ -233,10 +233,11 @@ function getSmartQuest(profile) {
     }
 }
 
-// === НЕДЕЛЬНОЕ ПЛАНИРОВАНИЕ И ОТПУСКА ===
+// === НЕДЕЛЬНОЕ ПЛАНИРОВАНИЕ, СТАТУСЫ И ОТПУСКА ===
 
 let weeklyPlanData = { weekId: null, tasks: [], completed: false };
 let engineerAbsence = { isActive: false, reason: 'Отпуск', startDate: null, endDate: null };
+let contractorStatuses = {}; // Объект для хранения статусов (active, paused, completed)
 
 function getWeekId(date = new Date()) {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -262,6 +263,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         const storedAbsence = await dbGet(STORES.SETTINGS, 'engineer_absence');
         if (storedAbsence && storedAbsence.data) engineerAbsence = storedAbsence.data;
+
+        const storedStatuses = await dbGet(STORES.SETTINGS, 'contractor_statuses');
+        if (storedStatuses && storedStatuses.data) contractorStatuses = storedStatuses.data;
     } catch (e) { console.error("Ошибка загрузки модуля планирования", e); }
 });
 
@@ -270,6 +274,7 @@ async function saveWeeklyPlan() {
     try { 
         await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData }); 
         await dbPut(STORES.SETTINGS, { key: 'engineer_absence', data: engineerAbsence });
+        await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
     } catch (e) { console.error("Ошибка сохранения плана", e); }
 }
 
@@ -317,80 +322,183 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo);
 
+    // Группируем по уникальным связкам
     const pairMap = {};
     recentChecks.forEach(c => {
-        const key = `${c.contractorName}_||_${c.templateKey}`;
-        if (!pairMap[key]) pairMap[key] = { contractor: c.contractorName, templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [] };
-        pairMap[key].checks.push(c);
+        const type = c.templateKey.split('_')[0];
+        const key = c.templateKey.replace(type + '_', '');
+        const templateObj = type === 'sys' ? SYSTEM_TEMPLATES[key] : userTemplates[key];
+        const freq = templateObj?.checkFrequency || 'continuous';
+        const instanceId = c.instanceId || 'default';
+        const statusKey = `${c.projectName}::${c.contractorName}::${c.templateKey}::${instanceId}`;
+
+        if (!pairMap[statusKey]) {
+            pairMap[statusKey] = {
+                statusKey: statusKey,
+                project: c.projectName,
+                contractor: c.contractorName,
+                templateKey: c.templateKey,
+                templateTitle: c.templateTitle,
+                frequency: freq,
+                instanceId: instanceId,
+                totalStages: templateObj?.groups ? templateObj.groups.length : 1,
+                checks: [],
+                allChecksCount: contractorArray.filter(hist => 
+                    hist.projectName === c.projectName && 
+                    hist.contractorName === c.contractorName && 
+                    hist.templateKey === c.templateKey
+                ).length
+            };
+        }
+        pairMap[statusKey].checks.push(c);
     });
 
     for (let key in pairMap) {
         const pair = pairMap[key];
-        const totalHistoryChecks = contractorArray.filter(c => c.contractorName === pair.contractor && c.templateKey === pair.templateKey).length;
         
-        let priority = "Низкий"; let priorityLvl = 1; let target = 1;
-        let isNew = false; let hasB3InLast = false;
+        // 1. Инициализация статуса в БД, если его нет
+        if (!contractorStatuses[key]) {
+            contractorStatuses[key] = {
+                status: "active",
+                progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 },
+                milestoneProgress: { completedStages: [], totalStages: pair.totalStages },
+                etalonCompleted: pair.allChecksCount >= 3, // Если больше 3 проверок - эталон не нужен
+                lastUpdate: new Date().toISOString()
+            };
+        }
 
-        if (totalHistoryChecks < 3) {
-            priority = "Новый"; priorityLvl = 3; target = 7; isNew = true;
-        } else {
-            const m = getContractorMetrics(pair.checks, userTemplates);
-            if (m) {
-                const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-                hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
+        const st = contractorStatuses[key];
+        if (st.status === 'paused' || st.status === 'completed') continue; // Пропускаем
 
-                if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40) { priority = "Критичный"; priorityLvl = 4; target = 5; } 
-                else if (m.finalC <= 84 || m.rateB3 >= 5 || m.stabilityIndex < 60) { priority = "Средний"; priorityLvl = 2; target = 2; }
+        // 2. Требование эталона
+        let needsEtalon = false;
+        if (pair.allChecksCount < 3 && !st.etalonCompleted) {
+            needsEtalon = true;
+        }
+
+        // 3. Формирование задачи (Continuous vs Milestone)
+        if (pair.frequency === 'continuous') {
+            let priority = "Низкий"; let priorityLvl = 1; let target = 1;
+            let hasB3InLast = false;
+
+            if (pair.allChecksCount < 3) {
+                priority = "Новый"; priorityLvl = 3; target = 7;
+            } else {
+                const m = getContractorMetrics(pair.checks, userTemplates);
+                if (m) {
+                    const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+                    hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
+                    if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40) { priority = "Критичный"; priorityLvl = 4; target = 5; } 
+                    else if (m.finalC <= 84 || m.rateB3 >= 5 || m.stabilityIndex < 60) { priority = "Средний"; priorityLvl = 2; target = 2; }
+                }
             }
-        }
 
-        if (hasB3InLast && priority !== "Новый") {
-            target = Math.min(target * 2, 7);
-            priority = "Критичный (Недавний B3)"; priorityLvl = 4;
-        }
+            if (hasB3InLast && priority !== "Новый") {
+                target = Math.min(target * 2, 7);
+                priority = "Критичный (Недавний B3)"; priorityLvl = 4;
+            }
 
-        const oldTask = oldPlan.find(t => t.contractor === pair.contractor && t.templateKey === pair.templateKey);
-        let deficit = 0; let carryOverCount = 0;
-        
-        if (oldTask && oldTask.done < oldTask.target) {
-            deficit = oldTask.target - oldTask.done;
-            carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
-            target = Math.min(target + deficit, 7); 
+            const oldTask = oldPlan.find(t => t.statusKey === key);
+            let deficit = 0; let carryOverCount = 0;
             
-            if (priorityLvl < 4) {
-                priorityLvl++;
-                if (priorityLvl === 2) priority = "Средний (Долг)";
-                if (priorityLvl === 3) priority = "Высокий (Долг)";
-                if (priorityLvl === 4) priority = "Критичный (Долг)";
+            if (oldTask && oldTask.done < oldTask.target && !needsEtalon) {
+                deficit = oldTask.target - oldTask.done;
+                carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
+                target = Math.min(target + deficit, 7); 
+                
+                if (priorityLvl < 4) {
+                    priorityLvl++;
+                    if (priorityLvl === 2) priority = "Средний (Долг)";
+                    if (priorityLvl === 3) priority = "Высокий (Долг)";
+                    if (priorityLvl === 4) priority = "Критичный (Долг)";
+                }
+            }
+
+            newTasks.push({
+                id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+                statusKey: key, type: 'continuous',
+                contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
+                priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
+                deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon
+            });
+        } 
+        else if (pair.frequency === 'milestone') {
+            // Milestone (Поэтапный контроль)
+            const completedLen = st.milestoneProgress.completedStages ? st.milestoneProgress.completedStages.length : 0;
+            const tTotal = st.milestoneProgress.totalStages || pair.totalStages;
+
+            if (completedLen < tTotal) {
+                newTasks.push({
+                    id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+                    statusKey: key, type: 'milestone',
+                    contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
+                    priority: "Поэтапный", priorityLvl: 2, 
+                    target: tTotal, done: completedLen,
+                    needsEtalon: needsEtalon
+                });
+            } else {
+                // Если все этапы завершены, закрываем статус автоматически
+                st.status = 'completed';
             }
         }
-
-        const estTime = (pair.templateKey.includes('monolit') || pair.templateKey.includes('fasad')) ? 45 : 25;
-
-        newTasks.push({
-            id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-            contractor: pair.contractor, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-            priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
-            estTime: estTime * target, deficit: deficit, carryOverCount: carryOverCount, isNew: isNew, fillRate: 0, photoRate: 0
-        });
     }
 
     newTasks.sort((a, b) => b.priorityLvl - a.priorityLvl);
     weeklyPlanData = { weekId: currentWeekId, tasks: newTasks, completed: false };
     
-    if (!force && oldPlan.length > 0) {
-        let totalDebt = 0;
-        oldPlan.forEach(t => {
-            if (t.done < t.target) {
-                totalDebt += (t.target - t.done);
-                gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'debt_penalty', target: t.id });
+    saveWeeklyPlan();
+    gameUpdatePlanProgress();
+};
+
+window.gameUpdatePlanProgress = function() {
+    const currentInspector = document.getElementById('inp-inspector')?.value.trim();
+    if (!currentInspector || !weeklyPlanData.tasks) return;
+
+    const startOfThisWeek = getStartOfWeek();
+    const myWeeklyChecks = contractorArray.filter(c => c.inspectorName === currentInspector && new Date(c.date) >= startOfThisWeek);
+    let allTasksDone = true;
+
+    weeklyPlanData.tasks.forEach(task => {
+        // Игнорируем прогресс, если требуется эталон
+        if (task.needsEtalon) {
+            allTasksDone = false;
+            return;
+        }
+
+        const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
+        
+        if (task.type === 'continuous') {
+            let validChecksCount = 0;
+            matchedChecks.forEach(c => { if (c.metrics && c.metrics.checkedCount >= 3) validChecksCount++; });
+            task.done = validChecksCount;
+            if (task.done < task.target) allTasksDone = false;
+        } else if (task.type === 'milestone') {
+            // Для milestone мы обновляем completedStages
+            const st = contractorStatuses[task.statusKey];
+            if (st && st.milestoneProgress) {
+                matchedChecks.forEach(c => {
+                    if (c.checkedStagesInfo) {
+                        c.checkedStagesInfo.forEach(stageName => {
+                            if (!st.milestoneProgress.completedStages.includes(stageName)) {
+                                st.milestoneProgress.completedStages.push(stageName);
+                            }
+                        });
+                    }
+                });
+                task.done = st.milestoneProgress.completedStages.length;
+                task.target = st.milestoneProgress.totalStages;
+                if (task.done < task.target) allTasksDone = false;
+                else st.status = 'completed'; // Закрываем, если всё пройдено
             }
-        });
-        if (totalDebt >= 10) gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'heavy_debt_penalty', target: 'all' });
+        }
+    });
+
+    if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
+        weeklyPlanData.completed = true;
+        gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
     }
 
     saveWeeklyPlan();
-    gameUpdatePlanProgress();
 };
 
 window.gameUpdatePlanProgress = function() {
@@ -678,59 +786,36 @@ window.gameRenderDashboard = function() {
 
     let absenceText = 'Активен (План работает)';
     if (engineerAbsence.isActive) {
-        if (engineerAbsence.endDate) {
-            const endD = new Date(engineerAbsence.endDate).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'});
-            absenceText = `${engineerAbsence.reason} до ${endD}`;
-        } else {
-            absenceText = `${engineerAbsence.reason} (Приостановлен)`;
-        }
-    }
-
-    html += `
-        <div class="bg-[var(--card-bg)] border ${engineerAbsence.isActive ? 'border-amber-300 bg-amber-50 dark:bg-amber-900/20' : 'border-[var(--card-border)]'} rounded-xl p-3 shadow-sm mb-4 mx-1 flex justify-between items-center transition-colors">
-            <div class="flex items-center gap-3">
-                <div class="text-2xl">${engineerAbsence.isActive ? '🌴' : '💼'}</div>
-                <div>
-                    <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Текущий статус</div>
-                    <div class="text-[11px] font-bold ${engineerAbsence.isActive ? 'text-amber-600 dark:text-amber-500' : 'text-green-600 dark:text-green-500'} mt-0.5">${absenceText}</div>
-                </div>
-            </div>
-            <button onclick="gameToggleAbsence()" class="text-[9px] font-bold ${engineerAbsence.isActive ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-[var(--hover-bg)] text-slate-600 border-[var(--card-border)]'} border px-3 py-2 rounded-lg shadow-sm active:scale-95 uppercase">Изменить</button>
-        </div>
-    `;
-
-    html += `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-4 mx-1 overflow-hidden">
-            <div class="bg-indigo-50 border-b border-indigo-100 dark:bg-indigo-900/30 dark:border-indigo-800 p-2.5 flex justify-between items-center">
-                <span class="font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest">📋 План (${weeklyPlanData.weekId || 'Нет'})</span>
-                <button onclick="gameForceUpdatePlan()" class="text-[9px] font-bold text-indigo-600 bg-white px-2 py-1 rounded shadow-sm active:scale-95 uppercase">↻ Обновить</button>
-            </div>
-            <div class="p-2 space-y-2 bg-slate-50 dark:bg-slate-900/50">
-    `;
-
-    if (engineerAbsence.isActive) {
         html += `<div class="text-center py-6 text-amber-600 font-bold text-[11px] bg-amber-50/50 rounded-xl border border-dashed border-amber-200 uppercase">План приостановлен</div>`;
     } else if (!weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) {
-        html += `<div class="text-center py-6 text-slate-500 font-bold text-[11px] bg-white rounded-xl border border-dashed border-slate-200 uppercase">Свободная неделя (риски минимальны)</div>`;
+        html += `<div class="text-center py-6 text-slate-500 font-bold text-[11px] bg-white rounded-xl border border-dashed border-slate-200 uppercase">Все задачи завершены или приостановлены</div>`;
     } else {
         weeklyPlanData.tasks.forEach(t => {
             const progressPerc = Math.min((t.done / t.target) * 100, 100);
             const isDone = t.done >= t.target;
             let badgeClass = t.priorityLvl === 4 ? 'text-red-600 bg-red-50 border-red-200' : (t.priorityLvl >= 2 ? 'text-orange-600 bg-orange-50 border-orange-200' : 'text-slate-500 bg-slate-100 border-slate-200');
+            
+            // НОВОЕ: Индикаторы Эталона и Milestone
+            let etalonBadge = t.needsEtalon ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-blue-100 text-blue-700">📌 Требуется Эталон</span>` : '';
+            let milestoneBadge = t.type === 'milestone' ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700">🏁 Поэтапно</span>` : '';
 
+            // НОВОЕ: Контекстное меню (Троеточие) для статуса
             html += `
-            <div class="border border-[var(--card-border)] rounded-xl p-2.5 bg-white dark:bg-slate-800 shadow-sm cursor-pointer active:scale-[0.98]" onclick="gameStartTask('${t.contractor.replace(/'/g, "\\'")}', '${t.templateKey}')">
-                <div class="flex justify-between items-start mb-1">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white truncate pr-2">${t.contractor}</div>
-                    <div class="text-[10px] font-black text-slate-500 shrink-0 ${isDone?'text-green-500':''}">${t.done}/${t.target}</div>
+            <div class="border border-[var(--card-border)] rounded-xl p-2.5 bg-white dark:bg-slate-800 shadow-sm relative group cursor-pointer active:scale-[0.98] transition-transform" onclick="gameStartTask('${t.contractor.replace(/'/g, "\\'")}', '${t.templateKey}')">
+                <div class="absolute top-2 right-2 flex items-center gap-2">
+                    <div class="text-[10px] font-black text-slate-500 ${isDone?'text-green-500':''}">${t.done}/${t.target}</div>
+                    <button onclick="gameOpenTaskMenu('${t.statusKey}', event)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 font-black rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">⋮</button>
                 </div>
-                <div class="text-[9px] font-bold text-slate-500 truncate mb-1.5">${t.templateTitle}</div>
-                <div class="flex gap-1.5 items-center">
+                <div class="text-[12px] font-black text-slate-800 dark:text-white truncate pr-16">${t.contractor}</div>
+                <div class="text-[9px] font-bold text-slate-500 truncate mb-1.5">${t.templateTitle} [${t.project}]</div>
+                <div class="flex gap-1.5 items-center mb-1.5 flex-wrap">
                     <span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border ${badgeClass}">${t.priority}</span>
-                    ${t.carryOverCount > 0 ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-red-100 text-red-700">⚠️ Долг</span>` : ''}
-                    <div class="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden ml-2">
-                        <div class="h-full ${isDone ? 'bg-green-500' : 'bg-indigo-500'}" style="width: ${progressPerc}%"></div>
-                    </div>
+                    ${milestoneBadge}
+                    ${etalonBadge}
+                    ${t.carryOverCount > 0 && !t.needsEtalon ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-red-100 text-red-700">⚠️ Долг</span>` : ''}
+                </div>
+                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-1">
+                    <div class="h-full ${isDone ? 'bg-green-500' : 'bg-indigo-500'}" style="width: ${progressPerc}%"></div>
                 </div>
             </div>`;
         });
@@ -1154,6 +1239,10 @@ function gameCalculateManagerMetrics() {
         });
 
         const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
+        
+        // НОВОЕ: Влияние Impact на PI (Опыт)
+        if (avgImpact > 0.2) p.pi += 50;
+        else if (avgImpact < -0.2) p.pi = Math.max(0, p.pi - 30);
 
         managerStats.push({ 
             name: p.name, pi: p.pi, level: p.levelObj.level, 
@@ -1277,6 +1366,10 @@ function gameRenderManagerAnalytics() {
     html += `
                     </tbody>
                 </table>
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mt-4 p-4">
+            <div class="font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 text-center">📈 Динамика строгости инженеров</div>
+            <div style="height: 200px; position: relative;"><canvas id="manager-strictness-chart"></canvas></div>
+        </div>
             </div>
         </div>
         <div class="mt-4 flex flex-wrap gap-4 text-[9px] font-bold text-slate-500 justify-center uppercase tracking-widest">
@@ -1287,4 +1380,85 @@ function gameRenderManagerAnalytics() {
     `;
 
     container.innerHTML = html;
+setTimeout(() => {
+        const ctxS = document.getElementById('manager-strictness-chart');
+        if (ctxS) {
+            // Рисуем график строгости по инженерам (по оси X - инженеры, по оси Y - строгость)
+            if (window.mgrStrictnessChart) window.mgrStrictnessChart.destroy();
+            window.mgrStrictnessChart = new Chart(ctxS, {
+                type: 'bar',
+                data: { 
+                    labels: stats.map(s => s.name.substring(0, 10)), 
+                    datasets: [{ 
+                        data: stats.map(s => s.strictness), 
+                        backgroundColor: stats.map(s => s.strictness > 5 ? '#22c55e' : (s.strictness < -5 ? '#ef4444' : '#f59e0b')),
+                        borderRadius: 4
+                    }] 
+                },
+                options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+    }, 100);
+}
+
+window.gameOpenTaskMenu = function(statusKey, e) {
+    e.stopPropagation();
+    const st = contractorStatuses[statusKey];
+    if (!st) return;
+
+    let actionsHtml = '';
+    if (st.status === 'active') {
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'paused')" class="w-full text-left p-3 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-sm font-bold border border-transparent hover:border-orange-200 transition-colors">⏸ Приостановить работы</button>`;
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'completed')" class="w-full text-left p-3 rounded-lg hover:bg-green-50 hover:text-green-700 text-sm font-bold border border-transparent hover:border-green-200 transition-colors">✅ Завершить работы (Сдать)</button>`;
+    } else if (st.status === 'paused') {
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'active')" class="w-full text-left p-3 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold border border-transparent hover:border-indigo-200 transition-colors">▶ Возобновить работы</button>`;
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'completed')" class="w-full text-left p-3 rounded-lg hover:bg-green-50 hover:text-green-700 text-sm font-bold border border-transparent hover:border-green-200 transition-colors">✅ Завершить (Отказ от работ)</button>`;
+    }
+    
+    document.getElementById('task-status-actions').innerHTML = actionsHtml;
+    document.getElementById('task-status-modal').style.display = 'flex';
+};
+
+window.gameChangeTaskStatus = function(statusKey, newStatus) {
+    if (contractorStatuses[statusKey]) {
+        contractorStatuses[statusKey].status = newStatus;
+        saveWeeklyPlan();
+        gameGenerateWeeklyPlan(true); // Принудительный пересчет плана без этой задачи
+        gameRenderDashboard();
+        showToast(`Статус изменен на: ${newStatus}`);
+    }
+    document.getElementById('task-status-modal').style.display = 'none';
+};
+
+// Интеграция Требования Эталона при нажатии на задачу
+window.gameStartTask = function(contractor, templateKey) {
+    // Проверка на потребность в эталоне
+    const task = weeklyPlanData.tasks.find(t => t.contractor === contractor && t.templateKey === templateKey);
+    if (task && task.needsEtalon) {
+        document.getElementById('etalon-prompt-modal').style.display = 'flex';
+        document.getElementById('btn-start-etalon').onclick = () => {
+            document.getElementById('etalon-prompt-modal').style.display = 'none';
+            // Запускаем системный акт-эталон
+            startInspectionWithValues(contractor, 'sys_etalon_act', task.statusKey);
+        };
+        return; // Блокируем обычный старт
+    }
+    startInspectionWithValues(contractor, templateKey);
+};
+
+function startInspectionWithValues(contractor, templateKey, statusKey = null) {
+    const contrInput = document.getElementById('inp-contractor');
+    if (contrInput) { contrInput.value = contractor; contrInput.dispatchEvent(new Event('input')); }
+    
+    // Если это эталон, передаем ключ статуса через скрытый атрибут, чтобы потом обновить
+    const selEl = document.getElementById('checklist-selector');
+    if (selEl) {
+        selEl.value = templateKey;
+        selEl.dataset.pendingStatusKey = statusKey || ''; // Запоминаем для обновления
+    }
+    
+    switchTab('tab-audit'); changeTemplate(templateKey);
+    setTimeout(() => {
+        updateDataSummary(); window.scrollTo({top: 0, behavior: 'smooth'});
+    }, 150);
 }
