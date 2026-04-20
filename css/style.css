@@ -762,17 +762,7 @@ body.nav-pos-bottom #fab-download-btn {
     /* Навигация (65px) + Подвкладки (около 50px) + Зазоры */
     bottom: 165px !important; 
 }
-/* === ИНТЕРАКТИВНЫЙ ТУТОРИАЛ === */
-.tut-relative {
-    position: relative !important;
-}
-.tut-highlight {
-    z-index: 10001 !important;
-    box-shadow: 0 0 0 4px var(--primary), 0 15px 30px rgba(0,0,0,0.4) !important;
-    background-color: var(--card-bg) !important;
-    border-radius: 12px !important;
-    transition: box-shadow 0.3s ease, background-color 0.3s ease;
-}
+
 /* === ЖЕЛЕЗОБЕТОННЫЕ ПРАВИЛА ДЛЯ МЕНЮ СНИЗУ === */
 body.nav-pos-bottom #analytics-subtabs-block,
 body.nav-pos-bottom #reference-subtabs-block {
@@ -856,10 +846,6 @@ html.font-xlarge { font-size: 18.5px !important; }
     padding-top: 6px !important;
     padding-bottom: 6px !important;
 }
-
-/* Сброс стилей старой подсветки туториала (нам они больше не нужны) */
-.tut-relative { position: relative !important; }
-.tut-highlight { z-index: auto !important; box-shadow: none !important; }
 
 /* ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ PDF - ПОЗИЦИИ */
 /* ========================================= */
@@ -960,3 +946,40 @@ input[list]::-webkit-calendar-picker-indicator {
     padding: 0 !important;
 }
 
+/* === ИНТЕРАКТИВНЫЙ ТУТОРИАЛ (ИДЕАЛЬНАЯ МОБИЛЬНАЯ ВЕРСИЯ v16.5) === */
+.tut-relative { 
+    z-index: 10001 !important; 
+    position: relative !important; 
+    background-color: var(--card-bg) !important;
+    border-radius: inherit;
+}
+
+#tut-highlight-box {
+    position: fixed !important; /* Строго fixed, чтобы не прыгало при скролле */
+    z-index: 10000 !important;
+    box-shadow: 0 0 0 4px var(--primary), 0 0 0 9999px rgba(15,23,42,0.85) !important;
+    background-color: transparent !important;
+    border-radius: 12px !important;
+    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    pointer-events: none;
+    opacity: 0;
+}
+
+#tutorial-tooltip {
+    position: fixed !important;
+    left: 50% !important;
+    transform: translateX(-50%) scale(0.9) !important;
+    width: 92% !important;
+    max-width: 360px !important;
+    z-index: 10002 !important;
+    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    opacity: 0;
+    visibility: hidden;
+    margin: 0 !important;
+}
+
+#tutorial-tooltip.tut-active {
+    transform: translateX(-50%) scale(1) !important;
+    opacity: 1;
+    visibility: visible;
+}

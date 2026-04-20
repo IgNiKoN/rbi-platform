@@ -1466,11 +1466,9 @@ function buildSmartText(scenario, c, cName, tTitle, count) {
     }
 }
 
-// === СИСТЕМА ЛЕНИВОЙ ПОДГРУЗКИ ФОТОГАЛЕРЕЙ (ПО 10 ШТ) ===
+// === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА С ПОДДЕРЖКОЙ ОК) ===
 window.rbiPhotoGalleries = {};
 
-// === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА) ===
-// === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА С ПОДДЕРЖКОЙ ОК) ===
 window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeClass = null, customBadgeText = null) {
     if (!photosArray || photosArray.length === 0) return '<div class="text-xs text-slate-400">Нет фото</div>';
     
@@ -1501,42 +1499,6 @@ window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeCl
         </div>
     `;
 };
-window.loadMorePhotos = function() {}; // Заглушка
 
-// Оставляем пустую заглушку, чтобы ничего не сломалось, если в старом коде остался вызов
+// Пустая заглушка, чтобы не сломать старые HTML-кнопки (если они где-то остались в истории)
 window.loadMorePhotos = function() {};
-
-window.loadMorePhotos = function(galleryId) {
-    const gallery = window.rbiPhotoGalleries[galleryId];
-    if (!gallery) return;
-    
-    const grid = document.getElementById(`gallery-grid-${galleryId}`);
-    const btn = document.getElementById(`gallery-btn-${galleryId}`);
-    if (!grid) return;
-
-    const nextBatch = gallery.photos.slice(gallery.currentIndex, gallery.currentIndex + 10);
-    const badgeColor = gallery.isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
-    const badgeText = gallery.isCrit ? 'B3' : 'B2';
-
-    let html = nextBatch.map(d => `
-        <div class="snap-start shrink-0 w-36 sm:w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
-            <img src="${d.photo}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer(this.src)">
-            <div class="p-2 flex-1 flex flex-col justify-between">
-                <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5">${d.name}</div>
-                <div>
-                    <div class="text-[8px] text-[var(--text-muted)] mb-1 truncate w-full">👤 ${d.contr}</div>
-                    <div class="flex justify-between items-center"><span class="${badgeColor} text-[8px] font-black px-1.5 rounded border">${badgeText}</span><span class="text-[8px] font-bold text-slate-400">${d.date}</span></div>
-                </div>
-            </div>
-        </div>
-    `).join('');
-
-    grid.insertAdjacentHTML('beforeend', html);
-    gallery.currentIndex += 10;
-
-    if (gallery.currentIndex < gallery.photos.length) {
-        btn.classList.remove('hidden');
-    } else {
-        btn.classList.add('hidden');
-    }
-};

@@ -468,10 +468,38 @@ window.gameUpdatePlanProgress = function() {
         const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
         
         if (task.type === 'continuous') {
-            let validChecksCount = 0;
-            matchedChecks.forEach(c => { if (c.metrics && c.metrics.checkedCount >= 3) validChecksCount++; });
+            let validChecksCount = 0; let sumFillRate = 0; let totalFails = 0; let failsWithPhotoOrComment = 0;
+
+            matchedChecks.forEach(c => {
+                if (c.metrics && c.metrics.checkedCount >= 3) {
+                    validChecksCount++;
+                    sumFillRate += (c.metrics.checkedCount / c.metrics.totalCount) * 100;
+                    
+                    if (c.state) {
+                        Object.keys(c.state).forEach(id => {
+                            if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                                totalFails++;
+                                if ((c.photos && c.photos[id]) || (c.details && c.details[id] && c.details[id].comment)) failsWithPhotoOrComment++;
+                            }
+                        });
+                    }
+                }
+            });
+
             task.done = validChecksCount;
+            task.fillRate = validChecksCount > 0 ? (sumFillRate / validChecksCount) : 0;
+            task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
+
             if (task.done < task.target) allTasksDone = false;
+            
+            // Бонус за перевыполнение критичной задачи
+            if (task.priorityLvl === 4 && task.done > task.target) {
+                const overCheck = matchedChecks[validChecksCount - 1]; 
+                if (!gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
+                    gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'overfulfill_bonus', target: overCheck.id });
+                }
+            }
+            
         } else if (task.type === 'milestone') {
             // Для milestone мы обновляем completedStages
             const st = contractorStatuses[task.statusKey];
@@ -489,57 +517,6 @@ window.gameUpdatePlanProgress = function() {
                 task.target = st.milestoneProgress.totalStages;
                 if (task.done < task.target) allTasksDone = false;
                 else st.status = 'completed'; // Закрываем, если всё пройдено
-            }
-        }
-    });
-
-    if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
-        weeklyPlanData.completed = true;
-        gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
-    }
-
-    saveWeeklyPlan();
-};
-
-window.gameUpdatePlanProgress = function() {
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim();
-    if (!currentInspector || !weeklyPlanData.tasks) return;
-
-    const startOfThisWeek = getStartOfWeek();
-    const myWeeklyChecks = contractorArray.filter(c => c.inspectorName === currentInspector && new Date(c.date) >= startOfThisWeek);
-    let allTasksDone = true;
-
-    weeklyPlanData.tasks.forEach(task => {
-        const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
-        
-        let validChecksCount = 0; let sumFillRate = 0; let totalFails = 0; let failsWithPhotoOrComment = 0;
-
-        matchedChecks.forEach(c => {
-            if (c.metrics && c.metrics.checkedCount >= 3) {
-                validChecksCount++;
-                sumFillRate += (c.metrics.checkedCount / c.metrics.totalCount) * 100;
-                
-                if (c.state) {
-                    Object.keys(c.state).forEach(id => {
-                        if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
-                            totalFails++;
-                            if ((c.photos && c.photos[id]) || (c.details && c.details[id] && c.details[id].comment)) failsWithPhotoOrComment++;
-                        }
-                    });
-                }
-            }
-        });
-
-        task.done = validChecksCount;
-        task.fillRate = validChecksCount > 0 ? (sumFillRate / validChecksCount) : 0;
-        task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
-
-        if (task.done < task.target) allTasksDone = false;
-        
-        if (task.priorityLvl === 4 && task.done > task.target) {
-            const overCheck = matchedChecks[validChecksCount - 1]; 
-            if (!gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
-                gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'overfulfill_bonus', target: overCheck.id });
             }
         }
     });
