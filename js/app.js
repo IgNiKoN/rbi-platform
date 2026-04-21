@@ -2197,6 +2197,14 @@ function saveProductToArray() {
     updateSmartInputCache('floor', floorInput.value.trim());
     updateSmartInputCache('room', roomInput.value.trim());
     
+    // --- АВТООБНОВЛЕНИЕ ПЛАНА ПРИ НОВОМ ПОДРЯДЧИКЕ/ВИДЕ РАБОТ ---
+    const pastChecks = contractorArray.filter(c => c.contractorName === contrInput.value.trim() && c.templateKey === currentTemplateKey);
+    if (pastChecks.length === 1 && typeof gameGenerateWeeklyPlan === 'function') {
+        gameGenerateWeeklyPlan(true); // Принудительно генерируем новый план, т.к. появилась новая связка
+    } else if (typeof gameUpdatePlanProgress === 'function') {
+        gameUpdatePlanProgress(); // Иначе просто обновляем прогресс
+    }
+    
     // Очищаем стейт ответов
     state = {}; details = {}; photos = {}; 
     

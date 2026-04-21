@@ -189,13 +189,16 @@ function gameCalculateAllProfiles() {
         let continuous100 = 0;
 
         p.rawChecks.forEach(check => {
+            const m = check.metrics;
+            // НАЧИСЛЯЕМ ОПЫТ ТОЛЬКО ЕСЛИ ПРОВЕРЕНО 3 И БОЛЕЕ ПУНКТОВ
+            if (!m || m.checkedCount < 3) return;
+
             p.checksCount++;
             let earnedPI = 0;
-            const m = check.metrics;
             const dStr = new Date(check.date).toLocaleString('ru-RU', {month:'short', year:'2-digit'});
             if(!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
 
-            earnedPI += 20;
+            earnedPI += 20; // Базовый опыт за нормальную проверку
 
             if (check.isCompleted) { earnedPI += 10; continuous100++; } 
             else { continuous100 = 0; }
@@ -240,6 +243,21 @@ function gameCalculateAllProfiles() {
         }
         if (p.currentStreak >= 8) p.badgesData['reliable'] = 8;
         if (p.currentStreak >= 16) p.badgesData['iron_will'] = 16;
+        
+        // ВЛИЯНИЕ IMPACT SCORE НА РЕЙТИНГ ИНЖЕНЕРА (Бонус и Штраф)
+        let totalImpact = 0; let impactCount = 0;
+        const contractorsSet = new Set(p.rawChecks.map(c => c.contractorName));
+        contractorsSet.forEach(cName => {
+            const cChecks = p.rawChecks.filter(c => c.contractorName === cName);
+            if (cChecks.length < 6) return; 
+            const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
+            const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+            const impact = calculateImpactScore(p.name, cName, topTemplate);
+            if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
+        });
+        const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
+        if (avgImpact > 0.2) p.pi += 50;
+        else if (avgImpact < -0.2) p.pi = Math.max(0, p.pi - 30);
     }
 
     gameActionLogs.forEach(log => {
@@ -252,6 +270,8 @@ function gameCalculateAllProfiles() {
         if (log.action === 'open_twi') { p.pi += 15; p.monthlyPI[dStr] += 15; p.badgesData['mentor']++; }
         if (log.action === 'create_twi') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['methodist'] = 1; }
         if (log.action === 'comment_written') { p.badgesData['communicator']++; }
+        // НАЧИСЛЕНИЕ БОНУСА ЗА ПЕРЕВЫПОЛНЕНИЕ ПЛАНА
+        if (log.action === 'overfulfill_bonus') { p.pi += 50; p.monthlyPI[dStr] += 50; }
     });
 
     for (let name in profiles) {
@@ -292,11 +312,11 @@ function getSmartQuest(profile) {
     });
 
     if (closestBadge) {
-        return `<div class="font-black text-indigo-900 dark:text-indigo-200 mb-1 leading-tight">Прокачайте навык «${closestBadge.name}» (Выполнено на ${Math.round(maxRatio*100)}%)</div>
-                <div class="text-[10px] text-indigo-700 dark:text-indigo-400"><b>Цель:</b> ${closestBadge.desc}</div>`;
+        return `<div class="text-[10px] sm:text-[11px] lg:text-[13px] font-black text-indigo-900 dark:text-indigo-200 mb-0.5 lg:mb-1 leading-tight">Прокачайте «${closestBadge.name}» (${Math.round(maxRatio*100)}%)</div>
+                <div class="text-[9px] sm:text-[10px] lg:text-[11px] text-indigo-700 dark:text-indigo-400 leading-snug"><b>Цель:</b> ${closestBadge.desc}</div>`;
     } else {
-        return `<div class="font-black text-indigo-900 dark:text-indigo-200 mb-1 leading-tight">Ваш профиль сбалансирован</div>
-                <div class="text-[10px] text-indigo-700 dark:text-indigo-400">Продолжайте проводить эталонные инспекции и использовать TWI для роста PI.</div>`;
+        return `<div class="text-[10px] sm:text-[11px] lg:text-[13px] font-black text-indigo-900 dark:text-indigo-200 mb-0.5 lg:mb-1 leading-tight">Профиль сбалансирован</div>
+                <div class="text-[9px] sm:text-[10px] lg:text-[11px] text-indigo-700 dark:text-indigo-400 leading-snug">Инспектируйте и применяйте TWI для роста XP.</div>`;
     }
 }
 
@@ -513,10 +533,22 @@ window.gameUpdatePlanProgress = function() {
     let allTasksDone = true;
 
     weeklyPlanData.tasks.forEach(task => {
-        // Игнорируем прогресс, если требуется эталон
+        const st = contractorStatuses[task.statusKey];
+        
+        // АВТОМАТИЧЕСКОЕ СНЯТИЕ ЭТАЛОНА
         if (task.needsEtalon) {
-            allTasksDone = false;
-            return;
+            const hasEtalonCheck = contractorArray.some(c => 
+                c.contractorName === task.contractor && 
+                c.projectName === task.project && 
+                c.templateKey === 'sys_etalon_act'
+            );
+            if (hasEtalonCheck) {
+                task.needsEtalon = false;
+                if (st) st.etalonCompleted = true;
+            } else {
+                allTasksDone = false;
+                return; // Блокируем прогресс, если эталон всё еще нужен
+            }
         }
 
         const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
@@ -546,7 +578,6 @@ window.gameUpdatePlanProgress = function() {
 
             if (task.done < task.target) allTasksDone = false;
             
-            // Бонус за перевыполнение критичной задачи
             if (task.priorityLvl === 4 && task.done > task.target) {
                 const overCheck = matchedChecks[validChecksCount - 1]; 
                 if (!gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
@@ -555,8 +586,6 @@ window.gameUpdatePlanProgress = function() {
             }
             
         } else if (task.type === 'milestone') {
-            // Для milestone мы обновляем completedStages
-            const st = contractorStatuses[task.statusKey];
             if (st && st.milestoneProgress) {
                 matchedChecks.forEach(c => {
                     if (c.checkedStagesInfo) {
@@ -570,7 +599,7 @@ window.gameUpdatePlanProgress = function() {
                 task.done = st.milestoneProgress.completedStages.length;
                 task.target = st.milestoneProgress.totalStages;
                 if (task.done < task.target) allTasksDone = false;
-                else st.status = 'completed'; // Закрываем, если всё пройдено
+                else st.status = 'completed'; 
             }
         }
     });
@@ -784,23 +813,23 @@ window.gameRenderDashboard = function() {
     // СЕКЦИЯ 1: ПРОФИЛЬ И НАГРАДЫ
     // ====================================================================
     html += `
-        <div class="flex flex-col md:flex-row gap-3 mx-1 mb-4">
+        <div class="grid grid-cols-2 gap-2 sm:gap-3 mx-1 mb-4">
             <!-- КАРТОЧКА ПРОФИЛЯ -->
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-5 shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
                 <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <div class="flex justify-between items-start mb-4 relative z-10">
-                    <div class="flex items-center gap-4">
-                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-2xl shrink-0 shadow-lg border-2 border-white dark:border-slate-800 ring-2 ${myProfile.levelObj.ring} ring-offset-2 dark:ring-offset-slate-900">
+                <div class="flex justify-between items-start mb-3 sm:mb-4 relative z-10">
+                     <div class="flex items-center gap-2 sm:gap-4 min-w-0 pr-1">
+                        <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-xl sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
                             ${myProfile.name.substring(0,1).toUpperCase()}
                         </div>
                         <div>
                             <!-- КЛИК ДЛЯ ИЗМЕНЕНИЯ ИМЕНИ -->
                             <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2">
-                                <div class="text-[16px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.name}</div>
+                                <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate">${myProfile.name}</div>
                                 <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                             </div>
-                            <div class="text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5">${myProfile.levelObj.name} <span class="text-slate-400 ml-1">Ур. ${myProfile.levelObj.level}</span></div>
+                             <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 truncate">${myProfile.levelObj.name} <span class="text-slate-400 ml-1">Ур. ${myProfile.levelObj.level}</span></div>
                         </div>
                     </div>
                     <div class="text-right shrink-0">
@@ -810,11 +839,11 @@ window.gameRenderDashboard = function() {
                 </div>
 
                 <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
-                    <div class="flex justify-between text-[10px] font-bold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
+                    <div class="flex justify-between text-[9px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1.5 sm:mb-2 uppercase tracking-wider">
                         <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
                         <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
                     </div>
-                    <div class="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
+                    <div class="w-full h-2 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
                         <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
                     </div>
                 </div>
@@ -827,7 +856,7 @@ window.gameRenderDashboard = function() {
             </div>
 
             <!-- ТОП НАГРАДЫ И КВЕСТ -->
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm md:w-[45%] flex flex-col justify-between">
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm flex flex-col justify-between w-full">
                 <div>
                     <div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 flex justify-between items-center">
                         <span>Награды</span>
@@ -862,13 +891,13 @@ window.gameRenderDashboard = function() {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                 </span>
             </summary>
-            <div class="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-[var(--hover-bg)]">
+            <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
                     <div style="height: 180px; width: 100%; position: relative;"><canvas id="pi-radar-chart"></canvas></div>
                 </div>
                 <button onclick="gameOpenImpactModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] ${globalImpactBg}">
                     <div class="flex justify-between items-start w-full mb-4">
-                        <div class="text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Ваше влияние на<br>качество объекта</div>
+                        <div class="text-[10px] sm:text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Ваше влияние на<br>качество</div>
                         <div class="${globalImpactColor}">${globalImpactIcon}</div>
                     </div>
                     <div>
@@ -889,25 +918,25 @@ window.gameRenderDashboard = function() {
     
     html += `
         <details class="mx-1 mb-4 group bg-[var(--card-bg)] border-2 ${taskBlockHeaderColor} rounded-2xl shadow-md overflow-hidden [&_summary::-webkit-details-marker]:hidden" open>
-            <summary class="p-4 cursor-pointer flex justify-between items-center ${taskBlockHeaderColor} transition-colors select-none border-b">
+            <summary class="p-4 cursor-pointer flex justify-between items-center ${taskBlockHeaderColor} transition-colors select-none border-b border-[var(--card-border)]">
                 <div>
                     <span class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2 mb-1">
-                        <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
                         Недельный план задач
                     </span>
                     <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wider">${weekStr} | Задач: ${doneTasks}/${totalTasks}</span>
                 </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="gameToggleAbsence(); event.stopPropagation();" class="text-[9px] font-black text-slate-600 bg-white/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-600 px-3 py-2 rounded-lg active:scale-95 transition-colors uppercase shadow-sm">
+                <div class="flex flex-col gap-1.5 items-end">
+                    <button onclick="gameForceUpdatePlan(); event.stopPropagation();" class="text-[9px] font-black text-indigo-700 bg-white/80 dark:bg-slate-800/80 border border-indigo-300 dark:border-indigo-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Обновить план
+                    </button>
+                    <button onclick="gameToggleAbsence(); event.stopPropagation();" class="text-[9px] font-black text-slate-600 bg-white/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
                         🏖️ Отпуск/Статус
                     </button>
-                    <span class="text-slate-500 shrink-0 transition-transform duration-300 group-open:rotate-180">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                    </span>
                 </div>
             </summary>
             
-            <div class="p-3 ${taskBlockBodyColor}">
+            <div class="p-3 ${taskBlockBodyColor} space-y-4">
     `;
 
     if (engineerAbsence.isActive) {
@@ -981,9 +1010,34 @@ window.gameRenderDashboard = function() {
             </div>`;
         };
 
-        html += `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">`;
-        weeklyPlanData.tasks.forEach(t => { html += renderTaskCard(t); });
-        html += `</div>`;
+        // --- НОВАЯ ЛОГИКА ГРУППИРОВКИ ЗАДАЧ ПО АККОРДЕОНАМ ---
+        const groupedTasks = {
+            4: { title: "🔴 Критичные и Долги", tasks: [] },
+            3: { title: "🔵 Новые Подрядчики", tasks: [] },
+            2: { title: "🟡 В Плане / Поэтапно", tasks: [] },
+            1: { title: "🟢 Низкий приоритет", tasks: [] }
+        };
+
+        weeklyPlanData.tasks.forEach(t => {
+            if (groupedTasks[t.priorityLvl]) groupedTasks[t.priorityLvl].tasks.push(t);
+        });
+
+        [4, 3, 2, 1].forEach(level => {
+            const group = groupedTasks[level];
+            if (group.tasks.length > 0) {
+                let doneInGroup = group.tasks.filter(t => t.isCompletedManually || t.done >= t.target).length;
+                html += `
+                <details class="bg-[var(--card-bg)] rounded-xl shadow-sm border border-[var(--card-border)] overflow-hidden group [&_summary::-webkit-details-marker]:hidden" ${level >= 2 ? 'open' : ''}>
+                    <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">${group.title} <span class="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded ml-2">${doneInGroup}/${group.tasks.length}</span></span>
+                        <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
+                    </summary>
+                    <div class="p-2 sm:p-3 bg-slate-50/50 grid grid-cols-2 gap-2 sm:gap-3">
+    ${group.tasks.map(t => renderTaskCard(t)).join('')}
+</div>
+                </details>`;
+            }
+        });
     }
     html += `</div></details>`;
 
@@ -998,14 +1052,14 @@ window.gameRenderDashboard = function() {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                 </span>
             </summary>
-            <div class="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-[var(--hover-bg)]">
+            <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
                     <div class="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest mb-2 absolute top-4 left-4 z-10">Активность (XP по месяцам)</div>
                     <div style="height: 160px; width: 100%; position: relative; margin-top:20px;"><canvas id="game-progress-chart"></canvas></div>
                 </div>
                 <button onclick="gameOpenTopModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] bg-[var(--card-bg)]">
                     <div class="flex justify-between items-start w-full mb-4">
-                        <div class="text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Общий рейтинг<br>Инженеров</div>
+                        <div class="text-[10px] sm:text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Рейтинг<br>Инженеров</div>
                         <div class="text-indigo-500"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M21.666 4.756c.962-.203 1.934-.377 2.916-.52a6.003 6.003 0 00-5.395 4.972"></path></svg></div>
                     </div>
                     <div>
@@ -1367,9 +1421,14 @@ window.gameGenerateAuditPlan = function() {
                         <div class="text-[16px] font-black ${c.metrics.final < 70 ? 'text-red-500' : (c.metrics.final < 85 ? 'text-orange-500' : 'text-green-600')}">${c.metrics.final}%</div>
                     </div>
                 </div>
-                <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="w-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform border border-slate-200 dark:border-slate-600">
-                    👁️ Открыть Акт
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
+                        👁️ Открыть Акт
+                    </button>
+                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}');" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
+                        ⚖️ Провести аудит
+                    </button>
+                </div>
             </div>`;
         });
 
@@ -1392,11 +1451,19 @@ function gameCalculateManagerMetrics() {
 
     const managerStats = [];
 
+    // Определяем начало текущей недели для анализа долгов
+    const now = new Date();
+    const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(now.getDate() - 14);
+
     Object.values(profiles).forEach(p => {
         if (p.checksCount === 0) return;
 
         let sumUrk = 0; let checksWithFails = 0; let checksWithFailsAndPhotos = 0;
         let sumCompleteness = 0; let urkValues = []; let b3Found = 0;
+        let continuousDone = 0, continuousTarget = 0;
+        let milestoneDone = 0, milestoneTarget = 0;
+        let totalDebt = 0;
+        let oldDebtWarning = false;
 
         p.rawChecks.forEach(c => {
             if (c.metrics) {
@@ -1417,6 +1484,21 @@ function gameCalculateManagerMetrics() {
                 }
             }
         });
+
+        // СБОР ДАННЫХ ИЗ ПЛАНА (Если он загрузился вместе с бэкапом)
+        // Примечание: так как мы смотрим данные всех инженеров, в реале каждый присылает свой бэкап. 
+        // Мы будем симулировать расчет долга по истории проверок (если нет прямых данных плана).
+        // Мы ищем подрядчиков, которые проверялись инженером, но не проверялись последние 2 недели.
+        const contrsChecked = new Set();
+        const contrsRecent = new Set();
+        p.rawChecks.forEach(c => {
+            contrsChecked.add(c.contractorName);
+            if (new Date(c.date) >= twoWeeksAgo) contrsRecent.add(c.contractorName);
+        });
+
+        // Очень грубая оценка долга: сколько подрядчиков были заброшены
+        totalDebt = contrsChecked.size - contrsRecent.size;
+        if (totalDebt > 15) oldDebtWarning = true;
 
         const avgUrk = sumUrk / p.checksCount;
         const strictness = globalAvgUrk - avgUrk; 
@@ -1453,15 +1535,14 @@ function gameCalculateManagerMetrics() {
 
         const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
         
-        // НОВОЕ: Влияние Impact на PI (Опыт)
-        if (avgImpact > 0.2) p.pi += 50;
-        else if (avgImpact < -0.2) p.pi = Math.max(0, p.pi - 30);
-
         managerStats.push({ 
             name: p.name, pi: p.pi, level: p.levelObj.level, 
             checks: p.checksCount, avgUrk: avgUrk, strictness: strictness, 
             volatility: volatility, photoRate: photoRate, completeness: completeness, 
-            b3Found: b3Found, avgImpact: avgImpact, improved: improvedContrs, degraded: degradedContrs 
+            b3Found: b3Found, avgImpact: avgImpact, improved: improvedContrs, degraded: degradedContrs,
+            totalDebt: totalDebt, oldDebtWarning: oldDebtWarning,
+            // Добавляем статус, если этот профиль совпадает с профилем, выгрузившим бэкап
+            isVacation: (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive && p.name === (document.getElementById('inp-inspector')?.value.trim() || ''))
         });
     });
 
@@ -1478,140 +1559,90 @@ function gameRenderManagerAnalytics() {
     }
 
     let html = `
-        <div class="mb-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
+        <div class="mb-4 bg-indigo-50 border border-indigo-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
             <div>
-                <h2 class="text-indigo-800 dark:text-indigo-300 font-black uppercase tracking-widest text-[11px] mb-1">Оценка реального влияния</h2>
-                <p class="text-[10px] text-indigo-600 dark:text-indigo-400 leading-snug max-w-lg">
-                    Здесь собрана аналитика по каждому инженеру. <b>Impact Score</b> показывает, насколько инженер улучшил качество у подрядчиков. <span class="font-bold text-green-600">Зеленые зоны</span> — целевые показатели.
+                <h2 class="text-indigo-800 font-black uppercase tracking-widest text-[11px] mb-1">Оценка эффективности (HR)</h2>
+                <p class="text-[10px] text-indigo-600 leading-snug max-w-lg">
+                    Данные об инженерах. Столбец <b>Долги</b> показывает количество забытых подрядчиков (без проверок более 2 недель).
                 </p>
             </div>
             <div class="flex gap-2 shrink-0">
-                <div class="bg-white dark:bg-slate-800 px-3 py-2 rounded-lg border border-indigo-100 dark:border-indigo-700 text-center shadow-sm">
-                    <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Всего инженеров</div>
-                    <div class="text-lg font-black text-indigo-600 dark:text-indigo-400">${stats.length}</div>
+                <div class="bg-white px-3 py-2 rounded-lg border border-indigo-100 text-center shadow-sm">
+                    <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Инженеров в базе</div>
+                    <div class="text-lg font-black text-indigo-600">${stats.length}</div>
                 </div>
             </div>
         </div>
 
-        <div class="mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
-            <div class="p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center cursor-pointer select-none active:bg-slate-100 dark:active:bg-slate-800 transition-colors" 
-                 onclick="document.getElementById('manager-help-content').classList.toggle('hidden'); document.getElementById('manager-help-icon').classList.toggle('rotate-180');">
-                <div class="font-black text-[11px] text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                    <span class="text-lg">📖</span> Как читать эти метрики? (Справка)
-                </div>
-                <div id="manager-help-icon" class="text-slate-400 transition-transform duration-300 font-black">▼</div>
-            </div>
-            <div id="manager-help-content" class="hidden p-4 bg-white dark:bg-slate-800">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
-                    <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                        <b class="text-indigo-600 dark:text-indigo-400 uppercase text-[10px] block mb-1">📈 Impact Score (Влияние)</b>
-                        Показывает <b>реальную пользу</b> от инженера. Сравнивает первые и последние 3 проверки.
-                    </div>
-                    <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                        <b class="text-indigo-600 dark:text-indigo-400 uppercase text-[10px] block mb-1">⚖️ Строгость</b>
-                        Отклонение от среднего УрК. Зеленый (+) — инженер строже. Красный (-) — лояльный, завышает оценки.
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
             <div class="overflow-x-auto custom-scrollbar pb-2">
                 <table class="w-full text-left text-[10px] whitespace-nowrap">
-                    <thead class="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 font-black uppercase tracking-wider">
+                    <thead class="bg-slate-100 text-slate-500 border-b border-slate-200 font-black uppercase tracking-wider">
                         <tr>
-                            <th class="p-3 sticky left-0 bg-slate-100 dark:bg-slate-900 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Инженер</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Влияние на качество подрядчиков (от -1 до +1)">Impact Score</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Подрядчики: Улучшил / Ухудшил">Динамика</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Профессиональный Индекс (XP)">PI (Опыт)</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Количество проведенных инспекций">Объем (Пров.)</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Доля дефектов, к которым прикреплено фото и указана причина (>80%)">Доказательность</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Отклонение от среднего УрК по объекту. Положительное - строгий, Отрицательное - лояльный">Строгость</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Процент заполненных пунктов в чек-листах (>90%)">Полнота Ч/Л</th>
-                            <th class="p-3 text-center border-l border-slate-200 dark:border-slate-700" title="Волатильность оценок (<15)">Разброс</th>
+                            <th class="p-3 sticky left-0 bg-slate-100 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Инженер</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Влияние на качество подрядчиков">Impact Score</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Подрядчиков: Улучшил / Ухудшил">Динамика</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Оценочные долги по задачам">Заброшенные П-ки</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Профессиональный Индекс (XP)">PI (Опыт)</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Количество инспекций">Объем</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Фото+Причина при дефекте">Доказательность</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Отклонение от среднего УрК. (+) - строгий">Строгость</th>
+                            <th class="p-3 text-center border-l border-slate-200" title="Процент заполненных пунктов">Полнота</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                    <tbody class="divide-y divide-slate-100">
     `;
 
     stats.forEach(s => {
         const getColorClass = (val, thresholds, inverse = false) => {
             if (!inverse) {
-                if (val >= thresholds[0]) return 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-                if (val >= thresholds[1]) return 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-                return 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-black';
+                if (val >= thresholds[0]) return 'bg-green-50 text-green-700';
+                if (val >= thresholds[1]) return 'bg-orange-50 text-orange-700';
+                return 'bg-red-50 text-red-700 font-black';
             } else {
-                if (val <= thresholds[0]) return 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-                if (val <= thresholds[1]) return 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-                return 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-black';
+                if (val <= thresholds[0]) return 'bg-green-50 text-green-700';
+                if (val <= thresholds[1]) return 'bg-orange-50 text-orange-700';
+                return 'bg-red-50 text-red-700 font-black';
             }
         };
 
         const strictAbs = Math.abs(s.strictness);
-        const strictClass = strictAbs <= 5 ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : (strictAbs <= 10 ? 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-black');
+        const strictClass = strictAbs <= 5 ? 'bg-green-50 text-green-700' : (strictAbs <= 10 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700 font-black');
         const strictText = s.strictness > 0 ? `+${s.strictness.toFixed(1)}` : `${s.strictness.toFixed(1)}`;
 
-        const impactClass = s.avgImpact > 0.2 ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' : (s.avgImpact < -0.2 ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20' : 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800');
+        const impactClass = s.avgImpact > 0.2 ? 'text-green-600 bg-green-50' : (s.avgImpact < -0.2 ? 'text-red-600 bg-red-50' : 'text-slate-600 bg-slate-50');
         const impactIcon = s.avgImpact > 0.2 ? '📈' : (s.avgImpact < -0.2 ? '📉' : '➖');
 
+        // Красим должников
+        const debtClass = s.oldDebtWarning ? 'bg-red-50 text-red-700 border-red-300 font-black animate-pulse' : (s.totalDebt > 5 ? 'bg-orange-50 text-orange-700' : 'text-green-600');
+        const vacationBadge = s.isVacation ? `<span class="bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[8px] ml-1">ОТПУСК</span>` : '';
+
         html += `
-            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                <td class="p-3 sticky left-0 bg-white dark:bg-slate-800 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                    <div class="font-black text-[12px] text-slate-800 dark:text-white truncate">${s.name}</div>
+            <tr class="hover:bg-slate-50 transition-colors">
+                <td class="p-3 sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                    <div class="font-black text-[12px] text-slate-800 truncate">${s.name} ${vacationBadge}</div>
                     <div class="text-[8px] font-bold text-slate-400 uppercase">Грейд ${s.level} | B3: ${s.b3Found} шт.</div>
                 </td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-black ${impactClass}">
+                <td class="p-3 text-center border-l border-slate-100 font-black ${impactClass}">
                     <div class="flex items-center justify-center gap-1">${impactIcon} ${s.avgImpact.toFixed(2)}</div>
                 </td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold text-[11px]">
+                <td class="p-3 text-center border-l border-slate-100 font-bold text-[11px]">
                     <span class="text-green-600" title="Улучшил подрядчиков">${s.improved}</span> / <span class="text-red-500" title="Ухудшил подрядчиков">${s.degraded}</span>
                 </td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-black text-indigo-600 dark:text-indigo-400">${s.pi}</td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold text-slate-600 dark:text-slate-300">${s.checks}</td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold ${getColorClass(s.photoRate, [80, 50])}">${s.photoRate.toFixed(0)}%</td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold ${strictClass}">${strictText}</td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold ${getColorClass(s.completeness, [90, 70])}">${s.completeness.toFixed(0)}%</td>
-                <td class="p-3 text-center border-l border-slate-100 dark:border-slate-700 font-bold ${getColorClass(s.volatility, [15, 20], true)}">${s.volatility.toFixed(1)}</td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold ${debtClass}">
+                    ${s.totalDebt}
+                </td>
+                <td class="p-3 text-center border-l border-slate-100 font-black text-indigo-600">${s.pi}</td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold text-slate-600">${s.checks}</td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold ${getColorClass(s.photoRate, [80, 50])}">${s.photoRate.toFixed(0)}%</td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold ${strictClass}">${strictText}</td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold ${getColorClass(s.completeness, [90, 70])}">${s.completeness.toFixed(0)}%</td>
             </tr>
         `;
     });
 
-    html += `
-                    </tbody>
-                </table>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mt-4 p-4">
-            <div class="font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 text-center">📈 Динамика строгости инженеров</div>
-            <div style="height: 200px; position: relative;"><canvas id="manager-strictness-chart"></canvas></div>
-        </div>
-            </div>
-        </div>
-        <div class="mt-4 flex flex-wrap gap-4 text-[9px] font-bold text-slate-500 justify-center uppercase tracking-widest">
-            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-green-200 dark:bg-green-900 border border-green-300"></span> Целевая зона</span>
-            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-orange-200 dark:bg-orange-900 border border-orange-300"></span> Зона внимания</span>
-            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-red-200 dark:bg-red-900 border border-red-300"></span> Зона риска</span>
-        </div>
-    `;
-
+    html += `</tbody></table></div></div>`;
     container.innerHTML = html;
-setTimeout(() => {
-        const ctxS = document.getElementById('manager-strictness-chart');
-        if (ctxS) {
-            // Рисуем график строгости по инженерам (по оси X - инженеры, по оси Y - строгость)
-            if (window.mgrStrictnessChart) window.mgrStrictnessChart.destroy();
-            window.mgrStrictnessChart = new Chart(ctxS, {
-                type: 'bar',
-                data: { 
-                    labels: stats.map(s => s.name.substring(0, 10)), 
-                    datasets: [{ 
-                        data: stats.map(s => s.strictness), 
-                        backgroundColor: stats.map(s => s.strictness > 5 ? '#22c55e' : (s.strictness < -5 ? '#ef4444' : '#f59e0b')),
-                        borderRadius: 4
-                    }] 
-                },
-                options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-            });
-        }
-    }, 100);
 }
 
 window.gameOpenTaskMenu = function(statusKey, e) {

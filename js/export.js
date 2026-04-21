@@ -1598,7 +1598,6 @@ function generateBackupObject(mode) {
         if (lastMgrDate) historyToExport = contractorArray.filter(c => new Date(c.date) > new Date(lastMgrDate));
     }
 
-    // Сортируем по дате
     historyToExport.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     const stats = {
@@ -1608,9 +1607,16 @@ function generateBackupObject(mode) {
         tmpl: Object.keys(userTemplates).length
     };
 
+    // ДОБАВЛЕНЫ HR ДАННЫЕ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
+    const hrData = {
+        weeklyPlanData: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
+        engineerAbsence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
+        contractorStatuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : null
+    };
+
     const obj = {
         type: "RBI_FULL_BACKUP",
-        version: "16.5",
+        version: "16.8",
         timestamp: new Date().toISOString(),
         mode: mode,
         data: {
@@ -1619,7 +1625,8 @@ function generateBackupObject(mode) {
             twi: customTwiCards,      
             docs: userDocsToExport,   
             expert: customExpertConclusions, 
-            gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] 
+            gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
+            hr: hrData
         }
     };
 
@@ -1840,7 +1847,7 @@ function processDataImport(event) {
     reader.onload = async (e) => {
         try {
             const parsed = JSON.parse(e.target.result);
-            let addedHist = 0, addedTmpl = 0, addedTwi = 0, addedDocs = 0, addedExpert = 0;
+            let addedHist = 0, addedTmpl = 0, addedTwi = 0, addedDocs = 0;
 
             if (parsed.type === "RBI_FULL_BACKUP" && parsed.data) {
                 if (parsed.data.history) {
@@ -1886,6 +1893,20 @@ function processDataImport(event) {
                     }
                     if (typeof saveSessionData === 'function') saveSessionData(); 
                 }
+                
+                // ИМПОРТ HR ДАННЫХ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
+                if (parsed.data.hr) {
+                    // Загружаем логи только если их не было (примитивное слияние)
+                    if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
+                    if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
+                    if (parsed.data.hr.contractorStatuses && typeof contractorStatuses !== 'undefined') {
+                        // Сливаем статусы задач
+                        for (let k in parsed.data.hr.contractorStatuses) {
+                            if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
+                        }
+                    }
+                }
+
                 showToast(`✅ Базы слиты!\nПров: +${addedHist} | Ч/Л: +${addedTmpl}\nTWI: +${addedTwi} | НД: +${addedDocs}`);
             } else if (Array.isArray(parsed)) {
                 for(const item of parsed) {
