@@ -26,28 +26,98 @@ const SKILL_ICONS = {
     "Редкие": `<svg class="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>`
 };
 
-// === КОМПЕТЕНЦИИ (АЧИВКИ) ===
+// === КОМПЕТЕНЦИИ (МНОГОУРОВНЕВЫЕ АЧИВКИ) ===
 const COMPETENCIES = [
-    { id: "win_win", group: "Партнёрство", name: "Win-Win", desc: "Подрядчик перешёл из красной/жёлтой зоны в зелёную (>85%) после ваших 3+ проверок.", maxProgress: 1 },
-    { id: "champ_coach", group: "Партнёрство", name: "Тренер чемпионов", desc: "Три разных подрядчика улучшили рейтинг благодаря вам.", maxProgress: 3 },
-    { id: "reanimator", group: "Партнёрство", name: "Кризис-менеджер", desc: "Подрядчик поднялся из красной зоны (<50%) в допустимую (>70%).", maxProgress: 1 },
-    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "20 проверок с фотофиксацией эталонов (OK).", maxProgress: 20 },
-    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактировано и скопировано 15 ИИ-заключений.", maxProgress: 15 },
-    { id: "detective", group: "Оформление", name: "Доказательная база", desc: "25 проверок, где ВСЕ дефекты имеют фото и указанную причину.", maxProgress: 25 },
-    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "50 проверок подряд со 100% заполнением всех пунктов чек-листа.", maxProgress: 50 },
-    { id: "mentor", group: "Обучение", name: "Наставничество", desc: "Открыта TWI-карта во время инспекции (показ рабочему) 20 раз.", maxProgress: 20 },
-    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Создано 3 собственных TWI-карты.", maxProgress: 3 },
-    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Оставлено 50 развернутых комментариев (указания для прораба).", maxProgress: 50 },
-    { id: "impartial", group: "Объективность", name: "Беспристрастность", desc: "Индекс строгости в пределах нормы на 100 проверках.", maxProgress: 100 },
-    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "40 проверок подряд со стандартным отклонением оценки < 10%.", maxProgress: 40 },
-    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность 12 недель подряд.", maxProgress: 12 },
-    { id: "iron_will", group: "Объективность", name: "Железная воля", desc: "Непрерывная активность 24 недели подряд.", maxProgress: 24 },
-    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по 10 различным видам работ.", maxProgress: 10 },
-    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в 30 различных локациях.", maxProgress: 30 },
-    { id: "perfection", group: "Редкие", name: "Внимание к деталям", desc: "Оценка 100%, но честно зафиксирован 1 мелкий дефект (B1).", maxProgress: 1 },
-    { id: "quality_guru", group: "Редкие", name: "Аудитор качества", desc: "Собраны: Win-Win, Аналитик, Наставничество, Беспристрастность.", maxProgress: 4 },
-    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Создано 10 TWI-карт с использованием функции Магия TWI.", maxProgress: 10 }
+    { id: "win_win", group: "Партнёрство", name: "Win-Win", desc: "Подрядчик перешёл в зелёную зону (>85%).", tiers: [1, 3, 5], maxProgress: 5 },
+    { id: "champ_coach", group: "Партнёрство", name: "Тренер", desc: "Разные подрядчики улучшили рейтинг.", tiers: [1, 3, 5], maxProgress: 5 },
+    { id: "reanimator", group: "Партнёрство", name: "Кризис-менеджер", desc: "Подрядчик выведен из красной зоны.", tiers: [1, 3, 5], maxProgress: 5 },
+    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "Проверки с фотофиксацией эталонов (OK).", tiers: [5, 15, 30], maxProgress: 30 },
+    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактированы ИИ-заключения.", tiers: [5, 15, 30], maxProgress: 30 },
+    { id: "detective", group: "Оформление", name: "Детектив", desc: "Дефекты с фото и указанной причиной.", tiers: [10, 25, 50], maxProgress: 50 },
+    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "Серия проверок со 100% заполнением.", tiers: [10, 25, 50], maxProgress: 50 },
+    { id: "mentor", group: "Обучение", name: "Наставник", desc: "Открыты TWI-карты во время инспекции.", tiers: [5, 15, 30], maxProgress: 30 },
+    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Созданы собственные TWI-карты.", tiers: [1, 3, 5], maxProgress: 5 },
+    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Развернутые комментарии к дефектам.", tiers: [10, 25, 50], maxProgress: 50 },
+    { id: "impartial", group: "Объективность", name: "Независимость", desc: "Строгость в пределах нормы.", tiers: [20, 50, 100], maxProgress: 100 },
+    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "Низкий разброс (волатильность) оценок.", tiers: [10, 20, 40], maxProgress: 40 },
+    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность (недели).", tiers: [4, 8, 12], maxProgress: 12 },
+    { id: "iron_will", group: "Объективность", name: "Железная воля", desc: "Высокий стрик активности (недели).", tiers: [12, 24, 48], maxProgress: 48 },
+    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по разным видам работ.", tiers: [3, 6, 10], maxProgress: 10 },
+    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в различных локациях.", tiers: [10, 20, 30], maxProgress: 30 },
+    { id: "perfection", group: "Редкие", name: "Педантичность", desc: "Оценка 100%, но честно зафиксирован B1.", tiers: [1, 3, 5], maxProgress: 5 },
+    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Созданы карты через 'Магию TWI'.", tiers: [3, 6, 10], maxProgress: 10 }
 ];
+
+// Функция определения уровня (Тира)
+// Функция определения уровня (Тира) с 5 уровнями редкости
+function getBadgeTier(badge, progress) {
+    if (progress >= badge.maxProgress) return 5; // Мифический
+    if (progress >= badge.tiers[2]) return 4;    // Легендарный
+    if (progress >= badge.tiers[1]) return 3;    // Эпический
+    if (progress >= badge.tiers[0]) return 2;    // Редкий
+    if (progress > 0) return 1;                  // Обычный
+    return 0;                                    // Заблокирован
+}
+
+// Генератор SVG Медалей
+// Генератор SVG Медалей (Строго по ТЗ, градиент ложится на обводку, а не на фон)
+window.getBadgeSvg = function(badgeId, tier, sizeCls) {
+    const uid = Math.random().toString(36).substring(2, 8) + '_' + badgeId;
+    
+    // Градиенты для ОБВОДКИ (stroke)
+    const defs = `
+        <defs>
+            <linearGradient id="g1_${uid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#cbd5e1"/><stop offset="100%" stop-color="#94a3b8"/></linearGradient>
+            <linearGradient id="g2_${uid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#d97706"/><stop offset="100%" stop-color="#b45309"/></linearGradient>
+            <linearGradient id="g3_${uid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#4338ca"/></linearGradient>
+            <linearGradient id="g4_${uid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#eab308"/><stop offset="100%" stop-color="#a16207"/></linearGradient>
+            <linearGradient id="g5_${uid}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ec4899"/><stop offset="100%" stop-color="#be185d"/></linearGradient>
+        </defs>`;
+
+    let strokeColor = "currentColor"; // По умолчанию
+    let opacityCls = "opacity-40 text-slate-400";
+    let shadow = "";
+
+    // Применяем градиенты именно к линиям (stroke)
+    if (tier === 1) { strokeColor = `url(#g1_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 2px 4px rgba(100,116,139,0.3));"; }
+    if (tier === 2) { strokeColor = `url(#g2_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 2px 4px rgba(217,119,6,0.3));"; }
+    if (tier === 3) { strokeColor = `url(#g3_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 2px 6px rgba(99,102,241,0.4));"; }
+    if (tier === 4) { strokeColor = `url(#g4_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 6px rgba(234,179,8,0.5));"; }
+    if (tier >= 5) { strokeColor = `url(#g5_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 8px rgba(236,72,153,0.5));"; }
+
+    let path = "";
+    switch(badgeId) {
+        case 'win_win': path = `<path d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/>`; break;
+        case 'champ_coach': path = `<path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>`; break;
+        case 'reanimator': path = `<path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-4.5v9m-4.5-4.5h9"/>`; break;
+        case 'chron_ideal': path = `<path d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/>`; break;
+        case 'strategist': path = `<path d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/><path d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/>`; break;
+        case 'detective': path = `<path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>`; break;
+        case 'meticulous': path = `<path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`; break;
+        case 'mentor': path = `<path d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>`; break;
+        case 'methodist': path = `<path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>`; break;
+        case 'communicator': path = `<path d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>`; break;
+        case 'impartial': path = `<path d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/>`; break;
+        case 'stable_eng': path = `<path d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>`; break;
+        case 'reliable': path = `<path d="M9 12.75L11.25 15 15 9.75M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>`; break;
+        case 'iron_will': path = `<path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>`; break;
+        case 'universal': path = `<path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/>`; break;
+        case 'pathfinder': path = `<path d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.715V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/>`; break;
+        case 'perfection': path = `<path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>`; break;
+        case 'magic_creator': path = `<path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>`; break;
+        default: path = `<path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>`; break;
+    }
+
+    // ВАЖНО: Красим линии, а фон (fill) оставляем прозрачным!
+    return `<svg class="${sizeCls} ${opacityCls} mx-auto transition-all duration-300" style="${shadow}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${defs}${path}</svg>`;
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
+        if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
+    } catch (e) { console.error("Ошибка загрузки логов HR-метрик", e); }
+});
 
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -319,7 +389,6 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo);
 
-    // Группируем по уникальным связкам
     const pairMap = {};
     recentChecks.forEach(c => {
         const type = c.templateKey.split('_')[0];
@@ -331,20 +400,12 @@ window.gameGenerateWeeklyPlan = function(force = false) {
 
         if (!pairMap[statusKey]) {
             pairMap[statusKey] = {
-                statusKey: statusKey,
-                project: c.projectName,
-                contractor: c.contractorName,
-                templateKey: c.templateKey,
-                templateTitle: c.templateTitle,
-                frequency: freq,
-                instanceId: instanceId,
+                statusKey: statusKey, project: c.projectName, contractor: c.contractorName,
+                templateKey: c.templateKey, templateTitle: c.templateTitle,
+                frequency: freq, instanceId: instanceId,
                 totalStages: templateObj?.groups ? templateObj.groups.length : 1,
                 checks: [],
-                allChecksCount: contractorArray.filter(hist => 
-                    hist.projectName === c.projectName && 
-                    hist.contractorName === c.contractorName && 
-                    hist.templateKey === c.templateKey
-                ).length
+                allChecksCount: contractorArray.filter(hist => hist.projectName === c.projectName && hist.contractorName === c.contractorName && hist.templateKey === c.templateKey).length
             };
         }
         pairMap[statusKey].checks.push(c);
@@ -353,31 +414,29 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     for (let key in pairMap) {
         const pair = pairMap[key];
         
-        // 1. Инициализация статуса в БД, если его нет
         if (!contractorStatuses[key]) {
             contractorStatuses[key] = {
-                status: "active",
-                progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 },
+                status: "active", progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 },
                 milestoneProgress: { completedStages: [], totalStages: pair.totalStages },
-                etalonCompleted: pair.allChecksCount >= 3, // Если больше 3 проверок - эталон не нужен
-                lastUpdate: new Date().toISOString()
+                etalonCompleted: false, lastUpdate: new Date().toISOString()
             };
         }
 
         const st = contractorStatuses[key];
-        if (st.status === 'paused' || st.status === 'completed') continue; // Пропускаем
 
-        // 2. Требование эталона
-        let needsEtalon = false;
-        if (pair.allChecksCount < 3 && !st.etalonCompleted) {
-            needsEtalon = true;
-        }
+        // --- ЛОГИКА ЭТАЛОНА ---
+        const hasAnyCheck = contractorArray.some(c => c.contractorName === pair.contractor && c.projectName === pair.project && (c.templateKey === 'sys_etalon_act' || c.templateKey === pair.templateKey));
+        if (hasAnyCheck || pair.allChecksCount >= 1) st.etalonCompleted = true;
+        let needsEtalon = !st.etalonCompleted;
 
-        // 3. Формирование задачи (Continuous vs Milestone)
+        const isPaused = st.status === 'paused';
+        const isManuallyCompleted = st.status === 'completed';
+
         if (pair.frequency === 'continuous') {
             let priority = "Низкий"; let priorityLvl = 1; let target = 1;
             let hasB3InLast = false;
 
+            // --- СТРОГАЯ ЛОГИКА ТАРГЕТОВ ПО ТЗ ---
             if (pair.allChecksCount < 3) {
                 priority = "Новый"; priorityLvl = 3; target = 7;
             } else {
@@ -385,58 +444,56 @@ window.gameGenerateWeeklyPlan = function(force = false) {
                 if (m) {
                     const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
                     hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
-                    if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40) { priority = "Критичный"; priorityLvl = 4; target = 5; } 
-                    else if (m.finalC <= 84 || m.rateB3 >= 5 || m.stabilityIndex < 60) { priority = "Средний"; priorityLvl = 2; target = 2; }
+
+                    if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) { 
+                        priority = "Критично"; priorityLvl = 4; target = 5; 
+                    } else if (m.finalC >= 70 && m.finalC <= 84) { 
+                        priority = "В плане"; priorityLvl = 2; target = 3; 
+                    } else { 
+                        priority = "Низкий"; priorityLvl = 1; target = 1; 
+                    }
                 }
             }
 
             if (hasB3InLast && priority !== "Новый") {
                 target = Math.min(target * 2, 7);
-                priority = "Критичный (Недавний B3)"; priorityLvl = 4;
+                priority = "Критично (Недавний B3)"; priorityLvl = 4;
             }
 
+            // --- ПЕРЕНОС ДОЛГОВ ---
             const oldTask = oldPlan.find(t => t.statusKey === key);
             let deficit = 0; let carryOverCount = 0;
             
-            if (oldTask && oldTask.done < oldTask.target && !needsEtalon) {
+            if (oldTask && oldTask.done < oldTask.target && !needsEtalon && !isPaused && !isManuallyCompleted) {
                 deficit = oldTask.target - oldTask.done;
                 carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
                 target = Math.min(target + deficit, 7); 
                 
                 if (priorityLvl < 4) {
                     priorityLvl++;
-                    if (priorityLvl === 2) priority = "Средний (Долг)";
-                    if (priorityLvl === 3) priority = "Высокий (Долг)";
-                    if (priorityLvl === 4) priority = "Критичный (Долг)";
+                    if (priorityLvl === 2) priority = "В плане (Долг)";
+                    if (priorityLvl === 3) priority = "Критично (Долг)";
+                    if (priorityLvl === 4) priority = "Критично (Старый Долг)";
                 }
             }
 
             newTasks.push({
-                id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-                statusKey: key, type: 'continuous',
+                id: 'task_' + Date.now().toString(36), statusKey: key, type: 'continuous',
                 contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
                 priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
-                deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon
+                deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon,
+                isPaused: isPaused, isCompletedManually: isManuallyCompleted
             });
-        } 
-        else if (pair.frequency === 'milestone') {
-            // Milestone (Поэтапный контроль)
+        } else {
             const completedLen = st.milestoneProgress.completedStages ? st.milestoneProgress.completedStages.length : 0;
             const tTotal = st.milestoneProgress.totalStages || pair.totalStages;
 
-            if (completedLen < tTotal) {
-                newTasks.push({
-                    id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-                    statusKey: key, type: 'milestone',
-                    contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-                    priority: "Поэтапный", priorityLvl: 2, 
-                    target: tTotal, done: completedLen,
-                    needsEtalon: needsEtalon
-                });
-            } else {
-                // Если все этапы завершены, закрываем статус автоматически
-                st.status = 'completed';
-            }
+            newTasks.push({
+                id: 'task_' + Date.now().toString(36), statusKey: key, type: 'milestone',
+                contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
+                priority: "Поэтапный", priorityLvl: 2, target: tTotal, done: completedLen,
+                needsEtalon: needsEtalon, isPaused: isPaused, isCompletedManually: isManuallyCompleted || (completedLen >= tTotal)
+            });
         }
     }
 
@@ -532,13 +589,16 @@ function injectAbsenceModal() {
     const html = `
     <div id="absence-modal-overlay" class="fixed inset-0 bg-slate-900/80 z-[4000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="this.style.display='none'">
         <div class="bg-[var(--card-bg)] w-full max-w-sm p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]" onclick="event.stopPropagation()">
-            <div class="font-black text-[14px] uppercase tracking-tight mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center gap-2 text-slate-800 dark:text-white">
-                <span class="text-xl">🌴</span> Управление статусом
+            <div class="font-black text-[14px] uppercase tracking-tight mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex items-center justify-between text-slate-800 dark:text-white">
+                <div class="flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"></path></svg>
+                    Статус инженера
+                </div>
             </div>
             
             <div class="space-y-4 mb-6">
                 <div>
-                    <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Причина отсутствия</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Причина отсутствия</label>
                     <select id="abs-reason" class="input-base">
                         <option value="Отпуск">Отпуск</option>
                         <option value="Больничный">Больничный</option>
@@ -548,19 +608,19 @@ function injectAbsenceModal() {
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Начало</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Начало</label>
                         <input type="date" id="abs-start" class="input-base text-[12px] !py-2">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Окончание</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Окончание</label>
                         <input type="date" id="abs-end" class="input-base text-[12px] !py-2">
                     </div>
                 </div>
             </div>
             
             <div class="flex gap-2">
-                <button onclick="document.getElementById('absence-modal-overlay').style.display='none'" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 border border-slate-200 dark:border-slate-700">Отмена</button>
-                <button onclick="saveAbsencePeriod()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">Применить</button>
+                <button onclick="document.getElementById('absence-modal-overlay').style.display='none'" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase tracking-widest active:scale-95 border border-slate-200 dark:border-slate-700 transition-colors">Отмена</button>
+                <button onclick="saveAbsencePeriod()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">Применить</button>
             </div>
         </div>
     </div>`;
@@ -612,59 +672,46 @@ window.gameForceUpdatePlan = function() {
     }
 };
 
-window.gameStartTask = function(contractor, templateKey) {
-    // 1. Заполняем Подрядчика
-    const contrInput = document.getElementById('inp-contractor');
-    if (contrInput) { 
-        contrInput.value = contractor; 
-        contrInput.dispatchEvent(new Event('input')); 
-    }
+// === НОВАЯ МОДАЛКА: СПИСОК УРОВНЕЙ ИНЖЕНЕРА ===
+window.gameShowLevelsModal = function() {
+    const myPi = window.currentProfileData ? window.currentProfileData.pi : 0;
     
-    // 2. Ищем последний Объект этого подрядчика в истории и подставляем
-    const pastCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey);
-    if (pastCheck) {
-        const projInput = document.getElementById('inp-project');
-        if (projInput && !projInput.value) {
-            projInput.value = pastCheck.projectName;
-            projInput.dispatchEvent(new Event('input')); 
-        }
-    }
+    let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
     
-    // 3. Очищаем локацию для новой проверки
-    const locInput = document.getElementById('inp-location');
-    if (locInput) locInput.value = '';
+    PI_GRADES.forEach((grade, idx) => {
+        const isCurrent = myPi >= grade.xpMin && myPi < grade.xpMax;
+        const isPassed = myPi >= grade.xpMax;
+        const isMaxLevel = (idx === PI_GRADES.length - 1) && myPi >= grade.xpMin;
+        
+        let statusIcon = isPassed ? `<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>` 
+                       : (isCurrent || isMaxLevel ? `<span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>` 
+                       : `<svg class="w-5 h-5 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`);
+                       
+        let bgClass = isCurrent || isMaxLevel ? `bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-600 shadow-sm transform scale-[1.02]` : `bg-[var(--card-bg)] border-[var(--card-border)] opacity-${isPassed ? '60' : '100'}`;
+        
+        html += `
+        <div class="p-3 border rounded-xl flex items-center justify-between transition-all ${bgClass}">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br ${grade.color} text-white font-black flex items-center justify-center text-xs shadow-sm">${grade.level}</div>
+                <div>
+                    <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight">${grade.name}</div>
+                    <div class="text-[10px] font-bold text-slate-400">${grade.xpMin} — ${grade.xpMax === 999999 ? '∞' : grade.xpMax} XP</div>
+                </div>
+            </div>
+            <div class="shrink-0 flex items-center justify-center w-8">${statusIcon}</div>
+        </div>`;
+    });
+    html += `</div>`;
 
-    // 4. Меняем чек-лист
-    const selectEl = document.getElementById('checklist-selector');
-    if (selectEl) selectEl.value = templateKey;
+    document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg></div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Карьерная лестница</div>`;
+    document.getElementById('modal-body').innerHTML = html;
     
-    // 5. Переходим на вкладку
-    switchTab('tab-audit'); 
-    changeTemplate(templateKey);
-    
-    // Принудительно обновляем названия в шапке
-    setTimeout(() => {
-        updateDataSummary();
-        window.scrollTo({top: 0, behavior: 'smooth'});
-        showToast("📝 Задача загружена. Данные заполнены!");
-    }, 150);
+    const modal = document.getElementById('modal-overlay');
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
 };
-
-// === РЕНДЕР ДАШБОРДА ===
-let currentGameTab = 'profile';
-
-window.switchGameTab = function(tabId) {
-    currentGameTab = tabId;
-    ['game-tab-profile', 'game-tab-tasks', 'game-tab-stats'].forEach(id => document.getElementById(id).classList.add('hidden'));
-    ['btn-g-profile', 'btn-g-tasks', 'btn-g-stats'].forEach(id => document.getElementById(id).className = "flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all");
-    
-    document.getElementById(`game-tab-${tabId}`).classList.remove('hidden');
-    document.getElementById(`btn-g-${tabId}`).className = "flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-600 transition-all";
-
-    if (tabId === 'profile') renderRadarChart();
-    if (tabId === 'stats') renderStatsCharts();
-};
-
+// === ЕДИНЫЙ ДАШБОРД ИНЖЕНЕРА (iOS STYLE) ===
 window.gameRenderDashboard = function() {
     const container = document.getElementById('game-dashboard-container');
     if (!container) return;
@@ -683,126 +730,35 @@ window.gameRenderDashboard = function() {
     const myProfile = window.currentProfileData;
     const piProgress = myProfile.pi >= myProfile.levelObj.xpMax ? 100 : ((myProfile.pi - myProfile.levelObj.xpMin) / (myProfile.levelObj.xpMax - myProfile.levelObj.xpMin)) * 100;
 
-    let html = `
-        <div class="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-inner flex gap-1 mb-4 mx-1">
-            <button id="btn-g-profile" onclick="switchGameTab('profile')" class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-600 transition-all">🏅 Профиль</button>
-            <button id="btn-g-tasks" onclick="switchGameTab('tasks')" class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">📋 Задачи</button>
-            <button id="btn-g-stats" onclick="switchGameTab('stats')" class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">📈 Рейтинг</button>
-        </div>
-
-        <!-- ПРОФИЛЬ -->
-        <div id="game-tab-profile" class="hidden">
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4 mx-1 relative overflow-hidden">
-                <div class="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-2xl pointer-events-none"></div>
-                <div class="absolute top-0 right-0 bg-gradient-to-br from-slate-800 to-slate-900 text-white border-b border-l border-slate-700 text-[9px] font-black px-3 py-1.5 rounded-bl-xl uppercase tracking-widest flex items-center gap-1.5 shadow-md">
-                    <svg class="w-3 h-3 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a7.5 7.5 0 01-5.892 5.892l-1.192.24a1 1 0 000 1.96l1.192.24a7.5 7.5 0 015.892 5.892l.24 1.192a1 1 0 001.96 0l.24-1.192a7.5 7.5 0 015.892-5.892l1.192-.24a1 1 0 000-1.96l-1.192-.24a7.5 7.5 0 01-5.892-5.892l-.24-1.192z"></path></svg>
-                    СТРИК: ${myProfile.currentStreak} НЕД.
-                </div>
-                
-                <div class="flex items-center gap-4 mb-4 mt-3 relative z-10">
-                    <div class="w-16 h-16 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-2xl shrink-0 shadow-lg border-2 border-white dark:border-slate-800 ring-2 ${myProfile.levelObj.ring} ring-offset-2 dark:ring-offset-slate-900">
-                        ${myProfile.name.substring(0,1).toUpperCase()}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-0.5">
-    <div class="text-[16px] font-black text-slate-800 dark:text-white truncate leading-tight">${myProfile.name}</div>
-    <button onclick="switchTab('tab-audit'); setTimeout(() => startSmartLock({preventDefault:()=>{}}, 'inp-inspector'), 100)" class="text-slate-400 hover:text-indigo-500 active:scale-90" title="Изменить имя">✏️</button>
-</div>
-                        <div class="text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mb-1.5">${myProfile.levelObj.name}</div>
-                        
-                        <div class="flex justify-between text-[9px] font-bold text-[var(--text-muted)] mb-1.5 uppercase tracking-wider">
-                            <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
-                            <span>ЦЕЛЬ: ${myProfile.levelObj.xpMax}</span>
-                        </div>
-                        
-                        <div class="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 relative shadow-inner">
-                            <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000 relative" style="width: ${piProgress}%">
-                                <div class="absolute inset-0 bg-white/20 w-full h-full" style="background-image: linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 75%, transparent 75%, transparent); background-size: 1rem 1rem;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex flex-col sm:flex-row gap-4 mb-4 mx-1">
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 sm:w-1/2 flex flex-col justify-center">
-                    <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">Активный Квест</div>
-                    ${getSmartQuest(myProfile)}
-                </div>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-3 sm:w-1/2 h-[180px] relative flex justify-center items-center">
-                    <canvas id="pi-radar-chart"></canvas>
-                </div>
-            </div>
-
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mx-1 p-4 mb-8">
-                <div class="font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 flex justify-between items-center">
-                    <span>Достижения</span>
-                    <span class="bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 shadow-sm">${myProfile.earnedBadges.length} / ${COMPETENCIES.length}</span>
-                </div>
-                <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
-    `;
-
-    COMPETENCIES.forEach(badge => {
-        const progress = myProfile.badgesData[badge.id] || 0;
-        const isEarned = progress >= badge.maxProgress;
-        const iconSvg = SKILL_ICONS[badge.group] || SKILL_ICONS["Редкие"];
-        const styleClass = isEarned ? "bg-gradient-to-br from-indigo-600 to-indigo-800 text-white shadow-md border-indigo-400/50" : "bg-[var(--hover-bg)] border-[var(--card-border)] opacity-50 grayscale";
-        
-        html += `
-            <div class="border rounded-xl p-2 flex flex-col items-center text-center ${styleClass} cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})">
-                <div class="mb-1 ${isEarned?'text-white drop-shadow-md':'text-slate-400'} w-5 h-5">${iconSvg}</div>
-                <div class="font-bold text-[7px] uppercase leading-tight ${isEarned?'text-indigo-100':'text-slate-500'} line-clamp-2 h-5 flex items-center">${badge.name}</div>
-            </div>
-        `;
-    });
-
-    html += `</div></div></div>`; 
-
-    // --- ПЛАН И ЗАДАЧИ ---
-    html += `<div id="game-tab-tasks" class="hidden">`;
-
-    let absenceText = 'Активен (План работает)';
-    if (engineerAbsence.isActive) {
-        html += `<div class="text-center py-6 text-amber-600 font-bold text-[11px] bg-amber-50/50 rounded-xl border border-dashed border-amber-200 uppercase">План приостановлен</div>`;
-    } else if (!weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) {
-        html += `<div class="text-center py-6 text-slate-500 font-bold text-[11px] bg-white rounded-xl border border-dashed border-slate-200 uppercase">Все задачи завершены или приостановлены</div>`;
-    } else {
+    // Считаем задачи на неделю
+    let totalTasks = 0, doneTasks = 0, debtTasks = 0;
+    if (weeklyPlanData && weeklyPlanData.tasks) {
+        totalTasks = weeklyPlanData.tasks.length;
         weeklyPlanData.tasks.forEach(t => {
-            const progressPerc = Math.min((t.done / t.target) * 100, 100);
-            const isDone = t.done >= t.target;
-            let badgeClass = t.priorityLvl === 4 ? 'text-red-600 bg-red-50 border-red-200' : (t.priorityLvl >= 2 ? 'text-orange-600 bg-orange-50 border-orange-200' : 'text-slate-500 bg-slate-100 border-slate-200');
-            
-            // НОВОЕ: Индикаторы Эталона и Milestone
-            let etalonBadge = t.needsEtalon ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-blue-100 text-blue-700">📌 Требуется Эталон</span>` : '';
-            let milestoneBadge = t.type === 'milestone' ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700">🏁 Поэтапно</span>` : '';
-
-            // НОВОЕ: Контекстное меню (Троеточие) для статуса
-            html += `
-            <div class="border border-[var(--card-border)] rounded-xl p-2.5 bg-white dark:bg-slate-800 shadow-sm relative group cursor-pointer active:scale-[0.98] transition-transform" onclick="gameStartTask('${t.contractor.replace(/'/g, "\\'")}', '${t.templateKey}')">
-                <div class="absolute top-2 right-2 flex items-center gap-2">
-                    <div class="text-[10px] font-black text-slate-500 ${isDone?'text-green-500':''}">${t.done}/${t.target}</div>
-                    <button onclick="gameOpenTaskMenu('${t.statusKey}', event)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-indigo-600 font-black rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">⋮</button>
-                </div>
-                <div class="text-[12px] font-black text-slate-800 dark:text-white truncate pr-16">${t.contractor}</div>
-                <div class="text-[9px] font-bold text-slate-500 truncate mb-1.5">${t.templateTitle} [${t.project}]</div>
-                <div class="flex gap-1.5 items-center mb-1.5 flex-wrap">
-                    <span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border ${badgeClass}">${t.priority}</span>
-                    ${milestoneBadge}
-                    ${etalonBadge}
-                    ${t.carryOverCount > 0 && !t.needsEtalon ? `<span class="text-[7px] font-black uppercase px-1.5 py-0.5 rounded border bg-red-100 text-red-700">⚠️ Долг</span>` : ''}
-                </div>
-                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-1">
-                    <div class="h-full ${isDone ? 'bg-green-500' : 'bg-indigo-500'}" style="width: ${progressPerc}%"></div>
-                </div>
-            </div>`;
+            if (t.done >= t.target) doneTasks++;
+            if (t.carryOverCount > 0 && !t.needsEtalon) debtTasks++;
         });
     }
-    html += `</div></div></div>`;
 
-    // --- РЕЙТИНГ ---
-    html += `<div id="game-tab-stats" class="hidden">`;
-    
-    let totalImpact = 0; let impactCount = 0; let impactHtmlList = '';
+    // Даты текущей недели
+    const startOfWeek = getStartOfWeek();
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(endOfWeek.getDate() + 6);
+    const weekStr = `${startOfWeek.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'})} - ${endOfWeek.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric'})}`;
+
+    // Топ очивок и квест
+    let activeBadges = [];
+    COMPETENCIES.forEach(b => {
+        const progress = myProfile.badgesData[b.id] || 0;
+        const tier = getBadgeTier(b, progress);
+        if (tier > 0) activeBadges.push({ ...b, tier, progress });
+    });
+    activeBadges.sort((a,b) => b.tier - a.tier);
+    const topBadges = activeBadges.slice(0, 3); // Оставил 3, чтобы влез квест
+    const smartQuestHtml = getSmartQuest(myProfile);
+
+    // Считаем Impact и Рейтинг для объединенных блоков
+    let totalImpact = 0; let impactCount = 0;
     const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
     contractorsSet.forEach(cName => {
         const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
@@ -810,78 +766,289 @@ window.gameRenderDashboard = function() {
         const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
         const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
         const impact = calculateImpactScore(currentInspector, cName, topTemplate);
-        if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') {
-            totalImpact += impact.score; impactCount++;
-            const trendIcon = impact.score > 0.2 ? '📈' : (impact.score < -0.2 ? '📉' : '➖');
-            impactHtmlList += `
-                <div class="flex justify-between items-center py-2 border-b border-dashed border-slate-200 dark:border-slate-700 last:border-0">
-                    <div class="min-w-0 flex-1 pr-2">
-                        <div class="text-[11px] font-bold truncate">${cName}</div>
-                        <div class="text-[9px] text-slate-500 truncate mt-0.5">База: ${impact.baseUrk}% ➔ Текущ: ${impact.currUrk}%</div>
-                    </div>
-                    <div class="text-right shrink-0 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded border border-slate-100 shadow-sm">
-                        <div class="text-[10px] font-black ${impact.color}">${trendIcon} ${impact.trend}</div>
-                        <div class="text-[8px] text-slate-400 font-bold uppercase mt-0.5">Индекс: ${(impact.score).toFixed(2)}</div>
-                    </div>
-                </div>`;
-        }
+        if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
     });
-
     const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
-    let globalImpactText = "Нейтральное"; let globalImpactColor = "text-slate-500";
-    if (avgImpact > 0.2) { globalImpactText = "Положительное"; globalImpactColor = "text-green-600"; }
-    else if (avgImpact < -0.2) { globalImpactText = "Отрицательное"; globalImpactColor = "text-red-600"; }
+    let globalImpactText = "Нейтральное"; let globalImpactColor = "text-slate-600 dark:text-slate-400"; let globalImpactBg = "bg-[var(--hover-bg)]";
+    let globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16"></path></svg>`;
+    if (avgImpact > 0.2) { globalImpactText = "Позитивное"; globalImpactColor = "text-green-600 dark:text-green-500"; globalImpactBg = "bg-green-50 dark:bg-green-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`; } 
+    else if (avgImpact < -0.2) { globalImpactText = "Отрицательное"; globalImpactColor = "text-red-600 dark:text-red-500"; globalImpactBg = "bg-red-50 dark:bg-red-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"></path></svg>`; }
 
+    const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
+    let myRank = allProfilesArr.findIndex(p => p.name === myProfile.name) + 1;
+    let totalEng = allProfilesArr.length;
+
+    let html = '';
+
+    // ====================================================================
+    // СЕКЦИЯ 1: ПРОФИЛЬ И НАГРАДЫ
+    // ====================================================================
     html += `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-4 mx-1 p-3">
-            <div class="font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-3 text-center border-b border-[var(--card-border)] pb-2">Impact Score (Влияние)</div>
-            <div class="flex justify-between items-center mb-3 bg-[var(--hover-bg)] p-3 rounded-xl border border-[var(--card-border)]">
-                <div class="text-[10px] font-bold text-slate-500 uppercase">Общая<br>Динамика</div>
-                <div class="text-right">
-                    <div class="text-[12px] font-black ${globalImpactColor} uppercase">${globalImpactText}</div>
-                    <div class="text-[9px] font-bold text-slate-400 mt-0.5">Средний Индекс: ${avgImpact.toFixed(2)}</div>
+        <div class="flex flex-col md:flex-row gap-3 mx-1 mb-4">
+            <!-- КАРТОЧКА ПРОФИЛЯ -->
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-5 shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div class="flex justify-between items-start mb-4 relative z-10">
+                    <div class="flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-2xl shrink-0 shadow-lg border-2 border-white dark:border-slate-800 ring-2 ${myProfile.levelObj.ring} ring-offset-2 dark:ring-offset-slate-900">
+                            ${myProfile.name.substring(0,1).toUpperCase()}
+                        </div>
+                        <div>
+                            <!-- КЛИК ДЛЯ ИЗМЕНЕНИЯ ИМЕНИ -->
+                            <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2">
+                                <div class="text-[16px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.name}</div>
+                                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                            </div>
+                            <div class="text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5">${myProfile.levelObj.name} <span class="text-slate-400 ml-1">Ур. ${myProfile.levelObj.level}</span></div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Стрик</div>
+                        <div class="text-[14px] font-black text-slate-800 dark:text-white">${myProfile.currentStreak} нед.</div>
+                    </div>
+                </div>
+
+                <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
+                    <div class="flex justify-between text-[10px] font-bold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
+                        <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
+                        <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
+                    </div>
+                    <div class="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
+                        <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
+                    </div>
+                </div>
+
+                <!-- СЧЕТЧИКИ ЗАДАЧ ПОД ХП -->
+                <div class="flex justify-between items-center mt-3 pt-3 border-t border-[var(--card-border)]">
+                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">План недели: <span class="font-black ${doneTasks === totalTasks && totalTasks > 0 ? 'text-green-600' : 'text-slate-800 dark:text-white'}">${doneTasks} / ${totalTasks}</span></div>
+                    ${debtTasks > 0 ? `<div class="text-[9px] font-black uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-2 py-0.5 rounded">Долг: ${debtTasks}</div>` : `<div class="text-[9px] font-bold text-green-500 uppercase">Долгов нет</div>`}
                 </div>
             </div>
-            <div class="space-y-1">${impactHtmlList || '<div class="text-[9px] text-center text-slate-400 py-3 font-bold border border-dashed rounded-xl bg-slate-50 uppercase">Нужно минимум 6 проверок по одному подрядчику</div>'}</div>
-        </div>
 
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-4 mx-1 p-3">
-            <div class="font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest mb-2 text-center border-b border-[var(--card-border)] pb-2">📈 График Опыта</div>
-            <div style="height: 140px; position: relative;"><canvas id="game-progress-chart"></canvas></div>
+            <!-- ТОП НАГРАДЫ И КВЕСТ -->
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm md:w-[45%] flex flex-col justify-between">
+                <div>
+                    <div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 flex justify-between items-center">
+                        <span>Награды</span>
+                        <button onclick="document.getElementById('badges-section').scrollIntoView({behavior: 'smooth'})" class="text-indigo-500 hover:text-indigo-600 active:scale-95 transition-colors">Все ➔</button>
+                    </div>
+                    <div class="flex items-center justify-start gap-3 overflow-x-auto no-scrollbar pb-2">
+                        ${topBadges.length > 0 
+                            ? topBadges.map(b => `
+                                <div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform w-16 shrink-0" onclick="gameShowBadgeInfo('${b.id}', ${b.progress})" title="${b.name}">
+                                    ${getBadgeSvg(b.id, b.tier, "w-10 h-10")}
+                                    <span class="text-[8px] font-bold text-slate-600 dark:text-slate-400 uppercase mt-1 text-center truncate w-full">${b.name}</span>
+                                </div>`).join('')
+                            : `<div class="text-[9px] font-bold text-slate-400 uppercase">Пока пусто.</div>`
+                        }
+                    </div>
+                </div>
+                <div class="mt-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-3 shadow-sm">
+                    ${smartQuestHtml}
+                </div>
+            </div>
         </div>
     `;
 
-    const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
-    if (allProfilesArr.length > 1) {
-        html += `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-8 mx-1 overflow-hidden">
-            <div class="bg-[var(--hover-bg)] border-b border-[var(--card-border)] p-2.5 flex justify-between items-center">
-                <span class="font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest">🏆 Топ Инженеров</span>
-            </div>
-            <div class="divide-y divide-[var(--card-border)]">`;
-        allProfilesArr.forEach((p, i) => {
-            const isMe = p.name === myProfile.name;
-            let rankBadge = `<div class="w-6 text-center font-black text-slate-400 text-[11px]">${i+1}</div>`;
-            if (i === 0) rankBadge = `<div class="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-500 text-white flex items-center justify-center font-black text-[10px] shadow-sm border border-yellow-200">1</div>`;
-            if (i === 1) rankBadge = `<div class="w-6 h-6 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-white flex items-center justify-center font-black text-[10px] shadow-sm border border-slate-200">2</div>`;
-            if (i === 2) rankBadge = `<div class="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white flex items-center justify-center font-black text-[10px] shadow-sm border border-orange-300">3</div>`;
-            html += `
-                <div class="flex items-center gap-3 p-2.5 ${isMe ? 'bg-indigo-50/30' : ''}">
-                    ${rankBadge}
-                    <div class="flex-1 min-w-0">
-                        <div class="font-bold text-[11px] truncate ${isMe?'text-indigo-600':''}">${p.name}</div>
-                        <div class="text-[8px] text-[var(--text-muted)] uppercase flex gap-2 mt-0.5 font-bold"><span>Гр. ${p.levelObj.level}</span><span>Пров: ${p.checksCount}</span></div>
+    // ====================================================================
+    // СЕКЦИЯ 2: ПРОФИЛЬ НАВЫКОВ И ВЛИЯНИЕ (ОБЪЕДИНЕНЫ, СВЕРНУТЫ)
+    // ====================================================================
+    html += `
+        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">📊 Профиль навыков и Влияние</span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-[var(--hover-bg)]">
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
+                    <div style="height: 180px; width: 100%; position: relative;"><canvas id="pi-radar-chart"></canvas></div>
+                </div>
+                <button onclick="gameOpenImpactModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] ${globalImpactBg}">
+                    <div class="flex justify-between items-start w-full mb-4">
+                        <div class="text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Ваше влияние на<br>качество объекта</div>
+                        <div class="${globalImpactColor}">${globalImpactIcon}</div>
                     </div>
-                    <span class="font-black text-[11px] ${isMe?'text-indigo-600':'text-slate-700'}">${p.pi} XP</span>
-                </div>`;
-        });
-        html += `</div></div>`;
-    }
+                    <div>
+                        <div class="text-[42px] font-black ${globalImpactColor} leading-none mb-2">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(2)}</div>
+                        <div class="text-[12px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Статус: ${globalImpactText}</div>
+                        <div class="text-[10px] text-slate-500 mt-3 font-medium">Impact Score показывает вашу реальную пользу. Сравнивает качество до ваших проверок и после.</div>
+                    </div>
+                </button>
+            </div>
+        </details>
+    `;
+
+    // ====================================================================
+    // СЕКЦИЯ 3: ПЛАН ЗАДАЧ (ВЫДЕЛЕН ЦВЕТОМ, РАЗВЕРНУТ)
+    // ====================================================================
+    let taskBlockHeaderColor = engineerAbsence.isActive ? "bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-800" : "bg-indigo-100 dark:bg-indigo-900/40 border-indigo-200 dark:border-indigo-800";
+    let taskBlockBodyColor = engineerAbsence.isActive ? "bg-amber-50 dark:bg-amber-900/10" : "bg-indigo-50/50 dark:bg-indigo-900/10";
     
-    html += `</div>`; 
+    html += `
+        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border-2 ${taskBlockHeaderColor} rounded-2xl shadow-md overflow-hidden [&_summary::-webkit-details-marker]:hidden" open>
+            <summary class="p-4 cursor-pointer flex justify-between items-center ${taskBlockHeaderColor} transition-colors select-none border-b">
+                <div>
+                    <span class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2 mb-1">
+                        <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        Недельный план задач
+                    </span>
+                    <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wider">${weekStr} | Задач: ${doneTasks}/${totalTasks}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="gameToggleAbsence(); event.stopPropagation();" class="text-[9px] font-black text-slate-600 bg-white/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-600 px-3 py-2 rounded-lg active:scale-95 transition-colors uppercase shadow-sm">
+                        🏖️ Отпуск/Статус
+                    </button>
+                    <span class="text-slate-500 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                    </span>
+                </div>
+            </summary>
+            
+            <div class="p-3 ${taskBlockBodyColor}">
+    `;
+
+    if (engineerAbsence.isActive) {
+        html += `<div class="bg-white/80 dark:bg-slate-800/80 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center text-amber-700 dark:text-amber-400 shadow-sm">
+                    <div class="text-[14px] font-black uppercase tracking-wider mb-1">Режим: ${engineerAbsence.reason}</div>
+                    <div class="text-[11px] font-bold opacity-80">Задачи на эту неделю приостановлены. Отдыхайте!</div>
+                 </div>`;
+    } else if (!weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) {
+        html += `<div class="bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6 text-center text-indigo-600 dark:text-indigo-400 shadow-sm">
+                    <div class="text-[14px] font-black uppercase tracking-wider mb-1">План чист</div>
+                    <div class="text-[11px] font-bold opacity-80">Все проверки выполнены или объектов в работе нет.</div>
+                 </div>`;
+    } else {
+        const renderTaskCard = (t) => {
+            const isDone = t.isCompletedManually || t.done >= t.target;
+            const progressPerc = Math.min((t.done / t.target) * 100, 100);
+            
+            let tagClass = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400';
+            let barColor = 'bg-indigo-500';
+            
+            if (t.isPaused) {
+                tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400';
+                barColor = 'bg-slate-400';
+            } else if (isDone) {
+                barColor = 'bg-green-500';
+            } else if (t.priorityLvl === 4) { 
+                tagClass = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'; barColor = 'bg-red-500'; 
+            } else if (t.priorityLvl === 3) { 
+                tagClass = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400'; 
+            } else if (t.priorityLvl === 2) { 
+                tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'; barColor = 'bg-orange-500'; 
+            }
+
+            const etalonBadge = t.needsEtalon ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-blue-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> Нужен Эталон</span>` : '';
+            const debtBadge = (t.carryOverCount > 0 && !t.needsEtalon && !t.isPaused) ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-red-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Долг</span>` : '';
+            const statusBadge = t.isPaused ? `<span class="text-[9px] font-black uppercase text-orange-600">⏸ НА ПАУЗЕ</span>` : (t.isCompletedManually ? `<span class="text-[9px] font-black uppercase text-green-600">✅ ЗАВЕРШЕНО</span>` : '');
+
+            const safeContractor = t.contractor.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeStatusKey = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeProject = t.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            
+            const onClickAction = (t.isPaused || t.isCompletedManually) ? `showToast('Управление доступно через меню (три точки)');` : `gameStartTask('${safeContractor}', '${t.templateKey}', '${safeProject}')`;
+            const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
+
+            return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="${onClickAction}">
+                <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
+                    <div class="flex-1 min-w-0 pr-2">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${t.contractor}</div>
+                        <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${t.templateTitle}</div>
+                    </div>
+                    <button onclick="event.stopPropagation(); gameOpenTaskMenu('${safeStatusKey}', event)" class="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-600 shrink-0 shadow-sm transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                </div>
+                
+                <div class="flex flex-wrap gap-2 items-center mb-3">
+                    <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'Остановлено' : t.priority}</span>
+                    ${etalonBadge} ${debtBadge} ${statusBadge}
+                </div>
+                
+                <div class="mt-auto">
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Прогресс</span>
+                        <span class="text-[11px] font-black ${isDone ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)]">
+                        <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
+                    </div>
+                </div>
+            </div>`;
+        };
+
+        html += `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">`;
+        weeklyPlanData.tasks.forEach(t => { html += renderTaskCard(t); });
+        html += `</div>`;
+    }
+    html += `</div></details>`;
+
+    // ====================================================================
+    // СЕКЦИЯ 4: АКТИВНОСТЬ И РЕЙТИНГ ИНЖЕНЕРОВ (ОБЪЕДИНЕНЫ, СВЕРНУТЫ)
+    // ====================================================================
+    html += `
+        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🔥 Активность и Рейтинг</span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="p-3 grid grid-cols-1 md:grid-cols-2 gap-3 bg-[var(--hover-bg)]">
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
+                    <div class="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-widest mb-2 absolute top-4 left-4 z-10">Активность (XP по месяцам)</div>
+                    <div style="height: 160px; width: 100%; position: relative; margin-top:20px;"><canvas id="game-progress-chart"></canvas></div>
+                </div>
+                <button onclick="gameOpenTopModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] bg-[var(--card-bg)]">
+                    <div class="flex justify-between items-start w-full mb-4">
+                        <div class="text-[12px] font-black uppercase text-[var(--text-muted)] tracking-widest leading-tight">Общий рейтинг<br>Инженеров</div>
+                        <div class="text-indigo-500"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M21.666 4.756c.962-.203 1.934-.377 2.916-.52a6.003 6.003 0 00-5.395 4.972"></path></svg></div>
+                    </div>
+                    <div>
+                        <div class="text-[42px] font-black text-slate-800 dark:text-white leading-none mb-2">#${myRank} <span class="text-[16px] text-[var(--text-muted)]">из ${totalEng}</span></div>
+                        <div class="text-[12px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Ваша позиция в топе</div>
+                        <div class="text-[10px] text-slate-500 mt-3 font-medium">Нажмите, чтобы увидеть таблицу лидеров и сравнить свои результаты.</div>
+                    </div>
+                </button>
+            </div>
+        </details>
+    `;
+
+    // ====================================================================
+    // СЕКЦИЯ 5: ВСЕ ДОСТИЖЕНИЯ (СВЕРНУТЫ)
+    // ====================================================================
+    html += `
+        <details id="badges-section" class="mx-1 mb-8 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🏅 Коллекция наград <span class="bg-white dark:bg-slate-800 border border-[var(--card-border)] px-1.5 py-0.5 rounded text-[9px] ml-1">${myProfile.earnedBadges.length}/${COMPETENCIES.length}</span></span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="p-4 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-y-6 gap-x-2 bg-[var(--hover-bg)]">
+    `;
+    COMPETENCIES.forEach(badge => {
+        const progress = myProfile.badgesData[badge.id] || 0;
+        const tier = getBadgeTier(badge, progress);
+        
+        html += `
+            <div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})" title="${badge.desc}">
+                ${getBadgeSvg(badge.id, tier, "w-12 h-12")}
+                <div class="font-bold text-[8px] uppercase text-center leading-tight mt-2 h-6 flex items-center ${tier > 0 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}">${badge.name}</div>
+            </div>
+        `;
+    });
+    html += `</div></details>`; 
 
     container.innerHTML = html;
-    switchGameTab(currentGameTab);
+    
+    // Вызов отрисовки графиков
+    renderRadarChart();
+    renderStatsCharts();
 };
 
 window.renderRadarChart = function() {
@@ -922,21 +1089,71 @@ window.gameShowBadgeInfo = function(badgeId, progress) {
     const badge = COMPETENCIES.find(b => b.id === badgeId);
     if(!badge) return;
     
-    const isEarned = progress >= badge.maxProgress;
-    const iconSvg = SKILL_ICONS[badge.group] || SKILL_ICONS["Редкие"];
+    const tier = getBadgeTier(badge, progress);
     
-    document.getElementById('modal-icon').innerHTML = `<div class="w-16 h-16 ${isEarned ? 'bg-indigo-600 text-white shadow-lg' : 'bg-[var(--hover-bg)] text-slate-400 border border-[var(--card-border)]'} rounded-2xl flex items-center justify-center mx-auto mb-3">${iconSvg}</div>`;
-    document.getElementById('modal-title').innerHTML = `<div class="text-center text-[16px] uppercase tracking-widest text-slate-800 dark:text-white font-black">${badge.name}</div><div class="text-center text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">${badge.group}</div>`;
+    // По умолчанию (Уровень 0 - Заблокировано)
+    let target = badge.tiers[0];
+    let levelName = "Заблокировано"; 
+    let color = "text-slate-400"; 
+    let bg = "bg-slate-300";
+    
+    // Синхронизируем цвета и названия со стилями SVG медалей
+    if (tier === 1) { 
+        target = badge.tiers[0]; 
+        levelName = "Обычная"; 
+        color = "text-slate-500"; 
+        bg = "bg-slate-400"; 
+    }
+    else if (tier === 2) { 
+        target = badge.tiers[1]; 
+        levelName = "Редкая"; 
+        color = "text-amber-600"; 
+        bg = "bg-amber-500"; 
+    }
+    else if (tier === 3) { 
+        target = badge.tiers[2]; 
+        levelName = "Эпическая"; 
+        color = "text-indigo-500"; 
+        bg = "bg-indigo-500"; 
+    }
+    else if (tier === 4) { 
+        target = badge.maxProgress; 
+        levelName = "Легендарная"; 
+        color = "text-yellow-600"; 
+        bg = "bg-yellow-500"; 
+    }
+    else if (tier >= 5) { 
+        target = badge.maxProgress; 
+        levelName = "Мифическая"; 
+        color = "text-pink-600"; 
+        bg = "bg-pink-500"; 
+        progress = target; // Визуально ограничиваем прогресс-бар, чтобы он не вылезал за 100%
+    }
+
+    const perc = Math.min((progress / target) * 100, 100);
+
+    document.getElementById('modal-icon').innerHTML = `
+        <div class="w-24 h-24 flex items-center justify-center mx-auto mb-2">
+            ${getBadgeSvg(badge.id, tier, "w-20 h-20")}
+        </div>
+    `;
+    
+    document.getElementById('modal-title').innerHTML = `
+        <div class="text-center text-[18px] uppercase tracking-tight text-slate-800 dark:text-white font-black">${badge.name}</div>
+        <div class="text-center text-[10px] ${color} font-bold uppercase tracking-widest mt-1.5 flex justify-center items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full ${bg}"></span> ${levelName}
+        </div>
+    `;
     
     document.getElementById('modal-body').innerHTML = `
-        <div class="text-center text-[12px] text-slate-700 dark:text-slate-300 mb-6 leading-relaxed">${badge.desc}</div>
-        <div class="bg-[var(--hover-bg)] p-4 rounded-xl border border-[var(--card-border)] shadow-inner">
-            <div class="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2 ${isEarned ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}">
-                <span>Прогресс навыка</span>
-                <span>${Math.min(progress, badge.maxProgress)} / ${badge.maxProgress}</span>
+        <div class="text-center text-[13px] text-slate-600 dark:text-slate-300 mb-6 leading-relaxed px-4">${badge.desc}</div>
+        <div class="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-inner">
+            <div class="flex justify-between text-[10px] font-black uppercase tracking-widest mb-3 ${tier > 0 ? color : 'text-slate-500'}">
+                <span>Прогресс уровня</span>
+                <span>${progress} / ${target}</span>
             </div>
             <div class="w-full h-2 bg-[var(--card-border)] rounded-full overflow-hidden">
-                <div class="h-full ${isEarned ? 'bg-indigo-500 shadow-[0_0_10px_rgba(79,70,229,0.8)]' : 'bg-slate-400'} transition-all duration-500" style="width: ${(Math.min(progress, badge.maxProgress)/badge.maxProgress)*100}%"></div>
+                <div class="h-full ${tier > 0 ? bg : 'bg-slate-400'} transition-all duration-700 ease-out" style="width: ${perc}%"></div>
             </div>
         </div>
     `;
@@ -1398,22 +1615,78 @@ setTimeout(() => {
 }
 
 window.gameOpenTaskMenu = function(statusKey, e) {
-    e.stopPropagation();
-    const st = contractorStatuses[statusKey];
-    if (!st) return;
+    if (e) e.stopPropagation();
+    
+    let st = contractorStatuses[statusKey];
+    if (!st) {
+        st = { status: 'active' };
+        contractorStatuses[statusKey] = st;
+    }
+
+    const safeStatusKeyForHtml = statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     let actionsHtml = '';
     if (st.status === 'active') {
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'paused')" class="w-full text-left p-3 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-sm font-bold border border-transparent hover:border-orange-200 transition-colors">⏸ Приостановить работы</button>`;
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'completed')" class="w-full text-left p-3 rounded-lg hover:bg-green-50 hover:text-green-700 text-sm font-bold border border-transparent hover:border-green-200 transition-colors">✅ Завершить работы (Сдать)</button>`;
-    } else if (st.status === 'paused') {
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'active')" class="w-full text-left p-3 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold border border-transparent hover:border-indigo-200 transition-colors">▶ Возобновить работы</button>`;
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${statusKey}', 'completed')" class="w-full text-left p-3 rounded-lg hover:bg-green-50 hover:text-green-700 text-sm font-bold border border-transparent hover:border-green-200 transition-colors">✅ Завершить (Отказ от работ)</button>`;
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'paused')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-orange-200">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Приостановить работы
+        </button>`;
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'completed')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-green-200 mt-1">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Завершить (Сдать)
+        </button>`;
+    } else {
+        // Если на паузе или завершена - предлагаем только возобновить
+        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'active')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-indigo-200">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Возобновить работы
+        </button>`;
     }
     
     document.getElementById('task-status-actions').innerHTML = actionsHtml;
+    
+    const header = document.querySelector('#task-status-modal .border-b');
+    if(header) header.innerHTML = `<div class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Управление задачей</div> <button onclick="document.getElementById('task-status-modal').style.display='none'" class="text-slate-400 hover:text-red-500 active:scale-90 transition-colors p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
+    
     document.getElementById('task-status-modal').style.display = 'flex';
 };
+
+function startInspectionWithValues(contractor, templateKey, statusKey = null, project = null) {
+    switchTab('tab-audit'); 
+    changeTemplate(templateKey);
+    
+    // Ждем полной очистки DOM перед вставкой
+    setTimeout(() => {
+        const contrInput = document.getElementById('inp-contractor');
+        if (contrInput && !contrInput.hasAttribute('readonly')) { 
+            contrInput.value = contractor; 
+            // Без dispatchEvent, чтобы не выпадал список!
+        }
+        
+        const projInput = document.getElementById('inp-project');
+        if (projInput && !projInput.hasAttribute('readonly')) {
+            if (project) {
+                projInput.value = project;
+            } else {
+                const pastCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey);
+                if (pastCheck && pastCheck.projectName) projInput.value = pastCheck.projectName;
+            }
+        }
+        
+        const locInput = document.getElementById('inp-location');
+        if (locInput) locInput.value = '';
+        ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        if (statusKey) {
+            const selEl = document.getElementById('checklist-selector');
+            if (selEl) selEl.dataset.pendingStatusKey = statusKey;
+        }
+        
+        if (typeof updateDataSummary === 'function') updateDataSummary();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+        showToast("Задача загружена. Данные заполнены!");
+    }, 150);
+}
 
 window.gameChangeTaskStatus = function(statusKey, newStatus) {
     if (contractorStatuses[statusKey]) {
@@ -1442,19 +1715,3 @@ window.gameStartTask = function(contractor, templateKey) {
     startInspectionWithValues(contractor, templateKey);
 };
 
-function startInspectionWithValues(contractor, templateKey, statusKey = null) {
-    const contrInput = document.getElementById('inp-contractor');
-    if (contrInput) { contrInput.value = contractor; contrInput.dispatchEvent(new Event('input')); }
-    
-    // Если это эталон, передаем ключ статуса через скрытый атрибут, чтобы потом обновить
-    const selEl = document.getElementById('checklist-selector');
-    if (selEl) {
-        selEl.value = templateKey;
-        selEl.dataset.pendingStatusKey = statusKey || ''; // Запоминаем для обновления
-    }
-    
-    switchTab('tab-audit'); changeTemplate(templateKey);
-    setTimeout(() => {
-        updateDataSummary(); window.scrollTo({top: 0, behavior: 'smooth'});
-    }, 150);
-}

@@ -302,6 +302,8 @@ function initSmartInput(inputId, dataField) {
 
     const wrapper = input.parentElement;
     const dropdown = document.createElement('div');
+    // ЖЕСТКО ЗАДАЕМ ID ДЛЯ ЗАКРЫТИЯ
+    dropdown.id = 'dd_' + inputId; 
     dropdown.className = 'absolute top-full left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-lg mt-1 z-[5000] hidden max-h-48 overflow-y-auto custom-scrollbar';
     wrapper.appendChild(dropdown);
 
@@ -317,6 +319,7 @@ function initSmartInput(inputId, dataField) {
 
         dropdown.innerHTML = items.map(val => {
             const safeVal = String(val).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            // ТЕПЕРЬ ОН ТОЧНО ЗАКРОЕТСЯ, ТАК КАК ID ИЗВЕСТЕН
             return `<div class="p-2.5 text-[11px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-700 dark:text-slate-300 transition-colors" 
                 onmousedown="document.getElementById('${inputId}').value='${safeVal}'; document.getElementById('${inputId}').dispatchEvent(new Event('input')); document.getElementById('${dropdown.id}').classList.add('hidden');">
                 ${val}
@@ -941,8 +944,9 @@ function renderReferenceTab() {
         if (filteredItems.length === 0) return;
 
         // Используем HTML <details> для нативного аккордеона в стиле iOS
+        // Используем HTML <details> для нативного аккордеона в стиле iOS (Свернуты по умолчанию)
         html += `
-        <details class="mb-3 bg-[var(--card-bg)] rounded-2xl border border-[var(--card-border)] overflow-hidden shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+        <details class="mb-3 bg-[var(--card-bg)] rounded-2xl border border-[var(--card-border)] overflow-hidden shadow-sm group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-4 text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 group-open:border-b border-[var(--card-border)] transition-colors select-none">
                 <span class="pr-4 leading-snug">${g.group || g.title}</span>
                 <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
@@ -1504,9 +1508,11 @@ function changeTemplate(val) {
         if(document.getElementById('checklist-selector')) document.getElementById('checklist-selector').value = ''; 
         state = {}; details = {}; photos = {};
         
-        // Умный сброс (Инспектор остается)
-        if(document.getElementById('inp-project')) document.getElementById('inp-project').value = '';
-        if(document.getElementById('inp-contractor')) document.getElementById('inp-contractor').value = '';
+        // Умный сброс (Инспектор остается, а Защищенные поля не трогаем)
+        const pInp = document.getElementById('inp-project');
+        const cInp = document.getElementById('inp-contractor');
+        if(pInp && !pInp.hasAttribute('readonly')) pInp.value = '';
+        if(cInp && !cInp.hasAttribute('readonly')) cInp.value = '';
         if(document.getElementById('inp-location')) document.getElementById('inp-location').value = '';
 
         switchTab('tab-audit');
@@ -1540,14 +1546,15 @@ function changeTemplate(val) {
     // Сброс ответов при смене листа
     state = {}; details = {}; photos = {}; 
     
-    // Умный сброс полей ввода (Инспектор остается!)
-    if(document.getElementById('inp-project')) document.getElementById('inp-project').value = '';
-    if(document.getElementById('inp-contractor')) document.getElementById('inp-contractor').value = '';
+    // НЕ стираем Защищенные поля (readonly)
+    const pInp2 = document.getElementById('inp-project');
+    const cInp2 = document.getElementById('inp-contractor');
+    if(pInp2 && !pInp2.hasAttribute('readonly')) pInp2.value = '';
+    if(cInp2 && !cInp2.hasAttribute('readonly')) cInp2.value = '';
     if(document.getElementById('inp-location')) document.getElementById('inp-location').value = '';
 
     saveSessionData(); 
     
-    // ИСПРАВЛЕНИЕ ЗАДАЧИ 2: Синхронизируем главный селектор перед обновлением шапки
     if (document.getElementById('checklist-selector')) {
         document.getElementById('checklist-selector').value = val;
     }
@@ -1559,6 +1566,7 @@ function changeTemplate(val) {
 
     if(document.getElementById('tab-audit').classList.contains('active')) { render(); updateUI(); }
 }
+// === КОНЕЦ ЗАМЕНЫ 1 === //
 // === КОНЕЦ ЗАМЕНЫ 1 === //
 
 function updateDataSummary() {
@@ -3851,6 +3859,7 @@ function processTwiImport(event) {
 // 2. ОТКРЫТИЕ КОНСТРУКТОРА И ПЕРЕКЛЮЧЕНИЕ ТИПОВ
 
 // === 1. РЕНДЕР СПИСКА TWI КАРТ (ИОС СТИЛЬ С ГРУППИРОВКОЙ) ===
+// === 1. РЕНДЕР СПИСКА TWI КАРТ (ИОС СТИЛЬ С ГРУППИРОВКОЙ И СВОРАЧИВАНИЕМ) ===
 function renderTwiList() {
     const container = document.getElementById('twi-cards-container');
     const searchInput = document.getElementById('twi-search-input')?.value.toLowerCase() || '';
@@ -3862,7 +3871,7 @@ function renderTwiList() {
     );
 
     if (filtered.length === 0) {
-        container.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Инструкций пока нет</div>`;
+        container.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Инструкций пока нет</div>`;
         return;
     }
 
@@ -3875,7 +3884,17 @@ function renderTwiList() {
 
     let html = '';
     for (let checklistName in grouped) {
-        html += `<div class="col-span-full font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-2 mt-4 border-b border-slate-200 dark:border-slate-700 pb-2">${checklistName}</div>`;
+        // Обертка группы (Свернута по умолчанию)
+        html += `
+        <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+                <span class="truncate pr-4">${checklistName} <span class="text-[10px] text-slate-400 ml-1">(${grouped[checklistName].length})</span></span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
+        `;
         
         grouped[checklistName].forEach(card => {
             let typeIcon = ''; let typeText = ''; let typeColor = '';
@@ -3913,6 +3932,8 @@ function renderTwiList() {
                 </button>
             </div>`;
         });
+        
+        html += `</div></details>`;
     }
     container.innerHTML = html;
 }
@@ -4523,7 +4544,6 @@ function toggleManagePanel() {
 // ==========================================
 
 let customNodes = [];
-let currentEditingNodeId = null;
 
 // Загрузка пользовательских узлов при старте
 document.addEventListener("DOMContentLoaded", async () => {
@@ -4533,7 +4553,86 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (e) { console.error("Ошибка загрузки узлов", e); }
 });
 
-let currentNodeFilter = 'ALL';
+// Анимация меню управления узлами
+function toggleNodeManagePanel() {
+    const body = document.getElementById('node-manage-body');
+    const icon = document.getElementById('node-manage-toggle-icon');
+    if (!body || !icon) return;
+    if (body.style.maxHeight === '0px' || !body.style.maxHeight) {
+        body.style.maxHeight = '200px';
+        body.style.opacity = '1';
+        body.style.marginTop = '12px';
+        icon.style.transform = 'rotate(0deg)';
+    } else {
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+        body.style.marginTop = '0px';
+        icon.style.transform = 'rotate(-90deg)';
+    }
+}
+
+// ЭКСПОРТ (ВЫГРУЗКА В JSON)
+function exportNodeJson() {
+    if (customNodes.length === 0) return showToast('Нет созданных узлов для экспорта');
+    const dataStr = JSON.stringify(customNodes, null, 4);
+    downloadFile(dataStr, `RBI_Nodes_${new Date().toLocaleDateString('ru-RU')}.json`, 'application/json');
+    showToast("✅ JSON-файл с узлами скачан!");
+}
+
+// ЭКСПОРТ В КОД (ДЛЯ system_nodes.js)
+function exportNodeJsCode() {
+    if (customNodes.length === 0) return showToast('Нет узлов для выгрузки в код');
+    
+    let jsCode = "/* Сгенерировано из RBI Quality (Пользовательские Узлы) */\n\nconst CUSTOM_SYSTEM_NODES = [\n";
+    customNodes.forEach((n, idx) => {
+        const comma = idx < customNodes.length - 1 ? ',' : '';
+        jsCode += `    {\n`;
+        jsCode += `        id: '${n.id}',\n`;
+        jsCode += `        category: '${n.category}',\n`;
+        jsCode += `        title: '${n.title.replace(/'/g, "\\'")}',\n`;
+        jsCode += `        desc: '${(n.desc || '').replace(/'/g, "\\'")}',\n`;
+        jsCode += `        img: '${n.img}',\n`;
+        jsCode += `        materials: ${JSON.stringify(n.materials)},\n`;
+        jsCode += `        linkedDoc: '${(n.linkedDoc || '').replace(/'/g, "\\'")}',\n`;
+        jsCode += `        linkedTwiChecklistKey: ${n.linkedTwiChecklistKey ? "'" + n.linkedTwiChecklistKey + "'" : "null"}\n`;
+        jsCode += `    }${comma}\n`;
+    });
+    jsCode += "];\n";
+    
+    downloadFile(jsCode, `rbi_nodes_code_${new Date().toLocaleDateString('ru-RU')}.js`, 'application/javascript');
+    showToast("✅ Код JS скопирован и скачан!");
+}
+
+// ИМПОРТ (ЗАГРУЗКА ИЗ JSON)
+function processNodeImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!Array.isArray(data)) throw new Error("Неверный формат");
+            
+            let addedCount = 0;
+            for(const item of data) {
+                if(!customNodes.find(x => x.id === item.id) && !SYSTEM_NODES.find(x => x.id === item.id)) {
+                    customNodes.push(item);
+                    addedCount++;
+                }
+            }
+            
+            await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: customNodes });
+            showToast(`✅ Импорт завершен! Добавлено узлов: ${addedCount}`);
+            renderNodesList();
+        } catch (err) { 
+            console.error(err);
+            alert("Ошибка импорта. Проверьте формат файла."); 
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+}
 
 function renderNodesList() {
     const container = document.getElementById('nodes-list-container');
@@ -4544,37 +4643,62 @@ function renderNodesList() {
     const allNodes = [...SYSTEM_NODES, ...customNodes];
 
     let filtered = allNodes.filter(node => {
-        const matchSearch = node.title.toLowerCase().includes(searchInput) || (node.desc && node.desc.toLowerCase().includes(searchInput));
-        const matchFilter = currentNodeFilter === 'ALL' || node.category === currentNodeFilter;
-        return matchSearch && matchFilter;
+        return node.title.toLowerCase().includes(searchInput) || (node.desc && node.desc.toLowerCase().includes(searchInput));
     });
 
     if (filtered.length === 0) {
-        container.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Узлы не найдены</div>`;
+        container.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Узлы не найдены</div>`;
         return;
     }
 
-    container.innerHTML = filtered.map(node => {
-        const isSystem = !customNodes.find(n => n.id === node.id);
-        const actionBtn = isSystem 
-            ? `<div class="absolute top-2 right-2 bg-indigo-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">СИС</div>` 
-            : `<button onclick="event.stopPropagation(); deleteNode('${node.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shadow-md active:scale-90">✕</button>`;
+    // Группируем по категории
+    const grouped = {};
+    filtered.forEach(node => {
+        if (!grouped[node.category]) grouped[node.category] = [];
+        grouped[node.category].push(node);
+    });
 
-        return `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-sm flex flex-col cursor-pointer active:scale-[0.98] transition-transform relative" onclick="openNodeViewer('${node.id}')">
-            ${actionBtn}
-            <div class="h-32 bg-slate-50 dark:bg-slate-900 border-b border-[var(--card-border)] p-2 flex items-center justify-center">
-                ${node.img ? `<img src="${node.img}" class="w-full h-full object-contain">` : `<span class="text-[10px] font-bold text-slate-400">НЕТ СХЕМЫ</span>`}
-            </div>
-            <div class="p-3 flex-1 flex flex-col">
-                <div class="text-[8px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-0.5 rounded w-fit mb-1.5 uppercase border border-indigo-100 dark:border-indigo-800">${node.category}</div>
-                <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">${node.title}</div>
-            </div>
-        </div>
+    let html = '';
+    for (let cat in grouped) {
+        // Обертка группы (Свернута по умолчанию, iOS-стиль)
+        html += `
+        <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+                <span class="truncate pr-4">${cat} <span class="text-[10px] text-slate-400 ml-1">(${grouped[cat].length})</span></span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3 py-2">
         `;
-    }).join('');
-}
 
+        grouped[cat].forEach(node => {
+            const isSystem = !customNodes.find(n => n.id === node.id);
+            const actionBtn = isSystem 
+                ? `<div class="absolute top-2 right-2 bg-indigo-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">СИС</div>` 
+                : `<button onclick="event.stopPropagation(); deleteNode('${node.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shadow-md active:scale-90">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                   </button>`;
+
+            html += `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-sm flex flex-col cursor-pointer active:scale-[0.98] transition-transform relative" onclick="openNodeViewer('${node.id}')">
+                ${actionBtn}
+                <div class="h-32 bg-slate-50 dark:bg-slate-900 border-b border-[var(--card-border)] p-2 flex items-center justify-center">
+                    ${node.img ? `<img src="${node.img}" class="w-full h-full object-contain">` : `<span class="text-[10px] font-bold text-slate-400">НЕТ СХЕМЫ</span>`}
+                </div>
+                <div class="p-3 flex-1 flex flex-col">
+                    <div class="text-[8px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-2 py-0.5 rounded w-fit mb-1.5 uppercase border border-indigo-100 dark:border-indigo-800">${node.category}</div>
+                    <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2">${node.title}</div>
+                </div>
+            </div>
+            `;
+        });
+        
+        html += `</div></details>`;
+    }
+    
+    container.innerHTML = html;
+}
 function openNodeViewer(nodeId) {
     const allNodes = [...SYSTEM_NODES, ...customNodes];
     const node = allNodes.find(n => n.id === nodeId);
@@ -5125,21 +5249,43 @@ async function exitDemoMode() {
     // 4. Восстанавливаем массивы, которые не хранятся в сессии
     customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
     customDocs = JSON.parse(JSON.stringify(realCustomDocs));
-    if (typeof gameActionLogs !== 'undefined') gameActionLogs = [];
+    
+    // === ИСПРАВЛЕНИЕ: Жесткая очистка логов HR и плана задач ===
+    // Так как демо-режим не писал в БД, мы просто загружаем реальные данные обратно из базы
+    if (typeof gameActionLogs !== 'undefined') {
+        gameActionLogs = []; // Очищаем демо-логи
+        try {
+            const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
+            if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
+            
+            // Восстанавливаем реальный план задач, чтобы убрать демо-квесты
+            const storedPlan = await dbGet(STORES.SETTINGS, 'weekly_plan_data');
+            if (storedPlan && storedPlan.data) weeklyPlanData = storedPlan.data; else weeklyPlanData = { tasks: [] };
 
-    // 5. Восстанавливаем сохраненную сессию
+            const storedAbsence = await dbGet(STORES.SETTINGS, 'engineer_absence');
+            if (storedAbsence && storedAbsence.data) engineerAbsence = storedAbsence.data; else engineerAbsence = { isActive: false };
+
+            const storedStatuses = await dbGet(STORES.SETTINGS, 'contractor_statuses');
+            if (storedStatuses && storedStatuses.data) contractorStatuses = storedStatuses.data; else contractorStatuses = {};
+        } catch (e) { console.error("Ошибка восстановления HR-данных", e); }
+    }
+
+    // 5. Восстанавливаем сохраненную сессию (проверки)
     await restoreSession();
 
     // 6. ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА ГЛАВНЫЙ СТАРТОВЫЙ ЭКРАН (HOME)
     switchTab('tab-audit');
     changeTemplate('HOME');
     
-    // 7. Обновляем фоновые списки
+    // 7. Обновляем фоновые списки и перерисовываем все дашборды
     updateDataSummary(); 
     renderHistoryTab(); 
     renderTwiList();
     if (typeof renderDocsList === 'function') renderDocsList();
     if (typeof renderNodesList === 'function') renderNodesList();
+    
+    // Принудительно перерисовываем вкладку инженера с чистыми реальными данными
+    if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
     
     showToast('Возврат к реальным данным (Главный экран)');
 }
