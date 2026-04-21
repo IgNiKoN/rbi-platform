@@ -815,45 +815,44 @@ window.gameRenderDashboard = function() {
     html += `
         <div class="grid grid-cols-2 gap-2 sm:gap-3 mx-1 mb-4">
             <!-- КАРТОЧКА ПРОФИЛЯ -->
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex-1 flex flex-col justify-center">
-                <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
-                
-                <div class="flex justify-between items-start mb-3 sm:mb-4 relative z-10">
-                     <div class="flex items-center gap-2 sm:gap-4 min-w-0 pr-1">
-                        <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-xl sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
-                            ${myProfile.name.substring(0,1).toUpperCase()}
-                        </div>
-                        <div>
-                            <!-- КЛИК ДЛЯ ИЗМЕНЕНИЯ ИМЕНИ -->
-                            <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-2">
-                                <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate">${myProfile.name}</div>
-                                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                            </div>
-                             <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 truncate">${myProfile.levelObj.name} <span class="text-slate-400 ml-1">Ур. ${myProfile.levelObj.level}</span></div>
-                        </div>
+            <!-- КАРТОЧКА ПРОФИЛЯ -->
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-2 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
+            <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex justify-between items-start mb-2 sm:mb-4 relative z-10">
+                <div class="flex items-center gap-1.5 sm:gap-4 min-w-0 pr-1">
+                    <div class="w-9 h-9 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-base sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
+                        ${myProfile.name.substring(0,1).toUpperCase()}
                     </div>
-                    <div class="text-right shrink-0">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Стрик</div>
-                        <div class="text-[14px] font-black text-slate-800 dark:text-white">${myProfile.currentStreak} нед.</div>
+                    <div class="overflow-hidden">
+                        <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-1 sm:gap-2">
+                            <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate">${myProfile.name}</div>
+                            <svg class="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </div>
+                        <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
                     </div>
                 </div>
-
-                <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
-                    <div class="flex justify-between text-[9px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1.5 sm:mb-2 uppercase tracking-wider">
-                        <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
-                        <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
-                    </div>
-                    <div class="w-full h-2 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
-                        <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
-                    </div>
-                </div>
-
-                <!-- СЧЕТЧИКИ ЗАДАЧ ПОД ХП -->
-                <div class="flex justify-between items-center mt-3 pt-3 border-t border-[var(--card-border)]">
-                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">План недели: <span class="font-black ${doneTasks === totalTasks && totalTasks > 0 ? 'text-green-600' : 'text-slate-800 dark:text-white'}">${doneTasks} / ${totalTasks}</span></div>
-                    ${debtTasks > 0 ? `<div class="text-[9px] font-black uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-2 py-0.5 rounded">Долг: ${debtTasks}</div>` : `<div class="text-[9px] font-bold text-green-500 uppercase">Долгов нет</div>`}
+                <div class="text-right shrink-0 ml-1 sm:ml-0">
+                    <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">Стрик</div>
+                    <div class="text-[13px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
                 </div>
             </div>
+
+            <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
+                <div class="flex justify-between text-[8px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1 sm:mb-2 uppercase tracking-wider">
+                    <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
+                    <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
+                </div>
+                <div class="w-full h-1.5 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
+                    <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mt-2 sm:mt-3 pt-1.5 sm:pt-3 border-t border-[var(--card-border)]">
+                <div class="text-[8px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest">План недели: <span class="font-black ${doneTasks === totalTasks && totalTasks > 0 ? 'text-green-600' : 'text-slate-800 dark:text-white'}">${doneTasks} / ${totalTasks}</span></div>
+                ${debtTasks > 0 ? `<div class="text-[7px] sm:text-[9px] font-black uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-1.5 sm:px-2 py-0.5 rounded">Долг: ${debtTasks}</div>` : `<div class="text-[7px] sm:text-[9px] font-bold text-green-500 uppercase">Долгов нет</div>`}
+            </div>
+        </div>
 
             <!-- ТОП НАГРАДЫ И КВЕСТ -->
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm flex flex-col justify-between w-full">
