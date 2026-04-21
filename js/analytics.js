@@ -1022,10 +1022,10 @@ function showContractorDetailView(contractorName) {
     let cStageData = {}; let cFailCounts = {}; let cB3Counts = {}; 
     let sumB1 = 0, sumB2 = 0, sumB3 = 0;
     
-    let allPhotosB3 = []; let allPhotosB2 = [];
+    // ВАЖНО: Инициализируем все 3 массива фотографий
+    let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
     
     data.forEach(unit => {
-        // ИСПРАВЛЕНИЕ: Берем реальные названия этапов, а не просто "Полная/Частичная"
         const stagesArray = (unit.checkedStagesInfo && unit.checkedStagesInfo.length > 0) 
                             ? unit.checkedStagesInfo 
                             : [unit.stageName || 'Этап не указан'];
@@ -1034,14 +1034,12 @@ function showContractorDetailView(contractorName) {
             if(!cStageData[stName]) cStageData[stName] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0 };
             cStageData[stName].checks++;
 
-            // Распределяем метрики (упрощенно для этапа берем среднее от проверки)
             if(unit.metrics) { 
                 cStageData[stName].sumUrk += unit.metrics.final;
                 cStageData[stName].b1 += unit.metrics.n_B1_fail;
                 cStageData[stName].b2 += unit.metrics.n_B2_fail;
                 cStageData[stName].b3 += unit.metrics.n_B3_fail;
                 
-                // Для глобальных счетчиков карточки берем только 1 раз (чтобы не дублировать)
                 if (stagesArray.indexOf(stName) === 0) {
                     sumB1 += unit.metrics.n_B1_fail;
                     sumB2 += unit.metrics.n_B2_fail;
@@ -1053,7 +1051,6 @@ function showContractorDetailView(contractorName) {
         if(unit.state) {
             Object.keys(unit.state).forEach(id => {
                 const s = unit.state[id];
-                // Ищем, к какому этапу относится этот пункт, чтобы зачесть OK/FAIL
                 let defName = "Дефект";
                 let parentStage = 'Этап не указан';
                 const tType = unit.templateKey.split('_')[0];
@@ -1065,11 +1062,18 @@ function showContractorDetailView(contractorName) {
                     if (found) { defName = found.n; parentStage = group.group || group.title; }
                 });
 
-                if (s === 'ok' && cStageData[parentStage]) cStageData[parentStage].ok++;
+                const photo = (unit.photos && unit.photos[id]) ? unit.photos[id] : null;
+
+                if (s === 'ok' && cStageData[parentStage]) {
+                    cStageData[parentStage].ok++;
+                    // Собираем фото эталонов
+                    if (photo) {
+                        allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                    }
+                }
                 if ((s === 'fail' || s === 'fail_escalated') && cStageData[parentStage]) {
                     cStageData[parentStage].fail++;
                     
-                    const photo = (unit.photos && unit.photos[id]) ? unit.photos[id] : null;
                     const flatList = getFlatList(cl);
                     const foundItem = flatList.find(x => x.id == id);
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
@@ -1106,7 +1110,6 @@ function showContractorDetailView(contractorName) {
     const pB2 = totalDefects > 0 ? Math.round((sumB2 / totalDefects) * 100) : 0;
     const pB3 = totalDefects > 0 ? Math.round((sumB3 / totalDefects) * 100) : 0;
 
-    // СМАРТ-АНАЛИЗ И МАТЕМАТИКА
     let mathBreakdown = `
         <div class="text-[11px] space-y-2 text-slate-700 dark:text-slate-300">
             <p>Система рассчитала Интегральный УрК на основе ${data.length} последних проверок.</p>
@@ -1123,16 +1126,14 @@ function showContractorDetailView(contractorName) {
         </div>
     `;
 
-    // Генерируем редактируемое ИИ-заключение (оно же пойдет на печать)
     const expertObj = getExpertConclusion(m, contractorName, workType, data.length, contractorName.replace(/\W/g, '_'), customExpertConclusions);
     const expertUiHtml = expertObj.uiHtml;
 
     container.innerHTML = `
-        <!-- KPI БЛОК (Сделали УрК кликабельным) -->
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm mb-4">
             <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">
                 <div onclick="openContractorMathModal('${contractorName.replace(/'/g, "\\'")}')" class="cursor-pointer active:scale-95 transition-transform bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК) <svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК)</div>
                     <div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>
                 </div>
                 <div class="text-right">
@@ -1150,18 +1151,17 @@ function showContractorDetailView(contractorName) {
             </div>
 
             <div class="flex h-3 rounded-full overflow-hidden border border-[var(--card-border)]">
-                <div class="bg-blue-500" style="width: ${pB1}%" title="Мелкие (B1): ${pB1}%"></div>
-                <div class="bg-orange-500" style="width: ${pB2}%" title="Значимые (B2): ${pB2}%"></div>
-                <div class="bg-red-500" style="width: ${pB3}%" title="Критичные (B3): ${pB3}%"></div>
+                <div class="bg-blue-500" style="width: ${pB1}%"></div>
+                <div class="bg-orange-500" style="width: ${pB2}%"></div>
+                <div class="bg-red-500" style="width: ${pB3}%"></div>
             </div>
             <div class="flex justify-between text-[9px] font-bold text-slate-500 mt-1.5 px-1 uppercase tracking-wider">
                 <span class="bg-blue-50 text-blue-700 px-2 rounded border border-blue-100">B1: ${sumB1}</span>
                 <span class="bg-orange-50 text-orange-700 px-2 rounded border border-orange-100">B2: ${sumB2}</span>
-                <span class="bg-red-50 text-red-700 px-2 rounded border border-red-100">B3: ${sumB3} (Доля ${m.rateB3.toFixed(0)}%)</span>
+                <span class="bg-red-50 text-red-700 px-2 rounded border border-red-100">B3: ${sumB3}</span>
             </div>
         </div>
 
-        <!-- ЭКСПЕРТНОЕ ЗАКЛЮЧЕНИЕ (АККОРДЕОН) -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
                 <span class="flex items-center gap-2">📝 Экспертное заключение ИИ</span>
@@ -1172,12 +1172,9 @@ function showContractorDetailView(contractorName) {
             </div>
         </details>
 
-        <!-- СПРАВОЧНО: МАТЕМАТИКА ОТ СИСТЕМЫ (БЕЗ РЕДАКТОРА) -->
-
-        <!-- СПРАВОЧНО: МАТЕМАТИКА ОТ СИСТЕМЫ (БЕЗ РЕДАКТОРА) -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
-                <span class="flex items-center gap-2">⚙️ Разбор оценки от Системы (Справка)</span>
+                <span class="flex items-center gap-2">⚙️ Разбор оценки от Системы</span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
@@ -1185,7 +1182,6 @@ function showContractorDetailView(contractorName) {
             </div>
         </details>
 
-        <!-- ДИНАМИКА И ЭТАПЫ (АККОРДЕОНЫ) -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
                 <summary class="p-3 font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
@@ -1211,10 +1207,10 @@ function showContractorDetailView(contractorName) {
             </details>
         </div>
 
-        <!-- ГАЛЕРЕИ (АККОРДЕОНЫ) -->
+        <!-- ГАЛЕРЕИ (С ЭТАЛОНАМИ OK) -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
-                <span class="flex items-center gap-2">📸 Фотофиксация дефектов</span>
+                <span class="flex items-center gap-2">📸 Фотогалереи (Брак и Эталоны)</span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 space-y-4">
@@ -1225,6 +1221,10 @@ function showContractorDetailView(contractorName) {
                 <div class="pt-2 border-t border-slate-200 dark:border-slate-700">
                     <h3 class="text-[10px] font-black text-orange-600 uppercase mb-2">Значимые дефекты (B2)</h3>
                     ${allPhotosB2.length > 0 ? window.initPhotoGallery('det_b2', allPhotosB2, false) : '<div class="text-xs text-slate-400">Нет фото B2</div>'}
+                </div>
+                <div class="pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <h3 class="text-[10px] font-black text-green-600 uppercase mb-2">Эталонные работы (OK)</h3>
+                    ${allPhotosOK.length > 0 ? window.initPhotoGallery('det_ok', allPhotosOK, false, 'text-green-700 bg-green-100 border-green-200', 'OK') : '<div class="text-xs text-slate-400">Нет фото эталонов</div>'}
                 </div>
             </div>
         </details>

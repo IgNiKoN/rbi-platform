@@ -264,10 +264,9 @@
     </div>
 
     <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
-    <div id="photo-viewer-overlay" class="fixed inset-0 bg-black/90 z-[2000] flex-col items-center justify-center"
-        style="display:none;" onclick="this.style.display='none'">
-        <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform"
-            onclick="this.parentElement.style.display='none'">
+    <div id="photo-viewer-overlay" class="fixed inset-0 bg-black/90 z-[6000] flex-col items-center justify-center transition-opacity duration-300 opacity-0"
+        style="display:none;" onclick="this.classList.add('opacity-0'); setTimeout(() => this.style.display='none', 300);">
+        <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform cursor-pointer">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
@@ -526,14 +525,12 @@
             </div>
             <div class="flex-1 overflow-y-auto p-0 md:p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900 relative"
                 id="viewer-twi-content"></div>
-            <div id="viewer-twi-footer"
-                class="p-4 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0">
-                <button onclick="closeTwiViewer()"
-                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                    Прочитано. Понятно!
+            <div id="viewer-twi-footer" class="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0 flex gap-2">
+                <button onclick="showTwiPrintOptions()" class="w-12 h-12 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 rounded-xl flex items-center justify-center active:scale-95 border border-slate-200 dark:border-slate-600 shrink-0 shadow-sm">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                </button>
+                <button onclick="closeTwiViewer()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-[12px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Прочитано
                 </button>
             </div>
         </div>
@@ -1339,151 +1336,133 @@
             </div>
 
             <!-- ПОДВКЛАДКА 3: TWI КАРТЫ И ТЕХКАРТЫ -->
-            <div id="ref-sub-twi" class="ref-sub-section hidden mx-1 mt-4 relative">
-                <div
-                    class="bg-amber-100 text-amber-800 text-center py-1 text-[10px] font-black uppercase mb-2 rounded border border-amber-200 shadow-sm">
-                    Раздел в стадии наполнения</div>
+            <div id="ref-sub-twi" class="ref-sub-section hidden mx-1 mt-2 relative">
                 <!-- ЭКРАН 1: СПИСОК КАРТ -->
                 <div id="twi-list-view">
-                    <div
-                        class="bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 sticky top-[70px] z-40 mx-1 mt-2">
-
+                    <div class="bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-2xl p-3 shadow-sm mb-4 sticky top-[70px] z-40">
                         <div class="flex justify-between items-center gap-2 mb-2">
                             <div class="relative flex-1">
-                                <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none"
-                                        stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                    </svg></span>
-                                <input type="text" id="twi-search-input" class="input-base pl-9 text-[11px]"
-                                    placeholder="Поиск карт..." oninput="renderTwiList()">
+                                <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                                <input type="text" id="twi-search-input" class="input-base pl-9 text-[12px] !py-2.5" placeholder="Поиск инструкций..." oninput="renderTwiList()">
                             </div>
-                            <button onclick="openTwiConstructor()"
-                                class="bg-indigo-600 text-white px-3 py-2.5 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap">➕
-                                Создать</button>
+                            <button onclick="openTwiConstructor()" class="bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-sm active:scale-95 text-[11px] font-bold uppercase flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Создать
+                            </button>
                         </div>
-
-                        <!-- ЗАГОЛОВОК-КНОПКА СВОРАЧИВАНИЯ УПРАВЛЕНИЯ -->
-                        <div onclick="toggleTwiManagePanel()"
-                            class="text-[10px] font-black text-[var(--text-muted)] uppercase pt-2 border-t border-[var(--card-border)] flex justify-between items-center cursor-pointer active:opacity-70 transition-opacity">
-                            <span class="flex items-center gap-1.5">⚙️ Управление инструкциями</span>
-                            <span id="twi-manage-toggle-icon"
-                                class="text-lg leading-none transform -rotate-90 transition-transform duration-300">▾</span>
+                        <div onclick="toggleTwiManagePanel()" class="text-[10px] font-bold text-[var(--text-muted)] uppercase pt-2 border-t border-[var(--card-border)] flex justify-between items-center cursor-pointer active:opacity-70 transition-opacity">
+                            <span class="flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Управление базой TWI</span>
+                            <span id="twi-manage-toggle-icon" class="transition-transform duration-300"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
                         </div>
-
-                        <!-- ТЕЛО УПРАВЛЕНИЯ (Скрыто по умолчанию) -->
-                        <div id="twi-manage-body"
-                            style="transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease; max-height: 0px; opacity: 0; overflow: hidden; margin-top: 0px;">
+                        <div id="twi-manage-body" style="max-height: 0px; opacity: 0; overflow: hidden; transition: all 0.3s ease;">
                             <div class="flex gap-2 mt-3">
-                                <button onclick="document.getElementById('twi-import-input').click()"
-                                    class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300 active:scale-95 transition-all border border-slate-200 dark:border-slate-700 shadow-sm font-bold text-[10px] uppercase">
-                                    📥 Загрузить (Импорт)
+                                <button onclick="document.getElementById('twi-import-input').click()" class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 active:scale-95 border border-[var(--card-border)] shadow-sm font-bold text-[10px] uppercase gap-1.5">
+                                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
                                 </button>
-                                <button onclick="exportTwiJson()"
-                                    class="flex-1 bg-indigo-50 text-indigo-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400">
-                                    📤 В код (Экспорт)
+                                <button onclick="exportTwiJson()" class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 active:scale-95 border border-[var(--card-border)] shadow-sm font-bold text-[10px] uppercase gap-1.5">
+                                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> Экспорт
                                 </button>
                             </div>
-                            <div class="text-[9px] text-slate-400 text-center mt-2 leading-tight">Вы можете выгрузить
-                                созданные карты в JSON, чтобы передать их коллегам или вшить в код приложения как
-                                системные.</div>
                         </div>
-
                     </div>
-
-                    <div id="twi-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-3 pb-8">
-                        <!-- Сюда рендерятся карты -->
-                    </div>
+                    <div id="twi-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-3 pb-8"></div>
                 </div>
 
-                <!-- ЭКРАН 2: КОНСТРУКТОР TWI (Скрыт по умолчанию) -->
-                <div id="twi-constructor-view"
-                    class="hidden bg-[var(--bg-main)] absolute inset-0 z-50 min-h-screen pb-32">
-                    <div
-                        class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-4 shadow-sm sticky top-[70px] z-40 flex justify-between items-center">
-                        <button onclick="closeTwiConstructor()"
-                            class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95"><span>◀</span>
-                            Назад</button>
-                        <div class="text-[11px] font-black text-indigo-600 uppercase tracking-widest">Конструктор TWI
-                        </div>
-                        <button onclick="saveTwiCard()"
-                            class="text-[11px] font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded border border-green-200 active:scale-95 shadow-sm">Сохранить</button>
+                <!-- ЭКРАН 2: КОНСТРУКТОР TWI -->
+                <div id="twi-constructor-view" class="hidden bg-[var(--bg-main)] absolute inset-0 z-50 min-h-screen pb-32 overflow-y-auto custom-scrollbar">
+                    <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
+                        <button onclick="closeTwiConstructor()" class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+                        </button>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest">Конструктор TWI</div>
+                        <button onclick="saveTwiCard()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-xl active:scale-95 shadow-md">Сохранить</button>
                     </div>
 
-                    <div class="space-y-4 px-1">
-
+                    <div class="space-y-4 px-3 max-w-2xl mx-auto">
                         <!-- ПЕРЕКЛЮЧАТЕЛЬ ТИПА КАРТЫ -->
-                        <div
-                            class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1.5 shadow-sm flex gap-1">
-                            <button id="twi-type-btn-inspector" onclick="changeTwiType('INSPECTOR')"
-                                class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg bg-indigo-50 shadow-sm text-indigo-600 border border-indigo-200 transition-all">🕵️‍♂️
-                                Технадзор</button>
-                            <button id="twi-type-btn-worker" onclick="changeTwiType('WORKER')"
-                                class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">🛠
-                                Инструкция</button>
-                            <button id="twi-type-btn-pdf" onclick="changeTwiType('PDF')"
-                                class="flex-1 py-2 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all">📄
-                                PDF-Файл</button>
+                        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1.5 shadow-sm flex gap-1">
+                            <button id="twi-type-btn-inspector" onclick="changeTwiType('INSPECTOR')" class="flex-1 py-2.5 text-[10px] font-bold uppercase rounded-lg bg-indigo-50 shadow-sm text-indigo-600 border border-indigo-200 transition-all flex items-center justify-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Технадзор
+                            </button>
+                            <button id="twi-type-btn-worker" onclick="changeTwiType('WORKER')" class="flex-1 py-2.5 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all flex items-center justify-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.827A2.54 2.54 0 1110.608 9.27l-5.32 5.32a2.652 2.652 0 003.748 3.747l2.384-2.383zM10.5 10.5L6 6"></path></svg> Инструкция
+                            </button>
+                            <button id="twi-type-btn-pdf" onclick="changeTwiType('PDF')" class="flex-1 py-2.5 text-[10px] font-bold uppercase rounded-lg text-slate-500 hover:text-slate-700 transition-all flex items-center justify-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg> PDF-Файл
+                            </button>
                         </div>
 
-                        <!-- Общая информация -->
-                        <div
-                            class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
-                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название
-                                Карты / Документа *</label>
-                            <input type="text" id="twi-title-input" class="input-base text-[13px] mb-3"
-                                placeholder="Например: Монтаж кронштейна">
+                        <!-- ОБЩАЯ ИНФОРМАЦИЯ И ПРИВЯЗКИ ДЛЯ ВСЕХ ТИПОВ -->
+                        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название Карты / Документа *</label>
+                                <input type="text" id="twi-title-input" class="input-base text-[13px]" placeholder="Например: Правильный монтаж кронштейна">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Привязка к чек-листу *</label>
+                                <select id="twi-checklist-select" class="input-base text-[12px]" onchange="populateTwiItemSelect()"></select>
+                            </div>
+                            <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+                                <label class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1 block">Привязка к пункту контроля *</label>
+                                <select id="twi-item-select" class="input-base text-[12px] mb-3" onchange="autoFillTwiNorm()">
+                                    <option value="" disabled selected>Сначала выберите чек-лист выше...</option>
+                                </select>
+                                
+                                <div class="flex gap-2">
+                                    <div class="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-[11px] text-slate-600 dark:text-slate-400 min-h-[44px]" id="twi-auto-norm-text">Справочный норматив пункта...</div>
+                                    <button onclick="searchNormFromTwi()" class="w-12 shrink-0 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-xl flex items-center justify-center border border-indigo-200 dark:border-indigo-800 active:scale-95 transition-transform" title="Искать в базе НД">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
 
-                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Привязка
-                                к виду работ (Чек-листу) *</label>
-                            <select id="twi-checklist-select" class="input-base text-[11px]"
-                                onchange="populateTwiItemSelect()">
-                                <!-- Заполняется через JS -->
-                            </select>
+                            <div class="pt-4 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                                <div>
+                                    <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase">Технический узел</div>
+                                    <div id="twi-linked-node-name" class="text-[12px] font-black text-slate-800 dark:text-white mt-0.5">Не привязан</div>
+                                    <input type="hidden" id="twi-linked-node-id" value="">
+                                </div>
+                                <button onclick="openNodeSelectorModal()" class="bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 px-3 py-2 rounded-xl text-[10px] font-bold uppercase flex items-center gap-1.5 active:scale-95 transition-colors shadow-sm border border-slate-200 dark:border-slate-600">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"></path></svg> Привязать
+                                </button>
+                            </div>
                         </div>
 
                         <!-- БЛОК А: ТЕХНАДЗОР (ПРАВИЛЬНО/БРАК) -->
                         <div id="twi-block-inspector" class="space-y-4">
-                            <div
-                                class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
-                                <label
-                                    class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-indigo-600">К
-                                    какому пункту привязать? *</label>
-                                <select id="twi-item-select" class="input-base text-[11px] mb-3">
-                                    <option value="" disabled selected>Сначала выберите чек-лист выше...</option>
-                                </select>
-
-                                <label
-                                    class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Почему
-                                    это важно? (Риски)</label>
-                                <textarea id="twi-why-input" class="input-base text-[12px] h-16 resize-none mb-3"
-                                    placeholder="Напр: Приведет к промерзанию стены..."></textarea>
-
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Как
-                                    проверять? (Методика)</label>
-                                <textarea id="twi-how-input" class="input-base text-[12px] h-16 resize-none"
-                                    placeholder="Напр: Приложить 2м правило, замерить щупом..."></textarea>
+                            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
+                                <div>
+                                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Почему это важно? (Риски нарушения)</label>
+                                    <textarea id="twi-why-input" class="input-base text-[12px] h-16 resize-none" placeholder="Напр: Приведет к промерзанию стены..."></textarea>
+                                </div>
+                                <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+                                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Условия приемки (Как подготовить)</label>
+                                    <textarea id="twi-preparation-input" class="input-base text-[12px] h-16 resize-none" placeholder="Напр: Очистить поверхность, обеспечить освещение..."></textarea>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допуски и критерии (Что соблюсти)</label>
+                                    <textarea id="twi-compliance-input" class="input-base text-[12px] h-16 resize-none" placeholder="Напр: Отклонение не более 2 мм на 1 метр..."></textarea>
+                                </div>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-2">
-                                <div
-                                    class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-2 shadow-sm text-center flex flex-col">
-                                    <div class="text-[10px] font-black text-green-700 uppercase mb-2">✅ Правильно</div>
-                                    <div id="twi-photo-good-container" data-photo=""
-                                        class="flex-1 flex flex-col justify-center">
-                                        <button onclick="document.getElementById('twi-photo-good-input').click()"
-                                            class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-green-300 py-4 rounded-lg text-[10px] font-bold text-green-600 active:scale-95 transition-all">➕
-                                            Загрузить фото</button>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-2xl p-3 shadow-sm text-center flex flex-col">
+                                    <div class="text-[11px] font-black text-green-700 dark:text-green-500 uppercase mb-2 flex justify-center items-center gap-1.5">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> ЭТАЛОН
+                                    </div>
+                                    <div id="twi-photo-good-container" data-photo="" class="flex-1 flex flex-col justify-center">
+                                        <button onclick="triggerTwiMarkupUpload('GOOD')" class="w-full h-full min-h-[90px] bg-white dark:bg-slate-800 border border-dashed border-green-300 dark:border-green-700 py-4 rounded-xl text-[10px] font-bold text-green-600 dark:text-green-500 active:scale-95 transition-all flex flex-col items-center justify-center gap-2 shadow-sm">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg> Добавить фото
+                                        </button>
                                     </div>
                                 </div>
-                                <div
-                                    class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-2 shadow-sm text-center flex flex-col">
-                                    <div class="text-[10px] font-black text-red-700 uppercase mb-2">❌ Брак</div>
-                                    <div id="twi-photo-bad-container" data-photo=""
-                                        class="flex-1 flex flex-col justify-center">
-                                        <button onclick="document.getElementById('twi-photo-bad-input').click()"
-                                            class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-red-300 py-4 rounded-lg text-[10px] font-bold text-red-600 active:scale-95 transition-all">➕
-                                            Загрузить фото</button>
+                                <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-2xl p-3 shadow-sm text-center flex flex-col">
+                                    <div class="text-[11px] font-black text-red-700 dark:text-red-500 uppercase mb-2 flex justify-center items-center gap-1.5">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg> БРАК
+                                    </div>
+                                    <div id="twi-photo-bad-container" data-photo="" class="flex-1 flex flex-col justify-center">
+                                        <button onclick="triggerTwiMarkupUpload('BAD')" class="w-full h-full min-h-[90px] bg-white dark:bg-slate-800 border border-dashed border-red-300 dark:border-red-700 py-4 rounded-xl text-[10px] font-bold text-red-600 dark:text-red-500 active:scale-95 transition-all flex flex-col items-center justify-center gap-2 shadow-sm">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg> Добавить фото
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1492,89 +1471,141 @@
                         <!-- БЛОК Б: TWI РАБОЧИЙ (ПОШАГОВЫЙ) -->
                         <div id="twi-block-worker" class="space-y-4 hidden">
                             <div>
-                                <div
-                                    class="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest mb-2 px-1 flex items-center gap-2">
-                                    🛠️ Пошаговый алгоритм</div>
-                                <div id="twi-steps-container" class="space-y-3">
-                                    <!-- Шаги добавляются сюда -->
+                                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Пошаговый алгоритм
                                 </div>
+                                <div id="twi-steps-container" class="space-y-3"></div>
                             </div>
-
-                            <button onclick="addTwiStep()"
-                                class="w-full bg-indigo-50 border border-dashed border-indigo-300 text-indigo-600 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400 py-4 rounded-xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-colors">
-                                ➕ Добавить следующий шаг
+                            <button onclick="addTwiStep()" class="w-full bg-emerald-50 border border-dashed border-emerald-300 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-400 py-4 rounded-2xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить следующий шаг
                             </button>
                         </div>
 
                         <!-- БЛОК В: ЗАГРУЗКА PDF -->
                         <div id="twi-block-pdf" class="space-y-4 hidden">
-                            <div
-                                class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm text-center">
-                                <div class="text-5xl mb-3">📄</div>
-                                <div
-                                    class="text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+                            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-6 shadow-sm text-center">
+                                <div class="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100">
+                                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg>
+                                </div>
+                                <div class="text-[12px] font-bold text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
                                     Прикрепите готовый проектный регламент, техкарту или письмо.<br>
-                                    <span class="text-red-500 font-black text-[9px] uppercase">Максимальный размер: 5
-                                        МБ</span>
+                                    <span class="text-red-500 font-black text-[10px] uppercase mt-1 block">Максимальный размер: 5 МБ</span>
                                 </div>
-
-                                <div id="twi-pdf-container" data-pdf=""
-                                    class="hidden mb-4 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-lg text-left flex justify-between items-center shadow-inner">
+                                <div id="twi-pdf-container" data-pdf="" class="hidden mb-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-left flex justify-between items-center shadow-inner">
                                     <div class="flex-1 min-w-0 pr-3">
-                                        <div class="text-[12px] font-black text-indigo-700 dark:text-indigo-400 truncate"
-                                            id="twi-pdf-name">doc.pdf</div>
-                                        <div class="text-[10px] text-indigo-500 font-bold" id="twi-pdf-size">1.2 MB
-                                        </div>
+                                        <div class="text-[13px] font-black text-slate-800 dark:text-white truncate" id="twi-pdf-name">doc.pdf</div>
+                                        <div class="text-[10px] text-slate-500 font-bold" id="twi-pdf-size">1.2 MB</div>
                                     </div>
-                                    <button onclick="removeTwiPdf()"
-                                        class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90">✕</button>
+                                    <button onclick="removeTwiPdf()" class="w-10 h-10 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                    </button>
                                 </div>
+                                <button onclick="document.getElementById('twi-pdf-input').click()" class="bg-indigo-600 text-white px-4 py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 w-full flex justify-center items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
+                                    Выбрать PDF файл
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                                <button onclick="document.getElementById('twi-pdf-input').click()"
-                                    class="bg-indigo-600 text-white px-4 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 w-full">
-                                    📥 Выбрать PDF файл
+            <!-- ПОДВКЛАДКА 4: ТЕХ. УЗЛЫ И КОНСТРУКТОР -->
+            <div id="ref-sub-nodes" class="ref-sub-section hidden mx-1 mt-2">
+                <!-- СПИСОК УЗЛОВ -->
+                <div id="nodes-main-view">
+                    <div class="bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-2xl p-3 shadow-sm mb-4 sticky top-[70px] z-40">
+                        <div class="flex justify-between items-center gap-2 mb-2">
+                            <div class="relative flex-1">
+                                <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                                <input type="text" id="node-search-input" class="input-base pl-9 text-[12px] !py-2.5" placeholder="Поиск узлов и деталей..." oninput="renderNodesList()">
+                            </div>
+                            <button onclick="openNodeConstructor()" class="bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-sm active:scale-95 text-[11px] font-bold uppercase flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Создать
+                            </button>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 pt-2 border-t border-[var(--card-border)]" id="node-filters-container">
+                            <button onclick="filterNodes('ALL', this)" class="node-filter-btn px-4 py-2 rounded-xl text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap border border-indigo-600">Все узлы</button>
+                            <button onclick="filterNodes('ФАСАД', this)" class="node-filter-btn px-4 py-2 rounded-xl text-[10px] font-bold bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">Фасад</button>
+                            <button onclick="filterNodes('КЖ', this)" class="node-filter-btn px-4 py-2 rounded-xl text-[10px] font-bold bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">КЖ (Бетон)</button>
+                            <button onclick="filterNodes('ОКНА', this)" class="node-filter-btn px-4 py-2 rounded-xl text-[10px] font-bold bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">Окна / Двери</button>
+                        </div>
+                    </div>
+                    <div id="nodes-list-container" class="grid grid-cols-2 md:grid-cols-3 gap-3 pb-8"></div>
+                </div>
+
+                <!-- КОНСТРУКТОР УЗЛОВ (ИСПРАВЛЕНО: fixed inset-0 z-[2000]) -->
+                <div id="node-constructor-view" class="hidden bg-[var(--bg-main)] fixed inset-0 z-[2000] h-screen pb-32 overflow-y-auto custom-scrollbar">
+                    <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
+                        <button onclick="closeNodeConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+                        </button>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest">Конструктор Узла</div>
+                        <button onclick="saveNodeCard()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-lg active:scale-95 shadow-md transition-colors">Сохранить</button>
+                    </div>
+
+                    <div class="space-y-4 px-4 max-w-2xl mx-auto">
+                        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название узла *</label>
+                                <input type="text" id="node-title-input" class="input-base text-[13px]" placeholder="Напр: Примыкание окна к стене">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Категория *</label>
+                                <select id="node-category-input" class="input-base text-[12px]">
+                                    <option value="ФАСАД">ФАСАД</option>
+                                    <option value="КЖ">КЖ (Бетон)</option>
+                                    <option value="ОКНА">ОКНА / ДВЕРИ</option>
+                                    <option value="ИНЖЕНЕРИЯ">ИНЖЕНЕРИЯ</option>
+                                    <option value="ОТДЕЛКА">ОТДЕЛКА</option>
+                                    <option value="ДРУГОЕ">ДРУГОЕ</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Описание (Назначение)</label>
+                                <textarea id="node-desc-input" class="input-base text-[12px] h-20 resize-none" placeholder="Опишите область применения узла..."></textarea>
+                            </div>
+                            
+                            <div class="pt-2 border-t border-slate-100 dark:border-slate-700">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Чертеж / Схема *</label>
+                                <div id="node-photo-container" data-photo="" class="w-full">
+                                    <button onclick="triggerNodeImageUpload()" class="w-full h-40 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold text-slate-500 active:scale-95 transition-all flex flex-col items-center justify-center gap-2">
+                                        <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Загрузить схему узла
+                                    </button>
+                                </div>
+                                <input type="file" id="node-photo-input" accept="image/*" style="display:none;" onchange="handleNodePhotoUpload(event)">
+                            </div>
+                        </div>
+
+                        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
+                            <div>
+                                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 flex items-center gap-2">
+                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Спецификация материалов
+                                </div>
+                                <div id="node-materials-container" class="space-y-2 mb-3"></div>
+                                <button onclick="addNodeMaterialRow()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 rounded-xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 border border-indigo-200 dark:border-indigo-800">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить материал
                                 </button>
                             </div>
                         </div>
 
+                        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
+                                <input type="text" id="node-linked-doc" class="input-base text-[12px]" placeholder="Напр: ГОСТ 30971-2012">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с TWI (Чек-листом)</label>
+                                <select id="node-linked-twi" class="input-base text-[12px]"></select>
+                            </div>
+                        </div>
+                        
+                        <!-- Дублирующая кнопка отмены внизу для удобства на длинных экранах -->
+                        <button onclick="closeNodeConstructor()" class="w-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase active:scale-95 border border-slate-200 dark:border-slate-700 mt-2">
+                            Отменить и закрыть
+                        </button>
                     </div>
                 </div>
-
-            </div>
-
-            <!-- ПОДВКЛАДКА 4: ТЕХ. УЗЛЫ -->
-            <div id="ref-sub-nodes" class="ref-sub-section hidden mx-1 mt-4">
-                <div
-                    class="bg-amber-100 text-amber-800 text-center py-1 text-[10px] font-black uppercase mb-2 rounded border border-amber-200 shadow-sm">
-                    Раздел в стадии наполнения</div>
-
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 shadow-sm mb-4">
-                    <div class="relative mb-2">
-                        <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none"
-                                stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg></span>
-                        <input type="text" id="node-search-input" class="input-base pl-9 text-[11px]"
-                            placeholder="Поиск узлов и деталей..." oninput="renderNodesList()">
-                    </div>
-                    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1" id="node-filters-container">
-                        <button onclick="filterNodes('ALL', this)"
-                            class="node-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap border border-indigo-600">Все
-                            узлы</button>
-                        <button onclick="filterNodes('ФАСАД', this)"
-                            class="node-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">Фасад</button>
-                        <button onclick="filterNodes('КЖ', this)"
-                            class="node-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">КЖ
-                            (Бетон)</button>
-                        <button onclick="filterNodes('ОКНА', this)"
-                            class="node-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700">Окна
-                            / Двери</button>
-                    </div>
-                </div>
-
-                <!-- Сетка узлов (Генерируется через JS) -->
-                <div id="nodes-list-container" class="grid grid-cols-2 md:grid-cols-3 gap-3 pb-8"></div>
             </div>
 
             <!-- ПОДВКЛАДКА 5: FAQ И ЛОГИКА РАСЧЕТОВ (ОБНОВЛЕННЫЙ БОЛЬШОЙ FAQ) -->
@@ -3364,6 +3395,51 @@
             <div class="flex gap-2">
                 <button onclick="document.getElementById('etalon-prompt-modal').style.display='none'" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95">Позже</button>
                 <button id="btn-start-etalon" class="flex-1 bg-blue-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Да, начать</button>
+            </div>
+        </div>
+    </div>
+<!-- === МОДАЛКА ВЫБОРА ТЕХ. УЗЛА === -->
+    <div id="node-selector-modal" class="fixed inset-0 bg-slate-900/70 z-[4000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeNodeSelectorModal()">
+        <div class="bg-[var(--bg-main)] w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform transform translate-y-full sm:translate-y-4 sm:scale-95 flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"></path></svg>
+                    Привязать технический узел
+                </div>
+                <button onclick="closeNodeSelectorModal()" class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2 bg-slate-50 dark:bg-slate-900/50" id="node-selector-list"></div>
+        </div>
+    </div>
+
+    <!-- === КОНТЕКСТНОЕ МЕНЮ TWI КАРТОЧЕКИ === -->
+    <div id="twi-action-sheet" class="fixed inset-0 bg-slate-900/60 z-[3500] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeTwiActionSheet()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[20px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0">
+                <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2" id="twi-action-title">
+                    Действия с картой
+                </h3>
+            </div>
+            <div class="p-2 space-y-1">
+                <button onclick="handleTwiAction('view')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+                    <div class="w-8 h-8 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></div>
+                    <span class="text-[12px] font-bold">Смотреть</span>
+                </button>
+                <button onclick="handleTwiAction('edit')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+                    <div class="w-8 h-8 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"></path></svg></div>
+                    <span class="text-[12px] font-bold">Редактировать</span>
+                </button>
+                <button onclick="handleTwiAction('duplicate')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+                    <div class="w-8 h-8 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg></div>
+                    <span class="text-[12px] font-bold">Дублировать</span>
+                </button>
+                <div class="border-t border-slate-100 dark:border-slate-800 my-1"></div>
+                <button onclick="handleTwiAction('delete')" class="w-full flex items-center gap-3 p-3 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors text-red-600 dark:text-red-400 active:scale-95">
+                    <div class="w-8 h-8 bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-500 rounded-lg flex items-center justify-center shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></div>
+                    <span class="text-[12px] font-bold">Удалить</span>
+                </button>
             </div>
         </div>
     </div>

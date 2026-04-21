@@ -420,7 +420,7 @@ body.modal-open { overflow: hidden; height: 100vh; touch-action: none; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(30px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(20px) scale(0.95); } }
 /* === МОДАЛЬНЫЕ ОКНА === */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.7); z-index: 1500; display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.7); z-index: 5000 !important; display: none; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px); }
 .modal-content { background: var(--card-bg); color: var(--text-main); border-radius: 24px; width: 100%; max-width: 480px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto; position: relative; }
 
 /* === TOGGLE SWITCH (ДЛЯ НАСТРОЕК) === */
