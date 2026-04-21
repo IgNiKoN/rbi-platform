@@ -826,7 +826,7 @@ window.gameRenderDashboard = function() {
                     </div>
                     <div class="overflow-hidden">
                         <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-1 sm:gap-2">
-                            <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate">${myProfile.name}</div>
+                            <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal">${myProfile.name}</div>
                             <svg class="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                         </div>
                         <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
@@ -949,96 +949,127 @@ window.gameRenderDashboard = function() {
                     <div class="text-[11px] font-bold opacity-80">Все проверки выполнены или объектов в работе нет.</div>
                  </div>`;
     } else {
-        const renderTaskCard = (t) => {
-            const isDone = t.isCompletedManually || t.done >= t.target;
-            const progressPerc = Math.min((t.done / t.target) * 100, 100);
-            
-            let tagClass = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400';
-            let barColor = 'bg-indigo-500';
-            
-            if (t.isPaused) {
-                tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400';
-                barColor = 'bg-slate-400';
-            } else if (isDone) {
-                barColor = 'bg-green-500';
-            } else if (t.priorityLvl === 4) { 
-                tagClass = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'; barColor = 'bg-red-500'; 
-            } else if (t.priorityLvl === 3) { 
-                tagClass = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400'; 
-            } else if (t.priorityLvl === 2) { 
-                tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'; barColor = 'bg-orange-500'; 
-            }
+    const renderTaskCard = (t) => {
+        const isDone = t.isCompletedManually || t.done >= t.target;
+        const progressPerc = Math.min((t.done / t.target) * 100, 100);
+        
+        let tagClass = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400';
+        let barColor = 'bg-indigo-500';
+        
+        if (t.isPaused) {
+            tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400';
+            barColor = 'bg-slate-400';
+        } else if (isDone) {
+            barColor = 'bg-green-500';
+        } else if (t.priorityLvl === 4) { 
+            tagClass = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'; barColor = 'bg-red-500'; 
+        } else if (t.priorityLvl === 3) { 
+            tagClass = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400'; 
+        } else if (t.priorityLvl === 2) { 
+            tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'; barColor = 'bg-orange-500'; 
+        }
 
-            const etalonBadge = t.needsEtalon ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-blue-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> Нужен Эталон</span>` : '';
-            const debtBadge = (t.carryOverCount > 0 && !t.needsEtalon && !t.isPaused) ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-red-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Долг</span>` : '';
-            const statusBadge = t.isPaused ? `<span class="text-[9px] font-black uppercase text-orange-600">⏸ НА ПАУЗЕ</span>` : (t.isCompletedManually ? `<span class="text-[9px] font-black uppercase text-green-600">✅ ЗАВЕРШЕНО</span>` : '');
+        const etalonBadge = t.needsEtalon ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-blue-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> Нужен Эталон</span>` : '';
+        const debtBadge = (t.carryOverCount > 0 && !t.needsEtalon && !t.isPaused) ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-red-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Долг</span>` : '';
+        const statusBadge = t.isPaused ? `<span class="text-[9px] font-black uppercase text-orange-600">⏸ НА ПАУЗЕ</span>` : (t.isCompletedManually ? `<span class="text-[9px] font-black uppercase text-green-600">✅ ЗАВЕРШЕНО</span>` : '');
 
-            const safeContractor = t.contractor.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const safeStatusKey = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const safeProject = t.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            
-            const onClickAction = (t.isPaused || t.isCompletedManually) ? `showToast('Управление доступно через меню (три точки)');` : `gameStartTask('${safeContractor}', '${t.templateKey}', '${safeProject}')`;
-            const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
+        const safeContractor = t.contractor.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeStatusKey = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeProject = t.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        
+        const onClickAction = (t.isPaused || t.isCompletedManually) ? `showToast('Управление доступно через меню (три точки)');` : `gameStartTask('${safeContractor}', '${t.templateKey}', '${safeProject}')`;
+        const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
 
-            return `
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="${onClickAction}">
-                <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
-                    <div class="flex-1 min-w-0 pr-2">
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${t.contractor}</div>
-                        <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${t.templateTitle}</div>
-                    </div>
-                    <button onclick="event.stopPropagation(); gameOpenTaskMenu('${safeStatusKey}', event)" class="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-600 shrink-0 shadow-sm transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-                    </button>
+        return `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="${onClickAction}">
+            <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
+                <div class="flex-1 min-w-0 pr-2">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${t.contractor}</div>
+                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${t.templateTitle}</div>
                 </div>
-                
-                <div class="flex flex-wrap gap-2 items-center mb-3">
-                    <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'Остановлено' : t.priority}</span>
-                    ${etalonBadge} ${debtBadge} ${statusBadge}
+                <button onclick="event.stopPropagation(); gameOpenTaskMenu('${safeStatusKey}', event)" class="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-600 shrink-0 shadow-sm transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                </button>
+            </div>
+            
+            <div class="flex flex-wrap gap-2 items-center mb-3">
+                <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'Остановлено' : t.priority}</span>
+                ${etalonBadge} ${debtBadge} ${statusBadge}
+            </div>
+            
+            <div class="mt-auto">
+                <div class="flex justify-between items-end mb-1">
+                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Прогресс</span>
+                    <span class="text-[11px] font-black ${isDone ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
                 </div>
-                
-                <div class="mt-auto">
-                    <div class="flex justify-between items-end mb-1">
-                        <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Прогресс</span>
-                        <span class="text-[11px] font-black ${isDone ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
-                    </div>
-                    <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)]">
-                        <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
-                    </div>
+                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)]">
+                    <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
                 </div>
-            </div>`;
-        };
+            </div>
+        </div>`;
+    };
 
-        // --- НОВАЯ ЛОГИКА ГРУППИРОВКИ ЗАДАЧ ПО АККОРДЕОНАМ ---
-        const groupedTasks = {
-            4: { title: "🔴 Критичные и Долги", tasks: [] },
-            3: { title: "🔵 Новые Подрядчики", tasks: [] },
-            2: { title: "🟡 В Плане / Поэтапно", tasks: [] },
-            1: { title: "🟢 Низкий приоритет", tasks: [] }
-        };
+    // --- ФИЛЬТРЫ-ЧИПСЫ И СЕТКА КАРТОЧЕК ---
+    let tasksHtml = '';
+    let priorityCount = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    weeklyPlanData.tasks.forEach(t => {
+        if (!t.isPaused && !t.isCompletedManually) {
+            priorityCount[t.priorityLvl] = (priorityCount[t.priorityLvl] || 0) + 1;
+        }
+        const taskCard = renderTaskCard(t);
+        tasksHtml += `<div data-priority="${t.priorityLvl}" data-status="${t.isPaused ? 'paused' : (t.isCompletedManually ? 'completed' : 'active')}" class="task-card-item">${taskCard}</div>`;
+    });
 
-        weeklyPlanData.tasks.forEach(t => {
-            if (groupedTasks[t.priorityLvl]) groupedTasks[t.priorityLvl].tasks.push(t);
+    html += `
+        <div class="flex flex-wrap gap-1.5 mb-3 pb-1 overflow-x-auto no-scrollbar" id="task-filters-container">
+            <button data-filter="all" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-indigo-600 text-white shadow-sm">Все <span class="ml-1 bg-white/20 px-1 rounded">${weeklyPlanData.tasks.length}</span></button>
+            <button data-filter="4" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🔴 Критичные <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[4] || 0}</span></button>
+            <button data-filter="3" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🔵 Новые <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[3] || 0}</span></button>
+            <button data-filter="2" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🟡 В плане <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[2] || 0}</span></button>
+            <button data-filter="1" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🟢 Низкий <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[1] || 0}</span></button>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-container">
+            ${tasksHtml}
+        </div>
+    `;
+
+    // Инициализация фильтров после вставки в DOM
+    setTimeout(() => {
+        const container = document.getElementById('tasks-grid-container');
+        if (!container) return;
+        const chips = document.querySelectorAll('.filter-chip');
+        function filterTasks(filterValue) {
+            const items = container.querySelectorAll('.task-card-item');
+            items.forEach(item => {
+                const priority = item.getAttribute('data-priority');
+                if (filterValue === 'all') {
+                    item.style.display = '';
+                } else {
+                    item.style.display = priority === filterValue ? '' : 'none';
+                }
+            });
+            chips.forEach(chip => {
+                const filterVal = chip.getAttribute('data-filter');
+                if (filterVal === filterValue) {
+                    chip.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
+                    chip.classList.remove('bg-slate-100', 'text-slate-700', 'dark:bg-slate-800', 'dark:text-slate-300');
+                } else {
+                    chip.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
+                    chip.classList.add('bg-slate-100', 'text-slate-700', 'dark:bg-slate-800', 'dark:text-slate-300');
+                }
+            });
+        }
+        chips.forEach(chip => {
+            chip.addEventListener('click', (e) => {
+                e.stopPropagation();
+                filterTasks(chip.getAttribute('data-filter'));
+            });
         });
-
-        [4, 3, 2, 1].forEach(level => {
-            const group = groupedTasks[level];
-            if (group.tasks.length > 0) {
-                let doneInGroup = group.tasks.filter(t => t.isCompletedManually || t.done >= t.target).length;
-                html += `
-                <details class="bg-[var(--card-bg)] rounded-xl shadow-sm border border-[var(--card-border)] overflow-hidden group [&_summary::-webkit-details-marker]:hidden" ${level >= 2 ? 'open' : ''}>
-                    <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                        <span class="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">${group.title} <span class="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded ml-2">${doneInGroup}/${group.tasks.length}</span></span>
-                        <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
-                    </summary>
-                    <div class="p-2 sm:p-3 bg-slate-50/50 grid grid-cols-2 gap-2 sm:gap-3">
-    ${group.tasks.map(t => renderTaskCard(t)).join('')}
-</div>
-                </details>`;
-            }
-        });
-    }
-    html += `</div></details>`;
+        filterTasks('all');
+    }, 50);
+}
+html += `</div></details>`;
 
     // ====================================================================
     // СЕКЦИЯ 4: АКТИВНОСТЬ И РЕЙТИНГ ИНЖЕНЕРОВ (ОБЪЕДИНЕНЫ, СВЕРНУТЫ)
