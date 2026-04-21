@@ -1025,35 +1025,53 @@ function showContractorDetailView(contractorName) {
     let allPhotosB3 = []; let allPhotosB2 = [];
     
     data.forEach(unit => {
-        const stName = unit.stageName || 'Этап не указан';
-        if(!cStageData[stName]) cStageData[stName] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0 };
-        cStageData[stName].checks++;
+        // ИСПРАВЛЕНИЕ: Берем реальные названия этапов, а не просто "Полная/Частичная"
+        const stagesArray = (unit.checkedStagesInfo && unit.checkedStagesInfo.length > 0) 
+                            ? unit.checkedStagesInfo 
+                            : [unit.stageName || 'Этап не указан'];
+        
+        stagesArray.forEach(stName => {
+            if(!cStageData[stName]) cStageData[stName] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0 };
+            cStageData[stName].checks++;
 
-        if(unit.metrics) { 
-            cStageData[stName].sumUrk += unit.metrics.final;
-            cStageData[stName].b1 += unit.metrics.n_B1_fail;
-            cStageData[stName].b2 += unit.metrics.n_B2_fail;
-            cStageData[stName].b3 += unit.metrics.n_B3_fail;
-            
-            sumB1 += unit.metrics.n_B1_fail;
-            sumB2 += unit.metrics.n_B2_fail;
-            sumB3 += unit.metrics.n_B3_fail;
-        }
+            // Распределяем метрики (упрощенно для этапа берем среднее от проверки)
+            if(unit.metrics) { 
+                cStageData[stName].sumUrk += unit.metrics.final;
+                cStageData[stName].b1 += unit.metrics.n_B1_fail;
+                cStageData[stName].b2 += unit.metrics.n_B2_fail;
+                cStageData[stName].b3 += unit.metrics.n_B3_fail;
+                
+                // Для глобальных счетчиков карточки берем только 1 раз (чтобы не дублировать)
+                if (stagesArray.indexOf(stName) === 0) {
+                    sumB1 += unit.metrics.n_B1_fail;
+                    sumB2 += unit.metrics.n_B2_fail;
+                    sumB3 += unit.metrics.n_B3_fail;
+                }
+            }
+        });
+
         if(unit.state) {
             Object.keys(unit.state).forEach(id => {
                 const s = unit.state[id];
-                if (s === 'ok') cStageData[stName].ok++;
-                if (s === 'fail' || s === 'fail_escalated') {
-                    cStageData[stName].fail++;
-                    
-                    let defName = "Дефект";
-                    const tType = unit.templateKey.split('_')[0];
-                    const tKey = unit.templateKey.replace(tType + '_', '');
-                    const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                    const foundItem = getFlatList(cl).find(x => x.id == id);
-                    if(foundItem) defName = foundItem.n;
+                // Ищем, к какому этапу относится этот пункт, чтобы зачесть OK/FAIL
+                let defName = "Дефект";
+                let parentStage = 'Этап не указан';
+                const tType = unit.templateKey.split('_')[0];
+                const tKey = unit.templateKey.replace(tType + '_', '');
+                const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                
+                cl.forEach(group => {
+                    const found = group.items.find(x => x.id == id);
+                    if (found) { defName = found.n; parentStage = group.group || group.title; }
+                });
 
+                if (s === 'ok' && cStageData[parentStage]) cStageData[parentStage].ok++;
+                if ((s === 'fail' || s === 'fail_escalated') && cStageData[parentStage]) {
+                    cStageData[parentStage].fail++;
+                    
                     const photo = (unit.photos && unit.photos[id]) ? unit.photos[id] : null;
+                    const flatList = getFlatList(cl);
+                    const foundItem = flatList.find(x => x.id == id);
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
 
                     if (isB3) {

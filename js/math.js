@@ -397,16 +397,20 @@ function getStageMetrics(stageId, historyArray) {
     return { avgFinal: Math.round(totalUrk / totalChecks), count: totalChecks, totalB3: sumB3, volatility: volatility, confidence: stageConfidence };
 }
 
-// === БЛОК 4: ИНТЕГРАЛЬНЫЕ ПОКАЗАТЕЛИ ОБЪЕКТА (ИКО) ===
+// === БЛОК 4: ИНТЕГРАЛЬНЫЕ ПОКАЗАТЕЛИ ОБЪЕКТА (ИКО V2.0 - ВЗВЕШЕННЫЙ РИСК) ===
 function getObjectIntegralMetrics(historyArray, userTemplatesData = {}) {
     if (!historyArray || historyArray.length === 0) return null;
 
-    // Группируем проверки по подрядчикам
+    // Группируем проверки по связке: "Подрядчик + Вид работ"
+    // (Потому что один подрядчик может делать и фасад, и плитку - риски разные)
     const grouped = {};
     historyArray.forEach(item => {
         const cName = item.contractorName || 'Не указан';
-        if (!grouped[cName]) grouped[cName] = [];
-        grouped[cName].push(item);
+        const tKey = item.templateKey;
+        const groupKey = `${cName}_||_${tKey}`;
+        
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(item);
     });
 
     let totalValidChecks = 0;
@@ -414,47 +418,65 @@ function getObjectIntegralMetrics(historyArray, userTemplatesData = {}) {
     let yellowChecks = 0;
     let greenChecks = 0;
 
-    let sum_Kop_x_N = 0;
+    let sum_Kop_x_Wr = 0; // Сумма (Опасность * Вес Риска)
+    let sum_Wr = 0;       // Сумма Весов
 
-    for (let cName in grouped) {
-        const cData = grouped[cName];
+    for (let groupKey in grouped) {
+        const cData = grouped[groupKey];
         const N = cData.length;
         
-        // Исключаем подрядчиков со статусом "Сбор данных" (N < 7)
+        // Исключаем связки со статусом "Сбор данных" (N < 7)
         if (N >= 7) {
             totalValidChecks += N;
             
-            // Считаем метрики подрядчика
+            // Считаем метрики
             const m = getContractorMetrics(cData, userTemplatesData);
             if (!m) continue;
 
-            // Распределяем количество проверок по зонам качества
+            // Распределяем количество проверок по зонам качества (для статистики)
             if (m.finalC < 70) redChecks += N;
             else if (m.finalC <= 84) yellowChecks += N;
             else greenChecks += N;
+
+            // Получаем Вес Риска (Wr) для данного вида работ
+            const tKey = cData[0].templateKey;
+            const type = tKey.split('_')[0];
+            const key = tKey.replace(type + '_', '');
+            
+            let Wr = 1.0; // Базовый вес для пользовательских шаблонов
+            if (type === 'sys' && SYSTEM_TEMPLATES[key]) {
+                Wr = SYSTEM_TEMPLATES[key].riskWeight || 1.0;
+            } else if (type === 'user' && userTemplatesData[key]) {
+                Wr = userTemplatesData[key].riskWeight || 1.0;
+            }
 
             // Расчет коэффициента опасности (K_опасности_i)
             let urk_frac = m.finalC / 100;
             let stab_frac = m.stabilityIndex / 100;
             let hasB3 = m.n_изделий_с_B3 > 0 ? 1 : 0;
 
+            // Опасность от 0 до 1 (1 - это 100% риск)
             let K_op = 1 - (urk_frac * stab_frac * (1 - 0.5 * hasB3));
-            sum_Kop_x_N += (K_op * N);
+            
+            // Взвешиваем ТОЛЬКО по риску, игнорируя объем N
+            sum_Kop_x_Wr += (K_op * Wr);
+            sum_Wr += Wr;
         }
     }
 
-    if (totalValidChecks === 0) return null; // Нет подрядчиков с N >= 7
+    if (totalValidChecks === 0 || sum_Wr === 0) return null; // Нет валидных данных
 
-    // Доли работ в зонах (в процентах)
+    // Доли работ в зонах (в процентах от общего объема N)
     const redZonePerc = Math.round((redChecks / totalValidChecks) * 100);
     const yellowZonePerc = Math.round((yellowChecks / totalValidChecks) * 100);
     const greenZonePerc = Math.round((greenChecks / totalValidChecks) * 100);
 
-    // Итоговый Индекс Критичности Объекта (ИКО)
-    const IKO = sum_Kop_x_N / totalValidChecks;
+    // Итоговый Индекс Критичности Объекта (ИКО) по новой модели
+    const IKO = sum_Kop_x_Wr / sum_Wr;
     
     let ikoStatus = "";
     let ikoColor = "";
+    // Пороги ИКО остаются прежними, так как K_op нормирован от 0 до 1
     if (IKO < 0.30) { ikoStatus = "Низкий риск"; ikoColor = "text-green-600"; }
     else if (IKO < 0.60) { ikoStatus = "Повышенный риск"; ikoColor = "text-orange-500"; }
     else { ikoStatus = "Высокий риск"; ikoColor = "text-red-600"; }

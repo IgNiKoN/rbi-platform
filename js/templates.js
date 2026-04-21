@@ -1235,27 +1235,48 @@ const SYSTEM_TEMPLATES = {
     }        
 };
 
-// === КЛАССИФИКАЦИЯ ЧАСТОТНОСТИ СИСТЕМНЫХ ЧЕК-ЛИСТОВ ===
-const FREQUENCY_MAP = {
-    nvf_facade: "continuous", armature: "continuous", vent_stairs: "milestone", blago: "milestone",
-    gazobeton: "continuous", gidro_0: "milestone", kirpich: "continuous", skc: "continuous",
-    krovlya: "milestone", monolit: "continuous", zemlya: "milestone", mk: "milestone",
-    okna_alu: "continuous", vitrazh: "continuous", dveri_met: "continuous", okna_pvh: "continuous",
-    otdelka_gkl: "continuous", otdelka_poly: "continuous", otdelka_oboi: "continuous",
-    otdelka_plitka: "continuous", otdelka_potolok: "continuous", otdelka_pokraska: "continuous",
-    otdelka_shpatlevka: "continuous", otdelka_shtukaturka: "continuous", svai_vdavlivanie: "milestone",
-    polusuhaya_styazhka: "continuous", fasad_shtukatur: "continuous"
+// === КЛАССИФИКАЦИЯ ЧАСТОТНОСТИ И ВЕСА РИСКОВ (ДЛЯ РАСЧЕТА ИКО) ===
+const CONFIG_MAP = {
+    nvf_facade: { freq: "continuous", risk: 2.0 },
+    fasad_shtukatur: { freq: "continuous", risk: 2.0 },
+    krovlya: { freq: "milestone", risk: 3.0 },
+    gidro_0: { freq: "milestone", risk: 3.0 },
+    okna_pvh: { freq: "continuous", risk: 2.5 },
+    okna_alu: { freq: "continuous", risk: 2.5 },
+    vitrazh: { freq: "continuous", risk: 2.5 },
+    dveri_met: { freq: "continuous", risk: 2.0 },
+    monolit: { freq: "continuous", risk: 1.0 },
+    armature: { freq: "continuous", risk: 1.0 },
+    vent_stairs: { freq: "milestone", risk: 1.0 },
+    svai_vdavlivanie: { freq: "milestone", risk: 1.0 },
+    mk: { freq: "milestone", risk: 1.0 },
+    gazobeton: { freq: "continuous", risk: 1.0 },
+    kirpich: { freq: "continuous", risk: 1.0 },
+    skc: { freq: "continuous", risk: 1.0 },
+    polusuhaya_styazhka: { freq: "continuous", risk: 1.2 },
+    otdelka_plitka: { freq: "continuous", risk: 1.0 },
+    otdelka_poly: { freq: "continuous", risk: 1.0 },
+    otdelka_pokraska: { freq: "continuous", risk: 1.0 },
+    otdelka_oboi: { freq: "continuous", risk: 1.0 },
+    otdelka_shpatlevka: { freq: "continuous", risk: 1.0 },
+    otdelka_shtukaturka: { freq: "continuous", risk: 1.0 },
+    otdelka_gkl: { freq: "continuous", risk: 1.0 },
+    otdelka_potolok: { freq: "continuous", risk: 1.5 },
+    zemlya: { freq: "milestone", risk: 1.0 },
+    blago: { freq: "milestone", risk: 1.0 }
 };
 
 for (let key in SYSTEM_TEMPLATES) {
-    SYSTEM_TEMPLATES[key].checkFrequency = FREQUENCY_MAP[key] || "continuous";
+    SYSTEM_TEMPLATES[key].checkFrequency = CONFIG_MAP[key] ? CONFIG_MAP[key].freq : "continuous";
+    SYSTEM_TEMPLATES[key].riskWeight = CONFIG_MAP[key] ? CONFIG_MAP[key].risk : 1.0; // По умолчанию вес 1.0
 }
 
 // === СИСТЕМНЫЙ АКТ-ЭТАЛОН ===
 SYSTEM_TEMPLATES['etalon_act'] = {
-    title: "Акт-Эталон (Первый образец)",
+    title: "Эталон (Первый образец)",
     templateVersion: "1.0",
     checkFrequency: "milestone",
+    riskWeight: 1.0,
     groups: [
         { group: "1. Фиксация эталона", items: [
             { id: 9901, n: "Соответствие рабочей документации (РД) и ТЗ", w: 3, t: formatNorms("Материалы, привязки и геометрия полностью соответствуют РД.") },

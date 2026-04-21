@@ -4,16 +4,16 @@ let gameActionLogs = [];
 
 // === ГРЕЙДЫ И ЦВЕТОВЫЕ ТИРЫ (РАНГИ) ===
 const PI_GRADES = [
-    { level: 1, name: "Grade I (Стажёр)", xpMin: 0, xpMax: 100, color: "from-slate-400 to-slate-500", ring: "ring-slate-400" },
-    { level: 2, name: "Grade II (Инженер)", xpMin: 100, xpMax: 300, color: "from-slate-400 to-slate-500", ring: "ring-slate-400" },
-    { level: 3, name: "Grade III (Старший инженер)", xpMin: 300, xpMax: 600, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
-    { level: 4, name: "Grade IV (Ведущий инженер)", xpMin: 600, xpMax: 1000, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
-    { level: 5, name: "Expert I (Эксперт)", xpMin: 1000, xpMax: 1500, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
-    { level: 6, name: "Expert II (Старший эксперт)", xpMin: 1500, xpMax: 2200, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
-    { level: 7, name: "Expert III (Главный эксперт)", xpMin: 2200, xpMax: 3000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
-    { level: 8, name: "Master I (Мастер качества)", xpMin: 3000, xpMax: 4200, color: "from-yellow-400 to-yellow-600", ring: "ring-yellow-500" },
-    { level: 9, name: "Master II (Аудитор)", xpMin: 4200, xpMax: 6000, color: "from-yellow-400 to-yellow-600", ring: "ring-yellow-500" },
-    { level: 10, name: "Principal (Управляющий)", xpMin: 6000, xpMax: 999999, color: "from-rose-500 to-pink-600", ring: "ring-rose-500" }
+    { level: 1, name: "Стажёр качества", xpMin: 0, xpMax: 200, color: "from-slate-400 to-slate-500", ring: "ring-slate-400" },
+    { level: 2, name: "Инженер контроля", xpMin: 200, xpMax: 600, color: "from-slate-500 to-slate-600", ring: "ring-slate-500" },
+    { level: 3, name: "Старший инженер", xpMin: 600, xpMax: 1200, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
+    { level: 4, name: "Ведущий аудитор", xpMin: 1200, xpMax: 2500, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
+    { level: 5, name: "Эксперт процессов", xpMin: 2500, xpMax: 4000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
+    { level: 6, name: "Главный эксперт", xpMin: 4000, xpMax: 6000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
+    { level: 7, name: "Мастер качества", xpMin: 6000, xpMax: 9000, color: "from-yellow-400 to-yellow-600", ring: "ring-yellow-500" },
+    { level: 8, name: "Амбассадор TWI", xpMin: 9000, xpMax: 13000, color: "from-emerald-500 to-teal-500", ring: "ring-emerald-500" },
+    { level: 9, name: "Ментор-Аудитор", xpMin: 13000, xpMax: 20000, color: "from-purple-500 to-fuchsia-500", ring: "ring-purple-500" },
+    { level: 10, name: "Легенда Качества", xpMin: 20000, xpMax: 999999, color: "from-rose-500 to-pink-600", ring: "ring-rose-500" }
 ];
 
 // === СТРОГИЕ SVG-ИКОНКИ ДЛЯ ГРУПП НАВЫКОВ ===
@@ -29,27 +29,24 @@ const SKILL_ICONS = {
 // === КОМПЕТЕНЦИИ (АЧИВКИ) ===
 const COMPETENCIES = [
     { id: "win_win", group: "Партнёрство", name: "Win-Win", desc: "Подрядчик перешёл из красной/жёлтой зоны в зелёную (>85%) после ваших 3+ проверок.", maxProgress: 1 },
-    { id: "champ_coach", group: "Партнёрство", name: "Тренер", desc: "Два разных подрядчика улучшили рейтинг на 15+ пунктов.", maxProgress: 2 },
+    { id: "champ_coach", group: "Партнёрство", name: "Тренер чемпионов", desc: "Три разных подрядчика улучшили рейтинг благодаря вам.", maxProgress: 3 },
     { id: "reanimator", group: "Партнёрство", name: "Кризис-менеджер", desc: "Подрядчик поднялся из красной зоны (<50%) в допустимую (>70%).", maxProgress: 1 },
-    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "10 идеальных проверок (100%) с фотофиксацией эталонов.", maxProgress: 10 },
-    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактировано и скопировано 5 ИИ-заключений.", maxProgress: 5 },
-    { id: "detective", group: "Оформление", name: "Доказательная база", desc: "10 проверок, где ВСЕ дефекты имеют фото и указанную причину.", maxProgress: 10 },
-    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "30 проверок подряд со 100% заполнением всех пунктов чек-листа.", maxProgress: 30 },
-    { id: "mentor", group: "Обучение", name: "Наставничество", desc: "Открыта TWI-карта во время инспекции 10 раз.", maxProgress: 10 },
-    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Создана собственная TWI-карта.", maxProgress: 1 },
-    { id: "bestseller", group: "Обучение", name: "Внедрение стандартов", desc: "Ваша TWI-карта открыта другими инженерами 10+ раз.", maxProgress: 10 },
-    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Оставлено 20 развернутых комментариев к дефектам.", maxProgress: 20 },
-    { id: "impartial", group: "Объективность", name: "Беспристрастность", desc: "Индекс строгости в пределах нормы на 50 проверках.", maxProgress: 50 },
-    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "20 проверок подряд со стандартным отклонением оценки < 10%.", maxProgress: 20 },
-    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность 8 недель подряд.", maxProgress: 8 },
-    { id: "iron_will", group: "Объективность", name: "Системность", desc: "Непрерывная активность 16 недель подряд.", maxProgress: 16 },
-    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по 7 различным видам работ.", maxProgress: 7 },
-    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в 15 различных локациях.", maxProgress: 15 },
-    { id: "know_all", group: "Охват", name: "Глубокий охват", desc: "Проведены проверки по всем активным видам работ.", maxProgress: 1 },
+    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "20 проверок с фотофиксацией эталонов (OK).", maxProgress: 20 },
+    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактировано и скопировано 15 ИИ-заключений.", maxProgress: 15 },
+    { id: "detective", group: "Оформление", name: "Доказательная база", desc: "25 проверок, где ВСЕ дефекты имеют фото и указанную причину.", maxProgress: 25 },
+    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "50 проверок подряд со 100% заполнением всех пунктов чек-листа.", maxProgress: 50 },
+    { id: "mentor", group: "Обучение", name: "Наставничество", desc: "Открыта TWI-карта во время инспекции (показ рабочему) 20 раз.", maxProgress: 20 },
+    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Создано 3 собственных TWI-карты.", maxProgress: 3 },
+    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Оставлено 50 развернутых комментариев (указания для прораба).", maxProgress: 50 },
+    { id: "impartial", group: "Объективность", name: "Беспристрастность", desc: "Индекс строгости в пределах нормы на 100 проверках.", maxProgress: 100 },
+    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "40 проверок подряд со стандартным отклонением оценки < 10%.", maxProgress: 40 },
+    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность 12 недель подряд.", maxProgress: 12 },
+    { id: "iron_will", group: "Объективность", name: "Железная воля", desc: "Непрерывная активность 24 недели подряд.", maxProgress: 24 },
+    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по 10 различным видам работ.", maxProgress: 10 },
+    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в 30 различных локациях.", maxProgress: 30 },
     { id: "perfection", group: "Редкие", name: "Внимание к деталям", desc: "Оценка 100%, но честно зафиксирован 1 мелкий дефект (B1).", maxProgress: 1 },
     { id: "quality_guru", group: "Редкие", name: "Аудитор качества", desc: "Собраны: Win-Win, Аналитик, Наставничество, Беспристрастность.", maxProgress: 4 },
-    { id: "crisis_man", group: "Редкие", name: "Управление рисками", desc: "Снижен ИКО объекта с опасного до нормы.", maxProgress: 1 },
-    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Создано 5 TWI-карт с использованием функции Магия TWI (фото с объекта).", maxProgress: 5 }
+    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Создано 10 TWI-карт с использованием функции Магия TWI.", maxProgress: 10 }
 ];
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -707,7 +704,10 @@ window.gameRenderDashboard = function() {
                         ${myProfile.name.substring(0,1).toUpperCase()}
                     </div>
                     <div class="flex-1 min-w-0">
-                        <div class="text-[16px] font-black text-slate-800 dark:text-white truncate leading-tight mb-0.5">${myProfile.name}</div>
+                        <div class="flex items-center gap-2 mb-0.5">
+    <div class="text-[16px] font-black text-slate-800 dark:text-white truncate leading-tight">${myProfile.name}</div>
+    <button onclick="switchTab('tab-audit'); setTimeout(() => startSmartLock({preventDefault:()=>{}}, 'inp-inspector'), 100)" class="text-slate-400 hover:text-indigo-500 active:scale-90" title="Изменить имя">✏️</button>
+</div>
                         <div class="text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mb-1.5">${myProfile.levelObj.name}</div>
                         
                         <div class="flex justify-between text-[9px] font-bold text-[var(--text-muted)] mb-1.5 uppercase tracking-wider">
@@ -1049,74 +1049,90 @@ window.switchManagerTab = function(tab) {
 }
 
 window.gameGenerateAuditPlan = function() {
-    showToast("⚙️ Нейросеть анализирует аномалии за прошлый месяц...");
+    showToast("⚙️ Нейросеть анализирует аномалии (протыкивания, завышения)...");
     setTimeout(() => {
         const now = new Date();
         const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        const recentChecks = contractorArray.filter(c => {
-            const d = new Date(c.date);
-            return d >= lastMonth && d < thisMonth;
-        });
+        // Берем проверки за последние 30 дней для актуальности
+        const recentChecks = contractorArray.filter(c => new Date(c.date) >= lastMonth);
 
         if (recentChecks.length === 0) {
-            document.getElementById('manager-audit-list').innerHTML = `<div class="text-center py-10 text-slate-500 font-bold text-xs uppercase bg-white dark:bg-slate-800 rounded-xl border border-slate-200">За прошлый месяц проверок не найдено</div>`;
+            document.getElementById('manager-audit-list').innerHTML = `<div class="text-center py-10 text-slate-500 font-bold text-xs uppercase bg-white dark:bg-slate-800 rounded-xl border border-slate-200">Проверок не найдено</div>`;
             return;
         }
 
         const anomalies = [];
         const checkedInspectors = new Set();
-        const checkedContractors = new Set();
+        
+        // Сортируем по дате, чтобы искать "быстрые протыкивания"
+        recentChecks.sort((a, b) => new Date(a.date) - new Date(b.date));
 
+        for (let i = 1; i < recentChecks.length; i++) {
+            const curr = recentChecks[i];
+            const prev = recentChecks[i-1];
+            
+            // Если один и тот же инспектор сдал 2 разные проверки с разницей меньше 60 секунд = "Протыкивание"
+            if (curr.inspectorName === prev.inspectorName && curr.location !== prev.location) {
+                const timeDiff = (new Date(curr.date) - new Date(prev.date)) / 1000; // в секундах
+                if (timeDiff > 0 && timeDiff < 60 && curr.metrics.final >= 85) {
+                    anomalies.push({ check: curr, type: '⚠️ Быстрое заполнение (<60 сек)', color: 'bg-purple-100 text-purple-800 border-purple-200' });
+                    checkedInspectors.add(curr.inspectorName);
+                }
+            }
+        }
+
+        // Аномалия: 100% у проблемного подрядчика
         const perfectChecks = recentChecks.filter(c => c.metrics && c.metrics.final === 100);
         perfectChecks.forEach(c => {
             const contrAll = recentChecks.filter(x => x.contractorName === c.contractorName);
             const avg = contrAll.reduce((sum, x) => sum + (x.metrics?x.metrics.final:0), 0) / contrAll.length;
-            if (avg < 80) {
-                anomalies.push({ check: c, type: 'Завышение (Подрядчик проблемный, но тут 100%)', color: 'bg-orange-100 text-orange-800 border-orange-200' });
-                checkedInspectors.add(c.inspectorName); checkedContractors.add(c.contractorName);
-            }
-        });
-
-        recentChecks.forEach(c => {
-            if (c.metrics && c.metrics.n_B3_fail > 0) {
-                let hasPhoto = false;
-                if(c.state && c.photos) {
-                    Object.keys(c.state).forEach(id => { if ((c.state[id] === 'fail' || c.state[id] === 'fail_escalated') && c.photos[id]) hasPhoto = true; });
-                }
-                if (!hasPhoto) {
-                    anomalies.push({ check: c, type: 'B3 без фото (Возможен вымысел)', color: 'bg-red-100 text-red-800 border-red-200' });
-                    checkedInspectors.add(c.inspectorName); checkedContractors.add(c.contractorName);
-                }
-            }
-        });
-
-        recentChecks.forEach(c => {
-            if (c.metrics && c.metrics.final < 40 && c.metrics.n_B3_fail === 0) {
-                anomalies.push({ check: c, type: 'Сверхстрогость (УрК < 40% без B3)', color: 'bg-blue-100 text-blue-800 border-blue-200' });
+            if (avg < 75) {
+                anomalies.push({ check: c, type: 'Завышение (Подрядчик в красной зоне)', color: 'bg-orange-100 text-orange-800 border-orange-200' });
                 checkedInspectors.add(c.inspectorName);
             }
         });
 
+        // Аномалия: B3 без доказательств
+        recentChecks.forEach(c => {
+            if (c.metrics && c.metrics.n_B3_fail > 0) {
+                let hasPhotoOrComment = false;
+                if(c.state) {
+                    Object.keys(c.state).forEach(id => { 
+                        if (c.state[id] === 'fail_escalated' || (c.state[id] === 'fail' && c.photos && c.photos[id])) hasPhotoOrComment = true; 
+                        if (c.details && c.details[id] && c.details[id].comment) hasPhotoOrComment = true;
+                    });
+                }
+                if (!hasPhotoOrComment) {
+                    anomalies.push({ check: c, type: 'B3 без фото и комментария', color: 'bg-red-100 text-red-800 border-red-200' });
+                    checkedInspectors.add(c.inspectorName);
+                }
+            }
+        });
+
+        // Разбавляем случайными аудитами для профилактики
         const allInspectors = [...new Set(recentChecks.map(c => c.inspectorName))];
         allInspectors.forEach(insp => {
             if (!checkedInspectors.has(insp)) {
                 const inspChecks = recentChecks.filter(c => c.inspectorName === insp);
                 if(inspChecks.length > 0) {
                     const randCheck = inspChecks[Math.floor(Math.random() * inspChecks.length)];
-                    anomalies.push({ check: randCheck, type: 'Случайная выборка (Плановый аудит)', color: 'bg-slate-100 text-slate-700 border-slate-300' });
+                    anomalies.push({ check: randCheck, type: 'Плановый перекрёстный аудит', color: 'bg-slate-100 text-slate-700 border-slate-300' });
                 }
             }
         });
 
-        let html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-3 pb-8">`;
-        const finalPlan = anomalies.sort(() => 0.5 - Math.random()).slice(0, 20);
+        let html = `<div class="grid grid-cols-1 gap-3 pb-8">`;
+        // Убираем дубликаты
+        const uniqueAnomalies = Array.from(new Set(anomalies.map(a => a.check.id)))
+            .map(id => anomalies.find(a => a.check.id === id))
+            .sort(() => 0.5 - Math.random()).slice(0, 15);
 
-        finalPlan.forEach((item, idx) => {
+        uniqueAnomalies.forEach((item, idx) => {
             const c = item.check;
             html += `
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm flex flex-col cursor-pointer hover:border-indigo-400 transition-colors" onclick="showHistoryDetail(${c.id})">
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm flex flex-col hover:border-indigo-400 transition-colors">
                 <div class="flex justify-between items-start mb-2">
                     <span class="px-2 py-1 rounded text-[9px] font-black uppercase border ${item.color}">${item.type}</span>
                     <span class="text-[10px] font-bold text-slate-400">#${idx+1}</span>
@@ -1124,7 +1140,7 @@ window.gameGenerateAuditPlan = function() {
                 <div class="text-[14px] font-black text-slate-800 dark:text-white mb-1 leading-tight">${c.contractorName}</div>
                 <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-3">${c.location} | ${c.templateTitle}</div>
                 
-                <div class="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800 flex justify-between items-center mt-auto">
+                <div class="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800 flex justify-between items-center mt-auto mb-3">
                     <div>
                         <div class="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Кого проверяем:</div>
                         <div class="text-[12px] font-black text-slate-700 dark:text-slate-300">${c.inspectorName || 'Неизвестно'}</div>
@@ -1134,12 +1150,15 @@ window.gameGenerateAuditPlan = function() {
                         <div class="text-[16px] font-black ${c.metrics.final < 70 ? 'text-red-500' : (c.metrics.final < 85 ? 'text-orange-500' : 'text-green-600')}">${c.metrics.final}%</div>
                     </div>
                 </div>
+                <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="w-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform border border-slate-200 dark:border-slate-600">
+                    👁️ Открыть Акт
+                </button>
             </div>`;
         });
 
         html += `</div>`;
         document.getElementById('manager-audit-list').innerHTML = html;
-        showToast("✅ Маршрут перекрестных аудитов сформирован!");
+        showToast("✅ План аудита сформирован! Найдены аномалии.");
     }, 800); 
 };
 

@@ -31,6 +31,8 @@ let realState = {}, realDetails = {}, realPhotos = {}, realContractorArray = [],
 // Настройки приложения (v16.0)
 let appSettings = {
     theme: 'auto',
+    engineerName: '',
+    defaultProject: '',
     fontSize: 'medium',
     navPosition: 'auto',
     swipeEnabled: false,      
@@ -175,6 +177,7 @@ async function restoreSession() {
         if(document.getElementById('inp-room')) document.getElementById('inp-room').value = data.room || '';
         
         updateLocationFromStructured(); // Пересчитываем скрытый inp-location
+        applySmartLocks(); // Применяем замки после загрузки сессии
 
         if (typeof updateDataSummary === 'function') updateDataSummary();
     } catch (e) {
@@ -752,7 +755,7 @@ function resetSettingsToDefault() {
     
     // 1. Сбрасываем объект
     appSettings = {
-        theme: 'auto', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
+        theme: 'auto', engineerName: '', defaultProject: '', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
         autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
         soundEnabled: true, autoSave: true, aiEnabled: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
         anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
@@ -2073,6 +2076,21 @@ function saveProductToArray() {
         return showToast('⚠️ Проверка с такой локацией уже существует в Истории!');
     }
     // ----------------------------
+    // --- УМНАЯ ФИКСАЦИЯ ПОСЛЕ ПЕРВОГО СОХРАНЕНИЯ ---
+    let settingsChanged = false;
+    if (!appSettings.engineerName && inspInput.value.trim()) {
+        appSettings.engineerName = inspInput.value.trim();
+        settingsChanged = true;
+    }
+    if (!appSettings.defaultProject && projInput.value.trim()) {
+        appSettings.defaultProject = projInput.value.trim();
+        settingsChanged = true;
+    }
+    if (settingsChanged && !isDemoMode) {
+        dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+        applySmartLocks();
+    }
+    // ----------------------------------------------
 
     let mergedState = {};
     let mergedDetails = {};
@@ -4537,40 +4555,54 @@ function startDemoMode(silent = false) {
     }
 }
 
-function exitDemoMode() {
-    state = JSON.parse(JSON.stringify(realState));
-    details = JSON.parse(JSON.stringify(realDetails));
-    photos = JSON.parse(JSON.stringify(realPhotos));
-    contractorArray = JSON.parse(JSON.stringify(realContractorArray));
-    customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
-    customDocs = JSON.parse(JSON.stringify(realCustomDocs));
-    if (typeof gameActionLogs !== 'undefined') gameActionLogs = [];
-    
-    // Убираем демо-узел из системы
+async function exitDemoMode() {
+    // 1. Убираем демо-узел из системы
     const demoNodeIdx = SYSTEM_NODES.findIndex(n => n.id === 'demo_node_1');
     if(demoNodeIdx !== -1) SYSTEM_NODES.splice(demoNodeIdx, 1);
 
+    // 2. Выключаем режим
     isDemoMode = false;
     document.body.classList.remove('demo-mode');
     
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit) { fabExit.classList.add('hidden'); fabExit.style.display = 'none'; }
     
-    document.getElementById('inp-project').value = '';
-    document.getElementById('inp-inspector').value = '';
-    document.getElementById('inp-contractor').value = '';
-    document.getElementById('inp-section').value = '';
-    document.getElementById('inp-floor').value = '';
-    document.getElementById('inp-room').value = '';
-    updateLocationFromStructured();
+    // 3. Жестко зачищаем DOM-поля шапки перед восстановлением
+    ['inp-project', 'inp-inspector', 'inp-contractor', 'inp-section', 'inp-floor', 'inp-room', 'inp-location'].forEach(id => {
+        if(document.getElementById(id)) {
+            document.getElementById(id).value = '';
+            document.getElementById(id).removeAttribute('readonly');
+            document.getElementById(id).classList.remove('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
+        }
+    });
+    // Скрываем замочки
+    if(document.getElementById('lock-inp-inspector')) document.getElementById('lock-inp-inspector').classList.add('hidden');
+    if(document.getElementById('lock-inp-project')) document.getElementById('lock-inp-project').classList.add('hidden');
     
-    if (realTemplateKey) changeTemplate(realTemplateKey);
-    else changeTemplate('HOME');
+    // 4. Восстанавливаем массивы, которые не хранятся в сессии
+    customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
+    customDocs = JSON.parse(JSON.stringify(realCustomDocs));
+    if (typeof gameActionLogs !== 'undefined') gameActionLogs = [];
+
+    // 5. ПОЛНОСТЬЮ ВОССТАНАВЛИВАЕМ СЕССИЮ ИЗ БАЗЫ ДАННЫХ
+    // (Она сама заполнит все поля, вернет ответы в чек-листах и поставит обратно замки)
+    await restoreSession();
+
+    // 6. Отрисовываем интерфейс на основе восстановленных данных
+    if (currentTemplateKey) {
+        render();
+        updateUI();
+    } else {
+        changeTemplate('HOME');
+    }
 
     switchTab('tab-audit');
-    updateDataSummary(); renderHistoryTab(); renderTwiList();
+    updateDataSummary(); 
+    renderHistoryTab(); 
+    renderTwiList();
     if (typeof renderDocsList === 'function') renderDocsList();
     if (typeof renderNodesList === 'function') renderNodesList();
+    
     showToast('Возврат к реальным данным');
 }
 
@@ -5013,3 +5045,58 @@ function stopTutorial() {
     }, 500);
 }
 // === КОНЕЦ ВСТАВКИ ===
+// === УМНАЯ ФИКСАЦИЯ ПОЛЕЙ ===
+let smartLockTimer = null;
+
+function startSmartLock(e, inputId) {
+    const input = document.getElementById(inputId);
+    if (!input || !input.hasAttribute('readonly')) return;
+    
+    smartLockTimer = setTimeout(() => {
+        if (confirm('Разблокировать поле для изменения значения?')) {
+            unlockSmartField(inputId);
+            // Если разблокировали инспектора, убираем из настроек
+            if (inputId === 'inp-inspector') { appSettings.engineerName = ''; }
+            if (inputId === 'inp-project') { appSettings.defaultProject = ''; }
+            dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+        }
+    }, 800); // 800 мс долгого нажатия
+}
+
+function cancelSmartLock() {
+    if (smartLockTimer) clearTimeout(smartLockTimer);
+}
+
+function unlockSmartField(inputId) {
+    const input = document.getElementById(inputId);
+    const lock = document.getElementById(`lock-${inputId}`);
+    if (!input) return;
+    
+    input.removeAttribute('readonly');
+    input.classList.remove('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
+    if (lock) {
+        lock.classList.add('hidden');
+    }
+    input.focus();
+}
+
+function applySmartLocks() {
+    if (isDemoMode) return; // В демо-режиме замки не трогаем, там своя логика
+
+    const inspInput = document.getElementById('inp-inspector');
+    const projInput = document.getElementById('inp-project');
+
+    if (inspInput && appSettings.engineerName) {
+        inspInput.value = appSettings.engineerName;
+        inspInput.setAttribute('readonly', 'true');
+        inspInput.classList.add('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
+        document.getElementById('lock-inp-inspector')?.classList.remove('hidden');
+    }
+    
+    if (projInput && appSettings.defaultProject) {
+        projInput.value = appSettings.defaultProject;
+        projInput.setAttribute('readonly', 'true');
+        projInput.classList.add('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
+        document.getElementById('lock-inp-project')?.classList.remove('hidden');
+    }
+}

@@ -677,9 +677,19 @@
                     </div>
                     </div>
                      <div id="data-block-content" class="grid grid-cols-3 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
-                   <div class="relative"><input type="text" id="inp-inspector" class="input-base text-center" placeholder="Проверяющий *" autocomplete="off"></div> 
-                   <div class="relative"><input type="text" id="inp-contractor" class="input-base text-center" placeholder="Подрядчик *" autocomplete="off"></div>
-                   <div class="relative"><input type="text" id="inp-project" class="input-base text-center" placeholder="Объект *" autocomplete="off"></div>
+                   <div class="relative" onmousedown="startSmartLock(event, 'inp-inspector')" ontouchstart="startSmartLock(event, 'inp-inspector')" onmouseup="cancelSmartLock()" onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
+    <input type="text" id="inp-inspector" class="input-base text-center pr-7 transition-colors" placeholder="Проверяющий *" autocomplete="off">
+    <span id="lock-inp-inspector" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
+    </span>
+</div> 
+<div class="relative"><input type="text" id="inp-contractor" class="input-base text-center" placeholder="Подрядчик *" autocomplete="off"></div>
+<div class="relative" onmousedown="startSmartLock(event, 'inp-project')" ontouchstart="startSmartLock(event, 'inp-project')" onmouseup="cancelSmartLock()" onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
+    <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="Объект *" autocomplete="off">
+    <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
+    </span>
+</div>
                    
                     <div class="col-span-3 grid grid-cols-3 gap-1.5 mt-1">
                         <div class="relative"><input type="text" id="inp-section" class="input-base text-center" placeholder="Корпус*" autocomplete="off"></div>
@@ -2298,95 +2308,48 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- 3.4 НОВЫЙ БЛОК: ИКО -->
-                            <h4
-                                class="font-black text-red-700 dark:text-red-400 uppercase mb-2 text-[11px] border-b border-red-200 dark:border-red-800 pb-1 mt-6">
-                                3.4. Этап III: Индекс критичности объекта (ИКО)</h4>
+                            <!-- 3.4 НОВЫЙ БЛОК: ИКО v2.0 -->
+                            <h4 class="font-black text-red-700 dark:text-red-400 uppercase mb-2 text-[11px] border-b border-red-200 dark:border-red-800 pb-1 mt-6">
+                                3.4. Этап III: Индекс критичности объекта (ИКО v2.0)
+                            </h4>
 
-                            <div
-                                class="bg-white dark:bg-slate-800 p-3 rounded-lg border-l-4 border-l-red-500 border border-slate-200 dark:border-slate-700 shadow-sm mb-4">
-                                <b class="text-[12px] text-slate-800 dark:text-white block mb-1">Как правильно понимать
-                                    ИКО?</b>
+                            <div class="bg-white dark:bg-slate-800 p-3 rounded-lg border-l-4 border-l-red-500 border border-slate-200 dark:border-slate-700 shadow-sm mb-4">
+                                <b class="text-[12px] text-slate-800 dark:text-white block mb-1">Как правильно понимать ИКО?</b>
                                 <p class="text-[11px] text-slate-700 dark:text-slate-300">
-                                    <b>ИКО — это средневзвешенная «опасность» всех подрядчиков на объекте. </b><br>
-                                    Опасность каждого подрядчика считается как вероятность того, что он создаст проблему
-                                    на объекте. ИКО не усредняет оценки качества напрямую, он оценивает совокупный риск
-                                    стройки.
+                                    <b>ИКО — это средневзвешенная «угроза» всех подрядчиков, с учетом критичности их видов работ.</b><br>
+                                    Новая модель полностью отвязана от объема (количества проверок). Проблема на кровле (Риск: 3.0) повлияет на ИКО в три раза сильнее, чем проблема с покраской стен (Риск: 1.0), даже если стены проверяли 500 раз, а кровлю всего 10.
                                 </p>
                             </div>
 
-                            <div
-                                class="bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-800 mb-4 shadow-inner text-center font-mono font-black text-red-800 dark:text-red-300 text-[10px] sm:text-[11px]">
-                                <div class="mb-2">Опасность_подр = 1 – [ УрК_подр × Стабильность × (1 – 0.5 ×
-                                    Наличие_B3) ]</div>
-                                <div>ИКО_Объекта = Σ ( Опасность_подр_i × N_i ) / Σ N_i</div>
+                            <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-200 dark:border-red-800 mb-4 shadow-inner text-center font-mono font-black text-red-800 dark:text-red-300 text-[10px] sm:text-[11px]">
+                                <div class="mb-2">Опасность_подр = 1 – [ УрК_подр × Стабильность × (1 – 0.5 × Наличие_B3) ]</div>
+                                <div>ИКО_Объекта = Σ ( Опасность_подр_i × Вес_Риска_i ) / Σ Вес_Риска_i</div>
                             </div>
 
                             <ul class="space-y-3 text-[11px] mb-2">
-                                <li
-                                    class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <b class="text-red-600 dark:text-red-400 text-[12px] block mb-1">Шаг 1: Считаем
-                                        «Опасность» каждого подрядчика (от 0 до 1)</b>
-                                    Почему мы вычитаем из единицы (1 - ...)? Потому что УрК и Стабильность — это метрики
-                                    "здоровья". Если здоровье 100% (1.0), то опасность равна 0. Если подрядчик работает
-                                    плохо и нестабильно, математика переводит это в высокий уровень угрозы.
-                                    <div
-                                        class="mt-2 bg-red-100/50 dark:bg-red-900/10 p-2 rounded border border-red-100 dark:border-red-800/30">
-                                        <b>Множитель B3:</b> Если подрядчик допускает критические аварии (Есть_B3), его
-                                        остаточное "здоровье" программно срезается вдвое (× 0.5), и его Опасность
-                                        моментально взлетает к единице.
-                                    </div>
+                                <li class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <b class="text-red-600 dark:text-red-400 text-[12px] block mb-1">Шаг 1: Считаем «Опасность» (от 0 до 1)</b>
+                                    Вычисляется для каждой связки "Подрядчик + Вид работ". УрК и Стабильность — это метрики "здоровья". Если здоровье 100% (1.0), опасность равна 0. Наличие критического дефекта (B3) программно срезает остаточное здоровье вдвое (× 0.5), и Опасность моментально взлетает.
                                 </li>
-                                <li
-                                    class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <b class="text-indigo-600 dark:text-indigo-400 text-[12px] block mb-1">Шаг 2:
-                                        Взвешиваем опасности по объему работы (N_i)</b>
-                                    Где <b>N_i</b> — это количество проведенных проверок у конкретного подрядчика.<br>
-                                    Опасный подрядчик (с высоким индексом Опасности), у которого 100 проверенных точек
-                                    на объекте, утащит общий ИКО в красную зону гораздо быстрее, чем опасный подрядчик,
-                                    который сделал всего 5 точек. Система учитывает масштаб проблемы.
+                                <li class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <b class="text-indigo-600 dark:text-indigo-400 text-[12px] block mb-1">Шаг 2: Взвешиваем по Весу Риска (W_R)</b>
+                                    Каждый вид работ имеет системный множитель влияния на NPS и безопасность и COPQ (Cost of Poor Quality) – "Цена ошибки" с учетом гарантийной статистики <br>
+                                    <b>Примеры весов:</b><br>
+                                    Кровля и Гидроизоляция = 3.0<br>
+                                    Фасад, Витражи, Окна = 2.5<br>
+                                    Монолит, Кладка = 1.5<br>
+                                    Отделка и Благоустройство = 1.0
                                 </li>
-                                <li
-                                    class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <b class="text-indigo-600 dark:text-indigo-400 text-[12px] block mb-1">Шаг 3:
-                                        НАХОДИТСЯ В ПРОРАБОТКЕ</b>
-
-                                    Текущее взвешивание по количеству проверок имеет ограничение: оно не различает
-                                    критичность разных видов работ. Ошибка в несущих конструкциях и ошибка в покраске
-                                    стен при таком подходе имеют одинаковый вес, если по ним проведено одинаковое число
-                                    проверок.
-
-                                    В следующей версии методики планируется:
-
-                                    Привязать каждый вид работ (шаблон проверки) к разделу (фасад, кровля, инженерия и
-                                    т.д.).
-
-                                    Назначить каждому разделу вес критичности на основе статистики гарантийных дефектов
-                                    (чем дороже и чаще ломается — тем выше вес).
-
-                                    Заменить N_i на Σ (Вес_раздела × Количество_проверок_в_разделе) для каждого
-                                    подрядчика.
-
-                                    Это позволит ИКО точнее отражать реальный уровень риска: ошибка в фасаде будет
-                                    «весить» больше, чем ошибка в отделке.
-                                <li
-                                    class="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <b class="text-slate-800 dark:text-white text-[12px] block mb-1">Интерпретация ИКО
-                                        для руководства:</b>
+                                <li class="bg-slate-100 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                    <b class="text-slate-800 dark:text-white text-[12px] block mb-1">Интерпретация ИКО для руководства:</b>
                                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 text-center text-[10px]">
-                                        <div
-                                            class="bg-green-100 text-green-800 py-1.5 rounded font-bold border border-green-200">
-                                            ИКО &lt; 0.30<br>🟢 Низкий риск</div>
-                                        <div
-                                            class="bg-yellow-100 text-yellow-800 py-1.5 rounded font-bold border border-yellow-200">
-                                            ИКО 0.30 – 0.60<br>🟡 Повышенный риск</div>
-                                        <div
-                                            class="bg-red-100 text-red-800 py-1.5 rounded font-bold border border-red-200">
-                                            ИКО ≥ 0.60<br>🔴 Высокий риск (Пожар)</div>
+                                        <div class="bg-green-100 text-green-800 py-1.5 rounded font-bold border border-green-200">ИКО &lt; 0.30<br>🟢 Низкий риск</div>
+                                        <div class="bg-yellow-100 text-yellow-800 py-1.5 rounded font-bold border border-yellow-200">ИКО 0.30 – 0.60<br>🟡 Повышенный риск</div>
+                                        <div class="bg-red-100 text-red-800 py-1.5 rounded font-bold border border-red-200">ИКО ≥ 0.60<br>🔴 Высокий риск (Пожар)</div>
                                     </div>
                                 </li>
                             </ul>
-                            <!-- /КОНЕЦ 3.4 НОВЫЙ БЛОК: ИКО -->
+                            <!-- /КОНЕЦ 3.4 НОВЫЙ БЛОК: ИКО v2.0 -->
                         </div>
                     </details>
 
