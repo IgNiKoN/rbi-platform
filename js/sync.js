@@ -382,12 +382,16 @@ window.mergeCloudData = async function(teamData) {
 
     // Сохраняем в локальную базу данных IndexedDB
     if (typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-        await dbPut(STORES.HISTORY, contractorArray);
-        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards });
-        await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
-        await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs });
-        await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
+    // ИСТОРИЯ: сохраняем каждую проверку отдельно
+    for (const item of contractorArray) {
+        await dbPut(STORES.HISTORY, item);
     }
+    // TWI, DOCS, LOGS — ожидают объекты с ключом 'key' и полем 'data'
+    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards });
+    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
+    await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs });
+    await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
+}
 
     // Если нашли свежую персональную сессию с другого устройства — восстанавливаем её
     if (personalDataToRestore && typeof state !== 'undefined') {
