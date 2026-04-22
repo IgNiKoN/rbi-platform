@@ -69,6 +69,9 @@ let __saveSessionTimer = null;
 // === ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ===
 document.addEventListener("DOMContentLoaded", async () => {
     try {
+        // Запускаем облако до загрузки остальных настроек
+        if (typeof initSync === 'function') await initSync();
+        
         await loadSettings();
         applySettingsToUI();
         
@@ -139,6 +142,7 @@ async function saveSessionData() {
     } catch (e) {
         console.error('Ошибка сохранения в IndexedDB:', e);
         showToast('⚠️ Ошибка автосохранения!');  // ← ДОБАВЛЕНО: уведомляем пользователя
+    if (typeof triggerSync === 'function') triggerSync('silent');
     }
 }
 
@@ -751,6 +755,9 @@ function renderSettingsTab() {
     
     if(document.getElementById('set-automanager')) document.getElementById('set-automanager').checked = appSettings.autoManagerEnabled;
     if(document.getElementById('set-automanager-day')) document.getElementById('set-automanager-day').value = appSettings.autoManagerDay || '5';
+    
+    // ПРИНУДИТЕЛЬНАЯ ОТРИСОВКА ПОЛЕЙ СИНХРОНИЗАЦИИ
+    if (typeof renderSyncUI === 'function') renderSyncUI();
 }
 
 function resetSettingsToDefault() {
@@ -2218,6 +2225,7 @@ function saveProductToArray() {
     
     render(); 
     updateUI();
+ if (typeof triggerSync === 'function') triggerSync('full');
 }
 
 // === ОБНОВЛЕНИЕ ПАМЯТИ ПОЛЕЙ ВВОДА (АВТОКОМПЛИТ) ===
@@ -3350,7 +3358,7 @@ async function saveCustomTemplate() {
         // Обновляем списки селекторов и список в настройках
         renderSelector();
         renderSettingsTab();
-        
+        if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) {
         console.error(e);
         showToast("Ошибка сохранения шаблона!");
@@ -3734,6 +3742,7 @@ async function saveCustomDoc() {
         showToast('✅ Норматив успешно добавлен!');
         closeAddDocModal();
         renderDocsList();
+        if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) {
         console.error(e);
         showToast('❌ Ошибка сохранения');
@@ -4294,6 +4303,7 @@ async function saveTwiCard() {
         await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
         showToast("✅ Инструкция успешно сохранена!");
         closeTwiConstructor();
+        if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) { showToast("❌ Ошибка при сохранении"); }
 }
 
@@ -4871,6 +4881,7 @@ async function saveNodeCard() {
         await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: customNodes });
         showToast('✅ Узел сохранен!');
         closeNodeConstructor();
+        if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) {
         showToast('❌ Ошибка сохранения (Возможно файл слишком большой)');
     }

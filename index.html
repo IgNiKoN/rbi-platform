@@ -559,9 +559,12 @@
                             class="text-slate-800 dark:text-white font-black text-[13px] uppercase tracking-tight truncate leading-none mb-1">
                             RBI Quality <span class="text-indigo-600 dark:text-indigo-400 font-bold">16.0</span>
                         </div>
-                        <div
-                            class="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
-                            Dev. by Igor Kondratiev
+                        <div class="flex items-center gap-2">
+                            <div class="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
+                                Dev. by Igor Kondratiev
+                            </div>
+                            <!-- Индикатор синхронизации -->
+                            <div id="header-sync-status"></div>
                         </div>
                     </div>
                 </div>
@@ -2828,7 +2831,13 @@
                     class="text-[10px] bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-bold uppercase active:scale-95 dark:bg-slate-700 dark:text-slate-300">Сбросить
                     по умолчанию</button>
             </div>
-
+            <!-- НОВЫЙ БЛОК: СИНХРОНИЗАЦИЯ КОМАНДЫ -->
+            <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-2 pl-2 flex items-center justify-between">
+                <span>☁️ Синхронизация Команды</span>
+            </div>
+            <div id="sync-settings-block" class="bg-[var(--card-bg)] border border-indigo-200 dark:border-indigo-800 rounded-2xl mb-6 overflow-hidden shadow-sm">
+                <!-- Содержимое рендерится из sync.js -->
+            </div>
             <div class="text-[11px] font-bold text-[var(--text-muted)] uppercase mb-2 pl-2">Оформление</div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl mb-6 overflow-hidden">
                 <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
@@ -3180,9 +3189,19 @@
     </nav>
 
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
+    
+    <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
+    <!-- 1. Сначала облако и конфигурация -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/config.js"></script>
+    <script src="js/sync.js"></script>
+
+    <!-- 2. Потом локальные данные -->
     <script src="data/system_docs.js"></script>
     <script src="data/system_nodes.js"></script>
     <script src="data/system_twi.js"></script>
+    
+    <!-- 3. Потом ядро приложения -->
     <script src="js/storage.js"></script>
     <script src="js/templates.js"></script>
     <script src="js/math.js"></script>
