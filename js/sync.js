@@ -66,10 +66,15 @@ window.renderSyncUI = function() {
     
     if (headerIndicator) {
         if (window.syncConfig.enabled) {
-            // Зеленое пульсирующее облачко (без текста)
-            headerIndicator.innerHTML = `<div title="Облако активно" class="text-green-500 animate-pulse flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
+            if (window.isSyncing) {
+                // Зеленое мигающее (идет загрузка)
+                headerIndicator.innerHTML = `<div title="Синхронизация..." class="text-green-500 animate-pulse flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
+            } else {
+                // Зеленое статичное (онлайн, ждет)
+                headerIndicator.innerHTML = `<div title="Облако подключено" class="text-green-500 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
+            }
         } else {
-            // Серое облачко (локальный режим)
+            // Серое статичное (офлайн)
             headerIndicator.innerHTML = `<div title="Локальный режим" class="text-slate-400 opacity-70 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
         }
     }
@@ -344,6 +349,8 @@ window.triggerSync = async function(mode = 'silent') {
     if (!window.isSyncEnabled() || window.isSyncing || !window.supabaseClient) return;
     
     window.isSyncing = true;
+    window.renderSyncUI(); // Включаем мигающее облачко
+    
     if (mode === 'manual') safeToast('🔄 Синхронизация с облаком...');
     
     try {
@@ -352,7 +359,7 @@ window.triggerSync = async function(mode = 'silent') {
         // 1. СТРОГО дожидаемся завершения обработки и перезаписи всех фото
         await window.extractAndUploadPhotos();
 
-        // 2. ЗАНОВО формируем чистые объекты из глобальных переменных (чтобы гарантированно не захватить старые Base64)
+        // 2. ЗАНОВО формируем чистые объекты из глобальных переменных
         const currentHistory = typeof contractorArray !== 'undefined' ? JSON.parse(JSON.stringify(contractorArray)) : [];
         const currentPhotos = typeof photos !== 'undefined' ? JSON.parse(JSON.stringify(photos)) : {};
         const currentTwi = typeof customTwiCards !== 'undefined' ? JSON.parse(JSON.stringify(customTwiCards)) : [];
@@ -414,6 +421,7 @@ window.triggerSync = async function(mode = 'silent') {
         if (mode === 'manual') safeToast('❌ Ошибка синхронизации. Проверьте интернет.');
     } finally {
         window.isSyncing = false;
+        window.renderSyncUI(); // Возвращаем статичное зеленое облачко
     }
 };
 

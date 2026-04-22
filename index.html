@@ -265,6 +265,7 @@
     </div>
 
     <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
+   <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
     <div id="photo-viewer-overlay" class="fixed inset-0 bg-black/90 z-[6000] flex-col items-center justify-center transition-opacity duration-300 opacity-0"
         style="display:none;" onclick="this.classList.add('opacity-0'); setTimeout(() => this.style.display='none', 300);">
         <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform cursor-pointer">
@@ -272,7 +273,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
         </div>
-        <img id="photo-viewer-img" src="" class="max-w-full max-h-[80vh] object-contain transition-transform"
+        <img id="photo-viewer-img" src="" class="max-w-full max-h-[80vh] object-contain cursor-grab"
             onclick="event.stopPropagation()">
     </div>
 
@@ -3211,42 +3212,115 @@
     <script src="js/export.js"></script>
     <script src="js/game.js"></script>
 
-    <!-- Скрипт для модалок зума фото, которые переехали из v15 -->
+    <!-- Скрипт для модалок зума фото (Поддержка Pinch-to-zoom и Double Tap) -->
+    <!-- Скрипт для модалок зума фото (Плавный ПК + Pinch-to-zoom) -->
     <script>
         const viewerImg = document.getElementById('photo-viewer-img');
-        if (viewerImg) {
-            document.getElementById('photo-viewer-overlay').addEventListener('wheel', (e) => {
+        const viewerOverlay = document.getElementById('photo-viewer-overlay');
+        
+        if (viewerImg && viewerOverlay) {
+            let zoom = 1;
+            let transX = 0;
+            let transY = 0;
+            
+            let isDrag = false;
+            let stX, stY;
+            
+            let initDistance = null;
+            let initZoom = 1;
+            let lastTap = 0;
+
+            function applyTransform() {
+                if (zoom <= 1) {
+                    zoom = 1; transX = 0; transY = 0;
+                }
+                viewerImg.style.transform = `translate(${transX}px, ${transY}px) scale(${zoom})`;
+            }
+
+            viewerOverlay.addEventListener('click', (e) => {
+                if (e.target === viewerOverlay || e.target.closest('div.absolute')) {
+                    zoom = 1; transX = 0; transY = 0;
+                    applyTransform();
+                }
+            });
+
+            viewerOverlay.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                currentZoom += e.deltaY * -0.001;
-                currentZoom = Math.min(Math.max(1, currentZoom), 5);
-                updateImageTransform();
-            });
+                zoom += e.deltaY * -0.002;
+                zoom = Math.min(Math.max(1, zoom), 5); 
+                applyTransform();
+            }, { passive: false });
+
             viewerImg.addEventListener('mousedown', (e) => {
-                if (currentZoom > 1) { isDragging = true; startX = e.clientX - translateX; startY = e.clientY - translateY; }
+                if (zoom > 1) { 
+                    e.preventDefault();
+                    isDrag = true; 
+                    viewerImg.style.cursor = 'grabbing';
+                    stX = e.clientX - transX; 
+                    stY = e.clientY - transY; 
+                }
             });
-            window.addEventListener('mouseup', () => { isDragging = false; });
+            window.addEventListener('mouseup', () => { 
+                isDrag = false; 
+                viewerImg.style.cursor = 'grab';
+            });
             window.addEventListener('mousemove', (e) => {
-                if (isDragging && currentZoom > 1) {
-                    translateX = e.clientX - startX; translateY = e.clientY - startY;
-                    updateImageTransform();
+                if (isDrag && zoom > 1) {
+                    e.preventDefault();
+                    transX = e.clientX - stX; 
+                    transY = e.clientY - stY;
+                    applyTransform();
                 }
             });
+
             viewerImg.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 1 && currentZoom > 1) {
-                    isDragging = true; startX = e.touches[0].clientX - translateX; startY = e.touches[0].clientY - translateY;
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                if (tapLength < 300 && tapLength > 0 && e.touches.length === 1) {
+                    zoom = zoom > 1 ? 1 : 2.5; 
+                    transX = 0; transY = 0;
+                    applyTransform();
+                    e.preventDefault();
                 }
+                lastTap = currentTime;
+
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    isDrag = false;
+                    initDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    initZoom = zoom;
+                } else if (e.touches.length === 1 && zoom > 1) {
+                    isDrag = true; 
+                    stX = e.touches[0].clientX - transX; 
+                    stY = e.touches[0].clientY - transY;
+                }
+            }, { passive: false });
+
+            window.addEventListener('touchend', () => { 
+                isDrag = false; 
+                initDistance = null;
             });
-            window.addEventListener('touchend', () => { isDragging = false; });
+
             window.addEventListener('touchmove', (e) => {
-                if (isDragging && currentZoom > 1 && e.touches.length === 1) {
-                    translateX = e.touches[0].clientX - startX; translateY = e.touches[0].clientY - startY;
-                    updateImageTransform();
+                if (e.touches.length === 2 && initDistance) {
+                    e.preventDefault();
+                    const currentDistance = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    const zoomChange = currentDistance / initDistance;
+                    zoom = Math.min(Math.max(1, initZoom * zoomChange), 5);
+                    applyTransform();
+                } else if (isDrag && zoom > 1 && e.touches.length === 1) {
+                    e.preventDefault();
+                    transX = e.touches[0].clientX - stX; 
+                    transY = e.touches[0].clientY - stY;
+                    applyTransform();
                 }
-            });
-        }
-        function updateImageTransform() {
-            if (currentZoom === 1) { translateX = 0; translateY = 0; }
-            viewerImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
+            }, { passive: false });
         }
     </script>
 
