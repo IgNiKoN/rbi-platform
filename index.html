@@ -1374,13 +1374,13 @@
                 </div>
 
                 <!-- ЭКРАН 2: КОНСТРУКТОР TWI -->
-                <div id="twi-constructor-view" class="hidden bg-[var(--bg-main)] absolute inset-0 z-50 min-h-screen pb-32 overflow-y-auto custom-scrollbar">
+                <div id="twi-constructor-view" class="hidden bg-[var(--bg-main)] fixed inset-0 z-[2000] h-screen pb-32 overflow-y-auto custom-scrollbar">
                     <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
-                        <button onclick="closeTwiConstructor()" class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+                        <button onclick="closeTwiConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
                         </button>
                         <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest">Конструктор TWI</div>
-                        <button onclick="saveTwiCard()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-xl active:scale-95 shadow-md">Сохранить</button>
+                        <button onclick="saveTwiCard()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-lg active:scale-95 shadow-md transition-colors">Сохранить</button>
                     </div>
 
                     <div class="space-y-4 px-3 max-w-2xl mx-auto">
@@ -1512,6 +1512,10 @@
                                 </button>
                             </div>
                         </div>
+                          <button onclick="closeTwiConstructor()" class="w-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase active:scale-95 border border-slate-200 dark:border-slate-700 mt-2">
+                            Отменить и закрыть
+                        </button>
+                   
                     </div>
                 </div>
             </div>
@@ -3213,114 +3217,136 @@
     <script src="js/game.js"></script>
 
     <!-- Скрипт для модалок зума фото (Поддержка Pinch-to-zoom и Double Tap) -->
-    <!-- Скрипт для модалок зума фото (Плавный ПК + Pinch-to-zoom) -->
+    <!-- Скрипт для модалок зума фото (Идеальная плавность 60fps) -->
     <script>
         const viewerImg = document.getElementById('photo-viewer-img');
         const viewerOverlay = document.getElementById('photo-viewer-overlay');
         
         if (viewerImg && viewerOverlay) {
-            let zoom = 1;
-            let transX = 0;
-            let transY = 0;
+            let currentZoom = 1;
+            let translateX = 0;
+            let translateY = 0;
             
-            let isDrag = false;
-            let stX, stY;
-            
-            let initDistance = null;
-            let initZoom = 1;
-            let lastTap = 0;
+            let isDragging = false;
+            let isPinching = false;
+            let startX, startY;
+            let initialDistance = 0;
+            let initialZoom = 1;
+            let reqFrame = null;
 
-            function applyTransform() {
-                if (zoom <= 1) {
-                    zoom = 1; transX = 0; transY = 0;
-                }
-                viewerImg.style.transform = `translate(${transX}px, ${transY}px) scale(${zoom})`;
+            // Применение координат
+            function updateTransform() {
+                viewerImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
             }
 
+            // Плавный сброс в исходное состояние
+            function resetZoom() {
+                currentZoom = 1; translateX = 0; translateY = 0;
+                viewerImg.style.transition = 'transform 0.2s ease-out';
+                updateTransform();
+            }
+
+            // Закрытие модалки
             viewerOverlay.addEventListener('click', (e) => {
-                if (e.target === viewerOverlay || e.target.closest('div.absolute')) {
-                    zoom = 1; transX = 0; transY = 0;
-                    applyTransform();
-                }
+                if (e.target === viewerOverlay || e.target.closest('div.absolute')) resetZoom();
             });
 
+            // Отключение CSS-анимации во время свайпов для 100% отклика за пальцем
+            function disableTransition() {
+                viewerImg.style.transition = 'none';
+            }
+
+            // --- ПК: КОЛЕСИКО И МЫШЬ ---
             viewerOverlay.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                zoom += e.deltaY * -0.002;
-                zoom = Math.min(Math.max(1, zoom), 5); 
-                applyTransform();
+                disableTransition();
+                currentZoom += e.deltaY * -0.002;
+                currentZoom = Math.min(Math.max(1, currentZoom), 5); // Лимит увеличения 5x
+                if (currentZoom <= 1) { translateX = 0; translateY = 0; }
+                updateTransform();
             }, { passive: false });
 
             viewerImg.addEventListener('mousedown', (e) => {
-                if (zoom > 1) { 
+                if (currentZoom > 1) {
                     e.preventDefault();
-                    isDrag = true; 
+                    isDragging = true;
+                    disableTransition();
                     viewerImg.style.cursor = 'grabbing';
-                    stX = e.clientX - transX; 
-                    stY = e.clientY - transY; 
+                    startX = e.clientX - translateX;
+                    startY = e.clientY - translateY;
                 }
             });
+            
             window.addEventListener('mouseup', () => { 
-                isDrag = false; 
-                viewerImg.style.cursor = 'grab';
+                isDragging = false; 
+                viewerImg.style.cursor = 'grab'; 
             });
+            
             window.addEventListener('mousemove', (e) => {
-                if (isDrag && zoom > 1) {
+                if (isDragging && currentZoom > 1) {
                     e.preventDefault();
-                    transX = e.clientX - stX; 
-                    transY = e.clientY - stY;
-                    applyTransform();
+                    translateX = e.clientX - startX;
+                    translateY = e.clientY - startY;
+                    if (reqFrame) cancelAnimationFrame(reqFrame);
+                    reqFrame = requestAnimationFrame(updateTransform);
                 }
             });
 
+            // --- МОБИЛЬНЫЕ: ЩИПОК И СКРОЛЛ ---
             viewerImg.addEventListener('touchstart', (e) => {
-                const currentTime = new Date().getTime();
-                const tapLength = currentTime - lastTap;
-                if (tapLength < 300 && tapLength > 0 && e.touches.length === 1) {
-                    zoom = zoom > 1 ? 1 : 2.5; 
-                    transX = 0; transY = 0;
-                    applyTransform();
-                    e.preventDefault();
-                }
-                lastTap = currentTime;
-
+                disableTransition();
                 if (e.touches.length === 2) {
-                    e.preventDefault();
-                    isDrag = false;
-                    initDistance = Math.hypot(
+                    // Два пальца = Зум
+                    isPinching = true;
+                    isDragging = false;
+                    initialDistance = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
-                    initZoom = zoom;
-                } else if (e.touches.length === 1 && zoom > 1) {
-                    isDrag = true; 
-                    stX = e.touches[0].clientX - transX; 
-                    stY = e.touches[0].clientY - transY;
+                    initialZoom = currentZoom;
+                } else if (e.touches.length === 1 && currentZoom > 1) {
+                    // Один палец (если уже увеличено) = Таскаем
+                    isDragging = true;
+                    startX = e.touches[0].clientX - translateX;
+                    startY = e.touches[0].clientY - translateY;
                 }
-            }, { passive: false });
-
-            window.addEventListener('touchend', () => { 
-                isDrag = false; 
-                initDistance = null;
             });
 
             window.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 2 && initDistance) {
+                // Блокируем дергание страницы под модалкой
+                if (viewerOverlay.style.display !== 'none' && (isPinching || isDragging)) {
                     e.preventDefault();
+                }
+
+                if (isPinching && e.touches.length === 2) {
                     const currentDistance = Math.hypot(
                         e.touches[0].clientX - e.touches[1].clientX,
                         e.touches[0].clientY - e.touches[1].clientY
                     );
-                    const zoomChange = currentDistance / initDistance;
-                    zoom = Math.min(Math.max(1, initZoom * zoomChange), 5);
-                    applyTransform();
-                } else if (isDrag && zoom > 1 && e.touches.length === 1) {
-                    e.preventDefault();
-                    transX = e.touches[0].clientX - stX; 
-                    transY = e.touches[0].clientY - stY;
-                    applyTransform();
+                    currentZoom = Math.min(Math.max(1, initialZoom * (currentDistance / initialDistance)), 5);
+                    if (currentZoom <= 1) { translateX = 0; translateY = 0; }
+                    
+                    if (reqFrame) cancelAnimationFrame(reqFrame);
+                    reqFrame = requestAnimationFrame(updateTransform);
+                    
+                } else if (isDragging && currentZoom > 1 && e.touches.length === 1) {
+                    translateX = e.touches[0].clientX - startX;
+                    translateY = e.touches[0].clientY - startY;
+                    
+                    if (reqFrame) cancelAnimationFrame(reqFrame);
+                    reqFrame = requestAnimationFrame(updateTransform);
                 }
             }, { passive: false });
+
+            window.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) isPinching = false;
+                if (e.touches.length === 0) isDragging = false;
+                
+                // Если картинку уменьшили обратно (или меньше 1), возвращаем красивую анимацию отскока
+                if (currentZoom <= 1) {
+                    resetZoom();
+                }
+            });
         }
     </script>
 
@@ -3549,6 +3575,14 @@
                     <span class="text-[12px] font-bold">Удалить</span>
                 </button>
             </div>
+        </div>
+    </div>
+    <!-- === НОВАЯ МОДАЛКА ИНФОРМАЦИИ О ЗАДАЧЕ === -->
+    <div id="task-details-modal" class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="this.style.display='none'">
+        <div class="bg-[var(--card-bg)] w-full max-w-sm p-5 rounded-3xl shadow-2xl transition-transform border border-[var(--card-border)] flex flex-col" onclick="event.stopPropagation()">
+            <div id="modal-icon"></div>
+            <div id="modal-title" class="font-black text-[14px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 text-slate-800 dark:text-white"></div>
+            <div id="task-details-body" class="overflow-y-auto max-h-[70vh] custom-scrollbar pr-1"></div>
         </div>
     </div>
 </body>

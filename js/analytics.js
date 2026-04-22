@@ -462,7 +462,26 @@ window.createMagicTwi = function(checklistKey, itemId, photoGood, photoBad, titl
         }, 300);
     }, 100);
 };
+// === ФИЛЬТРАЦИЯ СПИСКА ПОДРЯДЧИКОВ ПО ЧИПСАМ ===
+window.filterContractorsList = function(filterType, btnElement) {
+    currentContractorsFilter = filterType;
+    
+    // Сбрасываем стили всех чипсов
+    const container = document.getElementById('contractors-chips-container');
+    if (container) {
+        container.querySelectorAll('.contr-chip').forEach(el => {
+            el.className = "contr-chip px-3 py-1.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap transition-colors";
+        });
+    }
+    
+    // Красим активный чипс
+    if (btnElement) {
+        btnElement.className = "contr-chip px-3 py-1.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap transition-colors";
+    }
 
+    // Перерисовываем список
+    renderContractorsListOnly(getFilteredAnalyticsData());
+};
 // 5. Список Подрядчиков (Мини-карточки сеткой 2 и 3 в ряд)
 function renderContractorsListOnly(data) {
     const listContainer = document.getElementById('contractors-list-container');

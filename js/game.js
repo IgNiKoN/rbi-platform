@@ -825,9 +825,8 @@ window.gameRenderDashboard = function() {
                         ${myProfile.name.substring(0,1).toUpperCase()}
                     </div>
                     <div class="overflow-hidden">
-                        <div onclick="switchTab('tab-audit'); setTimeout(() => { document.getElementById('inp-inspector').focus(); }, 300)" class="cursor-pointer hover:opacity-70 transition-opacity flex items-center gap-1 sm:gap-2">
+                        <div class="flex items-center gap-1 sm:gap-2">
                             <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal">${myProfile.name}</div>
-                            <svg class="w-2.5 h-2.5 sm:w-3.5 sm:h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                         </div>
                         <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
                     </div>
@@ -977,19 +976,16 @@ window.gameRenderDashboard = function() {
         const safeStatusKey = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const safeProject = t.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         
-        const onClickAction = (t.isPaused || t.isCompletedManually) ? `showToast('Управление доступно через меню (три точки)');` : `gameStartTask('${safeContractor}', '${t.templateKey}', '${safeProject}')`;
+        const safeStatusKeyForHtml = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
 
         return `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="${onClickAction}">
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="gameOpenTaskDetails('${safeStatusKeyForHtml}', event)">
             <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
                 <div class="flex-1 min-w-0 pr-2">
                     <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${t.contractor}</div>
                     <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${t.templateTitle}</div>
                 </div>
-                <button onclick="event.stopPropagation(); gameOpenTaskMenu('${safeStatusKey}', event)" class="w-8 h-8 rounded-full bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-600 shrink-0 shadow-sm transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-                </button>
             </div>
             
             <div class="flex flex-wrap gap-2 items-center mb-3">
@@ -1675,38 +1671,98 @@ function gameRenderManagerAnalytics() {
     container.innerHTML = html;
 }
 
-window.gameOpenTaskMenu = function(statusKey, e) {
+window.gameOpenTaskDetails = function(statusKey, e) {
     if (e) e.stopPropagation();
     
+    // Ищем задачу в плане
+    const task = weeklyPlanData.tasks.find(t => t.statusKey === statusKey);
+    if (!task) return;
+
     let st = contractorStatuses[statusKey];
-    if (!st) {
-        st = { status: 'active' };
-        contractorStatuses[statusKey] = st;
-    }
+    if (!st) { st = { status: 'active' }; contractorStatuses[statusKey] = st; }
 
     const safeStatusKeyForHtml = statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const safeContractor = task.contractor.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const safeProject = task.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
+    // Определяем тексты объяснений в зависимости от приоритета
+    let logicTitle = ""; let logicDesc = ""; let logicColor = "";
+    if (task.priorityLvl === 4) {
+        logicTitle = "Критический риск (Авария)"; logicColor = "text-red-600 bg-red-50 border-red-200";
+        logicDesc = "Подрядчик находится в красной зоне (УрК < 70%) или недавно допустил критический дефект B3. Система назначила максимальное количество проверок для жесткого контроля.";
+    } else if (task.priorityLvl === 3) {
+        logicTitle = "Новый подрядчик (Сбор данных)"; logicColor = "text-blue-600 bg-blue-50 border-blue-200";
+        logicDesc = "Менее 7 проверок в базе. Система требует провести минимум 7 инспекций, чтобы рассчитать достоверный рейтинг надежности.";
+    } else if (task.priorityLvl === 2) {
+        logicTitle = "Желтая зона (Нестабильно)"; logicColor = "text-orange-600 bg-orange-50 border-orange-200";
+        logicDesc = "УрК от 70% до 84%. Подрядчик допускает системный брак (повторение дефектов B2). Требуется умеренный контроль.";
+    } else {
+        logicTitle = "Зеленая зона (Стабильно)"; logicColor = "text-green-600 bg-green-50 border-green-200";
+        logicDesc = "Высокое качество и стабильность. Достаточно 1 профилактической проверки в неделю.";
+    }
+
+    let pauseInfo = "";
+    if (st.status === 'active') {
+        pauseInfo = `<div class="text-[10px] text-slate-500 italic mb-4 text-center">Вы можете приостановить задачу, если подрядчик временно не работает на объекте.</div>`;
+    }
+
+    // Кнопки управления
     let actionsHtml = '';
     if (st.status === 'active') {
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'paused')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-orange-50 dark:hover:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-orange-200">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Приостановить работы
-        </button>`;
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'completed')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600 dark:text-green-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-green-200 mt-1">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Завершить (Сдать)
-        </button>`;
+        actionsHtml += `
+            <button onclick="document.getElementById('task-details-modal').style.display='none'; gameStartTask('${safeContractor}', '${task.templateKey}')" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2 mb-3">
+                ▶ Приступить к проверке
+            </button>
+            <div class="flex gap-2">
+                <button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'paused')" class="flex-1 flex justify-center items-center gap-2 p-3 rounded-xl bg-orange-50 text-orange-600 font-bold text-[10px] uppercase active:scale-95 border border-orange-200">
+                    ⏸ Пауза
+                </button>
+                <button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'completed')" class="flex-1 flex justify-center items-center gap-2 p-3 rounded-xl bg-green-50 text-green-600 font-bold text-[10px] uppercase active:scale-95 border border-green-200">
+                    ✅ Завершить
+                </button>
+            </div>
+        `;
     } else {
-        // Если на паузе или завершена - предлагаем только возобновить
-        actionsHtml += `<button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'active')" class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[12px] font-bold transition-colors active:scale-95 border border-transparent hover:border-indigo-200">
-            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Возобновить работы
-        </button>`;
+        actionsHtml += `
+            <div class="text-[10px] text-slate-500 italic mb-4 text-center">Задача находится в архиве (на паузе или завершена вручную).</div>
+            <button onclick="gameChangeTaskStatus('${safeStatusKeyForHtml}', 'active')" class="w-full bg-slate-100 text-slate-700 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-transform border border-slate-300">
+                🔄 Возобновить задачу
+            </button>
+        `;
     }
+
+    const html = `
+        <div class="mb-4 text-center">
+            <div class="text-[14px] font-black text-slate-800 dark:text-white leading-tight mb-1">${task.contractor}</div>
+            <div class="text-[11px] font-bold text-slate-500">${task.templateTitle}</div>
+        </div>
+
+        <div class="bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 mb-4 flex justify-between items-center">
+            <div>
+                <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Прогресс выполнения</div>
+                <div class="text-[14px] font-black text-slate-700 dark:text-slate-300"><span class="${task.done >= task.target ? 'text-green-500' : 'text-indigo-600'}">${task.done}</span> из ${task.target}</div>
+            </div>
+            <div class="text-right">
+                <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Долги</div>
+                <div class="text-[14px] font-black ${task.carryOverCount > 0 ? 'text-red-500' : 'text-green-500'}">${task.carryOverCount}</div>
+            </div>
+        </div>
+
+        <div class="border border-[var(--card-border)] rounded-xl p-3 mb-4">
+            <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Обоснование системы</div>
+            <div class="text-[10px] font-black px-2 py-1 rounded border uppercase w-fit mb-2 ${logicColor}">${logicTitle}</div>
+            <div class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed font-medium">${logicDesc}</div>
+        </div>
+
+        ${pauseInfo}
+        ${actionsHtml}
+    `;
+
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `<div class="flex justify-between items-center"><span>📋 Детали задачи</span><button onclick="document.getElementById('task-details-modal').style.display='none'" class="text-slate-400 hover:text-red-500 px-2 active:scale-90">✕</button></div>`;
+    document.getElementById('task-details-body').innerHTML = html;
     
-    document.getElementById('task-status-actions').innerHTML = actionsHtml;
-    
-    const header = document.querySelector('#task-status-modal .border-b');
-    if(header) header.innerHTML = `<div class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Управление задачей</div> <button onclick="document.getElementById('task-status-modal').style.display='none'" class="text-slate-400 hover:text-red-500 active:scale-90 transition-colors p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
-    
-    document.getElementById('task-status-modal').style.display = 'flex';
+    document.getElementById('task-details-modal').style.display = 'flex';
 };
 
 function startInspectionWithValues(contractor, templateKey, statusKey = null, project = null) {
@@ -1718,7 +1774,6 @@ function startInspectionWithValues(contractor, templateKey, statusKey = null, pr
         const contrInput = document.getElementById('inp-contractor');
         if (contrInput && !contrInput.hasAttribute('readonly')) { 
             contrInput.value = contractor; 
-            // Без dispatchEvent, чтобы не выпадал список!
         }
         
         const projInput = document.getElementById('inp-project');
@@ -1744,7 +1799,18 @@ function startInspectionWithValues(contractor, templateKey, statusKey = null, pr
         }
         
         if (typeof updateDataSummary === 'function') updateDataSummary();
-        window.scrollTo({top: 0, behavior: 'smooth'});
+        
+        // ИСПРАВЛЕНИЕ СКРОЛЛА: Динамически вычисляем высоту шапки
+        setTimeout(() => {
+            const headerEl = document.getElementById('main-header');
+            const offset = headerEl ? headerEl.offsetHeight : 140;
+            // Делаем микро-скролл, чтобы шапка свернулась, и контент встал ровно
+            window.scrollTo({top: offset - 60, behavior: 'smooth'});
+            
+            // Принудительно обновляем паддинги
+            if (typeof updateBodyPadding === 'function') updateBodyPadding();
+        }, 50);
+
         showToast("Задача загружена. Данные заполнены!");
     }, 150);
 }
@@ -1776,3 +1842,121 @@ window.gameStartTask = function(contractor, templateKey) {
     startInspectionWithValues(contractor, templateKey);
 };
 
+// === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
+window.gameOpenTopModal = function() {
+    if (!window.allProfilesData) return showToast('Нет данных для рейтинга');
+    
+    // Сортируем всех инженеров по опыту (PI)
+    const sortedProfiles = Object.values(window.allProfilesData).sort((a, b) => b.pi - a.pi);
+    const myName = document.getElementById('inp-inspector')?.value.trim();
+
+    let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
+    
+    sortedProfiles.forEach((p, idx) => {
+        const isMe = p.name === myName;
+        const isGold = idx === 0;
+        const isSilver = idx === 1;
+        const isBronze = idx === 2;
+        
+        let rankClass = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700';
+        if (isGold) rankClass = 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white border-yellow-500 shadow-md';
+        else if (isSilver) rankClass = 'bg-gradient-to-br from-slate-300 to-slate-500 text-white border-slate-400 shadow-sm';
+        else if (isBronze) rankClass = 'bg-gradient-to-br from-orange-400 to-orange-700 text-white border-orange-600 shadow-sm';
+
+        let bgClass = isMe ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-600 shadow-sm' : 'bg-[var(--card-bg)] border-[var(--card-border)]';
+
+        html += `
+        <div class="p-3 border rounded-xl flex items-center justify-between transition-all ${bgClass}">
+            <div class="flex items-center gap-3 min-w-0 pr-2">
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shrink-0 border ${rankClass}">${idx + 1}</div>
+                <div class="min-w-0">
+                    <div class="font-black text-[12px] text-slate-800 dark:text-white truncate ${isMe ? 'text-indigo-700 dark:text-indigo-400' : ''}">${p.name} ${isMe ? '(Вы)' : ''}</div>
+                    <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest truncate mt-0.5">${p.levelObj.name} (Ур. ${p.levelObj.level})</div>
+                </div>
+            </div>
+            <div class="shrink-0 text-right">
+                <div class="text-[14px] font-black text-indigo-600 dark:text-indigo-400 leading-none">${p.pi}</div>
+                <div class="text-[8px] font-bold text-slate-400 uppercase mt-1">XP</div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+
+    document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2 text-2xl">🏆</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Таблица лидеров</div>`;
+    document.getElementById('modal-body').innerHTML = html;
+    
+    const modal = document.getElementById('modal-overlay');
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+// === МОДАЛКА ДЕТАЛИЗАЦИИ ВЛИЯНИЯ (IMPACT SCORE) ===
+window.gameOpenImpactModal = function() {
+    if (!window.currentProfileData) return;
+    
+    const myProfile = window.currentProfileData;
+    let totalImpact = 0; let impactCount = 0;
+    const detailsHtml = [];
+
+    // Собираем детализацию по каждому подрядчику инженера
+    const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
+    contractorsSet.forEach(cName => {
+        const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
+        if (cChecks.length < 6) return; 
+        
+        const templatesCount = {}; 
+        cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
+        const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+        const templateTitle = cChecks.find(c => c.templateKey === topTemplate)?.templateTitle || 'Вид работ';
+
+        const impact = calculateImpactScore(myProfile.name, cName, topTemplate);
+        if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { 
+            totalImpact += impact.score; 
+            impactCount++; 
+            
+            let badge = impact.score > 0 ? 'bg-green-100 text-green-700 border-green-200' : (impact.score < 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200');
+            let icon = impact.score > 0 ? '📈' : (impact.score < 0 ? '📉' : '➖');
+
+            detailsHtml.push(`
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-2 flex justify-between items-center shadow-sm">
+                    <div class="min-w-0 flex-1 pr-2">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${cName}</div>
+                        <div class="text-[9px] text-slate-500 font-bold uppercase truncate">${templateTitle}</div>
+                        <div class="text-[10px] text-slate-600 dark:text-slate-400 mt-1">Базовый УрК: <b>${impact.baseUrk}%</b> ➔ Стал: <b>${impact.currUrk}%</b></div>
+                    </div>
+                    <div class="shrink-0 text-right">
+                        <div class="text-[14px] font-black ${impact.color}">${impact.score > 0 ? '+' : ''}${impact.score.toFixed(2)}</div>
+                        <div class="text-[9px] font-bold px-1.5 py-0.5 rounded border mt-1 ${badge}">${icon} ${impact.trend}</div>
+                    </div>
+                </div>
+            `);
+        }
+    });
+
+    const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
+    
+    let html = `
+        <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl mb-4 shadow-sm text-indigo-900 dark:text-indigo-200 text-[11px] leading-relaxed">
+            <b>Impact Score</b> оценивает вашу эффективность как инженера. Система сравнивает качество работы подрядчика на первых 3-х ваших проверках и на 3-х последних.<br><br>Если после ваших предписаний и TWI-карт УрК и стабильность подрядчика выросли, а доля брака B3 упала — ваш счет растет.
+        </div>
+        
+        <div class="flex justify-between items-center bg-[var(--hover-bg)] p-3 rounded-xl border border-[var(--card-border)] mb-4">
+            <div class="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-widest">Средний показатель:</div>
+            <div class="text-[18px] font-black ${avgImpact > 0 ? 'text-green-600' : (avgImpact < 0 ? 'text-red-600' : 'text-slate-600')}">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(2)}</div>
+        </div>
+
+        <div class="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-widest mb-2 pl-1 border-b border-[var(--card-border)] pb-2">Детализация по подрядчикам</div>
+        <div class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-2 pb-2">
+            ${detailsHtml.length > 0 ? detailsHtml.join('') : '<div class="text-center text-slate-400 font-bold text-[10px] uppercase py-4">Слишком мало данных. Нужно проверить одного подрядчика минимум 6 раз.</div>'}
+        </div>
+    `;
+
+    document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2 text-2xl">🎯</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Ваше влияние (Impact)</div>`;
+    document.getElementById('modal-body').innerHTML = html;
+    
+    const modal = document.getElementById('modal-overlay');
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};

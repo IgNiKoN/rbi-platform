@@ -3,12 +3,13 @@
 
 // 1. Главный обработчик всплывающего меню выгрузки
 // 1. Главный обработчик всплывающего меню выгрузки
+// 1. Главный обработчик всплывающего меню выгрузки
 function handleFabExportAction(actionType, mode = 'script') {
     closeFabExportMenu();
     const data = getFilteredAnalyticsData();
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
-    showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к печати...');
+    showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к выгрузке...');
     
     setTimeout(() => {
         if (actionType === 'current') {
@@ -21,6 +22,10 @@ function handleFabExportAction(actionType, mode = 'script') {
             exportPdfOnePager(data, mode);
         } else if (actionType === 'data') {
             exportPdfData(data, mode);
+        } else if (actionType === 'tender') {
+            // Если выбран "Скрипт" (левая кнопка) - качаем PDF, если "Принтер" (правая кнопка) - качаем Excel (CSV)
+            if (mode === 'script') exportTenderPDF();
+            else exportTenderCSV();
         }
     }, 500);
 }

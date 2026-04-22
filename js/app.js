@@ -693,6 +693,8 @@ function handleFabDownload() {
         contentHtml += createRow('current', 'Текущий экран', 'Детализация или список (А4)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconDoc);
         contentHtml += createRow('full_report', 'Отчёт по объекту', 'Паспорта подрядчиков (А3)', 'bg-emerald-50 dark:bg-emerald-900/30', 'text-emerald-600 dark:text-emerald-400', iconChart);
         contentHtml += createRow('poster', 'Плакат качества', 'Рейтинги и фото (А3)', 'bg-orange-50 dark:bg-orange-900/30', 'text-orange-600 dark:text-orange-400', iconPoster);
+        // ДОБАВЛЕНА КНОПКА ТЕНДЕРА (Левая кнопка - PDF, Правая кнопка - Excel CSV)
+        contentHtml += createRow('tender', 'Тендерный отчет', 'Левая кнопка: PDF | Правая: Excel CSV', 'bg-purple-50 dark:bg-purple-900/30', 'text-purple-600 dark:text-purple-400', iconTable);
     } else if (ctx === 'sub-onepager') {
         contentHtml += createRow('onepager', 'Сводный статус объекта', 'Графики и управленческие выводы (А3)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconChart);
     } else if (ctx === 'sub-data') {
@@ -2452,61 +2454,120 @@ function renderHistoryTab() {
         return;
     }
 
+    // Группировка
     const grouped = {};
     filteredArr.forEach(item => {
-        // УМНАЯ СВЯЗКА: Подрядчик + Объект
-        const cName = `${item.contractorName || 'Не указан'} [${item.projectName || 'Без объекта'}]`; 
+        const cName = item.contractorName || 'Не указан';
+        const pName = item.projectName || 'Без объекта';
+        const groupKey = `${cName}_||_${pName}`; // Безопасный ключ
+        
         const tTitle = item.templateTitle || 'Неизвестный вид работ';
-        if (!grouped[cName]) grouped[cName] = {}; 
-        if (!grouped[cName][tTitle]) grouped[cName][tTitle] = [];
-        grouped[cName][tTitle].push(item);
+        if (!grouped[groupKey]) grouped[groupKey] = {}; 
+        if (!grouped[groupKey][tTitle]) grouped[groupKey][tTitle] = [];
+        grouped[groupKey][tTitle].push(item);
+    });
+
+    const groupKeys = Object.keys(grouped);
+    // Умная сортировка групп: наверху те подрядчики, кого проверяли последними
+    groupKeys.sort((a, b) => {
+        const newestA = Math.max(...Object.values(grouped[a]).flat().map(c => new Date(c.date).getTime()));
+        const newestB = Math.max(...Object.values(grouped[b]).flat().map(c => new Date(c.date).getTime()));
+        return newestB - newestA;
     });
 
     let html = '';
     let groupIndex = 0;
-    for (let cName in grouped) {
+
+    const renderGroup = (gKey) => {
+        const parts = gKey.split('_||_');
+        const cName = parts[0];
+        const pName = parts[1];
         const safeGroupName = `hist-group-${groupIndex++}`;
-        // Сделали панель тонкой (py-2), скругленной со всех сторон (rounded-xl) и убрали эмодзи
-        html += `<div class="font-black text-slate-700 dark:text-slate-300 text-[11px] mt-3 mb-2 uppercase tracking-tight px-3 border-l-4 border-indigo-500 cursor-pointer flex justify-between items-center bg-[var(--card-bg)] border border-[var(--card-border)] py-2 rounded-xl shadow-sm hover:border-indigo-300 transition-colors" onclick="document.getElementById('${safeGroupName}').classList.toggle('hidden')">
-            <span class="truncate pr-2">${cName}</span>
-            <span class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 shrink-0">РАЗВЕРНУТЬ ▼</span>
-        </div><div id="${safeGroupName}" class="hidden transition-all duration-300 origin-top">`;
         
-        for (let tTitle in grouped[cName]) {
-            html += `<div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-2 ml-2 mt-2">${tTitle} (${grouped[cName][tTitle].length} изд.)</div>`;
-            const reversed = [...grouped[cName][tTitle]].sort((a, b) => new Date(b.date) - new Date(a.date));
+        let totalChecksInGroup = 0;
+        Object.values(grouped[gKey]).forEach(arr => totalChecksInGroup += arr.length);
+
+        // Компактный дизайн (уменьшены паддинги, иконка и шрифты)
+        let groupHtml = `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
+            <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
+                const body = document.getElementById('${safeGroupName}');
+                const icon = this.querySelector('.chevron-icon');
+                if (body.classList.contains('hidden')) {
+                    body.classList.remove('hidden');
+                    icon.style.transform = 'rotate(180deg)';
+                } else {
+                    body.classList.add('hidden');
+                    icon.style.transform = 'rotate(0deg)';
+                }
+            ">
+                <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-[10px] flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${cName}</div>
+                        <div class="text-[9px] font-bold text-slate-400 truncate mt-[1px]">${pName}</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 pl-1">
+                    <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${totalChecksInGroup} шт</span>
+                    <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+            </div>
             
-            // ПАГИНАЦИЯ: Показываем 15, остальные прячем
-            const visibleItems = reversed.slice(0, 15);
-            const hiddenItems = reversed.slice(15);
+            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2">`;
+        
+        for (let tTitle in grouped[gKey]) {
+            groupHtml += `<div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1.5 ml-1 mt-1.5 flex items-center gap-1"><svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg> ${tTitle} <span class="opacity-70 font-bold">(${grouped[gKey][tTitle].length})</span></div>`;
+            const reversed = [...grouped[gKey][tTitle]].sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            const visibleItems = reversed.slice(0, 10);
+            const hiddenItems = reversed.slice(10);
             
             const renderRow = (item) => {
                 const photoIcon = (item.photos && Object.keys(item.photos).length > 0) ? `📸` : '';
                 return `
-                <div class="flex items-center gap-2 mb-2">
-                    <input type="checkbox" class="hist-checkbox w-5 h-5 accent-indigo-600 rounded shrink-0" value="${item.id}">
-                    <div class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${item.id})">
-                        <div class="flex justify-between items-start mb-1">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                    <input type="checkbox" class="hist-checkbox w-4 h-4 accent-indigo-600 rounded shrink-0 cursor-pointer" value="${item.id}">
+                    <div class="flex-1 bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${item.id})">
+                        <div class="flex justify-between items-center">
                             <div class="min-w-0 pr-2">
-                                <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${item.location} <span class="text-[10px] ml-1">${photoIcon}</span></div>
-                                <div class="text-[9px] text-slate-400 mt-0.5 truncate">${new Date(item.date).toLocaleString('ru-RU')} | Инсп: ${item.inspectorName || 'Не указан'}</div>
+                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location} <span class="text-[9px] ml-1">${photoIcon}</span></div>
+                                <div class="text-[8px] text-slate-400 mt-0.5 truncate font-medium">${new Date(item.date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})} | Инсп: ${item.inspectorName || 'Не указан'}</div>
                             </div>
-                            <span class="status-tag ${item.metrics.statusCls} shrink-0">${item.metrics.final}%</span>
+                            <span class="status-tag ${item.metrics.statusCls} !text-[9px] !px-1.5 !py-0.5 shrink-0 shadow-sm">${item.metrics.final}%</span>
                         </div>
                     </div>
                 </div>`;
             };
 
-            html += visibleItems.map(renderRow).join('');
+            groupHtml += visibleItems.map(renderRow).join('');
             
             if (hiddenItems.length > 0) {
                 const hiddenGroupId = `${safeGroupName}-hidden-${tTitle.replace(/\W/g, '')}`;
-                html += `<div id="${hiddenGroupId}" class="hidden">${hiddenItems.map(renderRow).join('')}</div>`;
-                html += `<button onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 py-2 mt-1 mb-3 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-slate-300 dark:border-slate-600">Показать еще (${hiddenItems.length})</button>`;
+                groupHtml += `<div id="${hiddenGroupId}" class="hidden">${hiddenItems.map(renderRow).join('')}</div>`;
+                groupHtml += `<button onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать еще проверки (${hiddenItems.length})</button>`;
             }
         }
-        html += `</div>`; 
+        groupHtml += `</div></div>`; 
+        return groupHtml;
+    };
+
+    // ВНЕШНЯЯ ПАГИНАЦИЯ: Изначально грузим 15 подрядчиков
+    const VISIBLE_GROUPS = 15;
+    const visibleGroupKeys = groupKeys.slice(0, VISIBLE_GROUPS);
+    const hiddenGroupKeys = groupKeys.slice(VISIBLE_GROUPS);
+
+    html += visibleGroupKeys.map(renderGroup).join('');
+
+    if (hiddenGroupKeys.length > 0) {
+        html += `<div id="hidden-contractor-groups" class="hidden">${hiddenGroupKeys.map(renderGroup).join('')}</div>`;
+        html += `<button onclick="document.getElementById('hidden-contractor-groups').classList.remove('hidden'); this.style.display='none'" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-6 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
+            Загрузить остальные объекты (${hiddenGroupKeys.length})
+        </button>`;
     }
+
     listDiv.innerHTML = html;
 }
 // === ФОТО И КОММЕНТАРИИ (СОВМЕСТИМОСТЬ v15) ===
@@ -4167,8 +4228,10 @@ function selectNodeForTwi(id, title) {
 
 function openTwiConstructor(editId = null) {
     document.getElementById('twi-list-view').classList.add('hidden');
-    document.getElementById('twi-constructor-view').classList.remove('hidden');
-    window.scrollTo(0, 0);
+    const view = document.getElementById('twi-constructor-view');
+    view.classList.remove('hidden');
+    document.body.classList.add('modal-open'); // Блокируем фон
+    view.scrollTo(0, 0); // Скроллим само модальное окно наверх
 
     const selectEl = document.getElementById('twi-checklist-select');
     let options = '<option value="" disabled selected>Выберите вид работ...</option>';
@@ -4308,7 +4371,7 @@ async function saveTwiCard() {
 }
 
 // === МАГИЯ РАЗМЕТКИ (ФОТО РЕДАКТОР ДЛЯ TWI) ===
-let currentMarkupTarget = null; // 'GOOD' или 'BAD'
+let currentMarkupTarget = null; 
 
 window.triggerTwiMarkupUpload = function(target) {
     currentMarkupTarget = target;
@@ -4316,26 +4379,30 @@ window.triggerTwiMarkupUpload = function(target) {
     document.getElementById(inputId).click();
 };
 
-// Заменяем стандартные обработчики, чтобы они пробрасывали фото в редактор
+window.triggerTwiPhotoUpload = function(stepId) { 
+    currentTwiStepUploadId = stepId; 
+    currentMarkupTarget = 'STEP';
+    document.getElementById('twi-photo-input').click(); 
+};
+
 window.handleTwiGoodPhotoUpload = function(event) { handleTwiMarkupUpload(event, 'GOOD'); };
 window.handleTwiBadPhotoUpload = function(event) { handleTwiMarkupUpload(event, 'BAD'); };
+window.handleTwiPhotoUpload = function(event) { handleTwiMarkupUpload(event, 'STEP'); };
 
 function handleTwiMarkupUpload(event, target) {
     const file = event.target.files[0];
     if (!file) return;
 
-    currentMarkupTarget = target; // Убеждаемся, что цель задана
+    currentMarkupTarget = target; 
     
     const reader = new FileReader();
     reader.onload = function(e) {
         editorImgElement = new Image();
         editorImgElement.onload = function() {
-            // ИСПОЛЬЗУЕМ СУЩЕСТВУЮЩИЙ РЕДАКТОР ИЗ ОСМОТРА
             document.getElementById('photo-editor-overlay').style.display = 'flex';
             document.body.classList.add('modal-open');
             initPhotoEditor();
             
-            // ВАЖНО: Подменяем кнопку "Сохранить" в редакторе, чтобы она сохраняла в TWI
             const saveBtn = document.querySelector('#photo-editor-overlay button.text-green-400');
             saveBtn.onclick = saveTwiMarkupPhoto;
         }
@@ -4348,30 +4415,32 @@ function handleTwiMarkupUpload(event, target) {
 function saveTwiMarkupPhoto() {
     if (!editorCanvas || !currentMarkupTarget) return;
     
-    // Сохраняем без штампа времени для TWI
     const base64 = editorCanvas.toDataURL('image/jpeg', 0.85);
     
     if (currentMarkupTarget === 'GOOD') renderGoodPhoto(base64);
-    else renderBadPhoto(base64);
+    else if (currentMarkupTarget === 'BAD') renderBadPhoto(base64);
+    else if (currentMarkupTarget === 'STEP' && currentTwiStepUploadId) {
+        const container = document.getElementById(currentTwiStepUploadId).querySelector('.twi-photo-container');
+        container.dataset.photo = base64;
+        container.innerHTML = `<div class="relative w-full h-48 md:h-64 rounded-lg overflow-hidden border border-slate-200 shadow-sm mt-2 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiPhoto('${currentTwiStepUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
+    }
     
-    showToast("📸 Фото с разметкой добавлено!");
+    showToast("📸 Фото добавлено!");
     
-    // Закрываем и возвращаем оригинальную функцию на кнопку
     document.getElementById('photo-editor-overlay').style.display = 'none';
     document.body.classList.remove('modal-open');
     const saveBtn = document.querySelector('#photo-editor-overlay button.text-green-400');
-    saveBtn.onclick = saveEditedPhoto; // возвращаем функцию Осмотра
+    saveBtn.onclick = saveEditedPhoto; 
     currentMarkupTarget = null;
 }
-
 
 function closeTwiConstructor() {
     document.getElementById('twi-list-view').classList.remove('hidden');
     document.getElementById('twi-constructor-view').classList.add('hidden');
+    document.body.classList.remove('modal-open'); // Разблокируем фон
     currentEditingTwiId = null;
     renderTwiList();
 }
-
 // 3. ОБРАБОТКА ФОТО И PDF (ИНСПЕКТОР)
 function compressImageToBase64(file, maxWidth, quality, callback) {
     const reader = new FileReader();
@@ -4391,58 +4460,36 @@ function compressImageToBase64(file, maxWidth, quality, callback) {
     reader.readAsDataURL(file);
 }
 
-function handleTwiGoodPhotoUpload(event) {
-    if (!event.target.files[0]) return;
-    compressImageToBase64(event.target.files[0], 800, 0.8, (base64) => {
-        renderGoodPhoto(base64);
-        event.target.value = '';
-    });
-}
 function renderGoodPhoto(base64) {
     const cont = document.getElementById('twi-photo-good-container');
     cont.dataset.photo = base64;
-    // ИСПРАВЛЕНО: h-40 md:h-64 object-contain
     cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-green-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiGoodPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
 }
 function removeTwiGoodPhoto() {
     const cont = document.getElementById('twi-photo-good-container');
     cont.dataset.photo = '';
-    cont.innerHTML = `<button onclick="document.getElementById('twi-photo-good-input').click()" class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-green-300 py-4 rounded-lg text-[10px] font-bold text-green-600 active:scale-95 transition-all">➕ Загрузить фото</button>`;
+    cont.innerHTML = `<button onclick="triggerTwiMarkupUpload('GOOD')" class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-green-300 py-4 rounded-lg text-[10px] font-bold text-green-600 active:scale-95 transition-all">➕ Загрузить фото</button>`;
 }
 
-function handleTwiBadPhotoUpload(event) {
-    if (!event.target.files[0]) return;
-    compressImageToBase64(event.target.files[0], 800, 0.8, (base64) => {
-        renderBadPhoto(base64);
-        event.target.value = '';
-    });
-}
 function renderBadPhoto(base64) {
     const cont = document.getElementById('twi-photo-bad-container');
     cont.dataset.photo = base64;
-    // ИСПРАВЛЕНО: h-40 md:h-64 object-contain
     cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-red-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiBadPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
 }
 function removeTwiBadPhoto() {
     const cont = document.getElementById('twi-photo-bad-container');
     cont.dataset.photo = '';
-    cont.innerHTML = `<button onclick="document.getElementById('twi-photo-bad-input').click()" class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-red-300 py-4 rounded-lg text-[10px] font-bold text-red-600 active:scale-95 transition-all">➕ Загрузить фото</button>`;
+    cont.innerHTML = `<button onclick="triggerTwiMarkupUpload('BAD')" class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-red-300 py-4 rounded-lg text-[10px] font-bold text-red-600 active:scale-95 transition-all">➕ Загрузить фото</button>`;
 }
 
 function handleTwiPdfUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-        event.target.value = '';
-        return alert("Файл слишком большой! Максимум 5 МБ для оффлайн БД.");
-    }
-    
+    if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return alert("Файл слишком большой! Максимум 5 МБ."); }
     showToast("⚙️ Загружаем PDF в память...");
     const reader = new FileReader();
     reader.onload = function(e) {
-        const base64 = e.target.result;
-        renderPdfFile(file.name, (file.size / 1024 / 1024).toFixed(1) + ' MB', base64);
+        renderPdfFile(file.name, (file.size / 1024 / 1024).toFixed(1) + ' MB', e.target.result);
         event.target.value = '';
     }
     reader.readAsDataURL(file);
@@ -4453,13 +4500,47 @@ function renderPdfFile(name, size, base64) {
     document.getElementById('twi-pdf-name').innerText = name;
     document.getElementById('twi-pdf-size').innerText = size;
     cont.classList.remove('hidden');
-    cont.nextElementSibling.classList.add('hidden'); // прячем кнопку выбора
+    cont.nextElementSibling.classList.add('hidden');
 }
 function removeTwiPdf() {
     const cont = document.getElementById('twi-pdf-container');
     cont.dataset.pdf = '';
     cont.classList.add('hidden');
-    cont.nextElementSibling.classList.remove('hidden'); // показываем кнопку выбора
+    cont.nextElementSibling.classList.remove('hidden');
+}
+
+// 4. ДОБАВЛЕНИЕ ШАГА (ДЛЯ РАБОЧЕГО TWI)
+function addTwiStep(data = null) {
+    twiStepCount++;
+    const stepId = `twi-step-${twiStepCount}`;
+    const text = data ? data.text : '';
+    const time = data ? data.time : '';
+    const photoSrc = data ? data.photo : null;
+    
+    const photoHtml = photoSrc ? 
+        `<div class="relative w-full h-48 md:h-64 rounded-lg overflow-hidden border border-slate-200 shadow-sm mt-2 bg-slate-50 dark:bg-slate-900"><img src="${photoSrc}" class="w-full h-full object-contain" id="img-${stepId}"><button onclick="removeTwiPhoto('${stepId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>` : 
+        `<button onclick="triggerTwiPhotoUpload('${stepId}')" class="w-full mt-2 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2" id="btn-photo-${stepId}">📸 Прикрепить фото/схему</button>`;
+
+    const html = `
+        <div id="${stepId}" class="twi-step-item bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm relative transition-all">
+            <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 pb-2 mb-2">
+                <div class="font-black text-[12px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5"><span class="w-5 h-5 bg-indigo-100 dark:bg-indigo-900/50 rounded flex items-center justify-center">${twiStepCount}</span> Шаг</div>
+                <button onclick="document.getElementById('${stepId}').remove()" class="text-red-400 active:scale-90 font-black text-sm px-2">✕</button>
+            </div>
+            <textarea class="input-base text-[12px] h-16 resize-none mb-2 twi-step-text" placeholder="Опишите действие...">${text}</textarea>
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-[10px] font-bold text-slate-500 uppercase flex-1">Время на операцию:</span>
+                <input type="number" class="input-base !w-24 text-center !py-1 text-[11px] twi-step-time" placeholder="Мин." value="${time}">
+            </div>
+            <div class="twi-photo-container" data-photo="${photoSrc || ''}">${photoHtml}</div>
+        </div>`;
+    document.getElementById('twi-steps-container').insertAdjacentHTML('beforeend', html);
+}
+
+function removeTwiPhoto(stepId) {
+    const container = document.getElementById(stepId).querySelector('.twi-photo-container');
+    container.dataset.photo = '';
+    container.innerHTML = `<button onclick="triggerTwiPhotoUpload('${stepId}')" class="w-full mt-2 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">📸 Прикрепить фото/схему</button>`;
 }
 
 // 4. ДОБАВЛЕНИЕ ШАГА (ДЛЯ РАБОЧЕГО TWI)
@@ -4782,8 +4863,10 @@ function openNodeViewer(nodeId) {
 // КОНСТРУКТОР УЗЛОВ
 function openNodeConstructor() {
     document.getElementById('nodes-main-view').classList.add('hidden');
-    document.getElementById('node-constructor-view').classList.remove('hidden');
-    window.scrollTo(0, 0);
+    const view = document.getElementById('node-constructor-view');
+    view.classList.remove('hidden');
+    document.body.classList.add('modal-open'); // Блокируем фон
+    view.scrollTo(0, 0);
 
     // Сброс полей
     document.getElementById('node-title-input').value = '';
@@ -4808,6 +4891,7 @@ function openNodeConstructor() {
 function closeNodeConstructor() {
     document.getElementById('node-constructor-view').classList.add('hidden');
     document.getElementById('nodes-main-view').classList.remove('hidden');
+    document.body.classList.remove('modal-open'); // Разблокируем фон
     renderNodesList();
 }
 
