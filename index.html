@@ -554,17 +554,18 @@
                         </svg>
                     </div>
                     <!-- Блок с текстом -->
-                    <div class="flex flex-col justify-center min-w-0">
-                        <div
-                            class="text-slate-800 dark:text-white font-black text-[13px] uppercase tracking-tight truncate leading-none mb-1">
-                            RBI Quality <span class="text-indigo-600 dark:text-indigo-400 font-bold">16.0</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
-                                Dev. by Igor Kondratiev
+                    <div class="flex flex-col justify-center min-w-0 gap-0.5">
+                        <!-- Название и облачко в одной строке -->
+                        <div class="flex items-center gap-1.5">
+                            <div class="text-slate-800 dark:text-white font-black text-[13px] uppercase tracking-tight truncate leading-none">
+                                RBI Quality <span class="text-indigo-600 dark:text-indigo-400 font-bold">Pro</span>
                             </div>
                             <!-- Индикатор синхронизации -->
-                            <div id="header-sync-status"></div>
+                            <div id="header-sync-status" class="shrink-0 flex items-center"></div>
+                        </div>
+                        <!-- Подпись разработчика -->
+                        <div class="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest truncate leading-none">
+                            Dev. by Igor Kondratiev
                         </div>
                     </div>
                 </div>
@@ -679,7 +680,7 @@
                     </div>
                      <div id="data-block-content" class="grid grid-cols-3 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
                    <div class="relative" onmousedown="startSmartLock(event, 'inp-inspector')" ontouchstart="startSmartLock(event, 'inp-inspector')" onmouseup="cancelSmartLock()" onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
-    <input type="text" id="inp-inspector" class="input-base text-center pr-7 transition-colors" placeholder="Проверяющий *" autocomplete="off">
+    <input type="text" id="inp-inspector" class="input-base text-center pr-7 transition-colors" placeholder="Инженер *" autocomplete="off">
     <span id="lock-inp-inspector" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
     </span>

@@ -59,19 +59,22 @@ window.isSyncEnabled = function() {
     return window.syncConfig.enabled;
 };
 
-// 2. ОТРИСОВКА ИНТЕРФЕЙСА
+// 2. ОТРИСОВКА ИНТЕРФЕЙСА И ИНДИКАТОР-ОБЛАЧКО
 window.renderSyncUI = function() {
     const container = document.getElementById('sync-settings-block');
-    if (!container) return;
-
     const headerIndicator = document.getElementById('header-sync-status');
+    
     if (headerIndicator) {
         if (window.syncConfig.enabled) {
-            headerIndicator.innerHTML = `<span class="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-indigo-200"><span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Cloud</span>`;
+            // Зеленое пульсирующее облачко (без текста)
+            headerIndicator.innerHTML = `<div title="Облако активно" class="text-green-500 animate-pulse flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
         } else {
-            headerIndicator.innerHTML = `<span class="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 border border-slate-200"><span class="w-1.5 h-1.5 bg-slate-400 rounded-full"></span> Локально</span>`;
+            // Серое облачко (локальный режим)
+            headerIndicator.innerHTML = `<div title="Локальный режим" class="text-slate-400 opacity-70 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
         }
     }
+
+    if (!container) return;
 
     let engName = window.syncConfig.engineerName || '';
     if (!engName && typeof appSettings !== 'undefined' && appSettings.engineerName) engName = appSettings.engineerName;
@@ -84,12 +87,10 @@ window.renderSyncUI = function() {
                 <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Код проекта: ${window.syncConfig.projectCode}</div>
             </div>
             <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.triggerSync('full')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
                 <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform">Отключить облако</button>
             </div>
         `;
-        const inspInput = document.getElementById('inp-inspector');
-        if (inspInput && !inspInput.value) inspInput.value = window.syncConfig.engineerName;
     } else {
         container.innerHTML = `
             <div class="p-4 border-b border-[var(--card-border)]">
@@ -117,7 +118,7 @@ window.renderSyncUI = function() {
     }
 };
 
-// 3. СОХРАНЕНИЕ И АВТОРИЗАЦИЯ (СТРОГИЙ РЕЖИМ)
+// 3. СОХРАНЕНИЕ И АВТОРИЗАЦИЯ
 window.saveSyncSettings = async function() {
     const name = document.getElementById('sync-name').value.trim();
     const code = document.getElementById('sync-code').value.trim();
@@ -131,27 +132,17 @@ window.saveSyncSettings = async function() {
         return;
     }
 
-    // --- НОВАЯ ПРОВЕРКА: СУЩЕСТВУЕТ ЛИ ПРОЕКТ В БАЗЕ? ---
-    const { data: projData, error: projErr } = await window.supabaseClient
-        .from('allowed_projects')
-        .select('code')
-        .eq('code', code)
-        .limit(1);
+    const { data: projData } = await window.supabaseClient.from('allowed_projects').select('code').eq('code', code).limit(1);
 
     if (!projData || projData.length === 0) {
         safeToast("❌ Ошибка: Такого кода проекта не существует!");
         return;
     }
-    // -----------------------------------------------------
 
     const hashedPin = await window.hashPin(pin);
 
-    // Проверяем на сервере, есть ли такой юзер и совпадает ли ПИН
-    const { data, error } = await window.supabaseClient.from('app_sync_state')
-        .select('pin_hash')
-        .eq('project_code', code)
-        .eq('engineer_name', name)
-        .limit(1);
+    const { data } = await window.supabaseClient.from('app_sync_state')
+        .select('pin_hash').eq('project_code', code).eq('engineer_name', name).limit(1);
         
     if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
         window.showPinPromptModal(name, code, data[0].pin_hash);
@@ -168,7 +159,7 @@ window.showPinPromptModal = function(name, code, correctHash) {
             <div class="text-center mb-4">
                 <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-3">🔒</div>
                 <h3 class="font-black text-[13px] uppercase text-slate-800 dark:text-white">Введите PIN-код</h3>
-                <p class="text-[10px] text-slate-500 mt-1">Профиль ${name} защищен. Введите ПИН для доступа к облаку.</p>
+                <p class="text-[10px] text-slate-500 mt-1">Профиль ${name} защищен. Введите ПИН для доступа.</p>
             </div>
             <input type="password" id="sync-pin-verify" class="w-full bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center text-xl font-black tracking-widest outline-none mb-4" placeholder="••••" maxlength="4" inputmode="numeric">
             <div class="flex gap-2">
@@ -204,11 +195,14 @@ window.applySyncConnect = function(name, code, hashedPin) {
         if (typeof dbPut === 'function' && typeof STORES !== 'undefined') {
             dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
         }
+        if (typeof applySmartLocks === 'function') {
+            applySmartLocks(); // Обновляем блокировку
+        }
     }
 
     window.renderSyncUI();
-    safeToast("✅ Успешно подключено к Облаку!");
-    window.triggerSync('full');
+    safeToast("✅ Подключено к Облаку!");
+    window.triggerSync('manual'); // Первый запуск - ручной (с уведомлениями)
 };
 
 window.disconnectSync = function() {
@@ -221,65 +215,154 @@ window.disconnectSync = function() {
     safeToast("Отключено. Локальный режим.");
 };
 
-// 4. ВЫГРУЗКА ФОТО В SUPABASE BUCKET
+// 4. НАДЕЖНАЯ ВЫГРУЗКА ФОТО В SUPABASE BUCKET
+function b64toBlob(b64Data, contentType = 'image/jpeg', sliceSize = 512) {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+        const slice = byteCharacters.slice(offset, offset + sliceSize);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+    }
+    return new Blob(byteArrays, { type: contentType });
+}
+
 window.uploadBase64ToStorage = async function(base64str, path) {
-    if (!base64str.startsWith('data:image')) return base64str; 
+    if (!base64str || !base64str.startsWith('data:image')) return base64str; 
+    
     try {
-        const res = await fetch(base64str);
-        const blob = await res.blob();
-        const { data, error } = await window.supabaseClient.storage.from('inspection-photos').upload(path, blob, { upsert: true });
+        console.log(`[Sync] Выгрузка файла: ${path}`);
+        const parts = base64str.split(';');
+        const mime = parts[0].split(':')[1];
+        const b64Data = parts[1].split(',')[1];
+        
+        const blob = b64toBlob(b64Data, mime);
+
+        const { data, error } = await window.supabaseClient.storage
+            .from('inspection-photos')
+            .upload(path, blob, { upsert: true, contentType: mime });
+
         if (error) throw error;
+
         const { data: publicUrlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(path);
         return publicUrlData.publicUrl;
+
     } catch(e) {
-        console.error("Ошибка загрузки фото:", e);
-        return base64str; // при ошибке оставляем base64 как есть, чтобы не потерять фото
+        console.error("[Sync] Ошибка загрузки фото (fallback to base64):", e);
+        return base64str; 
     }
 };
 
+// ЖЕСТКО СИНХРОННАЯ ФУНКЦИЯ ОБРАБОТКИ ФОТО
 window.extractAndUploadPhotos = async function() {
-    if (typeof photos !== 'undefined') {
-        for (let id in photos) {
-            if (photos[id].startsWith('data:image')) {
+    console.log("[Sync] Запуск выгрузки фото...");
+    let dbUpdated = false;
+
+    // 1. Проверяем текущий активный черновик
+    if (typeof photos !== 'undefined' && photos !== null) {
+        const keys = Object.keys(photos);
+        for (let id of keys) {
+            if (photos[id] && photos[id].startsWith('data:image')) {
                 photos[id] = await window.uploadBase64ToStorage(photos[id], `sessions/${window.syncConfig.deviceId}_${id}.jpg`);
+                dbUpdated = true;
             }
         }
     }
-    if (typeof contractorArray !== 'undefined') {
+
+    // 2. Проверяем Архив проверок
+    if (typeof contractorArray !== 'undefined' && Array.isArray(contractorArray)) {
         for (let i = 0; i < contractorArray.length; i++) {
             let check = contractorArray[i];
             let changed = false;
+            
             if (check.photos) {
-                for (let id in check.photos) {
+                const pKeys = Object.keys(check.photos);
+                for (let id of pKeys) {
                     if (check.photos[id] && check.photos[id].startsWith('data:image')) {
-                        check.photos[id] = await window.uploadBase64ToStorage(check.photos[id], `history/${check.id}_${id}.jpg`);
-                        changed = true;
+                        const newUrl = await window.uploadBase64ToStorage(check.photos[id], `history/${check.id}_${id}.jpg`);
+                        if (newUrl && newUrl.startsWith('http')) {
+                            check.photos[id] = newUrl;
+                            changed = true;
+                            dbUpdated = true;
+                        }
                     }
                 }
             }
-            if (changed && typeof dbPut !== 'undefined') await dbPut(STORES.HISTORY, check);
+            
+            if (changed && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
+                await dbPut(STORES.HISTORY, check);
+            }
         }
     }
+
+    // 3. Проверяем TWI Карты (Они тоже могут пухнуть от Base64!)
+    if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
+        for (let i = 0; i < customTwiCards.length; i++) {
+            let twi = customTwiCards[i];
+            let changed = false;
+
+            if (twi.photoGood && twi.photoGood.startsWith('data:image')) {
+                twi.photoGood = await window.uploadBase64ToStorage(twi.photoGood, `twi/${twi.id}_good.jpg`);
+                changed = true;
+                dbUpdated = true;
+            }
+            if (twi.photoBad && twi.photoBad.startsWith('data:image')) {
+                twi.photoBad = await window.uploadBase64ToStorage(twi.photoBad, `twi/${twi.id}_bad.jpg`);
+                changed = true;
+                dbUpdated = true;
+            }
+            if (twi.steps && Array.isArray(twi.steps)) {
+                for (let j = 0; j < twi.steps.length; j++) {
+                    let step = twi.steps[j];
+                    if (step.photo && step.photo.startsWith('data:image')) {
+                        step.photo = await window.uploadBase64ToStorage(step.photo, `twi/${twi.id}_step_${step.order}.jpg`);
+                        changed = true;
+                        dbUpdated = true;
+                    }
+                }
+            }
+            
+            if (changed && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
+                const userCardsToSave = customTwiCards.filter(c => !c.id.startsWith('sys_'));
+                await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
+            }
+        }
+    }
+
+    if (dbUpdated && typeof saveSessionData === 'function') {
+        await saveSessionData();
+    }
+    console.log("[Sync] Выгрузка фото завершена.");
 };
 
-// 5. ГЛАВНЫЙ МЕХАНИЗМ СИНХРОНИЗАЦИИ (Отправка и Прием)
-window.triggerSync = async function(mode = 'full') {
+// 5. ГЛАВНЫЙ МЕХАНИЗМ СИНХРОНИЗАЦИИ
+window.triggerSync = async function(mode = 'silent') {
     if (!window.isSyncEnabled() || window.isSyncing || !window.supabaseClient) return;
     
     window.isSyncing = true;
-    if (mode === 'full') safeToast('🔄 Синхронизация с облаком...');
+    if (mode === 'manual') safeToast('🔄 Синхронизация с облаком...');
     
     try {
-        // Выгружаем тяжелые фотки в бакет перед отправкой JSON
+        console.log(`[Sync] Старт синхронизации (${mode})...`);
+        
+        // 1. СТРОГО дожидаемся завершения обработки и перезаписи всех фото
         await window.extractAndUploadPhotos();
 
-        // Собираем всё текущее состояние устройства
+        // 2. ЗАНОВО формируем чистые объекты из глобальных переменных (чтобы гарантированно не захватить старые Base64)
+        const currentHistory = typeof contractorArray !== 'undefined' ? JSON.parse(JSON.stringify(contractorArray)) : [];
+        const currentPhotos = typeof photos !== 'undefined' ? JSON.parse(JSON.stringify(photos)) : {};
+        const currentTwi = typeof customTwiCards !== 'undefined' ? JSON.parse(JSON.stringify(customTwiCards)) : [];
+        
         const localStateData = {
             timestamp: new Date().getTime(),
             shared: {
-                history: typeof contractorArray !== 'undefined' ? contractorArray : [],
+                history: currentHistory,
                 templates: typeof userTemplates !== 'undefined' ? userTemplates : {},
-                twi: typeof customTwiCards !== 'undefined' ? customTwiCards : [],
+                twi: currentTwi,
                 docs: typeof customDocs !== 'undefined' ? customDocs : [],
                 gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
                 statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}
@@ -289,7 +372,7 @@ window.triggerSync = async function(mode = 'full') {
                     templateKey: typeof currentTemplateKey !== 'undefined' ? currentTemplateKey : '', 
                     state: typeof state !== 'undefined' ? state : {}, 
                     details: typeof details !== 'undefined' ? details : {}, 
-                    photos: typeof photos !== 'undefined' ? photos : {}, 
+                    photos: currentPhotos, 
                     expert: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {} 
                 },
                 settings: typeof appSettings !== 'undefined' ? appSettings : {},
@@ -298,8 +381,11 @@ window.triggerSync = async function(mode = 'full') {
             }
         };
 
-        // Отправляем на сервер
-        await window.supabaseClient.from('app_sync_state').upsert({
+        const jsonSize = JSON.stringify(localStateData).length;
+        console.log(`[Sync] Размер отправляемого пакета: ${(jsonSize / 1024).toFixed(1)} KB`);
+
+        // 3. Отправляем в облако
+        const { error: upsertError } = await window.supabaseClient.from('app_sync_state').upsert({
             project_code: window.syncConfig.projectCode,
             engineer_name: window.syncConfig.engineerName,
             device_id: window.syncConfig.deviceId,
@@ -308,23 +394,24 @@ window.triggerSync = async function(mode = 'full') {
             updated_at: new Date().toISOString()
         }, { onConflict: 'project_code, engineer_name, device_id' });
 
-        // Скачиваем данные всех остальных устройств на этом проекте
-        const { data: teamData, error } = await window.supabaseClient.from('app_sync_state').select('*').eq('project_code', window.syncConfig.projectCode);
-        if (error) throw error;
+        if (upsertError) throw upsertError;
 
-        // Склеиваем локальные и облачные данные
+        // 4. Скачиваем данные команды
+        const { data: teamData, error: fetchError } = await window.supabaseClient.from('app_sync_state').select('*').eq('project_code', window.syncConfig.projectCode);
+        if (fetchError) throw fetchError;
+
+        // 5. Склеиваем
         await window.mergeCloudData(teamData);
 
-        if (mode === 'full') safeToast('✅ Данные успешно синхронизированы!');
+        if (mode === 'manual') safeToast('✅ Данные успешно синхронизированы!');
         
-        // Обновляем UI после слияния
         if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
         if (typeof renderSelector === 'function') renderSelector();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
         
     } catch (e) {
-        console.error("Ошибка синхронизации:", e);
-        if (mode === 'full') safeToast('❌ Ошибка синхронизации. Проверьте интернет.');
+        console.error("[Sync] Ошибка синхронизации:", e);
+        if (mode === 'manual') safeToast('❌ Ошибка синхронизации. Проверьте интернет.');
     } finally {
         window.isSyncing = false;
     }
@@ -332,7 +419,6 @@ window.triggerSync = async function(mode = 'full') {
 
 // 6. УМНОЕ СЛИЯНИЕ ДАННЫХ
 window.mergeCloudData = async function(teamData) {
-    // Карты для слияния по ID (чтобы исключить дубликаты)
     let historyMap = new Map();
     if (typeof contractorArray !== 'undefined') contractorArray.forEach(c => historyMap.set(c.id, c));
 
@@ -349,7 +435,6 @@ window.mergeCloudData = async function(teamData) {
         const cloudData = row.state_data;
         if (!cloudData) return;
 
-        // 1. Сливаем ОБЩИЕ данные (Всех инженеров проекта)
         if (cloudData.shared) {
             (cloudData.shared.history || []).forEach(h => { if (!historyMap.has(h.id)) historyMap.set(h.id, h); });
             Object.assign(templatesMerged, cloudData.shared.templates || {});
@@ -359,12 +444,8 @@ window.mergeCloudData = async function(teamData) {
             Object.assign(statusesMerged, cloudData.shared.statuses || {});
         }
 
-        // 2. Ищем ПЕРСОНАЛЬНЫЕ данные (С других устройств ТЕКУЩЕГО инженера)
         if (row.engineer_name === window.syncConfig.engineerName && row.device_id !== window.syncConfig.deviceId) {
-            // Защита: если там стоит ПИН, а у нас он не введен (или неверный), пропускаем его личные данные
             if (row.pin_hash && row.pin_hash !== window.syncConfig.pinHash) return; 
-            
-            // Берем самую последнюю по времени сессию
             if (cloudData.timestamp > latestPersonalSessionTime) {
                 latestPersonalSessionTime = cloudData.timestamp;
                 personalDataToRestore = cloudData.personal;
@@ -372,7 +453,6 @@ window.mergeCloudData = async function(teamData) {
         }
     });
 
-    // Возвращаем склеенные массивы в глобальные переменные приложения
     if (typeof contractorArray !== 'undefined') contractorArray = Array.from(historyMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
     if (typeof userTemplates !== 'undefined') userTemplates = templatesMerged;
     if (typeof customTwiCards !== 'undefined') customTwiCards = Array.from(twiMerged.values());
@@ -380,28 +460,24 @@ window.mergeCloudData = async function(teamData) {
     if (typeof gameActionLogs !== 'undefined') gameActionLogs = Array.from(logsMerged.values());
     if (typeof contractorStatuses !== 'undefined') contractorStatuses = statusesMerged;
 
-    // Сохраняем в локальную базу данных IndexedDB
     if (typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-    // ИСТОРИЯ: сохраняем каждую проверку отдельно
-    for (const item of contractorArray) {
-        await dbPut(STORES.HISTORY, item);
+        for (const item of contractorArray) {
+            await dbPut(STORES.HISTORY, item);
+        }
+        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
+        await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs.filter(d => !String(d.id).startsWith('sys_')) });
+        await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs });
+        await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
     }
-    // TWI, DOCS, LOGS — ожидают объекты с ключом 'key' и полем 'data'
-    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards });
-    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
-    await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs });
-    await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
-}
 
-    // Если нашли свежую персональную сессию с другого устройства — восстанавливаем её
     if (personalDataToRestore && typeof state !== 'undefined') {
-        // Мы применяем чужую сессию только если у нас прямо сейчас акт пустой (чтобы не стереть то, что юзер пишет прямо сейчас)
         const isSafeToRestoreSession = Object.keys(state).length === 0;
 
         if (personalDataToRestore.settings && typeof appSettings !== 'undefined') {
             appSettings = { ...appSettings, ...personalDataToRestore.settings };
             if (typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
             if (typeof applySettingsToUI === 'function') applySettingsToUI();
+            if (typeof applySmartLocks === 'function') applySmartLocks();
         }
         
         if (personalDataToRestore.plan && typeof weeklyPlanData !== 'undefined') {
