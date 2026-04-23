@@ -265,10 +265,9 @@
     </div>
 
     <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
-   <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
     <div id="photo-viewer-overlay" class="fixed inset-0 bg-black/90 z-[6000] flex-col items-center justify-center transition-opacity duration-300 opacity-0"
-        style="display:none;" onclick="this.classList.add('opacity-0'); setTimeout(() => this.style.display='none', 300);">
-        <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform cursor-pointer">
+        style="display:none;" onclick="closePhotoViewer()">
+        <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform cursor-pointer" onclick="closePhotoViewer()">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
@@ -2681,125 +2680,62 @@
                     </details>
 
                     <!-- РАЗДЕЛ 7: PWA, ОФЛАЙН, БЭКАПЫ И TWI -->
-                    <details
-                        class="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-                        <summary
-                            class="flex justify-between items-center font-black cursor-pointer list-none p-4 text-[12px] uppercase text-slate-800 dark:text-white hover:bg-[var(--hover-bg)] transition-colors">
-                            <span class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z">
-                                    </path>
-                                </svg> 7. Приложение: Офлайн, Бэкапы и TWI</span>
+                    <details class="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+                        <summary class="flex justify-between items-center font-black cursor-pointer list-none p-4 text-[12px] uppercase text-slate-800 dark:text-white hover:bg-[var(--hover-bg)] transition-colors">
+                            <span class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg> 7. Офлайн, Облако и Синхронизация</span>
                             <span class="transition group-open:rotate-180 text-slate-400">▼</span>
                         </summary>
-                        <div
-                            class="p-4 border-t border-[var(--card-border)] text-[12px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30">
+                        <div class="p-4 border-t border-[var(--card-border)] text-[12px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30">
 
-                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Установка и
-                                работа в офлайне (PWA)</h4>
-                            <p class="text-[11px] mb-2">Приложение не нужно скачивать из магазинов. Оно устанавливается
-                                из браузера:</p>
-                            <ul class="list-disc pl-5 space-y-1 text-[11px] mb-3">
-                                <li><b>iPhone (Safari):</b> Нажать «Поделиться» → «На экран Домой».</li>
-                                <li><b>Android (Chrome):</b> Меню (три точки) → «Добавить на главный экран».</li>
-                            </ul>
-                            <div
-                                class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-2.5 rounded text-[11px] text-blue-800 dark:text-blue-300 mb-6 shadow-sm">
-                                <b>Архитектура Offline-First:</b> Все данные (чек-листы, справочники, фото) хранятся в
-                                памяти телефона. На стройке интернет не нужен! Вы проводите осмотры, сохраняете, а бэкап
-                                выгружаете потом, когда появится Wi-Fi.
+                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Архитектура Offline-First</h4>
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-2.5 rounded text-[11px] text-blue-800 dark:text-blue-300 mb-4 shadow-sm">
+                                <b>Приложению не нужен интернет на стройке!</b> Все проверки, фотографии (сжатые в WebP), PDF-файлы и TWI-карты сохраняются в изолированную базу памяти телефона (IndexedDB). Вы работаете локально, а облако используется только для обмена данными с командой.
                             </div>
 
-                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Командная
-                                работа и Бэкапы (JSON)</h4>
-                            <p class="text-[11px] mb-1">Данные хранятся локально, для обмена используем Бэкапы.</p>
+                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Командная работа (Supabase)</h4>
+                            <p class="text-[11px] mb-2">Настройте доступ в разделе "Настройки" -> "Синхронизация Команды":</p>
                             <ul class="list-disc pl-5 space-y-1 text-[11px] mb-4">
-                                <li><b>Передать коллеге:</b> «Аналитика» → «База» → «Скачать Бэкап». Отправить файл
-                                    <code>rbi_backup.json</code> в мессенджер.
-                                </li>
-                                <li><b>Объединить базы:</b> «Аналитика» → «База» → «Загрузить». Система добавит только
-                                    новые проверки, старые не удалятся.</li>
-                                <li><b>Выгрузка в Excel:</b> Вкладка «История» → отметить нужные проверки → нажать
-                                    иконку CSV (справа вверху).</li>
+                                <li><b>Инкрементальный обмен:</b> При нажатии "Синхронизировать" телефон отправляет только новые данные. Фотографии улетают в облачный бакет, а тексты — в базу данных PostgreSQL.</li>
+                                <li><b>Фоновая загрузка:</b> Когда вы получаете акты коллег, приложение в фоне незаметно скачивает их фото и PDF в память телефона. Зайдя в подвал без связи, вы сможете открыть чужую инспекцию с картинками.</li>
+                                <li><b>Режимы доступа:</b> По умолчанию включен режим "Только мои" (для экономии памяти). Доступ ко всем проверкам объекта открывается по паролю руководителя.</li>
                             </ul>
 
-                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Справочник и
-                                TWI-карты</h4>
-                            <p class="text-[11px] mb-2">TWI — визуальные стандарты, привязанные к пунктам чек-листа.</p>
-                            <ul class="list-none space-y-2 text-[11px]">
-                                <li>🕵️ <b>Карта Технадзора:</b> фото «Как должно быть» и «Частый брак».</li>
-                                <li>🛠 <b>Инструкция рабочего:</b> пошаговый алгоритм действий с фото.</li>
-                                <li>📄 <b>Внешний PDF:</b> загруженная техкарта или ГОСТ.</li>
-                            </ul>
-                            <p class="text-[11px] mt-2 italic text-slate-500">Лайфхак: На странице просмотра TWI нажмите
-                                кнопку «Печать» — сформируется PDF-плакат для бытовки.</p>
-
+                            <h4 class="font-bold text-slate-800 dark:text-white mb-2 uppercase text-[11px]">Физическое удаление данных</h4>
+                            <p class="text-[11px] mb-2">Если вы удаляете акт (кнопка корзины), он помечается скрытым и исчезает с экрана. Чтобы навсегда освободить память устройства (и удалить фото), перейдите в Настройки -> <b>Очистить корзину</b>.</p>
                         </div>
                     </details>
 
                     <!-- РАЗДЕЛ 8: ЧАСТЫЕ ВОПРОСЫ (FAQ) -->
-                    <details
-                        class="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-                        <summary
-                            class="flex justify-between items-center font-black cursor-pointer list-none p-4 text-[12px] uppercase text-slate-800 dark:text-white hover:bg-[var(--hover-bg)] transition-colors">
-                            <span class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
-                                    </path>
-                                </svg> 8. Часто задаваемые вопросы</span>
+                    <details class="group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+                        <summary class="flex justify-between items-center font-black cursor-pointer list-none p-4 text-[12px] uppercase text-slate-800 dark:text-white hover:bg-[var(--hover-bg)] transition-colors">
+                            <span class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 8. Часто задаваемые вопросы</span>
                             <span class="transition group-open:rotate-180 text-slate-400">▼</span>
                         </summary>
-                        <div
-                            class="p-4 border-t border-[var(--card-border)] text-[12px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30 space-y-4">
+                        <div class="p-4 border-t border-[var(--card-border)] text-[12px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/30 space-y-4">
 
                             <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Почему при одном
-                                    проваленном B2 и всех остальных «OK» оценка может быть 54%?</b>
-                                <p class="text-[11px] mt-1">О: Сработал штраф Kc за концентрацию. Если единственный
-                                    проверенный значимый пункт провален, доля брака B2 = 100% → Kc = 0,70. Модель не
-                                    даёт маскировать провал ключевой операции мелочами.</p>
+                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Как выгрузить PDF-отчет для совещания?</b>
+                                <p class="text-[10px] mt-1">О: Перейдите во вкладку "Аналитика", выберите нужный подраздел (например, "Подрядчики") и нажмите круглую кнопку со стрелочкой в правом нижнем углу. Выберите формат: "Отчет по объекту (А3)" или "Тендерный отчет".</p>
                             </div>
 
                             <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Можно ли доверять
-                                    рейтингу, если у подрядчика всего 3 проверки?</b>
-                                <p class="text-[11px] mt-1">О: Нет. При N &lt; 7 рейтинг не отображается. При N = 7–15
-                                    показывается с пометкой «Предварительный». Это защита от ложных выводов на малой
-                                    статистике.</p>
+                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Как начисляется XP в разделе Инженеры?</b>
+                                <p class="text-[10px] mt-1">О: Опыт начисляется автоматически за системные действия: проведение инспекции (+20 XP), прикрепление фото к браку (+15 XP), создание TWI-карты (+100 XP) и генерацию выводов нейросетью. Ваш рейтинг также зависит от Impact Score (реального влияния на подрядчика).</p>
                             </div>
 
                             <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Что делать, если
-                                    подрядчик стабильно в жёлтой зоне (70–84%)?</b>
-                                <p class="text-[11px] mt-1">О: Приёмка КС-2 блокируется до устранения всех B2.
-                                    Необходимо усилить контроль, выявить корневую причину повторяющихся дефектов (через
-                                    TWI или инструктаж).</p>
+                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Почему при одном B2 оценка падает до 84%?</b>
+                                <p class="text-[10px] mt-1">О: Срабатывает правило "Стеклянного потолка". Идеальная оценка (>85%) означает готовность к сдаче клиенту. Наличие значимого дефекта (B2) требует переделки, поэтому оценка ограничивается желтой зоной.</p>
                             </div>
 
                             <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Как часто нужно
-                                    синхронизировать данные с другими инженерами?</b>
-                                <p class="text-[11px] mt-1">О: Рекомендуется после каждого выезда на объект передавать
-                                    бэкап руководителю или ответственному за сводную аналитику. Частота — по регламенту
-                                    вашей организации.</p>
+                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Где хранятся фотографии? Засоряют ли они галерею телефона?</b>
+                                <p class="text-[10px] mt-1">О: Фотографии конвертируются в легкий формат WebP и сохраняются внутри защищенной базы браузера. Они не попадают в общую фотопленку iPhone или Android. Вы можете следить за объемом кэша в разделе "Настройки".</p>
                             </div>
 
                             <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Можно ли использовать
-                                    приложение на планшете?</b>
-                                <p class="text-[11px] mt-1">О: Да, PWA работает на любых смартфонах, планшетах и ПК с
-                                    современным браузером.</p>
-                            </div>
-
-                            <div>
-                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Где хранятся
-                                    фотографии? Не засоряют ли они память телефона?</b>
-                                <p class="text-[11px] mt-1">О: Фотографии хранятся в защищенной базе IndexedDB внутри
-                                    приложения, они не попадают в общую галерею телефона. Размер базы контролируется
-                                    (есть индикатор в Настройках): старые проверки можно удалить, предварительно
-                                    сохранив бэкап.</p>
+                                <b class="text-slate-800 dark:text-white text-[11px] uppercase">В: Что делать, если уволился инженер?</b>
+                                <p class="text-[10px] mt-1">О: Все его проверки останутся в облаке. Новый инженер с паролем Руководителя сможет загрузить их на свое устройство через синхронизацию ("Режим: Вся команда").</p>
                             </div>
 
                         </div>
@@ -3119,6 +3055,12 @@
                     </svg>
                     Очистить кэш PDF
                 </button>
+                <button onclick="emptyTrashBin()"
+                    class="w-full mt-3 bg-orange-50 text-orange-600 border border-orange-200 dark:bg-orange-900/20 dark:border-orange-800/50 py-3.5 rounded-xl font-black text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 shadow-sm transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Очистить корзину
+                </button>
+                
                 <button onclick="fullFactoryReset()"
                     class="w-full mt-3 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:border-red-800/50 py-3.5 rounded-xl font-black text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 shadow-sm transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -3216,52 +3158,57 @@
     <script src="js/export.js"></script>
     <script src="js/game.js"></script>
 
-    <!-- Скрипт для модалок зума фото (Поддержка Pinch-to-zoom и Double Tap) -->
-    <!-- Скрипт для модалок зума фото (Идеальная плавность 60fps) -->
+    <!-- Скрипт для модалок зума фото (Pinch-to-zoom + Pan + Double Tap) -->
     <script>
         const viewerImg = document.getElementById('photo-viewer-img');
         const viewerOverlay = document.getElementById('photo-viewer-overlay');
         
         if (viewerImg && viewerOverlay) {
             let currentZoom = 1;
-            let translateX = 0;
-            let translateY = 0;
-            
-            let isDragging = false;
-            let isPinching = false;
+            let translateX = 0, translateY = 0;
+            let isDragging = false, isPinching = false;
             let startX, startY;
-            let initialDistance = 0;
-            let initialZoom = 1;
+            let initialDistance = 0, initialZoom = 1;
             let reqFrame = null;
+            let lastTap = 0; // Для двойного тапа
 
-            // Применение координат
             function updateTransform() {
                 viewerImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
             }
 
-            // Плавный сброс в исходное состояние
             function resetZoom() {
                 currentZoom = 1; translateX = 0; translateY = 0;
                 viewerImg.style.transition = 'transform 0.2s ease-out';
                 updateTransform();
             }
 
-            // Закрытие модалки
             viewerOverlay.addEventListener('click', (e) => {
                 if (e.target === viewerOverlay || e.target.closest('div.absolute')) resetZoom();
             });
 
-            // Отключение CSS-анимации во время свайпов для 100% отклика за пальцем
-            function disableTransition() {
-                viewerImg.style.transition = 'none';
-            }
+            function disableTransition() { viewerImg.style.transition = 'none'; }
 
-            // --- ПК: КОЛЕСИКО И МЫШЬ ---
+            // Двойной тап для сброса
+            viewerImg.addEventListener('touchend', (e) => {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                if (tapLength < 300 && tapLength > 0) {
+                    resetZoom();
+                    e.preventDefault();
+                }
+                lastTap = currentTime;
+
+                if (e.touches.length < 2) isPinching = false;
+                if (e.touches.length === 0) isDragging = false;
+                if (currentZoom <= 1 && !isPinching) resetZoom();
+            });
+
+            // Мышь (ПК)
             viewerOverlay.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 disableTransition();
                 currentZoom += e.deltaY * -0.002;
-                currentZoom = Math.min(Math.max(1, currentZoom), 5); // Лимит увеличения 5x
+                currentZoom = Math.min(Math.max(1, currentZoom), 5); 
                 if (currentZoom <= 1) { translateX = 0; translateY = 0; }
                 updateTransform();
             }, { passive: false });
@@ -3276,12 +3223,7 @@
                     startY = e.clientY - translateY;
                 }
             });
-            
-            window.addEventListener('mouseup', () => { 
-                isDragging = false; 
-                viewerImg.style.cursor = 'grab'; 
-            });
-            
+            window.addEventListener('mouseup', () => { isDragging = false; viewerImg.style.cursor = 'grab'; });
             window.addEventListener('mousemove', (e) => {
                 if (isDragging && currentZoom > 1) {
                     e.preventDefault();
@@ -3292,20 +3234,14 @@
                 }
             });
 
-            // --- МОБИЛЬНЫЕ: ЩИПОК И СКРОЛЛ ---
+            // Сенсор (Мобильные)
             viewerImg.addEventListener('touchstart', (e) => {
                 disableTransition();
                 if (e.touches.length === 2) {
-                    // Два пальца = Зум
-                    isPinching = true;
-                    isDragging = false;
-                    initialDistance = Math.hypot(
-                        e.touches[0].clientX - e.touches[1].clientX,
-                        e.touches[0].clientY - e.touches[1].clientY
-                    );
+                    isPinching = true; isDragging = false;
+                    initialDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                     initialZoom = currentZoom;
                 } else if (e.touches.length === 1 && currentZoom > 1) {
-                    // Один палец (если уже увеличено) = Таскаем
                     isDragging = true;
                     startX = e.touches[0].clientX - translateX;
                     startY = e.touches[0].clientY - translateY;
@@ -3313,40 +3249,21 @@
             });
 
             window.addEventListener('touchmove', (e) => {
-                // Блокируем дергание страницы под модалкой
-                if (viewerOverlay.style.display !== 'none' && (isPinching || isDragging)) {
-                    e.preventDefault();
-                }
+                if (viewerOverlay.style.display !== 'none' && (isPinching || isDragging)) e.preventDefault();
 
                 if (isPinching && e.touches.length === 2) {
-                    const currentDistance = Math.hypot(
-                        e.touches[0].clientX - e.touches[1].clientX,
-                        e.touches[0].clientY - e.touches[1].clientY
-                    );
+                    const currentDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                     currentZoom = Math.min(Math.max(1, initialZoom * (currentDistance / initialDistance)), 5);
                     if (currentZoom <= 1) { translateX = 0; translateY = 0; }
-                    
                     if (reqFrame) cancelAnimationFrame(reqFrame);
                     reqFrame = requestAnimationFrame(updateTransform);
-                    
                 } else if (isDragging && currentZoom > 1 && e.touches.length === 1) {
                     translateX = e.touches[0].clientX - startX;
                     translateY = e.touches[0].clientY - startY;
-                    
                     if (reqFrame) cancelAnimationFrame(reqFrame);
                     reqFrame = requestAnimationFrame(updateTransform);
                 }
             }, { passive: false });
-
-            window.addEventListener('touchend', (e) => {
-                if (e.touches.length < 2) isPinching = false;
-                if (e.touches.length === 0) isDragging = false;
-                
-                // Если картинку уменьшили обратно (или меньше 1), возвращаем красивую анимацию отскока
-                if (currentZoom <= 1) {
-                    resetZoom();
-                }
-            });
         }
     </script>
 

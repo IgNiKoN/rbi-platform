@@ -1,14 +1,15 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Увеличиваем версию БД до 2 для обновления структуры (v16.0)
-const DB_VERSION = 2; 
+// Увеличиваем версию БД до 3 для обновления структуры фото (v16.8.7)
+const DB_VERSION = 3; 
 
 const STORES = {
     STATE: 'app_state',       // Текущая сессия
     HISTORY: 'app_history',   // Архив проверок
     SETTINGS: 'app_settings', // Настройки
-    TEMPLATES: 'user_templates' // Пользовательские чек-листы
+    TEMPLATES: 'user_templates', // Пользовательские чек-листы
+    PHOTOS: 'app_photos'      // НОВОЕ: Хранилище бинарных фото (ArrayBuffer)
 };
 
 /**
@@ -22,18 +23,11 @@ function openAppDb() {
             const db = event.target.result;
             
             // Создаем новые хранилища, если их нет
-            if (!db.objectStoreNames.contains(STORES.STATE)) {
-                db.createObjectStore(STORES.STATE, { keyPath: 'key' });
-            }
-            if (!db.objectStoreNames.contains(STORES.HISTORY)) {
-                db.createObjectStore(STORES.HISTORY, { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
-                db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
-            }
-            if (!db.objectStoreNames.contains(STORES.TEMPLATES)) {
-                db.createObjectStore(STORES.TEMPLATES, { keyPath: 'slug' });
-            }
+            if (!db.objectStoreNames.contains(STORES.STATE)) db.createObjectStore(STORES.STATE, { keyPath: 'key' });
+            if (!db.objectStoreNames.contains(STORES.HISTORY)) db.createObjectStore(STORES.HISTORY, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(STORES.SETTINGS)) db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
+            if (!db.objectStoreNames.contains(STORES.TEMPLATES)) db.createObjectStore(STORES.TEMPLATES, { keyPath: 'slug' });
+            if (!db.objectStoreNames.contains(STORES.PHOTOS)) db.createObjectStore(STORES.PHOTOS, { keyPath: 'id' });
         };
 
         request.onsuccess = () => resolve(request.result);
@@ -100,7 +94,8 @@ async function dbClear(storeName) {
 }
 
 /**
- * Вспомогательные функции для миграции Base64 в Blob
+ /**
+ * Вспомогательные функции для работы с ArrayBuffer/Blob/Base64
  */
 function base64ToBlob(base64, mimeType = 'image/jpeg') {
     if (!base64 || !base64.includes('base64,')) return null;
@@ -120,6 +115,26 @@ function blobToBase64(blob) {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
+}
+
+// НОВЫЕ ФУНКЦИИ ДЛЯ v16.8.7 (Конвертация в бинарный формат ArrayBuffer)
+async function blobToArrayBuffer(blob) {
+    return await blob.arrayBuffer();
+}
+
+function arrayBufferToBlob(buffer, mimeType = 'image/webp') {
+    return new Blob([buffer], { type: mimeType });
+}
+
+async function base64ToArrayBuffer(base64) {
+    const mimeType = base64.match(/data:(.*?);/)[1] || 'image/webp';
+    const blob = base64ToBlob(base64, mimeType);
+    return await blobToArrayBuffer(blob);
+}
+
+async function arrayBufferToBase64(buffer, mimeType = 'image/webp') {
+    const blob = arrayBufferToBlob(buffer, mimeType);
+    return await blobToBase64(blob);
 }
 
 /**
@@ -231,4 +246,223 @@ async function updateStorageInfo() {
         sUsed.innerText = 'н/д';
         sFree.innerText = 'н/д';
     }
+}
+
+/**
+ * ГЛОБАЛЬНЫЙ МЕНЕДЖЕР ФОТОГРАФИЙ И ФАЙЛОВ (Умный кэш и Офлайн)
+ */
+const PhotoManager = {
+    cache: {}, // Быстрый кэш для моментальной отрисовки (RAM)
+
+    // 1. Загрузка всех ярлыков при старте
+    async init() {
+        try {
+            const photos = await dbGetAll(STORES.PHOTOS);
+            if (photos) {
+                for (let p of photos) {
+                    const blob = arrayBufferToBlob(p.data, p.mimeType);
+                    this.cache[p.id] = URL.createObjectURL(blob);
+                }
+            }
+            console.log(`[PhotoManager] В кэш загружено ${Object.keys(this.cache).length} файлов`);
+        } catch(e) { console.error("[PhotoManager] Ошибка инициализации", e); }
+    },
+
+    // 2. Сохранение нового фото (Сразу в БД)
+    async saveLocal(base64Data, prefix = 'img') {
+        if (!base64Data || !base64Data.startsWith('data:')) return base64Data;
+        
+        const id = 'local://' + prefix + '_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1000);
+        const mimeType = base64Data.match(/data:(.*?);/)[1] || 'image/webp';
+        const buffer = await base64ToArrayBuffer(base64Data);
+        
+        await dbPut(STORES.PHOTOS, { id, data: buffer, mimeType });
+        
+        const blob = arrayBufferToBlob(buffer, mimeType);
+        this.cache[id] = URL.createObjectURL(blob);
+        return id;
+    },
+
+    // 3. Умная выдача ссылки для <img> и <iframe>
+    getSrc(url) {
+        if (!url) return '';
+        // Если файл есть в нашей базе (local:// или скачанный https://), отдаем локальный ярлык
+        if (this.cache[url]) return this.cache[url];
+        // Если нет в базе, отдаем как есть (скачается из сети, если есть интернет)
+        return url; 
+    },
+
+    // 4. ПРИВЯЗКА: Меняем ключ, когда фото улетело в облако
+    async linkCloudToLocal(oldLocalUrl, newCloudUrl) {
+        const record = await dbGet(STORES.PHOTOS, oldLocalUrl);
+        if (record) {
+            await dbPut(STORES.PHOTOS, { id: newCloudUrl, data: record.data, mimeType: record.mimeType });
+            await dbDelete(STORES.PHOTOS, oldLocalUrl);
+            this.cache[newCloudUrl] = this.cache[oldLocalUrl];
+            delete this.cache[oldLocalUrl];
+        }
+    },
+
+    // 5. ФОНОВОЕ СКАЧИВАНИЕ (Для Офлайна)
+    async downloadForOffline(url) {
+        // Если это не ссылка или файл уже скачан — пропускаем
+        if (!url || !url.startsWith('http') || this.cache[url]) return;
+        
+        try {
+            console.log(`[PhotoManager] Скачиваю для офлайна: ${url}`);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Файл недоступен");
+            
+            const blob = await res.blob();
+            const buffer = await blobToArrayBuffer(blob);
+            
+            // Сохраняем вIndexedDB под ключом URL
+            await dbPut(STORES.PHOTOS, { id: url, data: buffer, mimeType: blob.type });
+            
+            // Создаем ярлык для интерфейса
+            this.cache[url] = URL.createObjectURL(blob);
+        } catch(e) { 
+            console.warn("[PhotoManager] Не удалось скачать файл (возможно нет интернета):", url); 
+        }
+    }
+};
+
+// Глобальная функция для HTML разметки
+window.getPhotoSrc = (url) => PhotoManager.getSrc(url);
+
+// Обновленная функция авто-миграции
+async function runPhotoMigration(historyArray) {
+    for (let item of historyArray) {
+        let itemChanged = false;
+        if (item.photos) {
+            for (let key in item.photos) {
+                const photoData = item.photos[key];
+                if (photoData && photoData.startsWith('data:image')) {
+                    const localUrl = await PhotoManager.saveLocal(photoData, 'migr');
+                    item.photos[key] = localUrl;
+                    itemChanged = true;
+                }
+            }
+        }
+        if (itemChanged) await dbPut(STORES.HISTORY, item);
+    }
+}
+
+/**
+ * Одноразовая авто-миграция старых Base64 фото в новое бинарное хранилище
+ */
+async function runPhotoMigration(historyArray) {
+    let migrationNeeded = false;
+    
+    for (let item of historyArray) {
+        let itemChanged = false;
+        if (item.photos) {
+            for (let key in item.photos) {
+                const photoData = item.photos[key];
+                // Если находим старую тяжелую картинку
+                if (photoData && photoData.startsWith('data:image')) {
+                    const localUrl = await PhotoManager.saveAndGetLocalUrl(photoData, 'migr');
+                    if (localUrl && localUrl.startsWith('local://')) {
+                        item.photos[key] = localUrl;
+                        itemChanged = true;
+                        migrationNeeded = true;
+                    }
+                }
+            }
+        }
+        if (itemChanged) {
+            // Тихо обновляем запись в БД
+            await dbPut(STORES.HISTORY, item);
+        }
+    }
+    
+    if (migrationNeeded) {
+        console.log("✅ Авто-миграция старых фото успешно завершена!");
+    }
+}
+
+// === ФОНОВЫЙ ЗАГРУЗЧИК ФАЙЛОВ ДЛЯ ОФЛАЙНА ===
+window.downloadMissingCloudFiles = async function() {
+    console.log("[Sync] Поиск новых файлов для скачивания в офлайн...");
+    const urlsToDownload = new Set();
+
+    // 1. Ищем фото в истории проверок
+    if (typeof contractorArray !== 'undefined') {
+        contractorArray.forEach(check => {
+            if (check.photos) {
+                Object.values(check.photos).forEach(url => {
+                    if (url && url.startsWith('http')) urlsToDownload.add(url);
+                });
+            }
+        });
+    }
+
+    // 2. Ищем фото и PDF в TWI картах
+    if (typeof customTwiCards !== 'undefined') {
+        customTwiCards.forEach(twi => {
+            if (twi.photoGood && twi.photoGood.startsWith('http')) urlsToDownload.add(twi.photoGood);
+            if (twi.photoBad && twi.photoBad.startsWith('http')) urlsToDownload.add(twi.photoBad);
+            if (twi.pdfData && twi.pdfData.startsWith('http')) urlsToDownload.add(twi.pdfData);
+            if (twi.steps) {
+                twi.steps.forEach(step => {
+                    if (step.photo && step.photo.startsWith('http')) urlsToDownload.add(step.photo);
+                });
+            }
+        });
+    }
+
+    // 3. Ищем схемы в Узлах
+    if (typeof customNodes !== 'undefined') {
+        customNodes.forEach(node => {
+            if (node.img && node.img.startsWith('http')) urlsToDownload.add(node.img);
+        });
+    }
+
+    // Запускаем скачивание по очереди, чтобы не перегрузить память телефона
+    let count = 0;
+    for (let url of urlsToDownload) {
+        if (!PhotoManager.cache[url]) { // Если еще нет в кэше
+            await PhotoManager.downloadForOffline(url);
+            count++;
+        }
+    }
+    if (count > 0) console.log(`[Sync] Скачано файлов для офлайна: ${count} шт.`);
+};
+
+// Окончательное удаление файлов из корзины (Hard Delete)
+window.emptyTrashBin = async function() {
+    if(!confirm("Безвозвратно удалить все скрытые проверки из базы? Они больше не будут восстанавливаться при синхронизации.")) return;
+    
+    const hist = await dbGetAll(STORES.HISTORY);
+    if (!hist) return;
+    
+    let deletedCount = 0;
+    for (let item of hist) {
+        if (item._deleted) {
+            // 1. Удаляем связанные фото из бинарной базы PHOTOS
+            if (item.photos) {
+                for (let k in item.photos) {
+                    const photoUrl = item.photos[k];
+                    if (photoUrl) {
+                        // Удаляем из базы IndexedDB по ключу (неважно, local:// это или https://)
+                        await dbDelete(STORES.PHOTOS, photoUrl);
+                        // Очищаем из оперативной памяти
+                        if (PhotoManager.cache[photoUrl]) {
+                            // Если это Blob URL, убиваем ссылку, чтобы освободить RAM
+                            if (PhotoManager.cache[photoUrl].startsWith('blob:')) {
+                                URL.revokeObjectURL(PhotoManager.cache[photoUrl]);
+                            }
+                            delete PhotoManager.cache[photoUrl];
+                        }
+                    }
+                }
+            }
+            // 2. Удаляем саму проверку из базы HISTORY
+            await dbDelete(STORES.HISTORY, item.id);
+            deletedCount++;
+        }
+    }
+    
+    showToast(`🗑️ Корзина очищена. Уничтожено: ${deletedCount} шт.`);
+    if (typeof updateStorageInfo === 'function') updateStorageInfo();
 }

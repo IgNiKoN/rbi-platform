@@ -983,3 +983,14 @@ input[list]::-webkit-calendar-picker-indicator {
     opacity: 1;
     visibility: visible;
 }
+
+/* === ФИКС ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ (v16.8.7) === */
+/* Скрываем нижнюю навигацию и кнопку PDF, когда открыта клавиатура (активен input или textarea) */
+@media screen and (max-width: 767px) {
+    body:has(input:focus, textarea:focus) .bottom-nav {
+        display: none !important;
+    }
+    body:has(input:focus, textarea:focus) #fab-download-btn {
+        display: none !important;
+    }
+}

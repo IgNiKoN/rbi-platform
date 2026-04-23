@@ -151,7 +151,12 @@ async function restoreSession() {
         const data = await dbGet(STORES.STATE, 'current_session');
         const hist = await dbGetAll(STORES.HISTORY);
         
-        contractorArray = hist || [];
+        let fullHistory = hist || [];
+        contractorArray = fullHistory.filter(i => !i._deleted);
+
+        // НОВОЕ: Инициализируем кэш и запускаем миграцию
+        await PhotoManager.init();
+        await runPhotoMigration(contractorArray);
         
         if (!data) return;
 
@@ -167,7 +172,14 @@ async function restoreSession() {
         state = data.state || {};
         details = data.details || {};
         photos = data.photos || {};
-        customExpertConclusions = data.customExpertConclusions || {};  // ← ДОБАВЛЕНО
+        customExpertConclusions = data.customExpertConclusions || {}; 
+
+        // НОВОЕ: Распаковываем фото в незаконченном черновике, если они там есть
+        for (let k in photos) {
+            if (photos[k] && photos[k].startsWith('local://')) {
+                photos[k] = await PhotoManager.getBlobUrl(photos[k]) || photos[k];
+            }
+        }
 
         if (currentTemplateKey && document.getElementById('checklist-selector')) {
             document.getElementById('checklist-selector').value = currentTemplateKey;
@@ -1172,24 +1184,33 @@ function openTwiViewer(twiId) {
 
         if (card.pdfData) {
             try {
-                const byteCharacters = atob(card.pdfData.split(',')[1]);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                let blobUrl = '';
+                
+                // УМНАЯ ПРОВЕРКА: Это Base64 (старый формат) или ссылка (новый формат)?
+                if (card.pdfData.startsWith('data:application/pdf')) {
+                    // Расшифровка старого Base64
+                    const byteCharacters = atob(card.pdfData.split(',')[1]);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], {type: 'application/pdf'});
+                    blobUrl = URL.createObjectURL(blob);
+                } else {
+                    // Это ссылка! Получаем локальный ярлык из офлайн-менеджера
+                    blobUrl = PhotoManager.getSrc(card.pdfData);
                 }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], {type: 'application/pdf'});
-                const blobUrl = URL.createObjectURL(blob);
 
                 content.innerHTML = `
                     <div class="w-full h-full flex flex-col relative bg-slate-100 dark:bg-slate-900">
                         <iframe src="${blobUrl}#toolbar=0" class="w-full flex-1 border-none bg-white dark:bg-slate-800" style="min-height: 60vh;"></iframe>
                         <div class="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10">
                             <div class="min-w-0 pr-3">
-                                <div class="text-[11px] font-black text-slate-800 dark:text-white truncate">${card.pdfName}</div>
-                                <div class="text-[9px] font-bold text-slate-500">${card.pdfSize}</div>
+                                <div class="text-[11px] font-black text-slate-800 dark:text-white truncate">${card.pdfName || 'Документ.pdf'}</div>
+                                <div class="text-[9px] font-bold text-slate-500">${card.pdfSize || 'Загружено из облака'}</div>
                             </div>
-                            <a href="${blobUrl}" target="_blank" download="${card.pdfName}" class="bg-red-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5 shrink-0">
+                            <a href="${blobUrl}" target="_blank" download="${card.pdfName || 'document.pdf'}" class="bg-red-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5 shrink-0">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Скачать
                             </a>
                         </div>
@@ -1354,15 +1375,22 @@ function getSelectedHistoryIds() {
 async function deleteSelectedHistory() {
     const ids = getSelectedHistoryIds();
     if (ids.length === 0) return showToast('Сначала выберите элементы галочками');
-    if (!confirm(`Удалить выбранные проверки (${ids.length} шт)? Это действие необратимо.`)) return;
+    if (!confirm(`Удалить выбранные проверки (${ids.length} шт)?`)) return;
 
-    // Фильтруем массив в памяти
-    contractorArray = contractorArray.filter(i => !ids.includes(i.id));
-    
-    // Удаляем каждую запись из базы
-    for (let id of ids) { 
-        await dbDelete(STORES.HISTORY, id); 
+    // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
+    for (let id of ids) {
+        // Находим проверку в памяти
+        let item = contractorArray.find(i => i.id === id);
+        if (item) {
+            item._deleted = true;
+            item._deletedAt = new Date().toISOString();
+            // Обновляем запись в БД с флагом удаления
+            await dbPut(STORES.HISTORY, item);
+        }
     }
+    
+    // Убираем удаленные из активного массива ОЗУ
+    contractorArray = contractorArray.filter(i => !i._deleted);
     
     // Снимаем главную галочку "Выбрать всё"
     const selectAllCb = document.getElementById('hist-select-all');
@@ -1412,7 +1440,7 @@ function showHistoryDetail(id) {
         if (item.state[i.id] === 'fail') { stTxt = 'FAIL'; stCls = 'tag-red'; }
         if (item.state[i.id] === 'fail_escalated') { stTxt = '>1.5x (B3)'; stCls = 'tag-red shadow-sm'; cat = 'B3'; }
         
-        let photoHtml = (item.photos && item.photos[i.id]) ? `<img src="${item.photos[i.id]}" class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer" onclick="openPhotoViewer(this.src)">` : '';
+        let photoHtml = (item.photos && item.photos[i.id]) ? `<img src="${window.getPhotoSrc(item.photos[i.id])}" class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer" onclick="openPhotoViewer('${item.photos[i.id]}')">` : '';
         
         let extraData = '';
         if(item.details && item.details[i.id]) {
@@ -1840,9 +1868,8 @@ function updateCardDOM(id, itemData = null) {
             `<button onclick="toggleCommentField(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></button>`;
         
         let photoBtn = photos[id] ? 
-            `<div class="relative shrink-0"><img src="${photos[id]}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-indigo-200 dark:border-indigo-800 shadow-sm object-cover" onclick="openPhotoViewer('${photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` : 
+            `<div class="relative shrink-0"><img src="${window.getPhotoSrc(photos[id])}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-indigo-200 dark:border-indigo-800 shadow-sm object-cover" onclick="openPhotoViewer('${photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` : 
             `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
-
         let escBtn = (i.w === 2) ? `<button onclick="toggleEscalation(${id})" class="btn-status ${isEscalated ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400' : 'text-orange-500 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'} !w-11 !h-11 !rounded-[12px] transition-all shrink-0 shadow-sm"><span class="text-[13px] font-bold">>1.5</span></button>` : '';
 
         let visualIndicatorHtml = isEscalated ? `<div class="text-[10px] font-black text-white bg-red-600 px-2 py-0.5 rounded w-fit mt-1 shadow-sm">Дефект учтен как B3</div>` : '';
@@ -1873,9 +1900,8 @@ function updateCardDOM(id, itemData = null) {
     // === 2. МАКЕТ ПРИ OK (Нормы скрыты, добавлено фото эталона) ===
     else if (okActive) {
         let photoBtnOk = photos[id] ? 
-            `<div class="relative shrink-0"><img src="${photos[id]}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-green-300 shadow-sm object-cover" onclick="openPhotoViewer('${photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` : 
+            `<div class="relative shrink-0"><img src="${window.getPhotoSrc(photos[id])}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-green-300 shadow-sm object-cover" onclick="openPhotoViewer('${photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` : 
             `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm text-green-600 bg-green-50 border-green-200" title="Добавить фото эталона"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
-
         contentHtml = `
             <div class="flex justify-between items-center w-full min-h-[44px]">
                 <div class="flex-1 mr-3 min-w-0 pointer-events-none">
@@ -2075,7 +2101,7 @@ function updateUI() {
 
 // === СОХРАНЕНИЕ / ОЧИСТКА ===
 // === СОХРАНЕНИЕ В ИСТОРИЮ (С ПОЛЯМИ СЕКЦИЯ/ЭТАЖ/ПОМЕЩЕНИЕ) ===
-function saveProductToArray() {
+async function saveProductToArray() {
     const projInput = document.getElementById('inp-project');
     const inspInput = document.getElementById('inp-inspector');
     const contrInput = document.getElementById('inp-contractor');
@@ -2170,6 +2196,19 @@ function saveProductToArray() {
     let instanceId = "default";
     if (secInput.value && floorInput.value) instanceId = `${secInput.value.replace(/\D/g, '')}_${floorInput.value.replace(/\D/g, '')}`;
 
+    // --- ПЕРЕНОС ФОТО В БИНАРНОЕ ХРАНИЛИЩЕ ---
+    let dbPhotos = {};
+    for (let id in mergedPhotos) {
+        const photoData = mergedPhotos[id];
+        if (photoData.startsWith('data:image')) {
+            dbPhotos[id] = await PhotoManager.saveLocal(photoData, 'hist');
+        } else {
+            dbPhotos[id] = photoData;
+        }
+    }
+    // -----------------------------------------
+    // -----------------------------------------
+
     const newItem = { 
         id: Date.now() + Math.floor(Math.random() * 1000), 
         date: new Date().toISOString(), 
@@ -2189,13 +2228,13 @@ function saveProductToArray() {
         isCompleted: isFullCheck,
         state: JSON.parse(JSON.stringify(mergedState)), 
         details: JSON.parse(JSON.stringify(mergedDetails)), 
-        photos: JSON.parse(JSON.stringify(mergedPhotos)), 
+        photos: dbPhotos, 
         metrics: finalMetrics 
     };
-
-    contractorArray.push(newItem);
+    
+    contractorArray.push(newItem); 
     if (!isDemoMode) {
-        dbPut(STORES.HISTORY, newItem); // ЗАЩИТА: не пишем в БД в демо-режиме
+        await dbPut(STORES.HISTORY, newItem); 
     }
 
     // Обновляем кэш автозаполнения для смарт-инпутов
@@ -2813,18 +2852,42 @@ function saveEditedPhoto() {
     cancelPhotoEditor();
 }
 
-function openPhotoViewer(src) {
+async function openPhotoViewer(src) {
     const viewer = document.getElementById('photo-viewer-overlay');
     const img = document.getElementById('photo-viewer-img');
     if(viewer && img) {
-        img.src = src; 
+        // Умная загрузка: берем фото прямо из оперативной памяти офлайн-менеджера
+        let finalSrc = src;
+        if (src && src.startsWith('local://')) {
+            const cachedSrc = PhotoManager.getSrc(src);
+            if (cachedSrc) finalSrc = cachedSrc;
+        }
+
+        img.src = finalSrc; 
         viewer.style.display = 'flex';
-        // Сброс зума при открытии нового фото, чтобы не было зависаний
+        
+        // Сброс зума при открытии нового фото
         currentZoom = 1; translateX = 0; translateY = 0;
         img.style.transform = `translate(0px, 0px) scale(1)`;
-        // Небольшая задержка для плавного появления
+        
         setTimeout(() => viewer.classList.remove('opacity-0'), 10);
     }
+}
+
+// НОВАЯ ФУНКЦИЯ: Правильно закрывает фото и чистит за собой память
+function closePhotoViewer() {
+    const viewer = document.getElementById('photo-viewer-overlay');
+    const img = document.getElementById('photo-viewer-img');
+    
+    viewer.classList.add('opacity-0');
+    setTimeout(() => {
+        viewer.style.display = 'none';
+        // Если картинка была временной ссылкой (blob:), очищаем память, чтобы iOS не вылетел
+        if (img.src && img.src.startsWith('blob:')) {
+            // URL.revokeObjectURL(img.src); // Пока закомментируем жесткую очистку, т.к. кэш держит PhotoManager
+            img.src = '';
+        }
+    }, 300);
 }
 
 
@@ -4442,18 +4505,36 @@ function closeTwiConstructor() {
     renderTwiList();
 }
 // 3. ОБРАБОТКА ФОТО И PDF (ИНСПЕКТОР)
-function compressImageToBase64(file, maxWidth, quality, callback) {
+function compressImageToBase64(file, oldMaxWidth, oldQuality, callback) {
+    // Жестко задаем новые стандарты сжатия (v16.8.7) игнорируя старые параметры
+    const maxWidth = 1200;
+    const quality = 0.6; 
+    
     const reader = new FileReader();
     reader.onload = function(e) {
         const img = new Image();
         img.onload = function() {
             const canvas = document.createElement('canvas');
             let width = img.width; let height = img.height;
+            
             if (width > height && width > maxWidth) { height *= maxWidth / width; width = maxWidth; } 
             else if (height > maxWidth) { width *= maxWidth / height; height = maxWidth; }
+            
             canvas.width = width; canvas.height = height;
             canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-            callback(canvas.toDataURL('image/jpeg', quality));
+            
+            // Используем WebP для максимального сжатия
+            let mimeType = 'image/webp';
+            let dataUrl = canvas.toDataURL(mimeType, quality);
+            
+            // Fallback: старые iOS не умеют кодировать WebP и вернут PNG (который весит очень много). 
+            // Перехватываем это и принудительно жмем в JPEG.
+            if (dataUrl.startsWith('data:image/png')) {
+                mimeType = 'image/jpeg';
+                dataUrl = canvas.toDataURL(mimeType, quality);
+            }
+            
+            callback(dataUrl);
         }
         img.src = e.target.result;
     }

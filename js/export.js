@@ -429,7 +429,7 @@ function exportPdfCurrentScreen(data, mode = 'script') {
                 ${paddedArr.map(src => {
                     if (!src) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:130px;"></td>`;
                     return `<td style="border:2px solid ${color}; border-radius:8px; background:white; padding:0; height:130px;">
-                        <img src="${src}" style="width:100%; height:100%; object-fit:cover; display:block;">
+                        <img src="${window.getPhotoSrc(src)}" style="width:100%; height:100%; object-fit:cover; display:block;">
                     </td>`;
                 }).join('')}
                 </tr>
@@ -693,7 +693,7 @@ function exportPdfFullObjectReport(data, mode = 'script') {
             <td style="width: 25%; ${paddingStyle}">
                 <div style="border: 1px solid ${borderCell}; border-radius: 8px; background: white; overflow: hidden; height: 160px; box-sizing: border-box;">
                     <div style="width: 100%; height: 110px; background: #f1f5f9; text-align: center; border-bottom: 2px solid ${titleColor}; overflow: hidden;">
-                        <img src="${p.src}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                        <img src="${window.getPhotoSrc(p.src)}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
                     </div>
                     <div style="padding: 6px; font-size: 10px; font-weight: bold; color: #0f172a; line-height: 1.2; height: 50px; overflow: hidden; box-sizing: border-box;">${p.name}</div>
                 </div>
@@ -1020,7 +1020,7 @@ function exportPdfPoster(data, mode = 'script') {
                         return `
                         <td style="border:2px solid ${borderColor}; border-radius:8px; background:${bgCell}; padding:0; height:180px; vertical-align:top;">
                             <div style="width:100%; height:130px; background:#f1f5f9; text-align:center;">
-                                <img src="${p.src}" style="width:100%; height:100%; object-fit:cover; display:block;">
+                                <img src="${window.getPhotoSrc(p.src)}" style="width:100%; height:100%; object-fit:cover; display:block;">
                             </div>
                             <div style="padding:6px; height:50px; border-top:1px solid ${borderColor};">
                                 <div style="font-size:9px; font-weight:900; color:#0f172a; line-height:1.2; overflow:hidden; height:22px;">${p.name}</div>
@@ -1335,10 +1335,10 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     const opt = {
         margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
         filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-        image: { type: 'jpeg', quality: 1.0 },   // максимальное качество
+        image: { type: 'jpeg', quality: 1.0 },   
         html2canvas: {
-            scale: HIGH_QUALITY_SCALE,   // 2.5 (или 2, или 3)
-            useCORS: !isIOS,             // на iOS отключаем CORS для скорости
+            scale: HIGH_QUALITY_SCALE,   
+            useCORS: true, // ИСПРАВЛЕНИЕ: Всегда true для поддержки загрузки фото из облака
             letterRendering: true,
             x: 0,
             y: 0,
@@ -1347,7 +1347,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             width: widthPx,
             windowWidth: widthPx,
             logging: false,
-            allowTaint: isIOS ? true : false,
+            allowTaint: true, // ИСПРАВЛЕНИЕ: Всегда true для iOS
             backgroundColor: '#ffffff'
         },
         jsPDF: {
@@ -1663,6 +1663,34 @@ async function clearBackupRegistry() {
     await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: [] });
     if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
     showToast("Реестр очищен");
+}
+// Окончательное удаление файлов из корзины (Hard Delete)
+window.emptyTrashBin = async function() {
+    if(!confirm("Безвозвратно удалить все проверки из корзины? Они больше не синхронизируются с облаком.")) return;
+    
+    const hist = await dbGetAll(STORES.HISTORY);
+    if (!hist) return;
+    
+    let deletedCount = 0;
+    for (let item of hist) {
+        if (item._deleted) {
+            // Удаляем связанные фото из базы
+            if (item.photos) {
+                for (let k in item.photos) {
+                    if (item.photos[k] && item.photos[k].startsWith('local://')) {
+                        const photoId = item.photos[k].replace('local://', '');
+                        await dbDelete(STORES.PHOTOS, photoId);
+                    }
+                }
+            }
+            // Удаляем саму проверку
+            await dbDelete(STORES.HISTORY, item.id);
+            deletedCount++;
+        }
+    }
+    
+    showToast(`🗑️ Корзина очищена. Удалено: ${deletedCount} шт.`);
+    if (typeof updateStorageInfo === 'function') updateStorageInfo();
 }
 
 // Универсальная функция загрузки файла

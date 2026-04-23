@@ -803,9 +803,20 @@ window.gameRenderDashboard = function() {
     if (avgImpact > 0.2) { globalImpactText = "Позитивное"; globalImpactColor = "text-green-600 dark:text-green-500"; globalImpactBg = "bg-green-50 dark:bg-green-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`; } 
     else if (avgImpact < -0.2) { globalImpactText = "Отрицательное"; globalImpactColor = "text-red-600 dark:text-red-500"; globalImpactBg = "bg-red-50 dark:bg-red-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"></path></svg>`; }
 
-    const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
-    let myRank = allProfilesArr.findIndex(p => p.name === myProfile.name) + 1;
-    let totalEng = allProfilesArr.length;
+    // НОВОЕ: Определяем свою позицию по глобальному серверному рейтингу (если доступен)
+    let myRank = 1;
+    let totalEng = 1;
+    
+    if (window.serverGlobalRating && Array.isArray(window.serverGlobalRating)) {
+        const sortedServer = window.serverGlobalRating.sort((a, b) => b.pi - a.pi);
+        myRank = sortedServer.findIndex(p => p.name === myProfile.name) + 1;
+        totalEng = sortedServer.length;
+        if (myRank === 0) myRank = '-'; // Если инженера еще нет на сервере
+    } else {
+        const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
+        myRank = allProfilesArr.findIndex(p => p.name === myProfile.name) + 1;
+        totalEng = allProfilesArr.length;
+    }
 
     let html = '';
 
@@ -1843,14 +1854,27 @@ window.gameStartTask = function(contractor, templateKey) {
 };
 
 // === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
+// === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
 window.gameOpenTopModal = function() {
-    if (!window.allProfilesData) return showToast('Нет данных для рейтинга');
-    
-    // Сортируем всех инженеров по опыту (PI)
-    const sortedProfiles = Object.values(window.allProfilesData).sort((a, b) => b.pi - a.pi);
-    const myName = document.getElementById('inp-inspector')?.value.trim();
+    let sortedProfiles = [];
+    const myName = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
+
+    // НОВОЕ: Если есть серверный глобальный рейтинг - используем его (важно для режима "Только мои")
+    if (window.serverGlobalRating && Array.isArray(window.serverGlobalRating)) {
+        sortedProfiles = window.serverGlobalRating.sort((a, b) => b.pi - a.pi);
+    } else if (window.allProfilesData) {
+        // Иначе считаем локально из того, что есть в памяти
+        sortedProfiles = Object.values(window.allProfilesData).sort((a, b) => b.pi - a.pi);
+    }
+
+    if (sortedProfiles.length === 0) return showToast('Нет данных для рейтинга');
 
     let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
+    
+    // Добавляем пометку, если рейтинг серверный
+    if (window.serverGlobalRating) {
+        html += `<div class="text-[10px] text-center text-slate-500 font-bold mb-3 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 py-1 rounded">Глобальный рейтинг сервера</div>`;
+    }
     
     sortedProfiles.forEach((p, idx) => {
         const isMe = p.name === myName;
