@@ -3170,7 +3170,7 @@
             let startX, startY;
             let initialDistance = 0, initialZoom = 1;
             let reqFrame = null;
-            let lastTap = 0; // Для двойного тапа
+            let lastTap = 0;
 
             function updateTransform() {
                 viewerImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentZoom})`;
@@ -3188,7 +3188,6 @@
 
             function disableTransition() { viewerImg.style.transition = 'none'; }
 
-            // Двойной тап для сброса
             viewerImg.addEventListener('touchend', (e) => {
                 const currentTime = new Date().getTime();
                 const tapLength = currentTime - lastTap;
@@ -3241,6 +3240,9 @@
                     isPinching = true; isDragging = false;
                     initialDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                     initialZoom = currentZoom;
+                    // Сохраняем центр для перемещения 2 пальцами
+                    startX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - translateX;
+                    startY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - translateY;
                 } else if (e.touches.length === 1 && currentZoom > 1) {
                     isDragging = true;
                     startX = e.touches[0].clientX - translateX;
@@ -3255,6 +3257,13 @@
                     const currentDistance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                     currentZoom = Math.min(Math.max(1, initialZoom * (currentDistance / initialDistance)), 5);
                     if (currentZoom <= 1) { translateX = 0; translateY = 0; }
+                    
+                    // Позволяем перемещать фото 2 пальцами во время зума
+                    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                    translateX = midX - startX;
+                    translateY = midY - startY;
+
                     if (reqFrame) cancelAnimationFrame(reqFrame);
                     reqFrame = requestAnimationFrame(updateTransform);
                 } else if (isDragging && currentZoom > 1 && e.touches.length === 1) {
@@ -3421,8 +3430,8 @@
         </div>
     </div>
 
-    <!-- СКРЫТЫЙ КОНТЕЙНЕР ДЛЯ ПЕЧАТИ ЧЕРЕЗ БРАУЗЕР -->
-    <div id="native-print-container" style="display: none;"></div>
+    <!-- === ИЗОЛИРОВАННЫЙ КОНТЕЙНЕР ДЛЯ БРАУЗЕРНОЙ ПЕЧАТИ === -->
+    <div id="print-content" class="print-only"></div>
 
 <!-- === МОДАЛКА УПРАВЛЕНИЯ СТАТУСОМ ЗАДАЧИ === -->
     <div id="task-status-modal" class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="this.style.display='none'">

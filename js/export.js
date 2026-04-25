@@ -20,6 +20,8 @@ function handleFabExportAction(actionType, mode = 'script') {
             exportPdfPoster(data, mode);
         } else if (actionType === 'onepager') {
             exportPdfOnePager(data, mode);
+        } else if (actionType === 'global_onepager') {
+            exportPdfGlobalOnePager(data, mode);
         } else if (actionType === 'data') {
             exportPdfData(data, mode);
         } else if (actionType === 'tender') {
@@ -44,13 +46,71 @@ function generatePdfChart(config, width = 600, height = 200) {
     return url;
 }
 
+// Универсальный генератор сетки фотографий (Поддерживает PDF и Browser Print)
+function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, columns, mode) {
+    const fontSizeTitle = mode === 'browser' ? '11pt' : '14px';
+    const fontSizeName = mode === 'browser' ? '8pt' : '10px';
+    const fontSizeContr = mode === 'browser' ? '7pt' : '9px';
+    const imgHeight = mode === 'browser' ? '28mm' : '110px'; 
+    const cellHeight = mode === 'browser' ? '40mm' : '160px'; 
+
+    if (!photos || photos.length === 0) {
+        return `
+        <div class="no-break" style="margin-bottom: 15px; background: ${bgCell}; border-radius: 8px; padding: 10px;">
+            <h3 style="margin: 0 0 10px 4px; color: ${titleColor}; font-size: ${fontSizeTitle}; text-transform: uppercase;">${title}</h3>
+            <div style="text-align:center; padding:15px; color:#94a3b8; font-size:${fontSizeName}; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px; background: white;">Нет фотографий</div>
+        </div>`;
+    }
+
+    const paddedArr = [...photos].slice(0, columns);
+    while (paddedArr.length < columns) paddedArr.push({ empty: true });
+
+    const colWidth = (100 / columns).toFixed(2) + '%';
+
+    const tds = paddedArr.map((p, idx) => {
+        let paddingStyle = 'padding: 0 4px;';
+        if (idx === 0) paddingStyle = 'padding: 0 4px 0 0;';
+        if (idx === columns - 1) paddingStyle = 'padding: 0 0 0 4px;';
+
+        if (p.empty) {
+            return `<td style="width: ${colWidth}; ${paddingStyle}">
+                        <div style="border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; height: ${cellHeight};"></div>
+                    </td>`;
+        }
+
+        const imgSrc = window.getPhotoSrc(p.src || p.photo);
+        let contrHtml = '';
+        if (p.contr) contrHtml = `<div style="font-size: ${fontSizeContr}; color: #64748b; font-weight: bold; margin-top: 2px; white-space: nowrap; overflow: hidden;">👤 ${p.contr} ${p.count ? `(${p.count} шт)` : ''}</div>`;
+
+        return `
+        <td style="width: ${colWidth}; ${paddingStyle}">
+            <div style="border: 1px solid ${borderColor}; border-radius: 8px; background: white; overflow: hidden; height: ${cellHeight}; box-sizing: border-box; display: block;">
+                <div style="width: 100%; height: ${imgHeight}; background: #f1f5f9; text-align: center; border-bottom: 2px solid ${titleColor}; overflow: hidden;">
+                    <img src="${imgSrc}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                </div>
+                <div style="padding: 6px; font-size: ${fontSizeName}; font-weight: bold; color: #0f172a; line-height: 1.2; height: calc(${cellHeight} - ${imgHeight}); overflow: hidden; box-sizing: border-box;">
+                    <div style="overflow: hidden; max-height: calc(1.2em * 2);">${p.name || 'Дефект'}</div>
+                    ${contrHtml}
+                </div>
+            </div>
+        </td>`;
+    }).join('');
+
+    return `
+    <div class="no-break" style="margin-bottom: 15px; background: ${bgCell}; border-radius: 8px; padding: 10px;">
+        <h3 style="margin: 0 0 10px 4px; color: ${titleColor}; font-size: ${fontSizeTitle}; text-transform: uppercase;">${title}</h3>
+        <table style="width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;">
+            <tr>${tds}</tr>
+        </table>
+    </div>`;
+}
+
 // 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
 function exportPdfOnePager(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
-    const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
-
+    
     let sumUrk = 0; let sumB3 = 0;
     data.forEach(i => { if(i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
@@ -114,13 +174,13 @@ function exportPdfOnePager(data, mode = 'script') {
     }
 
     const renderTrend = (curr, prev, label, inverse = false) => {
-        if (prev === undefined || prev === null || prev === "" || isNaN(prev)) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:10px; font-weight:bold; background:#f1f5f9; padding:2px 4px; border-radius:4px;">Нет базы</span></div>`;
+        if (prev === undefined || prev === null || prev === "" || isNaN(prev)) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:${mode === 'browser' ? '7pt' : '10px'}; font-weight:bold; background:#f1f5f9; padding:2px 4px; border-radius:4px;">Нет базы</span></div>`;
         let diff = (parseFloat(curr) - parseFloat(prev));
-        if (Math.abs(diff) < 0.01) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:14px; font-weight:900;">▬ 0</span><div style="font-size:8px; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+        if (Math.abs(diff) < 0.01) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:${mode === 'browser' ? '10pt' : '14px'}; font-weight:900;">▬ 0</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
         const isGood = inverse ? diff < 0 : diff > 0;
         const color = isGood ? '#16a34a' : '#dc2626';
         const sign = diff > 0 ? '▲' : '▼';
-        return `<div style="text-align:right;"><span style="color:${color}; font-size:16px; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:8px; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
     };
 
     const sparkLabels = []; const sparkData = [];
@@ -170,34 +230,10 @@ function exportPdfOnePager(data, mode = 'script') {
     const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
     const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-    // ЖЕЛЕЗОБЕТОННАЯ СЕТКА ФОТОГРАФИЙ ЧЕРЕЗ ТАБЛИЦУ
-    const renderPhotoGridRow = (arr, type) => {
-        while(arr.length < 5) { arr.push({ empty: true }); }
-        let badgeColor = type === 'b3' ? '#dc2626' : (type === 'b2' ? '#d97706' : '#16a34a');
-        return `
-        <table style="width: 100%; border-collapse: separate; border-spacing: 8px 0; table-layout: fixed;">
-            <tr>
-            ${arr.slice(0, 5).map(d => {
-                if (d.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:155px;"></td>`;
-                return `
-                <td style="border:1px solid #cbd5e1; border-radius:8px; background:white; vertical-align:top; overflow:hidden; padding:0; height:155px;">
-                    <div style="width:100%; height:95px; background:#f1f5f9; text-align:center;">
-                        ${d.photo ? `<img src="${d.photo}" style="width:100%; height:100%; object-fit:cover; display:block;">` : `<span style="color:#cbd5e1; font-size:12px; font-weight:bold; line-height:95px;">НЕТ ФОТО</span>`}
-                    </div>
-                    <div style="padding:6px; height:60px; background:white; border-top:2px solid ${badgeColor};">
-                        <div style="font-size:10px; font-weight:900; color:#0f172a; line-height:1.2; overflow:hidden; height:24px;">${d.name}</div>
-                        <div style="font-size:9px; color:#64748b; font-weight:bold; margin-top:2px; white-space:nowrap; overflow:hidden;">👤 ${d.contr} (${d.count} шт)</div>
-                    </div>
-                </td>`;
-            }).join('')}
-            </tr>
-        </table>`;
-    };
-
     const cSpark = document.getElementById('op-sparkline-chart');
     let imgSpark = '';
     if (cSpark && cSpark.width > 0 && cSpark.height > 0) {
-        try { imgSpark = `<img style="width:100%; height:55px; object-fit:fill;" src="${cSpark.toDataURL('image/png')}">`;
+        try { imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${cSpark.toDataURL('image/png')}">`;
         } catch(e) {}
     }
 
@@ -207,21 +243,22 @@ function exportPdfOnePager(data, mode = 'script') {
     const pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
     const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
     
-    let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
     const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
     let ratingHtml = '';
     if (ratingData.length === 0) {
-        ratingHtml = '<div style="font-size:10px; color:#94a3b8; text-align:center; padding: 20px;">Нет данных</div>';
+        ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 20px;">Нет данных</div>`;
     } else {
         const renderRow = (r) => `
-            <table style="width:100%; margin-bottom:6px; border-collapse:collapse;">
+            <table style="width:100%; margin-bottom:6px; border-collapse:collapse; table-layout: fixed;">
                 <tr>
-                    <td style="width:100px; font-size:11px; font-weight:bold; color:#334155; overflow:hidden;">${r.name}</td>
-                    <td style="background:#e2e8f0; height:12px; border-radius:6px; padding:0; border:1px solid #cbd5e1; width:auto;">
-                        <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%; border-radius:6px;"></div>
+                    <td style="width:40%; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${r.name}</td>
+                    <td style="width:45%; vertical-align: middle;">
+                        <div style="background:#e2e8f0; height:10px; border-radius:5px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
+                            <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%;"></div>
+                        </div>
                     </td>
-                    <td style="width:30px; text-align:right; font-size:11px; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">
+                    <td style="width:15%; text-align:right; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">
                         ${r.val}%
                     </td>
                 </tr>
@@ -231,76 +268,80 @@ function exportPdfOnePager(data, mode = 'script') {
         else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
     }
 
-    const content = `
+    const fontSizeSmall = mode === 'browser' ? '7pt' : '9px';
+        const fontSizeNum = mode === 'browser' ? '18pt' : '26px';
+
+        const content = `
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
             <tr>
-                <!-- ЛЕВАЯ КОЛОНКА (30%) -->
+                <!-- ЛЕВАЯ КОЛОНКА (32%) -->
                 <td style="width: 32%; vertical-align: top; padding-right: 15px;">
                     
-                    <table style="width: 100%; border-spacing: 8px 8px; border-collapse: separate; margin-left:-8px; margin-top:-8px;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
                         <tr>
-                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; width:50%;">
-                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
+                            <td style="padding: 0 4px 8px 0; width:50%;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                    <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
+                                </div>
                             </td>
-                            <td style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; width:50%;">
-                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
-                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
+                            <td style="padding: 0 0 8px 4px; width:50%;">
+                                <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'};">
+                                    <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
+                                </div>
                             </td>
                         </tr>
                         <tr>
-                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
-                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
+                            <td style="padding: 0 4px 8px 0;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                    <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
+                                </div>
                             </td>
-                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
-                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                                <table style="width:100%; margin-top:5px;"><tr><td style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
+                            <td style="padding: 0 0 8px 4px;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                    <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
+                                </div>
                             </td>
                         </tr>
                         <tr>
-                            <td style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca;">
-                                <div style="font-size: 9px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                                <div style="font-size: 26px; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
+                            <td style="padding: 0 4px 0 0;">
+                                <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca;">
+                                    <div style="font-size: ${fontSizeSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                                    <div style="font-size: ${fontSizeNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
+                                </div>
                             </td>
-                            <td style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative;">
-                                <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
-                                <div style="position:absolute; bottom:0; left:0; width:100%;">${imgSpark}</div>
+                            <td style="padding: 0 0 0 4px;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative; overflow: hidden;">
+                                    <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
+                                    <div style="position:absolute; bottom:0; left:0; width:100%;">${imgSpark}</div>
+                                </div>
                             </td>
                         </tr>
                     </table>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height:200px;">
-                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
-                        <div style="height:160px; text-align:center;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
+                        <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
                     </div>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height:250px;">
-                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                        <div>${ratingHtml}</div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height:${mode === 'browser' ? '60mm' : '250px'}; overflow: hidden; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
+                        <div style="width: 100%; overflow: hidden;">${ratingHtml}</div>
                     </div>
                 </td>
 
                 <!-- ПРАВАЯ КОЛОНКА (68%) -->
                 <td style="width: 68%; vertical-align: top;">
-                    <div style="background: #fef2f2; border: 2px solid #fecaca; border-radius: 8px; padding: 10px; margin-bottom:10px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #dc2626; text-transform: uppercase;">🚨 ТОП-5 Критических дефектов (B3)</h3>
-                        ${renderPhotoGridRow(topB3, 'b3')}
-                    </div>
+                    ${buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
+                    ${buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
+                    ${buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
 
-                    <div style="background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px; padding: 10px; margin-bottom:10px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #d97706; text-transform: uppercase;">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
-                        ${renderPhotoGridRow(topB2, 'b2')}
-                    </div>
-                    
-                    <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 8px; padding: 10px; margin-bottom:10px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 13px; color: #16a34a; text-transform: uppercase;">✅ ТОП-5 Эталонных работ (OK)</h3>
-                        ${renderPhotoGridRow(topOK, 'ok')}
-                    </div>
-
-                    <div style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: 14px; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
-                        <div style="font-size: 13px; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+                    <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+                        <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
                     </div>
                 </td>
             </tr>
@@ -308,6 +349,218 @@ function exportPdfOnePager(data, mode = 'script') {
     `;
 
     printPdfShell("Сводка для Руководства", content, "A3", "landscape", mode);
+}
+
+// 6.5. ГЛОБАЛЬНЫЙ СВОДНЫЙ ОТЧЕТ КОМПАНИИ (Титул + Объекты)
+function exportPdfGlobalOnePager(data, mode = 'script') {
+    if(data.length === 0) return showToast('Нет данных для выгрузки');
+
+    // 1. Считаем глобальные метрики компании
+    let globalSumUrk = 0;
+    data.forEach(i => { if(i.metrics) globalSumUrk += i.metrics.final; });
+    const globalAvgUrk = data.length > 0 ? Math.round(globalSumUrk / data.length) : 0;
+    
+    const globalIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+    const globalIKO = globalIntMetrics ? globalIntMetrics.IKO : "0.00";
+    const globalRedZone = globalIntMetrics ? globalIntMetrics.redZonePerc : 0;
+    
+    let pdfIkoColorGlobal = "#64748b";
+    if (globalIKO >= 0.6) pdfIkoColorGlobal = "#dc2626";
+    else if (globalIKO >= 0.3) pdfIkoColorGlobal = "#d97706";
+    else pdfIkoColorGlobal = "#16a34a";
+
+    const uniqueContractorsGlobal = new Set(data.map(i => i.contractorName).filter(Boolean)).size;
+
+    // Группируем проверки по объектам
+    const projectsMap = {};
+    data.forEach(item => {
+        const pName = item.projectName || 'Без объекта';
+        if (!projectsMap[pName]) projectsMap[pName] = [];
+        projectsMap[pName].push(item);
+    });
+
+    const projectsArray = Object.keys(projectsMap).map(pName => {
+        const pData = projectsMap[pName];
+        let pSumUrk = 0;
+        pData.forEach(i => { if(i.metrics) pSumUrk += i.metrics.final; });
+        const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
+        const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
+        
+        return { name: pName, data: pData, avgUrk: pAvgUrk, IKO: pMetrics ? pMetrics.IKO : "0.00" };
+    }).sort((a,b) => parseFloat(b.IKO) - parseFloat(a.IKO)); // Сортируем объекты по риску (красные в начале)
+
+    // График сравнения объектов для титульника
+    const barChartUrlGlobal = generatePdfChart({
+        type: 'bar',
+        data: {
+            labels: projectsArray.map(p => p.name.substring(0, 15) + '...'),
+            datasets: [{
+                data: projectsArray.map(p => p.avgUrk),
+                backgroundColor: projectsArray.map(p => p.avgUrk < 70 ? '#ef4444' : (p.avgUrk < 85 ? '#f59e0b' : '#22c55e')),
+                borderRadius: 4
+            }]
+        },
+        options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+    }, 800, 200);
+
+    const fSizeTitle = mode === 'browser' ? '24pt' : '36px';
+    const fSizeNum = mode === 'browser' ? '32pt' : '42px';
+    const fSizeLabel = mode === 'browser' ? '9pt' : '12px';
+
+    // --- ТИТУЛЬНЫЙ ЛИСТ КОМПАНИИ ---
+    let content = `
+        <div class="no-break" style="text-align:center; margin-bottom: 30px;">
+            <h1 style="margin: 0; font-size: ${fSizeTitle}; color: #0f172a; text-transform: uppercase; font-weight: 900;">СВОДНЫЙ ОТЧЕТ КОМПАНИИ</h1>
+            <div style="font-size: ${mode === 'browser' ? '12pt' : '18px'}; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 10px;">Статус на ${new Date().toLocaleDateString('ru-RU')}</div>
+        </div>
+
+        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 30px;">
+            <tr>
+                <td style="width: 25%; padding: 0 10px 0 0;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Глобальный УрК</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${globalAvgUrk}%</div>
+                    </div>
+                </td>
+                <td style="width: 25%; padding: 0 10px;">
+                    <div style="background: ${parseFloat(globalIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(globalIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: ${pdfIkoColorGlobal}; margin-top: 10px;">${globalIKO}</div>
+                    </div>
+                </td>
+                <td style="width: 25%; padding: 0 10px;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${data.length}</div>
+                    </div>
+                </td>
+                <td style="width: 25%; padding: 0 0 0 10px;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Активных подрядчиков</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${uniqueContractorsGlobal}</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div class="no-break" style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; margin-bottom: 20px;">
+            <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📊 Рейтинг объектов (Средний УрК)</div>
+            <div style="text-align: center; height: ${mode === 'browser' ? '50mm' : '200px'}; overflow: hidden;">
+                <img src="${barChartUrlGlobal}" style="width:100%; height:100%; object-fit:contain; display:block;">
+            </div>
+        </div>
+    `;
+
+    // --- ПЕРЕБОР ОБЪЕКТОВ ---
+    projectsArray.forEach(proj => {
+        const pData = proj.data;
+        const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
+        const pIKO = pMetrics ? pMetrics.IKO : "0.00";
+        const pRed = pMetrics ? pMetrics.redZonePerc : 0;
+        
+        let pIkoColor = "#64748b";
+        if (pIKO >= 0.6) pIkoColor = "#dc2626";
+        else if (pIKO >= 0.3) pIkoColor = "#d97706";
+        else pIkoColor = "#16a34a";
+
+        // Сбор Топ-фото для объекта
+        let b3Map = {}; let b2Map = {}; let okMap = {};
+        pData.forEach(i => {
+            if(i.state && i.photos && i.templateKey) {
+                Object.keys(i.state).forEach(id => {
+                    const s = i.state[id];
+                    let defName = "Дефект";
+                    const flatList = getFlatList(userTemplates[i.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[i.templateKey.replace('sys_','')]?.groups);
+                    const foundItem = flatList.find(x => x.id == id);
+                    if(foundItem) defName = foundItem.n;
+                    const photo = i.photos[id];
+
+                    if(s === 'fail' || s === 'fail_escalated') {
+                        let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
+                        if (isB3) {
+                            if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                            b3Map[defName].count++; if (photo) b3Map[defName].photo = photo; 
+                        } else {
+                            if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                            b2Map[defName].count++; if (photo) b2Map[defName].photo = photo;
+                        }
+                    } else if (s === 'ok' && photo) {
+                        if (!okMap[defName]) okMap[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
+                        okMap[defName].count++; if (photo) okMap[defName].photo = photo;
+                    }
+                });
+            }
+        });
+
+        const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 4);
+        const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 4);
+        const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 4);
+
+        // Рейтинг подрядчиков на объекте
+        const groupedC = {};
+        pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
+        const ratingData = [];
+        for(let cName in groupedC) {
+            if (groupedC[cName].length >= 3) {
+                const m = getContractorMetrics(groupedC[cName], userTemplates);
+                if (m) ratingData.push({ name: cName, val: m.finalC });
+            }
+        }
+        ratingData.sort((a,b) => b.val - a.val);
+        
+        let ratingHtml = '';
+        if (ratingData.length === 0) {
+            ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 10px;">Нет данных</div>`;
+        } else {
+            const renderRow = (r) => `
+                <table style="width:100%; margin-bottom:6px; border-collapse:collapse; table-layout: fixed;">
+                    <tr>
+                        <td style="width:50%; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${r.name}</td>
+                        <td style="width:35%; vertical-align: middle;">
+                            <div style="background:#e2e8f0; height:10px; border-radius:5px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
+                                <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%;"></div>
+                            </div>
+                        </td>
+                        <td style="width:15%; text-align:right; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">${r.val}%</td>
+                    </tr>
+                </table>`;
+            if (ratingData.length <= 7) ratingHtml = ratingData.map(renderRow).join('');
+            else ratingHtml = ratingData.slice(0, 4).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0;">...</div>` + ratingData.slice(-3).map(renderRow).join('');
+        }
+
+        content += `
+        <div class="pdf-page-break page-break-before"></div>
+        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 15px;">
+            <tr>
+                <td style="width: 40%; vertical-align: top; padding-right: 15px;">
+                    <h2 style="margin: 0 0 15px 0; font-size: ${mode === 'browser' ? '14pt' : '18px'}; color: #0f172a; text-transform: uppercase;">Объект: ${proj.name}</h2>
+                    
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight: bold;">Ср. УрК Объекта</div>
+                        <div style="font-size: ${mode === 'browser' ? '20pt' : '28px'}; font-weight: 900; color: #0f172a;">${proj.avgUrk}%</div>
+                    </div>
+                    
+                    <div style="background: ${parseFloat(pIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 1px solid ${parseFloat(pIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight: bold;">Индекс Риска (ИКО)</div>
+                        <div style="font-size: ${mode === 'browser' ? '20pt' : '28px'}; font-weight: 900; color: ${pIkoColor};">${pIKO}</div>
+                    </div>
+
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; height: ${mode === 'browser' ? '60mm' : '220px'}; overflow: hidden;">
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">🏆 Топ Подрядчиков</div>
+                        ${ratingHtml}
+                    </div>
+                </td>
+                <td style="width: 60%; vertical-align: top;">
+                    ${buildPhotoGridHTML(topB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
+                    ${buildPhotoGridHTML(topB2, '⚠️ Повторяющиеся нарушения (B2)', '#d97706', '#fdba74', '#fff7ed', 4, mode)}
+                    ${buildPhotoGridHTML(topOK, '✅ Эталоны (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
+                </td>
+            </tr>
+        </table>
+        `;
+    });
+
+    printPdfShell("Сводный Отчет Компании", content, "A3", "landscape", mode);
 }
 
 
@@ -395,6 +648,7 @@ function generatePosterData() {
 // 1. ПЕЧАТЬ ТЕКУЩЕГО ЭКРАНА (А4 Портрет)
 // ============================================================================
 // 5. Текущий экран (Детализация Подрядчика или Список А4)
+// 5. Текущий экран (Детализация Подрядчика или Список А4)
 function exportPdfCurrentScreen(data, mode = 'script') {
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
@@ -411,73 +665,56 @@ function exportPdfCurrentScreen(data, mode = 'script') {
                 Object.keys(check.state).forEach(id => {
                     const s = check.state[id];
                     if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
-                        const isB3 = s === 'fail_escalated' || getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups).find(x => x.id == id)?.w === 3;
-                        if (isB3) photosB3.push(check.photos[id]); else photosB2.push(check.photos[id]);
+                        const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                        const itemInfo = flatList.find(x => x.id == id);
+                        const isB3 = s === 'fail_escalated' || (itemInfo && itemInfo.w === 3);
+                        const defName = itemInfo ? itemInfo.n : 'Дефект';
+                        
+                        if (isB3) photosB3.push({ src: check.photos[id], name: defName, contr: check.contractorName }); 
+                        else photosB2.push({ src: check.photos[id], name: defName, contr: check.contractorName });
                     }
                 });
             }
         });
 
-        const renderPhotoStrip = (photos, color) => {
-            if(photos.length === 0) return '<div style="color:#94a3b8; font-size:12px; margin-bottom:15px;">Фотографий нет</div>';
-            const paddedArr = [...photos].slice(0, 5);
-            while(paddedArr.length < 5) paddedArr.push(null);
-            
-            return `
-            <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left: -10px; margin-bottom: 15px;">
-                <tr>
-                ${paddedArr.map(src => {
-                    if (!src) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:130px;"></td>`;
-                    return `<td style="border:2px solid ${color}; border-radius:8px; background:white; padding:0; height:130px;">
-                        <img src="${window.getPhotoSrc(src)}" style="width:100%; height:100%; object-fit:cover; display:block;">
-                    </td>`;
-                }).join('')}
-                </tr>
-            </table>`;
-        };
+        const fontSizeSmall = mode === 'browser' ? '8pt' : '10px';
+        const fontSizeNum = mode === 'browser' ? '28pt' : '36px';
 
         const content = `
             <div style="border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;" class="no-break">
-                <h2 style="margin:0; font-size: 24px; color:#0f172a; text-transform:uppercase;">Детализация: ${currentDetailedContractor}</h2>
-                <div style="color:#64748b; font-weight:bold; margin-top:5px;">Вид работ: ${workType} | Выборка: ${m.count} проверок</div>
+                <h2 style="margin:0; font-size: ${mode === 'browser' ? '18pt' : '24px'}; color:#0f172a; text-transform:uppercase;">Детализация: ${currentDetailedContractor}</h2>
+                <div style="color:#64748b; font-weight:bold; margin-top:5px; font-size:${mode === 'browser' ? '10pt' : '12px'};">Вид работ: ${workType} | Выборка: ${m.count} проверок</div>
             </div>
             
             <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;" class="no-break">
                 <tr>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                        <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.baseUrkContrPerc}%</div>
-                        <div style="font-size:10px; font-weight:bold; color:#475569;">До штрафов</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#0f172a;">${m.baseUrkContrPerc}%</div>
+                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">До штрафов</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                        <div style="font-size:36px; font-weight:900; color:${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')};">${m.finalC}%</div>
-                        <div style="font-size:10px; font-weight:bold; color:#475569;">Погрешность: ±${m.ci95_margin.toFixed(1)}%</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')};">${m.finalC}%</div>
+                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">Погрешность: ±${m.ci95_margin.toFixed(1)}%</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                        <div style="font-size:36px; font-weight:900; color:#0f172a;">${m.stabilityIndex}</div>
-                        <div style="font-size:10px; font-weight:bold; color:#475569; text-transform:uppercase;">${m.stabText}</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Стабильность</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#0f172a;">${m.stabilityIndex}</div>
+                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569; text-transform:uppercase;">${m.stabText}</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                        <div style="font-size:36px; font-weight:900; color:#dc2626;">${m.n_изделий_с_B3} <span style="color:#d97706; font-size:24px;">/ ${photosB2.length}</span></div>
-                        <div style="font-size:10px; font-weight:bold; color:#475569;">Критичность: ${m.kcritC.toFixed(2)}</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#dc2626;">${m.n_изделий_с_B3} <span style="color:#d97706; font-size:${mode === 'browser' ? '18pt' : '24px'};">/ ${photosB2.length}</span></div>
+                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">Критичность: ${m.kcritC.toFixed(2)}</div>
                     </td>
                 </tr>
             </table>
 
             ${expertText}
             
-            <div class="no-break">
-                <h3 style="color:#dc2626; font-size:14px; text-transform:uppercase; margin-bottom:10px;">🚨 Критические дефекты (B3)</h3>
-                ${renderPhotoStrip(photosB3, '#fca5a5')}
-            </div>
-            
-            <div class="no-break">
-                <h3 style="color:#d97706; font-size:14px; text-transform:uppercase; margin-bottom:10px;">⚠️ Значимые дефекты (B2)</h3>
-                ${renderPhotoStrip(photosB2, '#fde68a')}
-            </div>
+            ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', 'transparent', 5, mode)}
+            ${buildPhotoGridHTML(photosB2, '⚠️ Значимые дефекты (B2)', '#d97706', '#fde68a', 'transparent', 5, mode)}
         `;
         printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4", "portrait", mode);
 
@@ -520,14 +757,14 @@ function exportPdfCurrentScreen(data, mode = 'script') {
         let aiHtml = '';
         if (rawSmartText) {
             const isCustomText = !!customExpertConclusions[globalKey];
-            const pdfFormattedText = rawSmartText.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>').replace(/\n/g, '<br>');
+            const pdfFormattedText = rawSmartText.replace(/^\[(.*?)\]/gm, `<div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>`).replace(/\n/g, '<br>');
             
             aiHtml = `
             <div class="no-break" style="margin-bottom: 20px; border: 1px solid ${isCustomText ? '#fde047' : '#cbd5e1'}; border-radius: 8px; background: ${isCustomText ? '#fefce8' : '#f8fafc'}; padding: 15px;">
-                <h3 style="margin-top: 0; font-size: 14px; border-bottom: 2px solid ${isCustomText ? '#fef08a' : '#e2e8f0'}; padding-bottom: 8px; margin-bottom: 15px; color: ${isCustomText ? '#854d0e' : '#0f172a'};">
+                <h3 style="margin-top: 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; border-bottom: 2px solid ${isCustomText ? '#fef08a' : '#e2e8f0'}; padding-bottom: 8px; margin-bottom: 15px; color: ${isCustomText ? '#854d0e' : '#0f172a'};">
                     ${isCustomText ? '⚠️ АНАЛИЗ ЗОН РИСКА (С КОРРЕКТИРОВКАМИ ИНЖЕНЕРА)' : '🧠 АНАЛИЗ ЗОН РИСКА (АВТОМАТИЧЕСКИЙ)'}
                 </h3>
-                <div style="font-size: 12px; line-height: 1.5; color: #1e293b; white-space: pre-wrap;">${pdfFormattedText}</div>
+                <div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; line-height: 1.5; color: #1e293b; white-space: pre-wrap;">${pdfFormattedText}</div>
             </div>`;
         }
 
@@ -543,13 +780,13 @@ function exportPdfCurrentScreen(data, mode = 'script') {
                 <table style="width: 100%; border: none;">
                     <tr>
                         <td style="width:70%; vertical-align: top;">
-                            <div style="font-size:14px; font-weight:900; color:#0f172a; line-height:1.2;">${c.name}</div>
-                            <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold; margin-top:4px;">${c.workType}</div>
+                            <div style="font-size:${mode === 'browser' ? '11pt' : '14px'}; font-weight:900; color:#0f172a; line-height:1.2;">${c.name}</div>
+                            <div style="font-size:${mode === 'browser' ? '7pt' : '9px'}; color:#64748b; text-transform:uppercase; font-weight:bold; margin-top:4px;">${c.workType}</div>
                         </td>
                         <td style="text-align:right; vertical-align: top;">
-                            <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность</div>
-                            <div style="font-size:24px; font-weight:900; color:${color}; line-height:1;">
-                                ${m.count < 7 ? '<span style="font-size:12px;color:#64748b;">СБОР</span>' : m.finalC + '%'}
+                            <div style="font-size:${mode === 'browser' ? '7pt' : '9px'}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность</div>
+                            <div style="font-size:${mode === 'browser' ? '18pt' : '24px'}; font-weight:900; color:${color}; line-height:1;">
+                                ${m.count < 7 ? `<span style="font-size:${mode === 'browser' ? '10pt' : '12px'};color:#64748b;">СБОР</span>` : m.finalC + '%'}
                             </div>
                         </td>
                     </tr>
@@ -557,20 +794,20 @@ function exportPdfCurrentScreen(data, mode = 'script') {
                 <table style="width: 100%; border-top:1px solid #e2e8f0; padding-top:10px; margin-top:10px; text-align: center;">
                     <tr>
                         <td>
-                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Ср. УрК</div>
-                            <div style="font-weight:900; font-size:14px;">${m.baseUrkContrPerc}%</div>
+                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Ср. УрК</div>
+                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'};">${m.baseUrkContrPerc}%</div>
                         </td>
                         <td>
-                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Проверок</div>
-                            <div style="font-weight:900; font-size:14px;">${m.count}</div>
+                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Проверок</div>
+                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'};">${m.count}</div>
                         </td>
                         <td>
-                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                            <div style="font-weight:900; font-size:14px; color:${m.count < 7 ? '#94a3b8' : '#0f172a'};">${m.count < 7 ? '-' : m.stabilityIndex}</div>
+                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Стабильность</div>
+                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'}; color:${m.count < 7 ? '#94a3b8' : '#0f172a'};">${m.count < 7 ? '-' : m.stabilityIndex}</div>
                         </td>
                         <td>
-                            <div style="color:#64748b; font-size:8px; text-transform:uppercase; font-weight:bold;">B3</div>
-                            <div style="font-weight:900; font-size:14px; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
+                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">B3</div>
+                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'}; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
                         </td>
                     </tr>
                 </table>
@@ -589,25 +826,28 @@ function exportPdfCurrentScreen(data, mode = 'script') {
             `);
         }
 
+        const fontSizeSmall = mode === 'browser' ? '7pt' : '9px';
+        const fontSizeNum = mode === 'browser' ? '18pt' : '24px';
+
         const content = `
             <div class="no-break" style="margin-bottom: 20px;">
-                <h2 style="margin:0; font-size: 20px; color:#0f172a; text-transform:uppercase;">Отчет: Текущий срез подрядчиков</h2>
-                <div style="font-size: 12px; color: #64748b; font-weight:bold; margin-top:5px;">Сформировано на основе активных фильтров (Всего: ${data.length} пров.)</div>
+                <h2 style="margin:0; font-size: ${mode === 'browser' ? '16pt' : '20px'}; color:#0f172a; text-transform:uppercase;">Отчет: Текущий срез подрядчиков</h2>
+                <div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; color: #64748b; font-weight:bold; margin-top:5px;">Сформировано на основе активных фильтров (Всего: ${data.length} пров.)</div>
             </div>
             
             <table class="no-break" style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left: -10px; margin-bottom: 20px;">
                 <tr>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                        <div style="font-size:24px; font-weight:900; color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                        <div style="font-size:24px; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:9px; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                        <div style="font-size:24px; font-weight:900; color:#dc2626;">${sumB3} <span style="color:#d97706; font-size:16px;">/ ${sumB2}</span></div>
+                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#dc2626;">${sumB3} <span style="color:#d97706; font-size:${mode === 'browser' ? '12pt' : '16px'};">/ ${sumB2}</span></div>
                     </td>
                 </tr>
             </table>
@@ -623,9 +863,6 @@ function exportPdfCurrentScreen(data, mode = 'script') {
 }
 
 
-// ============================================================================
-// 2. ПОЛНЫЙ ОТЧЕТ ПО ОБЪЕКТУ ДЛЯ СОВЕЩАНИЙ (А3 Альбомный, Табличная сетка)
-// ============================================================================
 // 6. Выгрузка Полного отчета по объекту (Паспорта подрядчиков А3)
 function exportPdfFullObjectReport(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
@@ -663,7 +900,7 @@ function exportPdfFullObjectReport(data, mode = 'script') {
 
     // Графики для титульника
     const cLine = document.getElementById('op-line-chart');
-    const imgLineGlobal = cLine ? `<img style="width:100%; height:180px; object-fit:contain; display:block;" src="${cLine.toDataURL('image/png')}">` : '';
+    const imgLineGlobal = cLine ? `<img style="width:100%; height:${mode === 'browser' ? '50mm' : '180px'}; object-fit:contain; display:block;" src="${cLine.toDataURL('image/png')}">` : '';
 
     const barChartUrlGlobal = generatePdfChart({
         type: 'bar',
@@ -678,69 +915,43 @@ function exportPdfFullObjectReport(data, mode = 'script') {
         options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
     }, 800, 250);
 
-    // ГЕНЕРАТОР ТАБЛИЦ ФОТОГРАФИЙ ДЛЯ ПАСПОРТОВ
-    const renderPhotoTable = (arr, title, titleColor, bgCell, borderCell) => {
-        const paddedArr = [...arr].slice(0, 4); // По 4 фото (т.к. 80% ширины)
-        while(paddedArr.length < 4) paddedArr.push({ empty: true });
-        
-        let tds = paddedArr.map((p, idx) => {
-            let paddingStyle = 'padding: 0 4px;';
-            if (idx === 0) paddingStyle = 'padding: 0 4px 0 0;';
-            if (idx === 3) paddingStyle = 'padding: 0 0 0 4px;';
-
-            if (p.empty) return `<td style="width: 25%; ${paddingStyle}"><div style="border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; height: 160px;"></div></td>`;
-            return `
-            <td style="width: 25%; ${paddingStyle}">
-                <div style="border: 1px solid ${borderCell}; border-radius: 8px; background: white; overflow: hidden; height: 160px; box-sizing: border-box;">
-                    <div style="width: 100%; height: 110px; background: #f1f5f9; text-align: center; border-bottom: 2px solid ${titleColor}; overflow: hidden;">
-                        <img src="${window.getPhotoSrc(p.src)}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
-                    </div>
-                    <div style="padding: 6px; font-size: 10px; font-weight: bold; color: #0f172a; line-height: 1.2; height: 50px; overflow: hidden; box-sizing: border-box;">${p.name}</div>
-                </div>
-            </td>`;
-        }).join('');
-
-        return `
-        <div class="no-break" style="margin-bottom: 12px; background: ${bgCell}; border-radius: 8px; padding: 6px;">
-            <h3 style="margin: 0 0 6px 4px; color: ${titleColor}; font-size: 12px; text-transform: uppercase;">${title}</h3>
-            <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-                <tr>${tds}</tr>
-            </table>
-        </div>`;
-    };
+    const fSizeTitle = mode === 'browser' ? '24pt' : '36px';
+    const fSizeSub = mode === 'browser' ? '12pt' : '18px';
+    const fSizeNum = mode === 'browser' ? '32pt' : '42px';
+    const fSizeLabel = mode === 'browser' ? '9pt' : '12px';
 
     // --- СБОРКА ТИТУЛЬНОГО ЛИСТА ---
     let content = `
         <div class="no-break" style="text-align:center; margin-bottom: 30px;">
-            <h1 style="margin: 0; font-size: 36px; color: #0f172a; text-transform: uppercase; font-weight: 900;">СВОДНЫЙ ОТЧЕТ ПО КАЧЕСТВУ</h1>
-            <div style="font-size: 18px; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 10px;">ОБЪЕКТ: ${projName}</div>
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-top: 5px;">Сформировано на основе ${data.length} проверок</div>
+            <h1 style="margin: 0; font-size: ${fSizeTitle}; color: #0f172a; text-transform: uppercase; font-weight: 900;">СВОДНЫЙ ОТЧЕТ ПО КАЧЕСТВУ</h1>
+            <div style="font-size: ${fSizeSub}; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 10px;">ОБЪЕКТ: ${projName}</div>
+            <div style="font-size: ${fSizeLabel}; color: #64748b; font-weight: bold; margin-top: 5px;">Сформировано на основе ${data.length} проверок</div>
         </div>
 
         <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 30px;">
             <tr>
                 <td style="width: 25%; padding: 0 10px 0 0;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: 120px; box-sizing: border-box;">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                        <div style="font-size: 42px; font-weight: 900; color: #0f172a; margin-top: 10px;">${avgUrkProd}%</div>
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${avgUrkProd}%</div>
                     </div>
                 </td>
                 <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 20px; text-align: center; height: 120px; box-sizing: border-box;">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
-                        <div style="font-size: 42px; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : (parseFloat(IKO) >= 0.3 ? '#d97706' : '#16a34a')}; margin-top: 10px;">${IKO}</div>
+                    <div style="background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : (parseFloat(IKO) >= 0.3 ? '#d97706' : '#16a34a')}; margin-top: 10px;">${IKO}</div>
                     </div>
                 </td>
                 <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: 120px; box-sizing: border-box;">
-                        <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                        <div style="font-size: 42px; font-weight: 900; color: #0f172a; margin-top: 10px;">${data.length}</div>
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${data.length}</div>
                     </div>
                 </td>
                 <td style="width: 25%; padding: 0 0 0 10px;">
-                    <div style="background: #fef2f2; border: 2px solid #fca5a5; border-radius: 12px; padding: 20px; text-align: center; height: 120px; box-sizing: border-box;">
-                        <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                        <div style="font-size: 42px; font-weight: 900; color: #dc2626; margin-top: 10px;">${redZonePerc}%</div>
+                    <div style="background: #fef2f2; border: 2px solid #fca5a5; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                        <div style="font-size: ${fSizeLabel}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #dc2626; margin-top: 10px;">${redZonePerc}%</div>
                     </div>
                 </td>
             </tr>
@@ -749,15 +960,15 @@ function exportPdfFullObjectReport(data, mode = 'script') {
         <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
             <tr>
                 <td style="width: 50%; padding: 0 10px 0 0; vertical-align: top;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: 260px; box-sizing: border-box;">
-                        <div style="font-size: 14px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📈 Динамика (Ср. УрК)</div>
-                        <div style="text-align: center; height: 200px; overflow: hidden;">${imgLineGlobal || '<span style="color:#94a3b8;">Нет графика</span>'}</div>
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: ${mode === 'browser' ? '75mm' : '260px'}; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📈 Динамика (Ср. УрК)</div>
+                        <div style="text-align: center; height: ${mode === 'browser' ? '55mm' : '200px'}; overflow: hidden;">${imgLineGlobal || '<span style="color:#94a3b8;">Нет графика</span>'}</div>
                     </div>
                 </td>
                 <td style="width: 50%; padding: 0 0 0 10px; vertical-align: top;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: 260px; box-sizing: border-box;">
-                        <div style="font-size: 14px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📊 Сравнение Подрядчиков (ИУрК)</div>
-                        <div style="text-align: center; height: 200px; overflow: hidden;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: ${mode === 'browser' ? '75mm' : '260px'}; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📊 Сравнение Подрядчиков (ИУрК)</div>
+                        <div style="text-align: center; height: ${mode === 'browser' ? '55mm' : '200px'}; overflow: hidden;">
                             <img src="${barChartUrlGlobal}" style="width:100%; height:100%; object-fit:contain; display:block;">
                         </div>
                     </div>
@@ -809,54 +1020,58 @@ function exportPdfFullObjectReport(data, mode = 'script') {
             }
         });
 
+        // Экспертное заключение
         let expertHtml = getExpertConclusion(m, cName, cObj.workType, cData.length, 'print', customExpertConclusions).pdfHtml;
-        expertHtml = expertHtml.replace(/font-size:\s*1[23]px/g, 'font-size: 10px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px');
+        if (mode === 'browser') {
+            expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 9pt').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px');
+        } else {
+            expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 10px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px');
+        }
+
+        const fsBoxNum = mode === 'browser' ? '22pt' : '36px';
+        const fsBoxLabel = mode === 'browser' ? '7pt' : '10px';
+        const hBox = mode === 'browser' ? '28mm' : '95px';
 
         content += `
-        <div class="pdf-page-break"></div>
+        <div class="pdf-page-break page-break-before"></div>
         <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 6px; margin-bottom: 12px;">
-            <h1 style="margin: 0 0 4px 0; font-size: 20px; color: #0f172a; text-transform: uppercase;">Паспорт: ${cName}</h1>
-            <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Вид работ: ${cObj.workType}</div>
+            <h1 style="margin: 0 0 4px 0; font-size: ${mode === 'browser' ? '16pt' : '20px'}; color: #0f172a; text-transform: uppercase;">Паспорт: ${cName}</h1>
+            <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: bold; color: #64748b; text-transform: uppercase;">Вид работ: ${cObj.workType}</div>
         </div>
 
         <!-- БЛОК 1: МЕТРИКИ И ГРАФИК ПАСПОРТА -->
         <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 12px;">
             <tr>
-                <!-- Ср. УрК Изделия (ГЛАВНАЯ МЕТРИКА) -->
                 <td style="width: 25%; padding: 0 6px 0 0;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: 95px; box-sizing: border-box;">
-                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 900; margin-bottom: 6px;">Ср. УрК Изделий</div>
-                        <div style="font-size: 36px; font-weight: 900; color: #0f172a; line-height: 1;">${m.baseUrkContrPerc}%</div>
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
+                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: 900; margin-bottom: 6px;">Ср. УрК Изделий</div>
+                        <div style="font-size: ${fsBoxNum}; font-weight: 900; color: #0f172a; line-height: 1;">${m.baseUrkContrPerc}%</div>
                     </div>
                 </td>
-                <!-- Надежность -->
                 <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: ${bgMain}; border: 2px solid ${borderMain}; border-radius: 8px; padding: 12px; text-align: center; height: 95px; box-sizing: border-box;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Надежность</div>
-                        <div style="font-size: 26px; font-weight: 900; color: ${colorMain}; line-height: 1;">${m.finalC}%</div>
+                    <div style="background: ${bgMain}; border: 2px solid ${borderMain}; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
+                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Надежность</div>
+                        <div style="font-size: ${mode === 'browser' ? '18pt' : '26px'}; font-weight: 900; color: ${colorMain}; line-height: 1;">${m.finalC}%</div>
                     </div>
                 </td>
-                <!-- Проверок -->
                 <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: 95px; box-sizing: border-box;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Проверок</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #0f172a; line-height: 1;">${m.count}</div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
+                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Проверок</div>
+                        <div style="font-size: ${mode === 'browser' ? '18pt' : '26px'}; font-weight: 900; color: #0f172a; line-height: 1;">${m.count}</div>
                     </div>
                 </td>
-                <!-- Дефекты -->
                 <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: 95px; box-sizing: border-box;">
-                        <div style="font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Дефекты B1/B2/B3</div>
-                        <div style="font-size: 16px; font-weight: 900; color: #0f172a; line-height: 1.5;">
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
+                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">B1/B2/B3</div>
+                        <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: 900; color: #0f172a; line-height: 1.5;">
                             <span style="color:#3b82f6">${defs.b1}</span> / <span style="color:#d97706">${defs.b2}</span> / <span style="color:#dc2626">${defs.b3}</span>
                         </div>
                     </div>
                 </td>
-                <!-- График -->
                 <td style="width: 30%; padding: 0 0 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; height: 95px; box-sizing: border-box;">
-                        <div style="font-size: 9px; color: #0f172a; text-transform: uppercase; font-weight: bold; text-align:center;">Динамика проверок</div>
-                        <div style="height: 60px; text-align: center; margin-top: 4px;"><img src="${lineChartUrl}" style="width: 100%; height: 100%; object-fit: contain;"></div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; height: ${hBox}; box-sizing: border-box;">
+                        <div style="font-size: ${fsBoxLabel}; color: #0f172a; text-transform: uppercase; font-weight: bold; text-align:center;">Динамика проверок</div>
+                        <div style="height: ${mode === 'browser' ? '18mm' : '60px'}; text-align: center; margin-top: 4px;"><img src="${lineChartUrl}" style="width: 100%; height: 100%; object-fit: contain;"></div>
                     </div>
                 </td>
             </tr>
@@ -865,13 +1080,13 @@ function exportPdfFullObjectReport(data, mode = 'script') {
         <!-- БЛОК 2: ЗАКЛЮЧЕНИЕ И ФОТО -->
         <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
             <tr>
-                <td style="width: 20%; vertical-align: top; padding-right: 12px;">
+                <td style="width: 25%; vertical-align: top; padding-right: 12px;">
                     ${expertHtml}
                 </td>
-                <td style="width: 80%; vertical-align: top; padding: 0;">
-                    ${renderPhotoTable(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fef2f2', '#fca5a5')}
-                    ${renderPhotoTable(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fffbeb', '#fde68a')}
-                    ${renderPhotoTable(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#f0fdf4', '#bbf7d0')}
+                <td style="width: 75%; vertical-align: top; padding: 0;">
+                    ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
+                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fffbeb', '#fde68a', 4, mode)}
+                    ${buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
                 </td>
             </tr>
         </table>
@@ -880,10 +1095,6 @@ function exportPdfFullObjectReport(data, mode = 'script') {
 
     printPdfShell("Полный отчет по объекту", content, "A3", "landscape", mode);
 }
-// ============================================================================
-// 3. ПЛАКАТ КАЧЕСТВА (Жесткая одностраничная верстка)
-// ============================================================================
-// 3. ПЛАКАТ КАЧЕСТВА (Жесткая одностраничная верстка, красивые коллажи)
 // 4. Плакат Качества (A3 Альбом)
 function exportPdfPoster(data, mode = 'script') {
     let weekData = [];
@@ -922,7 +1133,7 @@ function exportPdfPoster(data, mode = 'script') {
 
     for (let cName in grouped) {
         const cData = grouped[cName];
-        if (cData.length >= 3) {
+        if (cData.length >= 3) { 
             const m = getContractorMetrics(cData, userTemplates);
             if (m) {
                 cData.forEach(check => {
@@ -981,7 +1192,7 @@ function exportPdfPoster(data, mode = 'script') {
         let color = '#0f172a'; let bg = '#f8fafc'; let bd = '#cbd5e1'; let badge = '';
         
         if (isLeader) { color = '#16a34a'; bg = '#f0fdf4'; bd = '#bbf7d0'; }
-        if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin-bottom:4px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
+        if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:${mode === 'browser' ? '7pt' : '10px'}; font-weight:bold; display:inline-block; margin-bottom:4px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
         if (isBad) { color = '#dc2626'; bg = '#fef2f2'; bd = '#fecaca'; }
         
         return `
@@ -990,12 +1201,12 @@ function exportPdfPoster(data, mode = 'script') {
             <table style="width: 100%; border: none;">
                 <tr>
                     <td style="vertical-align: top;">
-                        <div style="font-size: 16px; font-weight: 900; color: #0f172a; margin-bottom:4px; line-height:1.2;">${c.name}</div>
-                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight:bold;">${c.workType}</div>
-                        ${isBad && c.metrics.n_изделий_с_B3 > 0 ? `<div style="margin-top:6px; font-size:10px; font-weight:bold; color:#991b1b; background:#fee2e2; padding:4px 6px; border-radius:4px; display:inline-block;">🚨 Аварий (B3): ${c.metrics.n_изделий_с_B3} шт</div>` : ''}
+                        <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: 900; color: #0f172a; margin-bottom:4px; line-height:1.2;">${c.name}</div>
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight:bold;">${c.workType}</div>
+                        ${isBad && c.metrics.n_изделий_с_B3 > 0 ? `<div style="margin-top:6px; font-size:${mode === 'browser' ? '8pt' : '10px'}; font-weight:bold; color:#991b1b; background:#fee2e2; padding:4px 6px; border-radius:4px; display:inline-block;">🚨 Аварий (B3): ${c.metrics.n_изделий_с_B3} шт</div>` : ''}
                     </td>
-                    <td style="text-align: right; width: 60px; vertical-align: top;">
-                        <div style="font-size: 32px; font-weight: 900; color: ${color}; line-height:1;">${c.metrics.finalC}%</div>
+                    <td style="text-align: right; width: ${mode === 'browser' ? '20mm' : '60px'}; vertical-align: top;">
+                        <div style="font-size: ${mode === 'browser' ? '24pt' : '32px'}; font-weight: 900; color: ${color}; line-height:1;">${c.metrics.finalC}%</div>
                     </td>
                 </tr>
             </table>
@@ -1005,63 +1216,34 @@ function exportPdfPoster(data, mode = 'script') {
     allDefectPhotos = allDefectPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
     allOkPhotos = allOkPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
 
-    const renderCollage = (arr, title, titleColor, borderColor, bgCell) => {
-        if (arr.length === 0) return `<div style="text-align:center; padding:20px; color:#94a3b8; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Нет фотографий</div>`;
-        const paddedArr = [...arr];
-        while(paddedArr.length < 4) paddedArr.push({ empty: true });
-
-        return `
-            <div class="no-break" style="margin-bottom: 20px;">
-                <h3 style="text-align:center; font-size:16px; color:${titleColor}; text-transform:uppercase; margin:0 0 10px 0; font-weight:900;">${title}</h3>
-                <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left:-10px;">
-                    <tr>
-                    ${paddedArr.map(p => {
-                        if (p.empty) return `<td style="border:1px dashed #cbd5e1; border-radius:8px; background:#f8fafc; height:180px;"></td>`;
-                        return `
-                        <td style="border:2px solid ${borderColor}; border-radius:8px; background:${bgCell}; padding:0; height:180px; vertical-align:top;">
-                            <div style="width:100%; height:130px; background:#f1f5f9; text-align:center;">
-                                <img src="${window.getPhotoSrc(p.src)}" style="width:100%; height:100%; object-fit:cover; display:block;">
-                            </div>
-                            <div style="padding:6px; height:50px; border-top:1px solid ${borderColor};">
-                                <div style="font-size:9px; font-weight:900; color:#0f172a; line-height:1.2; overflow:hidden; height:22px;">${p.name}</div>
-                                <div style="font-size:8px; color:#475569; font-weight:bold; white-space:nowrap; overflow:hidden;">👤 ${p.contr}</div>
-                            </div>
-                        </td>`;
-                    }).join('')}
-                    </tr>
-                </table>
-            </div>
-        `;
-    };
-
     const content = `
         <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing:1px;">БЮЛЛЕТЕНЬ КАЧЕСТВА СТРОИТЕЛЬСТВА</h1>
-            <div style="font-size: 16px; color: #4f46e5; font-weight: 900; margin-top: 4px; text-transform:uppercase;">Итоги: ${periodStr}</div>
+            <h1 style="font-size: ${mode === 'browser' ? '24pt' : '32px'}; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing:1px;">БЮЛЛЕТЕНЬ КАЧЕСТВА СТРОИТЕЛЬСТВА</h1>
+            <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; color: #4f46e5; font-weight: 900; margin-top: 4px; text-transform:uppercase;">Итоги: ${periodStr}</div>
         </div>
 
         <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 10px;">
             <tr>
                 <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #16a34a; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">🏆 Лидеры (УрК > 85%)</h2>
-                    ${leaders.length > 0 ? leaders.map(c => renderPosterCard(c, 'leader')).join('') : '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">В зеленой зоне никого нет</div>'}
+                    <h2 style="background: #16a34a; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">🏆 Лидеры (УрК > 85%)</h2>
+                    ${leaders.length > 0 ? leaders.map(c => renderPosterCard(c, 'leader')).join('') : `<div style="text-align:center; padding:20px; color:#64748b; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">В зеленой зоне никого нет</div>`}
                 </td>
                 <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #4f46e5; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">🚀 Прорыв недели</h2>
-                    ${breakthrough ? renderPosterCard(breakthrough, 'break') : '<div style="text-align:center; padding:20px; color:#64748b; font-size:12px; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Значительного прогресса нет</div>'}
+                    <h2 style="background: #4f46e5; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">🚀 Прорыв недели</h2>
+                    ${breakthrough ? renderPosterCard(breakthrough, 'break') : `<div style="text-align:center; padding:20px; color:#64748b; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Значительного прогресса нет</div>`}
                     
                     <div style="margin-top: 20px; background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: center;">
-                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                        <div style="font-size: 48px; font-weight: 900; color: #0f172a; margin-top:5px;">${avgObjectUrk}%</div>
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                        <div style="font-size: ${mode === 'browser' ? '36pt' : '48px'}; font-weight: 900; color: #0f172a; margin-top:5px;">${avgObjectUrk}%</div>
                     </div>
                     <div style="margin-top: 15px; background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius: 8px; padding: 15px; text-align: center;">
-                        <div style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс риска (ИКО)</div>
-                        <div style="font-size: 48px; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'}; margin-top:5px;">${IKO}</div>
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс риска (ИКО)</div>
+                        <div style="font-size: ${mode === 'browser' ? '36pt' : '48px'}; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'}; margin-top:5px;">${IKO}</div>
                     </div>
                 </td>
                 <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #ef4444; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:14px; margin-top:0; margin-bottom:12px;">⚠️ Зона внимания</h2>
-                    ${antiLeaders.length > 0 ? antiLeaders.map(c => renderPosterCard(c, 'bad')).join('') : '<div style="text-align:center; padding:20px; color:#16a34a; font-size:12px; font-weight:bold; border:1px dashed #bbf7d0; border-radius:8px; background:#f0fdf4;">Отличная работа! Отстающих нет!</div>'}
+                    <h2 style="background: #ef4444; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">⚠️ Зона внимания</h2>
+                    ${antiLeaders.length > 0 ? antiLeaders.map(c => renderPosterCard(c, 'bad')).join('') : `<div style="text-align:center; padding:20px; color:#16a34a; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #bbf7d0; border-radius:8px; background:#f0fdf4;">Отличная работа! Отстающих нет!</div>`}
                 </td>
             </tr>
         </table>
@@ -1070,10 +1252,10 @@ function exportPdfPoster(data, mode = 'script') {
             <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left:-20px;">
                 <tr>
                     <td style="vertical-align:top; width:50%;">
-                        ${renderCollage(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4')}
+                        ${buildPhotoGridHTML(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
                     </td>
                     <td style="vertical-align:top; width:50%;">
-                        ${renderCollage(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2')}
+                        ${buildPhotoGridHTML(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
                     </td>
                 </tr>
             </table>
@@ -1087,6 +1269,11 @@ function exportPdfPoster(data, mode = 'script') {
 function exportPdfData(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
     const sortedData = [...data].sort((a,b) => new Date(b.date) - new Date(a.date));
+    
+    // Динамические шрифты под режим (pt для принтера, px для PDF)
+    const fSizeTitle = mode === 'browser' ? '14pt' : '18px';
+    const fSizeSub = mode === 'browser' ? '9pt' : '12px';
+    const fSizeTable = mode === 'browser' ? '8pt' : '10px';
     
     let rowsHtml = sortedData.map((r, i) => {
         const d = new Date(r.date).toLocaleDateString('ru-RU');
@@ -1102,26 +1289,26 @@ function exportPdfData(data, mode = 'script') {
             <td style="border: 1px solid #cbd5e1; padding: 6px;">${r.stageName}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px;">${r.inspectorName || '-'}</td>
             <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center; font-weight:bold; color: ${color};">${m ? m.final + '%' : '-'}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center;">B1:${m.n_B1_fail} | B2:${m.n_B2_fail} | B3:${m.n_B3_fail}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center;">B1:${m ? m.n_B1_fail : 0} | B2:${m ? m.n_B2_fail : 0} | B3:${m ? m.n_B3_fail : 0}</td>
         </tr>`;
     }).join('');
 
     const content = `
-        <div class="no-break">
-            <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 5px 0; text-transform: uppercase;">Сырые данные (База проверок)</h2>
-            <div style="margin-bottom: 15px; font-size: 12px; color: #64748b;">Выгружено проверок: <b>${data.length} шт.</b></div>
+        <div class="no-break" style="margin-bottom: 15px;">
+            <h2 style="font-size: ${fSizeTitle}; color: #0f172a; margin: 0 0 5px 0; text-transform: uppercase;">Сырые данные (База проверок)</h2>
+            <div style="font-size: ${fSizeSub}; color: #64748b;">Выгружено проверок: <b>${data.length} шт.</b></div>
         </div>
-        <table style="width: 100%; border-collapse: collapse; font-size: 10px; color: #1e293b;">
+        <table style="width: 100%; border-collapse: collapse; font-size: ${fSizeTable}; color: #1e293b; table-layout: fixed;">
             <thead>
                 <tr style="background-color: #e2e8f0; font-weight: bold; text-transform: uppercase;">
-                    <th style="border: 1px solid #94a3b8; padding: 8px;">#</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Дата</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Подрядчик</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Локация</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Этап</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left;">Инспектор</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px;">УрК</th>
-                    <th style="border: 1px solid #94a3b8; padding: 8px;">Дефекты</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; width: 5%;">#</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left; width: 10%;">Дата</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left; width: 20%;">Подрядчик</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left; width: 15%;">Локация</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left; width: 20%;">Этап</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; text-align: left; width: 10%;">Инспектор</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; width: 5%;">УрК</th>
+                    <th style="border: 1px solid #94a3b8; padding: 8px; width: 15%;">Дефекты</th>
                 </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
@@ -1131,30 +1318,24 @@ function exportPdfData(data, mode = 'script') {
 }
 
 
-// 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
-// 9. Универсальная печатная оболочка (Идеальная математика пикселей и Iframe)
+// 9. Универсальная печатная оболочка (Диспетчер потоков PDF / Print)
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
-    // ------------------------------------------------------------------
-    // 1. Элементы загрузчика
-    // ------------------------------------------------------------------
+    // 1. Управление лоадером
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
     
     if (loader && loaderText) {
-        loaderText.innerText = mode === 'script' ? "Формируем PDF. Пожалуйста, подождите..." : "Подготовка к печати...";
+        loaderText.innerText = mode === 'script' ? "Формируем PDF (высокое качество)..." : "Подготовка к системной печати...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
-    // ------------------------------------------------------------------
-    // 2. Данные проекта и настройки качества
-    // ------------------------------------------------------------------
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
     const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
+    // Константы для PDF режима (в Print режиме они не используются, там работают pt и mm)
     const MARGIN_MM = 10;
     const MM_TO_PX = 3.7795;
-
     const pageWidths = {
         'A4_portrait':  Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
@@ -1162,10 +1343,9 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
     };
     const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
-
-    // ⭐ ВЫСОКОЕ КАЧЕСТВО: scale 2.5 (можно поставить 2 или 3)
     const HIGH_QUALITY_SCALE = 2.5;
 
+    // Универсальная шапка (Пока используем единую, на следующих этапах для браузера будем дублировать её программно)
     const header = `
         <div class="no-break" style="border-bottom:3px solid #1e293b; padding-bottom:15px; margin-bottom:25px;">
             <table style="width: 100%; border: none; border-spacing: 0;">
@@ -1186,112 +1366,76 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         </div>
     `;
 
-    // ------------------------------------------------------------------
-    // 3. Режим системной печати (browser) – для случаев, когда скрипт не нужен
-    // ------------------------------------------------------------------
+    // ============================================================================
+    // ПАЙПЛАЙН 1: БРАУЗЕРНАЯ ПЕЧАТЬ (window.print)
+    // ============================================================================
     if (mode === 'browser') {
-        const printContainer = document.getElementById('native-print-container');
-        if (printContainer) {
-            const browserWidths = {
-                'A4_portrait':  '190mm', 'A4_landscape': '277mm',
-                'A3_portrait':  '277mm', 'A3_landscape': '400mm',
-            };
-            const bodyWidth = browserWidths[`${formatSize}_${orientation}`] || '190mm';
-
-            printContainer.innerHTML = `
-                <style>
-                    @page { size: ${formatSize} ${orientation}; margin: ${MARGIN_MM}mm; }
-                    #print-body { width: ${bodyWidth}; margin: 0 auto; font-family: Arial, sans-serif; color: black; background: white; box-sizing: border-box; }
-                    #print-body * { box-sizing: border-box !important; }
-                    #print-body img { max-width: 100%; display: block; }
-                    #print-body table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-                    .pdf-page-break { page-break-before: always; break-before: page; display: block; height: 0; width: 100%; }
-                    .no-break, tr, td, img { page-break-inside: avoid; break-inside: avoid; }
-                    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-                </style>
-                <div id="print-body">
-                    ${header}
-                    ${content}
-                </div>
-            `;
-            
-            const images = printContainer.querySelectorAll('img');
-            const imgPromises = Array.from(images).map(img => {
-                if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-                return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 3000); });
-            });
-
-            await Promise.all(imgPromises);
-            setTimeout(() => {
-                window.print();
-                setTimeout(() => {
-                    printContainer.innerHTML = '';
-                    if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
-                }, 1000);
-            }, 500);
+        const printContainer = document.getElementById('print-content');
+        if (!printContainer) {
+            console.error('Контейнер #print-content не найден!');
+            return;
         }
+
+        // В Print-режиме задаем размеры страницы через @page, а контенту отдаем 100% ширины
+        printContainer.innerHTML = `
+            <style>
+                @page { 
+                    size: ${formatSize} ${orientation}; 
+                    margin: 15mm 10mm; 
+                }
+                #print-wrapper { 
+                    width: 100%; 
+                    margin: 0 auto; 
+                    font-family: Arial, sans-serif; 
+                    font-size: 10pt; /* Используем pt для печати */
+                }
+                #print-wrapper img { max-width: 100%; display: block; }
+                #print-wrapper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+            </style>
+            <div id="print-wrapper">
+                ${header}
+                ${content}
+            </div>
+        `;
+        
+        // Дожидаемся загрузки всех картинок перед вызовом диалога печати
+        const images = printContainer.querySelectorAll('img');
+        const imgPromises = Array.from(images).map(img => {
+            if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+            return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 3000); });
+        });
+
+        await Promise.all(imgPromises);
+        
+        setTimeout(() => {
+            window.print();
+            // Очищаем DOM и убираем лоадер после закрытия окна печати
+            setTimeout(() => {
+                printContainer.innerHTML = '';
+                if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
+            }, 1000);
+        }, 500); // 500ms пауза критична для iOS Safari
         return;
     }
 
-    // ------------------------------------------------------------------
-    // 4. Режим скрипта (html2pdf) – СКРЫТЫЙ DIV, БЕЗ IFRAME
-    // ------------------------------------------------------------------
+    // ============================================================================
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Скрипт)
+    // ============================================================================
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     
-    // Создаём скрытый div
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = `
-        position: fixed;
-        left: -10000px;
-        top: -10000px;
-        width: ${widthPx + 100}px;
-        background: white;
-        z-index: -1;
-        display: block;
-        visibility: visible;
-        opacity: 1;
-    `;
+    hiddenDiv.style.cssText = `position: fixed; left: -10000px; top: -10000px; width: ${widthPx + 100}px; background: white; z-index: -1; display: block;`;
     document.body.appendChild(hiddenDiv);
 
-    // Стили изоляции (без all: initial)
+    // Специфичные стили для изоляции html2canvas (Работаем с пикселями)
     const styleElem = document.createElement('style');
     styleElem.textContent = `
-        #pdf-print-root {
-            width: ${widthPx}px !important;
-            margin: 0 auto !important;
-            padding: 20px !important;
-            background: white !important;
-            font-family: Arial, sans-serif !important;
-            color: black !important;
-            box-sizing: border-box !important;
-        }
-        #pdf-print-root * {
-            box-sizing: border-box !important;
-        }
-        #pdf-print-root img {
-            max-width: 100% !important;
-            display: block !important;
-        }
-        #pdf-print-root table {
-            width: 100% !important;
-            table-layout: fixed !important;
-            border-collapse: collapse !important;
-        }
-        #pdf-print-root .pdf-page-break {
-            page-break-before: always !important;
-            break-before: page !important;
-            display: block !important;
-            height: 1px;
-            clear: both;
-        }
-        #pdf-print-root .no-break {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-        #pdf-print-root tr, #pdf-print-root td, #pdf-print-root img {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
+        #pdf-print-root { width: ${widthPx}px !important; margin: 0 auto !important; padding: 20px !important; background: white !important; font-family: Arial, sans-serif !important; color: black !important; box-sizing: border-box !important; }
+        #pdf-print-root * { box-sizing: border-box !important; }
+        #pdf-print-root img { max-width: 100% !important; display: block !important; }
+        #pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+        #pdf-print-root .pdf-page-break { page-break-before: always !important; break-before: page !important; display: block !important; height: 1px; clear: both; }
+        #pdf-print-root .no-break, #pdf-print-root tr, #pdf-print-root td, #pdf-print-root img { page-break-inside: avoid !important; break-inside: avoid !important; }
     `;
     hiddenDiv.appendChild(styleElem);
 
@@ -1301,22 +1445,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     hiddenDiv.appendChild(rootDiv);
 
     const cleanup = () => {
-        if (loader) {
-            loader.classList.add('opacity-0');
-            setTimeout(() => loader.style.display = 'none', 300);
-        }
+        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
 
-    // Дожидаемся изображений
     const images = hiddenDiv.querySelectorAll('img');
     const imagePromises = Array.from(images).map(img => {
         if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-        return new Promise((resolve) => {
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-            setTimeout(() => resolve(), 5000);
-        });
+        return new Promise((resolve) => { img.onload = () => resolve(); img.onerror = () => resolve(); setTimeout(() => resolve(), 5000); });
     });
 
     const fontPromise = document.fonts ? document.fonts.ready : Promise.resolve();
@@ -1325,42 +1461,28 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     await Promise.all([fontPromise, ...imagePromises]);
     
     if (loaderText) loaderText.innerText = "Создание PDF (высокое качество)...";
-    
-    // Небольшая задержка для полного рендеринга (на iOS чуть дольше)
     await new Promise(resolve => setTimeout(resolve, isIOS ? 500 : 200));
 
-    // ------------------------------------------------------------------
-    // 5. Настройки html2pdf с ВЫСОКИМ scale
-    // ------------------------------------------------------------------
     const opt = {
         margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
         filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-        image: { type: 'jpeg', quality: 1.0 },   
+        image: { type: 'jpeg', quality: 0.98 },   
         html2canvas: {
             scale: HIGH_QUALITY_SCALE,   
-            useCORS: true, // ИСПРАВЛЕНИЕ: Всегда true для поддержки загрузки фото из облака
+            useCORS: true,
             letterRendering: true,
-            x: 0,
+            width: widthPx, // Кристально точная ширина захвата
+            windowWidth: widthPx, // Принудительно заставляем эмулировать экран этой ширины
+            x: 0, // Начинаем захват строго с нуля
             y: 0,
             scrollX: 0,
             scrollY: 0,
-            width: widthPx,
-            windowWidth: widthPx,
             logging: false,
-            allowTaint: true, // ИСПРАВЛЕНИЕ: Всегда true для iOS
+            allowTaint: true,
             backgroundColor: '#ffffff'
         },
-        jsPDF: {
-            unit: 'mm',
-            format: formatSize.toLowerCase(),
-            orientation: orientation,
-            compress: true
-        },
-        pagebreak: {
-            mode: ['css', 'legacy'],
-            before: '.pdf-page-break',
-            avoid: ['.no-break', 'tr', 'td', 'img', '.avoid-break']
-        }
+        jsPDF: { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation, compress: true },
+        pagebreak: { mode: ['css', 'legacy'] }
     };
 
     try {

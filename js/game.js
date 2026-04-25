@@ -407,7 +407,13 @@ window.gameGenerateWeeklyPlan = function(force = false) {
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo);
+    
+    // ИСПРАВЛЕНИЕ: Формируем план ТОЛЬКО по тем подрядчикам, 
+    // с которыми работал именно ТЕКУЩИЙ инспектор за последний месяц.
+    const recentChecks = contractorArray.filter(c => 
+        new Date(c.date) >= thirtyDaysAgo && 
+        c.inspectorName === currentInspector
+    );
 
     const pairMap = {};
     recentChecks.forEach(c => {
@@ -415,8 +421,15 @@ window.gameGenerateWeeklyPlan = function(force = false) {
         const key = c.templateKey.replace(type + '_', '');
         const templateObj = type === 'sys' ? SYSTEM_TEMPLATES[key] : userTemplates[key];
         const freq = templateObj?.checkFrequency || 'continuous';
+        
+        // УМНАЯ ГРУППИРОВКА:
+        // Непрерывные процессы (Фасад, Отделка) - 1 общая задача на объект.
+        // Этапные процессы (Монолит, Кровля) - задача привязывается к конкретному этажу/участку (instanceId).
+        let statusKey = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
         const instanceId = c.instanceId || 'default';
-        const statusKey = `${c.projectName}::${c.contractorName}::${c.templateKey}::${instanceId}`;
+        if (freq === 'milestone') {
+            statusKey += `::${instanceId}`;
+        }
 
         if (!pairMap[statusKey]) {
             pairMap[statusKey] = {
@@ -511,7 +524,8 @@ window.gameGenerateWeeklyPlan = function(force = false) {
             newTasks.push({
                 id: 'task_' + Date.now().toString(36), statusKey: key, type: 'milestone',
                 contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-                priority: "Поэтапный", priorityLvl: 2, target: tTotal, done: completedLen,
+                // Для Milestone добавляем в название Локацию, чтобы инспектор понимал, ЧТО именно он проверяет
+                priority: `Этап (${pair.instanceId.replace('_', ' ')})`, priorityLvl: 2, target: tTotal, done: completedLen,
                 needsEtalon: needsEtalon, isPaused: isPaused, isCompletedManually: isManuallyCompleted || (completedLen >= tTotal)
             });
         }

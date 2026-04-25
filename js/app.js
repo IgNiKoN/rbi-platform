@@ -709,6 +709,7 @@ function handleFabDownload() {
         contentHtml += createRow('tender', 'Тендерный отчет', 'Левая кнопка: PDF | Правая: Excel CSV', 'bg-purple-50 dark:bg-purple-900/30', 'text-purple-600 dark:text-purple-400', iconTable);
     } else if (ctx === 'sub-onepager') {
         contentHtml += createRow('onepager', 'Сводный статус объекта', 'Графики и управленческие выводы (А3)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconChart);
+        contentHtml += createRow('global_onepager', 'Глобальная сводка', 'Все объекты компании (А3)', 'bg-blue-50 dark:bg-blue-900/30', 'text-blue-600 dark:text-blue-400', iconDoc);
     } else if (ctx === 'sub-data') {
         contentHtml += createRow('data', 'Реестр проверок', 'Сырая база данных (А4)', 'bg-slate-100 dark:bg-slate-800', 'text-slate-600 dark:text-slate-300', iconTable);
     } else {
@@ -5149,8 +5150,13 @@ window.printCurrentTwi = function(mode = 'browser') {
 
     let content = '';
 
+    // Адаптивные шрифты и уменьшенные размеры картинок для TWI (чтобы влезало на 1 лист)
+    const fsTitle = mode === 'browser' ? '12pt' : '16px';
+    const fsText = mode === 'browser' ? '9pt' : '12px';
+    const imgHeight = mode === 'browser' ? '40mm' : '180px';
+
     if (card.type === 'INSPECTOR') {
-        // Парсим новые поля для печати
+        // Парсим поля для печати
         let compliance = "", prep = "";
         if (card.howToCheck) {
             if (card.howToCheck.includes('[Как подготовить]')) {
@@ -5163,71 +5169,80 @@ window.printCurrentTwi = function(mode = 'browser') {
         }
 
         content = `
-            <div style="display:flex; gap:15px; margin-bottom:20px; page-break-inside: avoid;">
-                <div style="flex:1; border:3px solid #22c55e; padding:10px; border-radius:12px; text-align:center; background:#f0fdf4;">
-                    <h2 style="color:#166534; margin-top:0; font-size:18px;">✅ ЭТАЛОН (ПРАВИЛЬНО)</h2>
-                    ${card.photoGood ? `<div style="height: 250px; overflow: hidden; border-radius:8px;"><img src="${card.photoGood}" style="width:100%; height:100%; object-fit:contain;"></div>` : '<div style="height:250px; line-height:250px; color:#166534;">Нет фото</div>'}
-                </div>
-                <div style="flex:1; border:3px solid #ef4444; padding:10px; border-radius:12px; text-align:center; background:#fef2f2;">
-                    <h2 style="color:#991b1b; margin-top:0; font-size:18px;">❌ БРАК (НАРУШЕНИЕ)</h2>
-                    ${card.photoBad ? `<div style="height: 250px; overflow: hidden; border-radius:8px;"><img src="${card.photoBad}" style="width:100%; height:100%; object-fit:contain;"></div>` : '<div style="height:250px; line-height:250px; color:#991b1b;">Нет фото</div>'}
-                </div>
-            </div>
-            
-            <table style="width:100%; border-collapse: separate; border-spacing: 15px 0; margin-left:-15px;">
+            <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
                 <tr>
-                    <td style="width:50%; vertical-align:top;">
-                        <div style="background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #cbd5e1; height:100%;">
-                            <h3 style="color:#0f172a; margin-top:0; font-size:14px; text-transform:uppercase;">📌 Как подготовить:</h3>
-                            <p style="font-size:13px; color:#334155; white-space:pre-wrap;">${prep || 'Не указано'}</p>
+                    <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
+                        <h2 style="color: #166534; margin: 0 0 10px 0; font-size: ${fsTitle}; text-transform: uppercase;">✅ ЭТАЛОН (ПРАВИЛЬНО)</h2>
+                        ${card.photoGood ? `<div style="height: ${imgHeight}; overflow: hidden; border-radius: 8px; background: white;"><img src="${window.getPhotoSrc(card.photoGood)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #166534;">Нет фото</div>`}
+                    </td>
+                    <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
+                        <h2 style="color: #991b1b; margin: 0 0 10px 0; font-size: ${fsTitle}; text-transform: uppercase;">❌ БРАК (НАРУШЕНИЕ)</h2>
+                        ${card.photoBad ? `<div style="height: ${imgHeight}; overflow: hidden; border-radius: 8px; background: white;"><img src="${window.getPhotoSrc(card.photoBad)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #991b1b;">Нет фото</div>`}
+                    </td>
+                </tr>
+            </table>
+            
+            <table class="no-break" style="width: 100%; border-collapse: separate; border-spacing: 15px 0; table-layout: fixed; margin-left: -15px;">
+                <tr>
+                    <td style="width: 50%; vertical-align: top;">
+                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
+                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📌 Как подготовить:</h3>
+                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${prep || 'Не указано'}</p>
                         </div>
                     </td>
-                    <td style="width:50%; vertical-align:top;">
-                        <div style="background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #cbd5e1; height:100%;">
-                            <h3 style="color:#0f172a; margin-top:0; font-size:14px; text-transform:uppercase;">📏 Что соблюсти (Критерии):</h3>
-                            <p style="font-size:13px; color:#334155; white-space:pre-wrap;">${compliance || 'Не указано'}</p>
+                    <td style="width: 50%; vertical-align: top;">
+                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
+                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📏 Что соблюсти (Критерии):</h3>
+                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${compliance || 'Не указано'}</p>
                         </div>
                     </td>
                 </tr>
             </table>
 
-            <div style="background:#fef2f2; padding:15px; border-radius:12px; border:1px solid #fecaca; margin-top:15px; page-break-inside: avoid;">
-                <h3 style="color:#991b1b; margin-top:0; font-size:14px; text-transform:uppercase;">🚨 Риски нарушения:</h3>
-                <p style="font-size:13px; color:#7f1d1d;">${card.whyImportant || 'Не указано'}</p>
+            <div class="no-break" style="background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fecaca; margin-top: 15px;">
+                <h3 style="color: #991b1b; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">🚨 Риски нарушения:</h3>
+                <p style="font-size: ${fsText}; color: #7f1d1d; margin: 0;">${card.whyImportant || 'Не указано'}</p>
             </div>
         `;
     } else if (card.type === 'WORKER') {
         content = `
-            <div style="background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #cbd5e1; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div style="font-size:10px; color:#64748b; font-weight:bold; text-transform:uppercase;">Время операции</div>
-                    <div style="font-size:20px; font-weight:900; color:#0f172a;">~${card.totalTime} мин</div>
-                </div>
-                <div style="text-align:right;">
-                    <div style="font-size:10px; color:#64748b; font-weight:bold; text-transform:uppercase;">Количество шагов</div>
-                    <div style="font-size:20px; font-weight:900; color:#0f172a;">${card.steps.length}</div>
-                </div>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:15px;">
+            <table class="no-break" style="width: 100%; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; border-collapse: collapse;">
+                <tr>
+                    <td style="vertical-align: middle;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Время операции</div>
+                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">~${card.totalTime} мин</div>
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Количество шагов</div>
+                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">${card.steps.length}</div>
+                    </td>
+                </tr>
+            </table>
         `;
+        
         card.steps.forEach(step => {
             content += `
-                <div style="border:2px solid #e2e8f0; border-left:6px solid #10b981; padding:15px; border-radius:10px; page-break-inside: avoid; display:flex; gap:15px; align-items:center; background:white;">
-                    <div style="flex:1;">
-                        <h3 style="color:#047857; margin-top:0; font-size:14px; text-transform:uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color:#64748b; font-size:11px;">(⏱ ${step.time} мин)</span>` : ''}</h3>
-                        <p style="font-size:14px; font-weight:bold; color:#1e293b; white-space:pre-wrap;">${step.text}</p>
-                    </div>
-                    ${step.photo ? `<div style="width:200px; height:150px; flex-shrink:0; text-align:right;"><img src="${step.photo}" style="width:100%; height:100%; object-fit:contain; border-radius:6px; border:1px solid #cbd5e1; background:#f1f5f9;"></div>` : ''}
-                </div>
+                <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
+                    <tr>
+                        <td style="padding: 15px; vertical-align: top;">
+                            <h3 style="color: #047857; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color: #64748b; font-size: ${mode === 'browser' ? '9pt' : '11px'};">(⏱ ${step.time} мин)</span>` : ''}</h3>
+                            <p style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: bold; color: #1e293b; white-space: pre-wrap; margin: 0;">${step.text}</p>
+                        </td>
+                        ${step.photo ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: top; text-align: right;">
+                            <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
+                                <img src="${window.getPhotoSrc(step.photo)}" style="width: 100%; height: 100%; object-fit: contain;">
+                            </div>
+                        </td>` : ''}
+                    </tr>
+                </table>
             `;
         });
-        content += `</div>`;
     } else {
         return showToast('Печать PDF-файлов осуществляется внешними средствами.');
     }
 
-    // Вызываем универсальную оболочку из export.js (A4 Landscape/Portrait в зависимости от типа)
     const orientation = card.type === 'INSPECTOR' ? 'landscape' : 'portrait';
+    // Вызываем нашу универсальную оболочку из export.js!
     printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode);
 }
 
@@ -5997,3 +6012,12 @@ window.showTwiPrintOptions = function() {
     document.body.classList.add('modal-open'); 
     modal.style.display = 'flex';
 };
+
+// Переход в базу знаний со стартового экрана
+function goToFAQ() {
+    switchTab('tab-reference');
+    setTimeout(() => {
+        const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
+        if (btns[4]) switchReferenceSubTab('ref-sub-faq', btns[4]);
+    }, 150);
+}

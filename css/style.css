@@ -887,37 +887,58 @@ select option, select optgroup {
     color: var(--text-main);
 }
 
-/* === ПРАВИЛА ДЛЯ СИСТЕМНОЙ ПЕЧАТИ (БРАУЗЕР) === */
+/* === БАЗОВЫЕ ПРАВИЛА ИЗОЛЯЦИИ ПЕЧАТИ === */
+.print-only { display: none; }
+
 @media print {
-    /* Жестко скрываем ВООБЩЕ ВСЁ, кроме контейнера печати */
-    body > *:not(#native-print-container) { display: none !important; }
+    /* Жестко скрываем ВООБЩЕ ВСЕ элементы интерфейса PWA */
+    body > *:not(#print-content) { 
+        display: none !important; 
+    }
     
-    /* Дополнительно убиваем плавающие элементы */
+    /* Скрываем все плавающие окна, модалки и навигацию */
     #fab-download-btn, #fab-export-menu-overlay, #toast-container, 
     #global-loader, .header-fixed, .bottom-nav, .analytics-nav-container, 
-    #tutorial-overlay, #tutorial-tooltip { 
+    #tutorial-overlay, #tutorial-tooltip, .modal-overlay { 
         display: none !important; 
         opacity: 0 !important;
         visibility: hidden !important;
     }
 
-    /* Показываем только контейнер для печати */
-    #native-print-container {
+    /* Активируем только печатный контейнер */
+    #print-content.print-only {
         display: block !important;
         position: absolute;
         top: 0; left: 0;
         width: 100%;
-        margin: 0; padding: 0;
+        margin: 0; padding: 10mm !important; /* Гарантированные поля на самом листе */
         background: white;
+        box-sizing: border-box !important;
     }
 
-    /* Разрешаем браузеру печатать фоновые цвета */
+    /* Глобальные настройки браузерной печати */
     * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        box-sizing: border-box !important;
     }
     
-    /* ВАЖНО: Мы убрали @page { margin: 0; }, чтобы браузер сам ставил отступы! */
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    /* Настройки страницы для принтера */
+    @page { 
+        margin: 0; /* Поля регулируются через padding контейнера выше для избежания багов iOS */
+    }
+
+    /* Управление разрывами для браузера */
+    .page-break-before { page-break-before: always; break-before: page; }
+    .no-break { page-break-inside: avoid; break-inside: avoid; }
+    tr, td, img, h1, h2, h3, h4 { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* === ИСПРАВЛЕНИЯ ИЗ ЗАДАЧ 3 И 4 === */

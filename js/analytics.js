@@ -681,10 +681,12 @@ function renderOnePagerSubTab(data) {
     }
 
     let defaultChartContrs = [];
+    let isTruncatedForChart = false;
     if (ratingData.length <= 10) {
         defaultChartContrs = ratingData.map(r => r.name);
     } else {
         defaultChartContrs = [...ratingData.slice(0, 5).map(r => r.name), ...ratingData.slice(-5).map(r => r.name)];
+        isTruncatedForChart = true;
     }
     
     if (!selectedChartFilters.onepager) selectedChartFilters.onepager = [];
@@ -921,7 +923,25 @@ function renderOnePagerSubTab(data) {
             chartInstances['op-line-chart'] = new Chart(ctxLine.getContext('2d'), {
                 type: 'line',
                 data: trendData,
-                options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, ticks: { font: {size: 9} } }, x: { ticks: { font: {size: 9} } } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: {size: 8} } } } }
+                options: { 
+                    animation: false, 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { 
+                        y: { min: 0, max: 100, ticks: { font: {size: 9} } }, 
+                        x: { ticks: { font: {size: 9} } } 
+                    }, 
+                    plugins: { 
+                        legend: { position: 'right', labels: { boxWidth: 8, font: {size: 8} } },
+                        title: {
+                            display: isTruncatedForChart,
+                            text: 'Отображен ТОП-5 лучших и ТОП-5 худших подрядчиков',
+                            color: '#94a3b8',
+                            font: { size: 10, weight: 'bold' },
+                            padding: { bottom: 5 }
+                        }
+                    } 
+                }
             });
         }
     }, 100);
@@ -1471,19 +1491,59 @@ function copyExpertText(btnId, textAreaId) {
     }).catch(() => showToast('Ошибка копирования'));
 }
 
+// === ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
 function generateSmartComment(scenario) {
     if(!currentEditingExpertKey) return;
-    const parts = currentEditingExpertKey.split('_||_');
-    const cName = parts[0]; const tTitle = parts[1];
     
-    const cDataAll = contractorArray.filter(i => i.contractorName === cName && i.templateTitle === tTitle);
-    if(cDataAll.length < 7) return showToast("Мало данных для генерации (нужно минимум 7 изделий)");
+    // 1. Проверка: Если мы редактируем Глобальный вывод (Дашборд или One-Pager)
+    if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
+        // Берем отфильтрованные данные (то, что сейчас на экране)
+        const data = getFilteredAnalyticsData();
+        if (data.length === 0) return showToast("Нет данных для анализа");
+        
+        const text = generateGlobalSmartText(scenario, data);
+        document.getElementById('modal-expert-input').value = text;
+        showToast("Глобальный вывод сгенерирован!");
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
+        return;
+    }
+
+    // 2. Стандартная генерация для конкретного подрядчика
+    const parts = currentEditingExpertKey.split('_||_');
+    if (parts.length < 2) return showToast("Ошибка ключа генерации");
+    const cKey = parts[0]; 
+    const tTitle = parts[1];
+    
+    const cDataAll = contractorArray.filter(i => {
+        const itemKey = (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']';
+        return itemKey === cKey && i.templateTitle === tTitle;
+    });
+    
+    if(cDataAll.length < 7) return showToast(`Мало данных для ИИ (Найдено: ${cDataAll.length} шт., нужно 7)`);
     
     const metrics = getContractorMetrics(cDataAll, userTemplates);
-    const text = buildSmartText(scenario, metrics, cName, tTitle, cDataAll.length);
+    const text = buildSmartText(scenario, metrics, cKey.split(' [')[0], tTitle, cDataAll.length);
     document.getElementById('modal-expert-input').value = text;
     showToast("Текст успешно сгенерирован!");
     if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
+}
+
+// Вспомогательная функция для Глобальных выводов
+function generateGlobalSmartText(scenario, data) {
+    let sumB3 = 0;
+    data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
+    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+    const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+    const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+    
+    const isDanger = parseFloat(IKO) >= 0.60 || sumB3 > 0;
+    
+    switch(scenario) {
+        case 'strict': return `[СТРОГОЕ ПРЕДПИСАНИЕ ПО ОБЪЕКТУ]\nИндекс риска (ИКО): ${IKO}\nВ красной зоне: ${redZone}% работ.\n\n${isDanger ? 'КРИТИЧЕСКАЯ СИТУАЦИЯ. ТРЕБУЕТСЯ ОСТАНОВКА РАБОТ ДЛЯ ВЫЯВЛЕНИЯ ПРИЧИН БРАКА.' : 'Ситуация стабильна. Удержать качество на текущем уровне.'}`;
+        case 'boss': return `[ДОКЛАД ДЛЯ РУКОВОДСТВА]\nСтатус: ${isDanger ? 'ВЫСОКИЙ РИСК СРЫВА СРОКОВ' : 'Штатный режим'}.\nИКО: ${IKO}.\n\nВывод: ${isDanger ? 'Необходимы жесткие административные меры к отстающим подрядчикам.' : 'Объект строится в заданных параметрах качества.'}`;
+        case 'action_plan': return `[ПЛАН ДЕЙСТВИЙ (PDCA)]\n1. Индекс риска (ИКО): ${IKO}.\n2. Проблемный объем: ${redZone}%.\n\nШАГИ:\n- ${isDanger ? 'Блокировка КС-2 для всех подрядчиков в красной зоне.' : 'Фокус на профилактике (разработка новых TWI).'}\n- Проведение кросс-аудита работы ИТР.`;
+        default: return `[АНАЛИТИКА ДАШБОРДА]\nИндекс критичности объекта (ИКО): ${IKO}.\nРаботы в красной зоне: ${redZone}%.\nОхват: ${data.length} проверок.\n\n${isDanger ? '1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.' : 'Процесс находится в управляемой зоне. Ресурсы направить на профилактику системных дефектов.'}`;
+    }
 }
 
 function buildSmartText(scenario, c, cName, tTitle, count) {
