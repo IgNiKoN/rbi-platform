@@ -916,7 +916,9 @@ window.gameRenderDashboard = function() {
             </summary>
             <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
-                    <div style="height: 180px; width: 100%; position: relative;"><canvas id="pi-radar-chart"></canvas></div>
+                    <div style="height: 160px; width: 100%; position: relative;"><canvas id="pi-radar-chart"></canvas></div>
+                    <button onclick="generateAiTutorAdvice()" class="mt-3 w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 text-[9px] font-black uppercase py-2 rounded-lg border border-indigo-200 dark:border-indigo-800 active:scale-95 transition-transform shadow-sm">🧠 AI-Наставник</button>
+                    <div id="ai-tutor-container" class="hidden mt-2 text-[10px] leading-snug text-slate-700 dark:text-slate-300 border-t border-slate-100 dark:border-slate-700 pt-2"></div>
                 </div>
                 <button onclick="gameOpenImpactModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] ${globalImpactBg}">
                     <div class="flex justify-between items-start w-full mb-4">
@@ -953,6 +955,9 @@ window.gameRenderDashboard = function() {
                     <button onclick="gameForceUpdatePlan(); event.stopPropagation();" class="text-[9px] font-black text-indigo-700 bg-white/80 dark:bg-slate-800/80 border border-indigo-300 dark:border-indigo-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Обновить план
                     </button>
+                    <button onclick="generateAiRoutePlan(); event.stopPropagation();" class="text-[9px] font-black text-purple-700 bg-purple-100 dark:bg-purple-900/50 border border-purple-300 dark:border-purple-700 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
+                        🧠 AI-Маршрут
+                    </button>
                     <button onclick="gameToggleAbsence(); event.stopPropagation();" class="text-[9px] font-black text-slate-600 bg-white/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
                         🏖️ Отпуск/Статус
                     </button>
@@ -960,6 +965,7 @@ window.gameRenderDashboard = function() {
             </summary>
             
             <div class="p-3 ${taskBlockBodyColor} space-y-4">
+            <div id="ai-route-container" class="hidden bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 text-[11px] text-purple-900 dark:text-purple-200 leading-relaxed shadow-inner"></div>
     `;
 
     if (engineerAbsence.isActive) {
@@ -1735,6 +1741,11 @@ window.gameOpenTaskDetails = function(statusKey, e) {
     let actionsHtml = '';
     if (st.status === 'active') {
         actionsHtml += `
+            <div id="ai-task-risk-${task.id}" class="mb-3">
+                <button onclick="generateTaskRiskAi('${safeContractor}', '${task.templateKey}', 'ai-task-risk-${task.id}')" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-transform flex justify-center items-center gap-2 shadow-sm">
+                    🔮 Оценить риски (ИИ)
+                </button>
+            </div>
             <button onclick="document.getElementById('task-details-modal').style.display='none'; gameStartTask('${safeContractor}', '${task.templateKey}')" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2 mb-3">
                 ▶ Приступить к проверке
             </button>
@@ -1997,4 +2008,108 @@ window.gameOpenImpactModal = function() {
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+};
+
+// === AI: ПРОГНОЗ РИСКОВ В КАРТОЧКЕ ЗАДАЧИ ===
+window.generateTaskRiskAi = async function(contractorName, templateKey, containerId) {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const cData = contractorArray.filter(c => c.contractorName === contractorName && c.templateKey === templateKey).sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (cData.length < 3) return showToast("Мало данных для прогноза (нужно хотя бы 3 проверки).");
+
+    container.innerHTML = `<div class="text-center text-[10px] text-indigo-500 font-bold animate-pulse py-3">Анализирую динамику...</div>`;
+
+    const m = getContractorMetrics(cData, userTemplates);
+    const urkHistory = cData.slice(-5).map(c => c.metrics.final).join('%, ') + '%'; 
+
+    const promptSystem = `Ты — аналитик качества. Оцени риск ухудшения качества подрядчика. 
+    Ответь строго в формате:
+    Статус: [Риск растёт / Стабильно / Риск снижается]
+    Обоснование: [1 короткое предложение, почему так]`;
+
+    const promptUser = `Подрядчик: ${contractorName}
+    УрК по последним 5 проверкам (в хронологии): ${urkHistory}
+    Индекс стабильности: ${m.stabilityIndex}/100
+    Доля критических аварий B3: ${m.rateB3}%`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 150 });
+
+        const isBad = response.toLowerCase().includes('растёт') || m.finalC < 75;
+        const isGood = response.toLowerCase().includes('снижается') || (m.finalC > 85 && m.stabilityIndex > 80);
+        const bgColor = isBad ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/30' : (isGood ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/30' : 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/30');
+
+        container.innerHTML = `
+            <div class="${bgColor} border p-3 rounded-xl shadow-sm text-[11px] leading-snug">
+                <div class="font-black uppercase mb-1 flex items-center gap-1">🤖 AI-Прогноз</div>
+                ${response.replace(/\n/g, '<br>')}
+            </div>
+        `;
+    } catch (e) {
+        container.innerHTML = `<button onclick="generateTaskRiskAi('${contractorName}', '${templateKey}', '${containerId}')" class="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex justify-center items-center gap-2">❌ Ошибка. Повторить</button>`;
+    }
+};
+
+// === AI: МАРШРУТИЗАТОР (ПЛАН НА ДЕНЬ) ===
+window.generateAiRoutePlan = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    if (!weeklyPlanData || !weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) return showToast("План пуст.");
+
+    const container = document.getElementById('ai-route-container');
+    container.classList.remove('hidden');
+    container.innerHTML = `<span class="animate-pulse font-bold">🧠 Нейросеть прокладывает оптимальный маршрут с учетом рисков...</span>`;
+
+    // Собираем контекст по задачам
+    const tasksContext = weeklyPlanData.tasks.map(t => 
+        `- Подрядчик: ${t.contractor}, Работа: ${t.templateTitle}, Статус: ${t.priority}, Долг: ${t.carryOverCount}`
+    ).join('\n');
+
+    const promptSystem = `Ты — AI-логист строительного контроля. Составь оптимальный маршрут на сегодня из списка задач.
+    Верни строго 2 абзаца:
+    МАРШРУТ: [краткий список из 3-4 самых критичных подрядчиков по порядку].
+    ОБОСНОВАНИЕ: [1 предложение, почему выбран такой порядок (например, из-за долгов или аварий)].`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: `Задачи в пуле:\n${tasksContext}` }
+        ], { temperature: 0.2, max_tokens: 200 });
+
+        container.innerHTML = `<b>📍 Рекомендация маршрута:</b><br>${response.replace(/\n/g, '<br>')}`;
+        showToast("✨ Маршрут построен!");
+    } catch (e) {
+        container.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+    }
+};
+
+// === AI: ТЬЮТОР (СОВЕТ ПО РАЗВИТИЮ) ===
+window.generateAiTutorAdvice = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
+    const container = document.getElementById('ai-tutor-container');
+    container.classList.remove('hidden');
+    container.innerHTML = `<span class="animate-pulse">⏳ Анализирую ваш профиль...</span>`;
+
+    const profile = window.currentProfileData;
+    const logs = gameActionLogs.filter(l => l.inspector === profile.name).slice(-20); // Последние 20 действий
+    const actionsMap = {};
+    logs.forEach(l => { actionsMap[l.action] = (actionsMap[l.action] || 0) + 1; });
+
+    const promptSystem = `Ты — наставник инженера. Дай 1 короткий, мотивирующий совет (максимум 2 предложения) по профессиональному росту. 
+    Посмотри на статистику действий и подскажи, чего не хватает (например, мало используют TWI или мало генерируют AI-отчеты). 
+    Без воды, сразу к делу.`;
+
+    const promptUser = `XP инженера: ${profile.pi}. Последние действия: ${JSON.stringify(actionsMap)}. Навыки: ${JSON.stringify(profile.radarData)}.`;
+
+    try {
+        const response = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.5, max_tokens: 150 });
+        container.innerHTML = `<b>💡 Наставление:</b> ${response}`;
+    } catch (e) {
+        container.innerHTML = `<span class="text-red-500">Ошибка AI</span>`;
+    }
 };

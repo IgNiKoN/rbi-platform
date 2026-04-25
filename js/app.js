@@ -41,7 +41,9 @@ let appSettings = {
     fastMode: false,          
     soundEnabled: true,
     autoSave: true,
-    aiEnabled: false,   
+    aiEnabled: false,
+    usePersonalKey: false,
+    aiCorpPwd: '',    
     aiAuto: false,      
     apiKey: '',
     dashboardMode: 'compact',
@@ -807,7 +809,26 @@ function renderSettingsTab() {
     if(document.getElementById('set-ana-ai')) document.getElementById('set-ana-ai').checked = appSettings.anaEngAi;
     if(document.getElementById('set-ana-photos')) document.getElementById('set-ana-photos').checked = appSettings.anaEngPhotos;
     if(document.getElementById('set-ana-top')) document.getElementById('set-ana-top').checked = appSettings.anaOpTopDefects;
+    // 3.5. AI-настройки
+    if(document.getElementById('set-ai-enabled')) {
+        document.getElementById('set-ai-enabled').checked = appSettings.aiEnabled;
+        document.getElementById('ai-settings-body').style.display = appSettings.aiEnabled ? 'block' : 'none';
+    }
+    if(document.getElementById('set-ai-key')) document.getElementById('set-ai-key').value = appSettings.apiKey || '';
+    if(document.getElementById('set-ai-corp-pwd')) document.getElementById('set-ai-corp-pwd').value = appSettings.aiCorpPwd || ''; // НОВОЕ ПОЛЕ
     
+    const aiModes = document.getElementsByName('ai-mode');
+    if (aiModes.length > 0) {
+        if (appSettings.usePersonalKey) {
+            aiModes[1].checked = true;
+            document.getElementById('personal-key-field').classList.remove('hidden');
+            document.getElementById('corporate-pwd-field').classList.add('hidden');
+        } else {
+            aiModes[0].checked = true;
+            document.getElementById('corporate-pwd-field').classList.remove('hidden');
+            document.getElementById('personal-key-field').classList.add('hidden');
+        }
+    }
     // 4. НОВЫЕ БЛОКИ: Автоматизация бэкапов
     if(document.getElementById('set-autobackup')) document.getElementById('set-autobackup').checked = appSettings.autoBackupEnabled;
     if(document.getElementById('set-autobackup-day')) document.getElementById('set-autobackup-day').value = appSettings.autoBackupDay || '5';
@@ -900,7 +921,16 @@ function applySettingsToUI() {
 
     const activeTab = document.querySelector('.view-section.active');
     if (activeTab && typeof updateFabButton === 'function') updateFabButton(activeTab.id);
+    const aiBody = document.getElementById('ai-settings-body');
+    if (aiBody) aiBody.style.display = appSettings.aiEnabled ? 'block' : 'none';
+    
+    const personalKeyBlock = document.getElementById('personal-key-field');
+    if (personalKeyBlock) {
+        if (appSettings.usePersonalKey) personalKeyBlock.classList.remove('hidden');
+        else personalKeyBlock.classList.add('hidden');
+    }
 }
+
 
 // Вывод списка пользовательских шаблонов для управления (Удаления)
     const templatesList = document.getElementById('settings-user-templates-list');
@@ -1520,6 +1550,10 @@ function showHistoryDetail(id) {
         </div>
         
         ${item.metrics.reason ? `<div class="text-[10px] font-bold text-red-600 mb-3 bg-red-50 p-3 rounded-lg border border-red-100 shadow-sm">${item.metrics.reason}</div>` : ''}
+        
+        <button onclick="closeModal(); setTimeout(() => generatePrescriptionAi(${item.id}), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+            📄 Создать предписание (ИИ)
+        </button>
         
         <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-4">
             <div class="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Инженерный breakdown</div>
@@ -2691,7 +2725,9 @@ function toggleCommentField(id) {
         pureComment = pureComment.replace(/^\[.*?\]\s*/, '');
     }
     textarea.value = pureComment;
-    
+    // Скрываем и очищаем блок AI-подсказки при новом открытии окна
+    const aiHint = document.getElementById('ai-hint-block');
+    if (aiHint) { aiHint.innerHTML = ''; aiHint.classList.add('hidden'); }
     document.getElementById('comment-modal-overlay').style.display = 'flex';
     document.body.classList.add('modal-open');
 }
@@ -2731,6 +2767,49 @@ function saveCommentModal() {
 
     closeCommentModal();
 }
+
+// === AI-ПОДСКАЗКА ДЛЯ ПРЕДОТВРАЩЕНИЯ ДЕФЕКТОВ ===
+window.generateAiHintForDefect = async function() {
+    if (!appSettings.aiEnabled || !currentCommentId) return;
+    
+    const select = document.getElementById('modal-cause-select');
+    const aiHint = document.getElementById('ai-hint-block');
+    const causeCode = select.value;
+    
+    if (!causeCode) {
+        aiHint.classList.add('hidden');
+        return;
+    }
+
+    const causeName = DEFECT_CAUSES.find(c => c.code === causeCode)?.name || 'Неизвестная причина';
+    
+    const flatList = getFlatList(currentChecklist);
+    const itemData = flatList.find(x => x.id === currentCommentId);
+    if (!itemData) return;
+
+    // Проверяем, есть ли для этого пункта TWI-карта
+    const existingTwi = customTwiCards.find(c => c.checklistKey === currentTemplateKey && (String(c.itemId) === String(currentCommentId) || c.itemId === 'ALL'));
+    const twiContext = existingTwi ? `В базе УЖЕ ЕСТЬ TWI-карта "${existingTwi.title}". Посоветуй инженеру показать её рабочим.` : `В базе НЕТ TWI-карты для этого узла. Посоветуй инженеру её создать.`;
+
+    aiHint.classList.remove('hidden');
+    aiHint.innerHTML = `<span class="animate-pulse text-slate-500">⏳ AI формулирует совет...</span>`;
+
+    const promptSystem = `Ты — старший наставник стройконтроля. Дай инспектору 1-2 коротких предложения: как предотвратить этот дефект прямо сейчас на площадке. 
+    ОБЯЗАТЕЛЬНО учти контекст: ${twiContext}`;
+    
+    const promptUser = `Нарушение: ${itemData.n}. Норма: ${itemData.t}. Причина: ${causeName}.`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.4, max_tokens: 150 });
+
+        aiHint.innerHTML = `<b>💡 AI-Совет:</b> ${response.replace(/\n/g, ' ')}`;
+    } catch (e) {
+        aiHint.classList.add('hidden'); 
+    }
+};
 
 function deleteComment(id, e) {
     if(e) e.stopPropagation();
@@ -6066,3 +6145,275 @@ function goToFAQ() {
         if (btns[4]) switchReferenceSubTab('ref-sub-faq', btns[4]);
     }, 150);
 }
+
+// ============================================================================
+// === AI ЧАТ ПО НОРМАТИВАМ (RAG: Поиск контекста + DeepSeek) ===
+// ============================================================================
+
+window.openAiDocChat = function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
+    document.getElementById('ai-chat-modal').style.display = 'flex';
+    document.body.classList.add('modal-open');
+};
+
+window.closeAiDocChat = function() {
+    document.getElementById('ai-chat-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+};
+
+window.askAiDocQuestion = async function() {
+    const inputEl = document.getElementById('ai-chat-input');
+    const chatHistory = document.getElementById('ai-chat-history');
+    const btn = document.getElementById('ai-chat-send-btn');
+    
+    const question = inputEl.value.trim();
+    if (!question) return;
+
+    // 1. Отображаем вопрос пользователя в чате
+    const userMsgHtml = `
+        <div class="flex gap-2 w-full max-w-[85%] ml-auto justify-end">
+            <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-[12px] shadow-sm">${escapeHtml(question)}</div>
+        </div>`;
+    chatHistory.insertAdjacentHTML('beforeend', userMsgHtml);
+    inputFieldReset();
+
+    // 2. Отображаем индикатор "Печатает..."
+    const loaderId = 'loader_' + Date.now();
+    const loaderHtml = `
+        <div id="${loaderId}" class="flex gap-2 w-full max-w-[85%]">
+            <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-500 shadow-sm animate-pulse">
+                Ищу норматив и формулирую ответ...
+            </div>
+        </div>`;
+    chatHistory.insertAdjacentHTML('beforeend', loaderHtml);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+    
+    // 3. УМНЫЙ ЛОКАЛЬНЫЙ ПОИСК КОНТЕКСТА (RAG)
+    // Собираем все документы и пункты чек-листов, чтобы скормить нейросети "шпаргалку"
+    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
+    
+    // Разбиваем вопрос пользователя на слова для простого поиска совпадений
+    const keywords = question.toLowerCase().replace(/[.,?!]/g, '').split(' ').filter(w => w.length > 3);
+    
+    // Ищем в документах
+    let contextArr = [];
+    allDocs.forEach(doc => {
+        const text = `${doc.code} ${doc.title}`.toLowerCase();
+        let matches = keywords.filter(kw => text.includes(kw)).length;
+        if (matches > 0) contextArr.push({ type: 'Документ', title: doc.code, text: doc.title, score: matches });
+    });
+
+    // Ищем прямо в чек-листах (в текстах нормативов)
+    const flatList = getFlatList(currentChecklist);
+    flatList.forEach(item => {
+        const text = `${item.n} ${item.t}`.toLowerCase();
+        let matches = keywords.filter(kw => text.includes(kw)).length;
+        if (matches > 0) {
+            // Очищаем от HTML тегов
+            const cleanNorm = item.t ? item.t.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ") : "Нет норматива";
+            contextArr.push({ type: 'Пункт проверки', title: item.n, text: cleanNorm, score: matches });
+        }
+    });
+
+    // Берем ТОП-10 самых подходящих кусков текста
+    contextArr.sort((a,b) => b.score - a.score);
+    const topContext = contextArr.slice(0, 10).map(c => `[${c.type}] ${c.title}: ${c.text}`).join('\n');
+
+    // 4. ФОРМИРУЕМ ПРОМПТ ДЛЯ DEEPSEEK
+    const promptSystem = `Ты — эксперт строительного контроля. Ответь на вопрос инженера максимально точно и КОРОТКО. 
+    Используй ТОЛЬКО информацию из предоставленной базы знаний ниже. Если ответа в базе нет, скажи, что точного норматива не найдено, но дай общестроительный совет. Обязательно указывай ГОСТ или СП, если ссылаешься на них.
+    
+    БАЗА ЗНАНИЙ ПРИЛОЖЕНИЯ:
+    ${topContext || 'База пуста'}`;
+
+    try {
+        btn.disabled = true; btn.style.opacity = '0.5';
+        
+        // ВЫЗЫВАЕМ ИИ
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: question }
+        ], { temperature: 0.2, max_tokens: 500 }); // Температуру ставим низкую, чтобы не фантазировал, а отвечал строго по ГОСТ
+
+        // 5. Выводим результат
+        document.getElementById(loaderId).remove();
+        
+        const aiMsgHtml = `
+            <div class="flex gap-2 w-full max-w-[90%]">
+                <div class="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
+                <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-2xl rounded-tl-none text-[12px] text-indigo-900 dark:text-indigo-200 shadow-sm leading-relaxed whitespace-pre-wrap font-medium">
+                    ${response}
+                </div>
+            </div>`;
+        chatHistory.insertAdjacentHTML('beforeend', aiMsgHtml);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+
+    } catch (e) {
+        document.getElementById(loaderId).remove();
+        const errorHtml = `
+            <div class="flex gap-2 w-full max-w-[85%]">
+                <div class="w-6 h-6 bg-red-200 rounded-full flex items-center justify-center text-[10px] shrink-0">❌</div>
+                <div class="bg-red-50 text-red-600 border border-red-200 p-3 rounded-2xl rounded-tl-none text-[12px] shadow-sm">
+                    Ошибка связи с нейросетью: ${e.message}
+                </div>
+            </div>`;
+        chatHistory.insertAdjacentHTML('beforeend', errorHtml);
+    } finally {
+        btn.disabled = false; btn.style.opacity = '1';
+    }
+
+    function inputFieldReset() {
+        inputEl.value = '';
+        inputEl.focus();
+    }
+};
+
+// === ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА AI ===
+window.changeAiMode = function(isPersonal) {
+    appSettings.usePersonalKey = isPersonal;
+    saveSettings('usePersonalKey', isPersonal); 
+    
+    const personalKeyBlock = document.getElementById('personal-key-field');
+    const corporatePwdBlock = document.getElementById('corporate-pwd-field');
+    
+    if (isPersonal) {
+        if (personalKeyBlock) personalKeyBlock.classList.remove('hidden');
+        if (corporatePwdBlock) corporatePwdBlock.classList.add('hidden');
+    } else {
+        if (personalKeyBlock) personalKeyBlock.classList.add('hidden');
+        if (corporatePwdBlock) corporatePwdBlock.classList.remove('hidden');
+    }
+};
+
+// === AI: ГЕНЕРАЦИЯ ЧЕРНОВИКА TWI КАРТЫ ===
+window.generateTwiDraftAi = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    
+    const title = document.getElementById('twi-title-input').value.trim();
+    const norm = document.getElementById('twi-auto-norm-text').innerText;
+
+    if (!title) return showToast("⚠️ Сначала укажите Название Карты!");
+
+    showToast("⏳ Нейросеть генерирует инструкцию...");
+
+    let promptSystem = "";
+    let promptUser = `Вид работ/узел: ${title}. \nСправочный норматив: ${norm}`;
+
+    if (currentTwiType === 'INSPECTOR') {
+        promptSystem = `Ты — инженер технадзора. Напиши ОЧЕНЬ КРАТКУЮ инструкцию для проверки качества (чтобы она влезла на 1 лист А4 при печати). 
+        Верни ответ СТРОГО в формате:
+        РИСКИ: [строго 1-2 коротких предложений - к чему приведет нарушение]
+        ПОДГОТОВКА: [строго 1-2 короткое предложение - что обеспечить перед проверкой]
+        КРИТЕРИИ: [строго 1-2 коротких предложения - допуски и как проверить]`;
+    } else if (currentTwiType === 'WORKER') {
+        promptSystem = `Ты — бригадир. Напиши КРАТКУЮ пошаговую инструкцию (SOP) для рабочего.
+        Разбей процесс на 3-4 лаконичных шага (чтобы влезло на 1 лист). 
+        Верни ответ СТРОГО в таком формате, каждый шаг с новой строки:
+        Шаг: [текст действия - максимум 10-15 слов] | Время: [минуты цифрой]`;
+    }
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 300 }); // Уменьшен лимит токенов
+
+        if (currentTwiType === 'INSPECTOR') {
+            const risksMatch = response.match(/РИСКИ:\s*(.*?)(?=ПОДГОТОВКА:|КРИТЕРИИ:|$)/is);
+            const prepMatch = response.match(/ПОДГОТОВКА:\s*(.*?)(?=КРИТЕРИИ:|$)/is);
+            const critMatch = response.match(/КРИТЕРИИ:\s*(.*?)$/is);
+
+            if (risksMatch) document.getElementById('twi-why-input').value = risksMatch[1].trim();
+            if (prepMatch) document.getElementById('twi-preparation-input').value = prepMatch[1].trim();
+            if (critMatch) document.getElementById('twi-compliance-input').value = critMatch[1].trim();
+        } else if (currentTwiType === 'WORKER') {
+            document.getElementById('twi-steps-container').innerHTML = '';
+            twiStepCount = 0;
+            
+            const lines = response.split('\n').filter(l => l.includes('Шаг:'));
+            lines.forEach(line => {
+                const parts = line.split('| Время:');
+                const text = parts[0].replace(/Шаг:\s*/, '').trim();
+                const time = parts[1] ? parseInt(parts[1].replace(/\D/g, '')) : 0;
+                addTwiStep({ text: text, time: isNaN(time) ? 0 : time, photo: null });
+            });
+            if (lines.length === 0) addTwiStep({ text: response, time: 0, photo: null });
+        }
+
+        showToast("✨ Инструкция успешно сгенерирована ИИ!");
+    } catch (e) {
+        showToast("❌ Ошибка нейросети: " + e.message);
+    }
+};
+
+// === AI: ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ПРЕДПИСАНИЯ ===
+window.generatePrescriptionAi = async function(inspectionId) {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    
+    // Находим проверку
+    const inspection = contractorArray.find(i => i.id === inspectionId);
+    if (!inspection) return;
+
+    // Собираем список дефектов
+    let defectsList = [];
+    const type = inspection.templateKey.split('_')[0]; 
+    const key = inspection.templateKey.replace(type + '_', '');
+    const checklist = type === 'sys' && SYSTEM_TEMPLATES[key] ? SYSTEM_TEMPLATES[key].groups : (userTemplates[key] ? userTemplates[key].groups : []);
+    
+    getFlatList(checklist).forEach(i => {
+        if (inspection.state[i.id] === 'fail' || inspection.state[i.id] === 'fail_escalated') {
+            const comment = inspection.details && inspection.details[i.id] ? inspection.details[i.id].comment : 'Без комментария';
+            defectsList.push(`- Нарушение: ${i.n}. Норматив: ${i.t}. Уточнение: ${comment}`);
+        }
+    });
+
+    if (defectsList.length === 0) return showToast("В этой проверке нет дефектов для предписания.");
+
+    // Показываем окно ожидания
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = ``;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Генерация документа...</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="flex flex-col items-center justify-center py-6">
+            <div class="text-4xl mb-4 animate-bounce">🤖</div>
+            <div class="text-sm font-bold text-slate-500 text-center">Нейросеть составляет юридически грамотный текст предписания...</div>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+
+    const promptSystem = `Ты — строгий инженер технического надзора. Составь официальное предписание об устранении нарушений.
+    Используй классический деловой стиль. 
+    Структура:
+    1. ШАПКА: "Кому: Руководителю проекта от организации [Подрядчик]". "От кого: Инженер строительного контроля [Инспектор]".
+    2. СУТЬ: "На объекте [Объект] в ходе проверки выявлены следующие нарушения:"
+    3. ПЕРЕЧЕНЬ НАРУШЕНИЙ (перечисли их списком).
+    4. ТРЕБОВАНИЯ: Устранить нарушения в срок до 3 рабочих дней. В случае невыполнения работы не будут приняты.
+    5. ПОДПИСЬ.`;
+
+    const promptUser = `Объект: ${inspection.location} (${inspection.projectName}).
+    Подрядчик: ${inspection.contractorName}.
+    Инспектор: ${inspection.inspectorName}.
+    Список нарушений:
+    ${defectsList.join('\n')}`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 800 });
+
+        // Выводим готовый текст в текстовое поле с возможностью копирования
+        document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Предписание готовое</div>`;
+        document.getElementById('modal-body').innerHTML = `
+            <textarea id="ai-prescription-text" class="w-full h-[50vh] bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 mb-4">${response}</textarea>
+            <button onclick="copyExpertText(this.id, 'ai-prescription-text')" id="btn-copy-presc" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
+                📋 Скопировать текст
+            </button>
+        `;
+    } catch (e) {
+        closeModal();
+        showToast("❌ Ошибка нейросети: " + e.message);
+    }
+};

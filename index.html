@@ -369,7 +369,9 @@
             <div class="mb-4">
                 <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1.5 block">Причина дефекта
                     (Справочник)</label>
-                <select id="modal-cause-select" class="input-base w-full"></select>
+                <select id="modal-cause-select" class="input-base w-full" onchange="generateAiHintForDefect()"></select>
+<!-- Сюда будет падать ответ нейросети -->
+<div id="ai-hint-block" class="mt-2 text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-2 hidden shadow-inner leading-snug"></div>
             </div>
             <div class="mb-5">
                 <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1.5 block">Уточняющий
@@ -1310,17 +1312,13 @@
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2">
                     <div class="flex justify-between items-center mb-2">
                         <div class="relative flex-1 mr-2">
-                            <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                </svg></span>
-                            <input type="text" id="doc-search-input" class="input-base pl-9 text-[11px]"
-                                placeholder="Поиск ГОСТ, СП..." oninput="renderDocsList()">
+                            <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                            <input type="text" id="doc-search-input" class="input-base pl-9 text-[11px]" placeholder="Поиск ГОСТ, СП..." oninput="renderDocsList()">
                         </div>
-                        <button onclick="openAddDocModal()"
-                            class="bg-indigo-600 text-white px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap">➕
-                            Свой НД</button>
+                        <button onclick="openAiDocChat()" class="bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-black uppercase whitespace-nowrap mr-2 flex items-center gap-1">
+                            🤖 Спросить ИИ
+                        </button>
+                        <button onclick="openAddDocModal()" class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap">➕ Свой НД</button>
                     </div>
                     <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-[var(--card-border)] pt-2"
                         id="doc-filters-container">
@@ -1434,6 +1432,9 @@
 
                         <!-- БЛОК А: ТЕХНАДЗОР (ПРАВИЛЬНО/БРАК) -->
                         <div id="twi-block-inspector" class="space-y-4">
+                            <button onclick="generateTwiDraftAi()" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-transform flex justify-center items-center gap-2 shadow-sm">
+                                🤖 Сгенерировать черновик (ИИ)
+                            </button>
                             <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
                                 <div>
                                     <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Почему это важно? (Риски нарушения)</label>
@@ -1475,6 +1476,11 @@
 
                         <!-- БЛОК Б: TWI РАБОЧИЙ (ПОШАГОВЫЙ) -->
                         <div id="twi-block-worker" class="space-y-4 hidden">
+                            <!-- КНОПКА ГЕНЕРАЦИИ ИИ ДЛЯ РАБОЧЕГО -->
+                            <button onclick="generateTwiDraftAi()" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-transform flex justify-center items-center gap-2 shadow-sm">
+                                🤖 Сгенерировать шаги (ИИ)
+                            </button>
+                            
                             <div>
                                 <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
                                     <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Пошаговый алгоритм
@@ -2924,25 +2930,46 @@
             </div>
 
             <div class="text-[11px] font-bold text-[var(--text-muted)] uppercase mb-2 pl-2 flex items-center gap-2">
-                Экспертное заключение ИИ
-                <span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[8px] font-black uppercase">В
-                    разработке</span>
+                🤖 AI-ассистент (DeepSeek)
             </div>
-            <div
-                class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl mb-6 overflow-hidden opacity-60 pointer-events-none grayscale">
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl mb-6 overflow-hidden shadow-sm">
                 <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                     <div>
-                        <div class="font-bold text-sm">Режим ИИ (DeepSeek)</div>
-                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Использовать нейросеть для выводов</div>
+                        <div class="font-bold text-sm">Включить AI</div>
+                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Интеллектуальные подсказки и аналитика</div>
                     </div>
-                    <label class="toggle-switch"><input type="checkbox" disabled><span
-                            class="toggle-slider"></span></label>
+                    <label class="toggle-switch"><input type="checkbox" id="set-ai-enabled" onchange="toggleSetting('aiEnabled', this)"><span class="toggle-slider"></span></label>
                 </div>
-                <div class="p-4 flex flex-col gap-2">
-                    <div class="font-bold text-sm">API ключ DeepSeek</div>
-                    <input type="password" class="input-base font-mono text-[10px]" placeholder="sk-..." disabled>
+                <div id="ai-settings-body" class="transition-all duration-300 hidden">
+                    <div class="p-4 bg-[var(--hover-bg)]">
+                        <div class="font-bold text-sm mb-3">Способ вызова нейросети</div>
+                        <div class="flex flex-col gap-3">
+                            <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                <input type="radio" name="ai-mode" value="server" class="w-4 h-4 accent-indigo-600" onchange="changeAiMode(false)"> 
+                                <span class="text-[12px] font-bold text-slate-800 dark:text-slate-200">🔒 Через корпоративный сервер</span>
+                            </label>
+                            
+                            <!-- НОВОЕ: Поле для корпоративного пароля -->
+                            <div id="corporate-pwd-field" class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Пароль доступа к ИИ</label>
+                                <input type="password" id="set-ai-corp-pwd" class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900" placeholder="Введите пароль..." onchange="toggleSetting('aiCorpPwd', this)">
+                            </div>
+
+                            <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                <input type="radio" name="ai-mode" value="personal" class="w-4 h-4 accent-indigo-600" onchange="changeAiMode(true)"> 
+                                <span class="text-[12px] font-bold text-slate-800 dark:text-slate-200">🔑 Мой персональный API-ключ</span>
+                            </label>
+
+                            <!-- Поле для личного ключа -->
+                            <div id="personal-key-field" class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">API-ключ DeepSeek</label>
+                                <input type="password" id="set-ai-key" class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900" placeholder="sk-..." onchange="toggleSetting('apiKey', this)">
+                                <div class="text-[8px] text-slate-400 mt-1.5 leading-snug">Сохраняется только на вашем устройстве.</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+
             <!-- НОВЫЙ БЛОК: Автоматический бэкап -->
             <div class="text-[11px] font-bold text-[var(--text-muted)] uppercase mb-2 pl-2">Автоматический бэкап
                 (Полный)</div>
@@ -3509,6 +3536,41 @@
             <div id="modal-icon"></div>
             <div id="modal-title" class="font-black text-[14px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 text-slate-800 dark:text-white"></div>
             <div id="task-details-body" class="overflow-y-auto max-h-[70vh] custom-scrollbar pr-1"></div>
+        </div>
+    </div>
+
+    <!-- === МОДАЛКА AI-ЧАТА ПО НОРМАТИВАМ === -->
+    <div id="ai-chat-modal" class="fixed inset-0 bg-slate-900/80 z-[7000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300" onclick="closeAiDocChat()">
+        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col h-[85vh] sm:h-[75vh] border border-[var(--card-border)]" onclick="event.stopPropagation()">
+            <!-- Шапка чата -->
+            <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-t-3xl sm:rounded-t-2xl shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center text-xl shadow-md">🤖</div>
+                    <div>
+                        <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">База Знаний (AI)</div>
+                        <div class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">Нейросеть знает все загруженные ГОСТы</div>
+                    </div>
+                </div>
+                <button onclick="closeAiDocChat()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-500 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+            </div>
+            
+            <!-- Окно переписки -->
+            <div id="ai-chat-history" class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50 space-y-4">
+                <div class="flex gap-2 w-full max-w-[85%]">
+                    <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
+                    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 dark:text-slate-300 shadow-sm">
+                        Привет! Задай мне любой вопрос по строительным нормам. Я найду нужный СП или ГОСТ в базе приложения и дам точный ответ.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Поле ввода -->
+            <div class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-3xl sm:rounded-b-2xl shrink-0 flex gap-2">
+                <textarea id="ai-chat-input" class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] outline-none resize-none h-12 text-slate-800 dark:text-white" placeholder="Например: Какое допустимое отклонение стен из газобетона?"></textarea>
+                <button onclick="askAiDocQuestion()" id="ai-chat-send-btn" class="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 transition-transform">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </div>
         </div>
     </div>
 </body>

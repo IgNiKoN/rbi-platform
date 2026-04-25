@@ -239,6 +239,7 @@ function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWin
 function getExpertConclusion(c, contractorName, templateTitle, count, safeId, customExpertConclusions = {}) {
     const expertKey = contractorName + "_||_" + templateTitle;
     const isRed = c.finalC < 70 || c.rateB3 >= 30 || c.isRedZone;
+    const safeExpertKeyForHtml = expertKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
     const isYellow = c.finalC >= 70 && c.finalC < 85 && !isRed;
     
     const mainColor = isRed ? '#dc2626' : (isYellow ? '#d97706' : '#16a34a');
@@ -345,7 +346,7 @@ function getExpertConclusion(c, contractorName, templateTitle, count, safeId, cu
             <div class="bg-[var(--hover-bg)] border-b border-[var(--card-border)] p-2 flex justify-between items-center gap-2">
                 <div class="font-black text-[10px] min-[400px]:text-[11px] uppercase tracking-widest flex items-center gap-1 min-w-0 truncate ml-1">🧠 Смарт-Анализ</div>
                 <div class="flex gap-1 shrink-0">
-                    <button onclick="editExpertText('${expertKey}', 'text_expert_${safeId}')" class="text-[10px] font-bold bg-[var(--card-bg)] border border-[var(--card-border)] px-2 py-1.5 rounded shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1">
+                    <button onclick="editExpertText('${safeExpertKeyForHtml}', 'text_expert_${safeId}')" class="text-[10px] font-bold bg-[var(--card-bg)] border border-[var(--card-border)] px-2 py-1.5 rounded shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1">
                         ✏️<span class="hidden min-[400px]:inline"> Редак.</span>
                     </button>
                     <button id="btn_copy_${safeId}" onclick="copyExpertText('btn_copy_${safeId}', 'text_expert_${safeId}')" class="text-[10px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 px-2 py-1.5 rounded shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1">

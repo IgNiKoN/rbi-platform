@@ -732,21 +732,21 @@ function renderOnePagerSubTab(data) {
     const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
     const renderUIPhotoCards = (arr, isCrit, isOk = false) => {
-        if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${isOk ? 'Эталонов нет' : 'Дефектов не зафиксировано'}</div>`;
-        return `<div class="grid grid-cols-5 gap-1.5 min-[400px]:gap-2">
+        if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${isOk ? 'Эталонов нет' : 'Дефектов не зафиксировано'}</div>`;
+        return `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
             ${arr.map(d => {
-                const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-14 min-[400px]:h-20 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${d.photo}')">` : `<div class="w-full h-14 min-[400px]:h-20 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[8px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
+                const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${d.photo}')">` : `<div class="w-full h-24 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[10px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
                 let badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
                 let badgeText = isCrit ? 'B3' : 'B2';
                 if (isOk) { badgeColor = 'text-green-700 bg-green-100 border-green-200'; badgeText = 'OK'; }
                 return `
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg overflow-hidden flex flex-col shadow-sm">
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
                     ${imgHtml}
-                    <div class="p-1 flex-1 flex flex-col justify-between">
-                        <div class="text-[7px] min-[400px]:text-[8px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1" title="${d.name}">${d.name}</div>
+                    <div class="p-2 flex-1 flex flex-col justify-between">
+                        <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1" title="${d.name}">${d.name}</div>
                         <div>
-                            <div class="text-[6px] min-[400px]:text-[7px] text-[var(--text-muted)] mb-0.5 truncate w-full" title="${d.contr}">👤 ${d.contr}</div>
-                            <div class="flex justify-between items-center"><span class="${badgeColor} text-[6px] min-[400px]:text-[7px] font-black px-1 rounded border">${badgeText}</span><span class="text-[7px] font-black text-[var(--text-muted)]">${d.count} шт</span></div>
+                            <div class="text-[8px] text-[var(--text-muted)] mb-1 truncate w-full" title="${d.contr}">👤 ${d.contr}</div>
+                            <div class="flex justify-between items-center"><span class="${badgeColor} text-[8px] font-black px-1.5 rounded border">${badgeText}</span><span class="text-[9px] font-black text-[var(--text-muted)]">${d.count} шт</span></div>
                         </div>
                     </div>
                 </div>`;
@@ -777,129 +777,223 @@ function renderOnePagerSubTab(data) {
     }
     let uiPdcaText = rawPdcaText.replace(/\n/g, '<br>').replace(/^\[(.*?)\]/gm, '<b class="text-slate-800 dark:text-white text-[11px] block mt-2 mb-1">$1</b>');
 
+    // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
+    const heatmapStages = {};
+    data.forEach(check => {
+        if (!check.metrics || check.metrics.final === 100) return; 
+        const stage = check.templateTitle;
+        const contr = check.contractorName;
+        if (!heatmapStages[stage]) heatmapStages[stage] = {};
+        if (!heatmapStages[stage][contr]) heatmapStages[stage][contr] = { checks: 0, defects: 0 };
+        
+        heatmapStages[stage][contr].checks++;
+        heatmapStages[stage][contr].defects += (check.metrics.n_B2_fail + check.metrics.n_B3_fail);
+    });
+
+    let heatmapHtml = '';
+    const stageNames = Object.keys(heatmapStages).sort();
+    if (stageNames.length > 0) {
+        heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2"><table class="w-full text-left border-collapse text-[10px]">
+            <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black">Вид работ / Подрядчик</th>`;
+        
+        const topMatrixContrs = ratingData.slice(0, 4).map(r => r.name);
+        topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold truncate max-w-[80px]" title="${c}">${c.substring(0,10)}</th>`);
+        heatmapHtml += `</tr></thead><tbody>`;
+
+        stageNames.forEach(stage => {
+            heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title="${stage}">${stage}</td>`;
+            topMatrixContrs.forEach(contr => {
+                const cell = heatmapStages[stage][contr];
+                if (!cell) {
+                    heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center bg-[var(--hover-bg)] text-slate-400 dark:text-slate-600">-</td>`;
+                } else {
+                    const defectRate = cell.defects / cell.checks;
+                    let bgColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800'; 
+                    if (defectRate > 1.5) bgColor = 'bg-red-100 text-red-800 border-red-300 font-black dark:bg-red-900/40 dark:border-red-700'; 
+                    else if (defectRate > 0.5) bgColor = 'bg-yellow-50 text-yellow-700 border-yellow-200 font-bold dark:bg-yellow-900/20 dark:border-yellow-800';
+                    heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center ${bgColor}">${cell.defects} деф.</td>`;
+                }
+            });
+            heatmapHtml += `</tr>`;
+        });
+        heatmapHtml += `</tbody></table></div>`;
+    } else {
+        heatmapHtml = `<div class="text-center text-slate-400 py-6 text-[10px] font-bold uppercase bg-[var(--hover-bg)] rounded-lg border border-dashed border-[var(--card-border)]">Недостаточно дефектов для карты</div>`;
+    }
+
+    // --- ИНДЕКС ЗДОРОВЬЯ (ПУЛЬС) ---
+    const healthIndex = Math.max(0, Math.min(100, Math.round(100 - (parseFloat(mData.IKO) * 50) - (mData.redZonePerc * 0.5) - (sumB3 * 2))));
+    let healthColor = healthIndex > 80 ? 'text-green-500' : (healthIndex > 50 ? 'text-orange-500' : 'text-red-500');
+
+    // ==========================================
+    // СБОРКА ИТОГОВОГО HTML (ОДИН СПИСОК АККОРДЕОНОВ)
+    // ==========================================
     container.innerHTML = `
-        <div class="text-center sm:text-left border-b border-[var(--card-border)] pb-3 mb-4">
+        <div class="text-center sm:text-left border-b border-[var(--card-border)] pb-3 mb-4 mx-1">
             <h2 class="text-[16px] min-[400px]:text-lg font-black uppercase tracking-tight text-slate-800 dark:text-white">Сводный статус объекта</h2>
             <div class="text-[10px] font-bold text-[var(--text-muted)] mt-1">Охват: ${data.length} независимых проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
         </div>
         
-        <div class="flex flex-col md:flex-row gap-4 items-stretch">
-            <div class="flex-1 flex flex-col gap-3 md:w-1/2 md:border-r md:border-dashed md:border-[var(--card-border)] md:pr-4">
-                
-                <div class="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ср. УрК Объекта</div>
-                        <div class="flex justify-between items-end">
-                            <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currAvgUrk}%</span>
-                            ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
-                        </div>
-                    </div>
-                    <div class="bg-[var(--card-bg)] border ${parseFloat(mData.IKO) >= 0.6 ? 'border-red-300 bg-red-50/50' : 'border-[var(--card-border)]'} rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Индекс Риска (ИКО)</div>
-                        <div class="flex justify-between items-end">
-                            <span class="text-2xl font-black ${mData.ikoColor} leading-none">${mData.IKO}</span>
-                            ${renderTrend(mData.IKO, prevIko, trendLabel, true)}
-                        </div>
-                    </div>
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Объем проверок</div>
-                        <div class="flex justify-between items-end">
-                            <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${data.length}</span>
-                            ${renderTrend(data.length, prevChecks, trendLabel)}
-                        </div>
-                    </div>
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Акт. Подрядчиков</div>
-                        <div class="flex justify-between items-end">
-                            <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currContractorsCount}</span>
-                            ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
-                        </div>
-                    </div>
-                    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                        <div class="text-[9px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-1">В красной зоне</div>
-                        <div class="flex justify-between items-end">
-                            <span class="text-2xl font-black text-red-600 dark:text-red-400 leading-none">${mData.redZonePerc}%</span>
-                            <span class="text-[9px] font-bold text-red-700/70">от объема</span>
-                        </div>
-                    </div>
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between relative overflow-hidden">
-                        <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 z-10">Тренд УрК (6 нед)</div>
-                        <div class="absolute bottom-0 left-0 right-0 h-[40px] opacity-70"><canvas id="op-sparkline-chart"></canvas></div>
-                    </div>
-                </div>
-
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col mt-1">
-                    <div class="flex justify-between items-center mb-2">
-                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase">Динамика Подрядчиков (Средний УРк)</div>
-                        <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 rounded px-2 py-1 active:scale-95 shadow-sm">⚙️ Фильтр линий</button>
-                    </div>
-                    <div style="height: 180px; position: relative;"><canvas id="op-line-chart"></canvas></div>
-                </div>
-
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex-1 flex flex-col mt-1">
-                    <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 flex justify-between items-center">
-                        🏆 Рейтинг Подрядчиков (Интегральный УрК)
-                    </div>
-                    <div class="space-y-2.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-2 flex-1">
-                        ${ratingData.map(r => `
-                            <div class="flex items-center gap-2">
-                                <div class="w-24 text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" title="${r.name}">${r.name}</div>
-                                <div class="flex-1 h-2.5 bg-[var(--hover-bg)] rounded-full overflow-hidden border border-[var(--card-border)] relative">
-                                    <div class="h-full ${r.val < 70 ? 'bg-red-500' : (r.val < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${r.val}%"></div>
-                                </div>
-                                <div class="w-14 flex items-center justify-end gap-1 shrink-0">
-                                    ${r.isPrelim ? '<span class="text-[8px]" title="Предварительный рейтинг (Мало проверок)">⚠️</span>' : ''}
-                                    <span class="text-[11px] font-black ${r.val < 70 ? 'text-red-500' : (r.val < 85 ? 'text-orange-500' : 'text-green-500')}">${r.val}%</span>
-                                </div>
+        <div class="space-y-3 mx-1">
+            
+            <!-- АККОРДЕОН 1: ГЛАВНЫЕ МЕТРИКИ И РЕЙТИНГ -->
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
+                    <span class="flex items-center gap-2">📊 Статистика и Тренды</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-4">
+                    
+                    <div class="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ср. УрК Объекта</div>
+                            <div class="flex justify-between items-end">
+                                <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currAvgUrk}%</span>
+                                ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
                             </div>
-                        `).join('') || '<div class="text-[10px] text-[var(--text-muted)] text-center py-2">Недостаточно данных</div>'}
+                        </div>
+                        <div class="bg-[var(--card-bg)] border ${parseFloat(mData.IKO) >= 0.6 ? 'border-red-300 bg-red-50/50' : 'border-[var(--card-border)]'} rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Индекс Риска (ИКО)</div>
+                            <div class="flex justify-between items-end">
+                                <span class="text-2xl font-black ${mData.ikoColor} leading-none">${mData.IKO}</span>
+                                ${renderTrend(mData.IKO, prevIko, trendLabel, true)}
+                            </div>
+                        </div>
+                        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Объем проверок</div>
+                            <div class="flex justify-between items-end">
+                                <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${data.length}</span>
+                                ${renderTrend(data.length, prevChecks, trendLabel)}
+                            </div>
+                        </div>
+                        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Акт. Подрядчиков</div>
+                            <div class="flex justify-between items-end">
+                                <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currContractorsCount}</span>
+                                ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
+                            </div>
+                        </div>
+                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-1">В красной зоне</div>
+                            <div class="flex justify-between items-end">
+                                <span class="text-2xl font-black text-red-600 dark:text-red-400 leading-none">${mData.redZonePerc}%</span>
+                                <span class="text-[9px] font-bold text-red-700/70">от объема</span>
+                            </div>
+                        </div>
+                        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 z-10">Тренд УрК (6 нед)</div>
+                            <div class="absolute bottom-0 left-0 right-0 h-[40px] opacity-70"><canvas id="op-sparkline-chart"></canvas></div>
+                        </div>
+                    </div>
+
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="text-[10px] font-black text-[var(--text-muted)] uppercase">Динамика Подрядчиков (Ср. УРк)</div>
+                            <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 rounded px-2 py-1 active:scale-95 shadow-sm">⚙️ Фильтр линий</button>
+                        </div>
+                        <div style="height: 180px; position: relative;"><canvas id="op-line-chart"></canvas></div>
+                    </div>
+
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
+                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 flex justify-between items-center">
+                            🏆 Рейтинг Подрядчиков (Интегральный УрК)
+                        </div>
+                        <div class="space-y-2.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                            ${ratingData.map(r => `
+                                <div class="flex items-center gap-2">
+                                    <div class="w-24 text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" title="${r.name}">${r.name}</div>
+                                    <div class="flex-1 h-2.5 bg-[var(--hover-bg)] rounded-full overflow-hidden border border-[var(--card-border)] relative">
+                                        <div class="h-full ${r.val < 70 ? 'bg-red-500' : (r.val < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${r.val}%"></div>
+                                    </div>
+                                    <div class="w-14 flex items-center justify-end gap-1 shrink-0">
+                                        ${r.isPrelim ? '<span class="text-[8px]" title="Предварительный рейтинг (Мало проверок)">⚠️</span>' : ''}
+                                        <span class="text-[11px] font-black ${r.val < 70 ? 'text-red-500' : (r.val < 85 ? 'text-orange-500' : 'text-green-500')}">${r.val}%</span>
+                                    </div>
+                                </div>
+                            `).join('') || '<div class="text-[10px] text-[var(--text-muted)] text-center py-2">Недостаточно данных</div>'}
+                        </div>
                     </div>
                 </div>
-            </div>
+            </details>
 
-            <div class="flex-1 flex flex-col gap-4 md:w-1/2">
-                ${appSettings.anaOpTopDefects ? `
-                <div class="flex-1 bg-red-50 dark:bg-red-900/10 border-2 border-red-200 dark:border-red-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                    <h3 class="margin-0 mb-3 font-black text-[10px] text-red-700 dark:text-red-500 uppercase border-b border-red-200 dark:border-red-800 pb-2">
-                        🚨 ТОП-5 Критических дефектов (B3)
-                    </h3>
-                    <div class="flex-1 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+            <!-- АККОРДЕОН 2: ПУЛЬС ОБЪЕКТА -->
+            <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors select-none">
+                    <span class="flex items-center gap-2">❤️ Пульс объекта (AI)</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-4 border-t border-indigo-100 dark:border-indigo-800 bg-white dark:bg-slate-800">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="text-[10px] font-black uppercase text-slate-400">Индекс Здоровья</div>
+                        <div class="text-4xl font-black ${healthColor}">${healthIndex}<span class="text-lg text-slate-400">/100</span></div>
+                    </div>
+                    <div class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 font-medium" id="pulse-ai-text">
+                        ${customExpertConclusions['pulse_ai'] || 'Нажмите кнопку ниже для генерации пульса.'}
+                    </div>
+                    <button onclick="generatePulseAi()" class="mt-3 w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2 transition-transform">
+                        🤖 Обновить Пульс
+                    </button>
+                </div>
+            </details>
+
+            <!-- АККОРДЕОН 3: ТЕПЛОВАЯ КАРТА -->
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
+                    <span class="flex items-center gap-2">🗺️ Тепловая карта этапов</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800">
+                    ${heatmapHtml}
+                    <button onclick="generateHeatmapAi()" class="mt-3 w-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-600 transition-transform">
+                        🤖 Анализ Рисков (ИИ)
+                    </button>
+                    <div id="heatmap-ai-text" class="hidden mt-3 text-[11px] leading-relaxed text-red-800 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800 font-medium"></div>
+                </div>
+            </details>
+
+            <!-- АККОРДЕОН 4: ТОП ФОТО -->
+            ${appSettings.anaOpTopDefects ? `
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
+                    <span class="flex items-center gap-2">📸 ТОП-5 Дефектов и Эталонов</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-3">
+                    <div class="bg-red-50 dark:bg-red-900/10 border-2 border-red-200 dark:border-red-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-black text-[10px] text-red-700 dark:text-red-500 uppercase border-b border-red-200 dark:border-red-800 pb-2">🚨 ТОП-5 Критических дефектов (B3)</h3>
                         ${renderUIPhotoCards(topB3, true)}
                     </div>
-                </div>
-
-                <div class="flex-1 bg-orange-50 dark:bg-orange-900/10 border-2 border-orange-200 dark:border-orange-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                    <h3 class="margin-0 mb-3 font-black text-[10px] text-orange-700 dark:text-orange-500 uppercase border-b border-orange-200 dark:border-orange-800 pb-2">
-                        🔄 ТОП-5 Повторяющихся нарушений (B2)
-                    </h3>
-                    <div class="flex-1 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+                    <div class="bg-orange-50 dark:bg-orange-900/10 border-2 border-orange-200 dark:border-orange-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-black text-[10px] text-orange-700 dark:text-orange-500 uppercase border-b border-orange-200 dark:border-orange-800 pb-2">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
                         ${renderUIPhotoCards(topB2, false)}
                     </div>
-                </div>
-
-                <div class="flex-1 bg-green-50 dark:bg-green-900/10 border-2 border-green-200 dark:border-green-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                    <h3 class="margin-0 mb-3 font-black text-[10px] text-green-700 dark:text-green-500 uppercase border-b border-green-200 dark:border-green-800 pb-2">
-                        ✅ ТОП-5 Эталонных работ (OK)
-                    </h3>
-                    <div class="flex-1 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+                    <div class="bg-green-50 dark:bg-green-900/10 border-2 border-green-200 dark:border-green-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-black text-[10px] text-green-700 dark:text-green-500 uppercase border-b border-green-200 dark:border-green-800 pb-2">✅ ТОП-5 Эталонных работ (OK)</h3>
                         ${renderUIPhotoCards(topOK, false, true)}
                     </div>
                 </div>
-                ` : ''}
+            </details>
+            ` : ''}
 
-                <div class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border-2 rounded-xl p-3 shadow-sm flex-none relative">
-                    <div class="flex justify-between items-center border-b ${isGlobalDanger ? 'border-orange-200 dark:border-orange-800' : 'border-green-200 dark:border-green-800'} pb-2 mb-2">
-                        <h3 class="margin-0 font-black text-[10px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase">
-                            🎯 Управленческое Решение и Риски
-                        </h3>
-                        <button onclick="editExpertText('${pdcaKey}', 'hidden_pdca_text')" class="text-[9px] font-bold bg-white/50 dark:bg-black/20 border border-black/10 dark:border-white/10 px-2 py-1 rounded shadow-sm active:scale-95 text-slate-700 dark:text-slate-300">✏️ Изменить</button>
+            <!-- АККОРДЕОН 5: УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ -->
+            <details class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border-2 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                <summary class="p-3 font-black text-[12px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase tracking-widest cursor-pointer flex justify-between items-center rounded-xl transition-colors select-none">
+                    <span class="flex items-center gap-2">🎯 Управленческое Решение</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-4 border-t ${isGlobalDanger ? 'border-orange-200 dark:border-orange-800' : 'border-green-200 dark:border-green-800'}">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="text-[10px] font-black uppercase opacity-70">Стратегия действий</div>
+                        <div class="flex gap-2">
+                            <button onclick="generateOnePagerForecastAi('${pdcaKey}')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1">🤖 AI-Анализ</button>
+                            <button onclick="editExpertText('${pdcaKey}', 'hidden_pdca_text')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1">✏️ Изменить</button>
+                        </div>
                     </div>
                     <textarea id="hidden_pdca_text" class="hidden">${rawPdcaText}</textarea>
-                    <div class="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 flex flex-col gap-1">
-                        <div class="whitespace-pre-wrap">${uiPdcaText}</div>
-                    </div>
+                    <div class="text-[12px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-medium">${uiPdcaText}</div>
                 </div>
-            </div>
+            </details>
+
         </div>
     `;
 
@@ -1210,6 +1304,19 @@ function showContractorDetailView(contractorName) {
                 ${expertUiHtml}
             </div>
         </details>
+        
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">🏅 Культура качества (AI)</span>
+                <span class="transition-transform group-open:rotate-180">▼</span>
+            </summary>
+            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
+                <button onclick="generateCultureAi('${contractorName.replace(/'/g, "\\'")}', '${workType}')" class="w-full bg-white border border-indigo-200 text-indigo-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 mb-2">🤖 Оценить вовлеченность</button>
+                <div id="culture-ai-text" class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
+                    ${customExpertConclusions[`culture_${contractorName}`] || 'Нажмите кнопку для генерации оценки вовлеченности подрядчика.'}
+                </div>
+            </div>
+        </details>
 
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
@@ -1491,77 +1598,96 @@ function copyExpertText(btnId, textAreaId) {
     }).catch(() => showToast('Ошибка копирования'));
 }
 
-// === ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
-function generateSmartComment(scenario) {
-    if(!currentEditingExpertKey) return;
+// === ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ (РЕАЛЬНЫЙ DEEPSEEK) ===
+window.generateSmartComment = async function(scenario) {
+    if (!currentEditingExpertKey) return;
+    if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
+
+    const inputField = document.getElementById('modal-expert-input');
+    const originalText = inputField.value;
+    inputField.value = "⏳ Нейросеть DeepSeek анализирует данные...\nФормирование отчета займет несколько секунд.";
     
-    // 1. Проверка: Если мы редактируем Глобальный вывод (Дашборд или One-Pager)
-    if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
-        // Берем отфильтрованные данные (то, что сейчас на экране)
-        const data = getFilteredAnalyticsData();
-        if (data.length === 0) return showToast("Нет данных для анализа");
-        
-        const text = generateGlobalSmartText(scenario, data);
-        document.getElementById('modal-expert-input').value = text;
-        showToast("Глобальный вывод сгенерирован!");
+    try {
+        let promptSystem = "";
+        let promptUser = "";
+
+        // 1. Глобальный вывод (Дашборд или One-Pager)
+        if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
+            const data = getFilteredAnalyticsData();
+            if (data.length === 0) throw new Error("Нет данных для анализа");
+            
+            let sumB3 = 0;
+            data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
+            const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+            const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+            const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+
+            promptSystem = `Ты — эксперт-аналитик качества. Сформируй ОЧЕНЬ КРАТКИЙ аналитический обзор (СТРОГО не более 60-80 слов суммарно, чтобы текст поместился на 1 печатный лист). Без markdown-звездочек.
+            Структура ответа (каждый пункт - 1 короткое предложение):
+            1. Общая оценка ситуации.
+            2. Главный риск.
+            3. Прогноз на неделю.
+            4. Рекомендуемое действие.`;
+            
+            promptUser = `Статистика: ИКО: ${IKO}. В красной зоне: ${redZone}%. Проверок: ${data.length}. Аварий (B3): ${sumB3}.
+            Сделай вывод для: ${scenario === 'strict' ? 'Жесткое предписание' : (scenario === 'boss' ? 'Доклад директору' : 'Сводка для команды')}`;
+        } 
+        // 2. Вывод по конкретному Подрядчику (Паспорт Подрядчика)
+        else {
+            const parts = currentEditingExpertKey.split('_||_');
+            const cKey = parts[0]; 
+            const tTitle = parts[1];
+            
+            const cDataAll = contractorArray.filter(i => {
+                const itemKey = (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']';
+                return itemKey === cKey && i.templateTitle === tTitle;
+            });
+            
+            const m = getContractorMetrics(cDataAll, userTemplates);
+            
+            const causes = {};
+            cDataAll.forEach(check => {
+                if (check.state && check.details) {
+                    Object.keys(check.state).forEach(id => {
+                        if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') {
+                            const code = check.details[id]?.causeCode || 'C00';
+                            causes[code] = (causes[code] || 0) + 1;
+                        }
+                    });
+                }
+            });
+            const topCausesCodes = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 3);
+            const topCausesNames = topCausesCodes.map(code => (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : code) || 'Нарушения технологии');
+
+            promptSystem = `Ты — независимый эксперт строительного контроля. Сформируй ОЧЕНЬ КРАТКИЙ отчет (СТРОГО не более 50-70 слов, суммарно до 400 символов, чтобы он влез в небольшую ячейку А4). Не используй markdown-звездочки. Используй заглавные буквы для заголовков.
+            Структура ответа (СТРОГО по 1 короткому предложению на блок):
+            СТАТУС: общая оценка.
+            ФАКТЫ: главная проблема.
+            ПРОГНОЗ: риск.
+            РЕКОМЕНДАЦИИ: 1 шаг.`;
+            
+            promptUser = `Подрядчик: ${cKey.split(' [')[0]}. Вид работ: ${tTitle}. Проверок: ${cDataAll.length}.
+            УрК: ${m.finalC}% (<70% плохо, >85% отлично). Ks: ${m.ks} (<1.0 - системный брак).
+            Аварий B3: ${m.rateB3}%. Топ причины: ${topCausesNames.join(', ')}.
+            Сценарий: ${scenario === 'strict' ? 'Официальная претензия' : (scenario === 'action_plan' ? 'План корректирующих действий' : (scenario === 'tech' ? 'Технический аудит' : 'Доклад руководству'))}`;
+        }
+
+        // Ограничиваем max_tokens, чтобы ИИ физически не мог выдать "простыню" текста
+        const aiResponse = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.4, max_tokens: 300 });
+
+        inputField.value = aiResponse;
+        showToast("✨ Текст успешно сгенерирован ИИ!");
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
-        return;
-    }
 
-    // 2. Стандартная генерация для конкретного подрядчика
-    const parts = currentEditingExpertKey.split('_||_');
-    if (parts.length < 2) return showToast("Ошибка ключа генерации");
-    const cKey = parts[0]; 
-    const tTitle = parts[1];
-    
-    const cDataAll = contractorArray.filter(i => {
-        const itemKey = (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']';
-        return itemKey === cKey && i.templateTitle === tTitle;
-    });
-    
-    if(cDataAll.length < 7) return showToast(`Мало данных для ИИ (Найдено: ${cDataAll.length} шт., нужно 7)`);
-    
-    const metrics = getContractorMetrics(cDataAll, userTemplates);
-    const text = buildSmartText(scenario, metrics, cKey.split(' [')[0], tTitle, cDataAll.length);
-    document.getElementById('modal-expert-input').value = text;
-    showToast("Текст успешно сгенерирован!");
-    if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
-}
-
-// Вспомогательная функция для Глобальных выводов
-function generateGlobalSmartText(scenario, data) {
-    let sumB3 = 0;
-    data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
-    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-    const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
-    const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
-    
-    const isDanger = parseFloat(IKO) >= 0.60 || sumB3 > 0;
-    
-    switch(scenario) {
-        case 'strict': return `[СТРОГОЕ ПРЕДПИСАНИЕ ПО ОБЪЕКТУ]\nИндекс риска (ИКО): ${IKO}\nВ красной зоне: ${redZone}% работ.\n\n${isDanger ? 'КРИТИЧЕСКАЯ СИТУАЦИЯ. ТРЕБУЕТСЯ ОСТАНОВКА РАБОТ ДЛЯ ВЫЯВЛЕНИЯ ПРИЧИН БРАКА.' : 'Ситуация стабильна. Удержать качество на текущем уровне.'}`;
-        case 'boss': return `[ДОКЛАД ДЛЯ РУКОВОДСТВА]\nСтатус: ${isDanger ? 'ВЫСОКИЙ РИСК СРЫВА СРОКОВ' : 'Штатный режим'}.\nИКО: ${IKO}.\n\nВывод: ${isDanger ? 'Необходимы жесткие административные меры к отстающим подрядчикам.' : 'Объект строится в заданных параметрах качества.'}`;
-        case 'action_plan': return `[ПЛАН ДЕЙСТВИЙ (PDCA)]\n1. Индекс риска (ИКО): ${IKO}.\n2. Проблемный объем: ${redZone}%.\n\nШАГИ:\n- ${isDanger ? 'Блокировка КС-2 для всех подрядчиков в красной зоне.' : 'Фокус на профилактике (разработка новых TWI).'}\n- Проведение кросс-аудита работы ИТР.`;
-        default: return `[АНАЛИТИКА ДАШБОРДА]\nИндекс критичности объекта (ИКО): ${IKO}.\nРаботы в красной зоне: ${redZone}%.\nОхват: ${data.length} проверок.\n\n${isDanger ? '1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.' : 'Процесс находится в управляемой зоне. Ресурсы направить на профилактику системных дефектов.'}`;
+    } catch (error) {
+        console.error("AI Gen Error:", error);
+        inputField.value = originalText;
+        showToast("❌ Ошибка нейросети: " + error.message);
     }
-}
-
-function buildSmartText(scenario, c, cName, tTitle, count) {
-    const hasB3 = c.n_изделий_с_B3 > 0;
-    const isRed = c.finalC < 70 || hasB3; 
-    const isYellow = c.finalC >= 70 && c.finalC < 85 && !hasB3;
-    
-    const b3Str = hasB3 ? `🚨 КРИТИЧЕСКИЙ БРАК (B3): выявлено в ${c.n_изделий_с_B3} из ${count} проверок. Это блокирует дальнейшие операции!` : `Критический брак (B3) отсутствует.`;
-    
-    switch(scenario) {
-        case 'strict': return `ОФИЦИАЛЬНАЯ ПРЕТЕНЗИЯ (ПРЕДПИСАНИЕ)\n\nКому: Руководителю проекта от организации "${cName}".\nКасательно: Неудовлетворительное качество работ по виду "${tTitle}".\n\nПо результатам независимого строительного контроля (база: ${count} проверок) Интегральный Уровень Качества (УрК) составил ${c.finalC}%.\n\n${isRed ? '❌ ПОКАЗАТЕЛЬ НИЖЕ 70% ИЛИ ВЫЯВЛЕН B3. ПРОДОЛЖЕНИЕ РАБОТ ЗАПРЕЩЕНО.\nТребуется немедленная остановка СМР.' : (isYellow ? '⚠️ ПОКАЗАТЕЛЬ 70-84%. СТАТУС: "УСЛОВНО ВЫПОЛНЕНО".\nКачество в допустимом диапазоне для этапа СМР, однако финишная приемка невозможна до устранения дефектов.' : '✅ ПОКАЗАТЕЛЬ > 85%. РАБОТЫ ПРИНИМАЮТСЯ.')}\n\nФакты нарушений:\n- ${b3Str}\n- Системный повтор дефектов: в ${c.maxFailRate.toFixed(1)}% проверок.\n\nТРЕБОВАНИЯ:\n1. Устранить все критические (B3) и значимые (B2) замечания.\n2. Предъявить исправленные объемы повторно к сдаче.\nВ случае неустранения, применить компенсационные удержания.`;
-        case 'tech': return `ТЕХНИЧЕСКИЙ АУДИТ КАЧЕСТВА (МЕТОДИКА 70/85)\n\nПодрядчик: ${cName}\nРаздел: ${tTitle}\nВыборка: ${count} независимых проверок\n\n[МЕТРИКИ ИНЖИНИРИНГА]\n• Итоговый УрК: ${c.finalC}% (Погрешность: ±${c.ci95_margin.toFixed(1)}%)\n• Коэф. системного брака (Ks): ${c.ks.toFixed(2)} (макс. частота дефекта ${c.maxFailRate.toFixed(1)}%)\n• Коэф. критичности (Kcrit): ${c.kcritC.toFixed(2)} (доля проверок с B3: ${c.rateB3.toFixed(1)}%)\n• Стабильность процесса: ${c.stabilityIndex}/100\n\n[СТАТУС И ВЫВОДЫ]\n${isRed ? '🔴 ПРОЦЕСС ЗАБЛОКИРОВАН (УрК < 70% или есть B3).' : (isYellow ? '🟡 ОПЕРАЦИОННЫЙ КОМПРОМИСС (УрК 70-84%).' : '🟢 ЦЕЛЕВОЙ ПОКАЗАТЕЛЬ (УрК >= 85%).')}`;
-        case 'boss': return `ИНФОРМАЦИОННАЯ СПРАВКА ДЛЯ РУКОВОДСТВА\n\n🏗 Подрядчик: ${cName}\n📊 Бизнес-прогноз: ${isRed ? '🔴 ВЫСОКИЙ РИСК СРЫВА ПЕРЕДАЧИ КЛИЕНТУ' : (isYellow ? '🟡 ТРЕБУЮТСЯ ДОРАБОТКИ ПЕРЕД ФИНИШЕМ' : '🟢 ВЫСОКАЯ ВЕРОЯТНОСТЬ СДАЧИ С 1-ГО РАЗА')}\n📉 Интегральный УрК: ${c.finalC}%\n\nКлючевые тезисы:\n1. ${b3Str}\n2. ${isRed ? 'Работы остановлены. Идет развитие опасных дефектов.' : (isYellow ? 'Этап СМР продолжается, но на финише возможен "дефектный хвост".' : 'Отличный результат.')}`;
-        case 'action_plan': return `ПЛАН КОРРЕКТИРУЮЩИХ МЕРОПРИЯТИЙ (PDCA)\n\nПодрядчик: ${cName} | УрК: ${c.finalC}% (Цель: >85%)\n\nШАГ 1. БЛОКИРОВКА (${b3Str})\n- ${hasB3 ? 'Остановить работы на участках с B3 до устранения.' : 'Ограничений по B3 нет.'}\n\nШАГ 2. ПЕРЕХОД ИЗ СМР В ФИНИШ (Текущий статус: ${isYellow ? 'Условно выполнено' : (isRed ? 'Не принято' : 'Принято')})\n- Устранить все дефекты B2. Наличие не устраненного B2 блокирует подписание финального акта.\n\nШАГ 3. ПРОФИЛАКТИКА СИСТЕМНОГО БРАКА (Частота: ${c.maxFailRate.toFixed(1)}%)\n- Провести аудит квалификации исполнителей.`;
-        case 'finance': return `СЛУЖЕБНАЯ ЗАПИСКА (ОПЛАТА И КС-2)\n\nПодрядчик: ${cName}\nВид работ: ${tTitle} | Итоговый УрК: ${c.finalC}%\n\nЗАКЛЮЧЕНИЕ СТРОИТЕЛЬНОГО КОНТРОЛЯ:\n${isRed ? '🔴 ЗАПРЕТ НА ПОДПИСАНИЕ КС-2. УрК ниже 70% или выявлен критический дефект. Применить компенсационные удержания.' : (isYellow ? '🟡 УСЛОВНЫЙ ДОПУСК К КС-2 (Этап СМР). Разрешается частичная оплата, но финальный расчет заблокирован до доведения УрК до 85%.' : '🟢 ОПЛАТА БЕЗ ОГРАНИЧЕНИЙ. УрК >= 85%.')}\n\n${b3Str}`;
-        default: return `ЭКСПЕРТНОЕ ЗАКЛЮЧЕНИЕ\n\nКачество работ подрядчика "${cName}" оценивается на ${c.finalC}%.\n\n[Бизнес-метрика]\n${isRed ? 'Остановка работ (<70%).' : (isYellow ? 'Условный допуск СМР (70-84%).' : 'Готовность к сдаче клиенту с 1-го раза (>=85%).')}\n\n[Проблемы]\n• ${c.maxFailRate >= 20 ? `Системный брак: в ${c.maxFailRate.toFixed(1)}% проверок.` : 'Системных отклонений не выявлено.'}\n• ${b3Str}\n\n[Вывод]\n${isRed ? 'Требуется полная переделка.' : (isYellow ? 'Устранить B2 перед финишем.' : 'Работы приняты.')}`;
-    }
-}
+};
 
 // === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА С ПОДДЕРЖКОЙ ОК) ===
 window.rbiPhotoGalleries = {};
@@ -1599,3 +1725,181 @@ window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeCl
 
 // Пустая заглушка, чтобы не сломать старые HTML-кнопки (если они где-то остались в истории)
 window.loadMorePhotos = function() {};
+
+// === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
+window.callAI = async function(messages, options = {}) {
+    const { temperature = 0.7, max_tokens = 2000 } = options;
+    const useServer = !appSettings.usePersonalKey || !appSettings.apiKey;
+    
+    let url, headers;
+    
+    if (useServer) {
+        // Корпоративный режим (Edge Function)
+        url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/deepseek-proxy`;
+        
+        // Теперь берем не ПИН руководителя, а отдельный корпоративный пароль для ИИ
+        const token = appSettings.aiCorpPwd;
+        if (!token) throw new Error('Введите пароль доступа к корпоративному AI в Настройках!');
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+    } else {
+        // Личный режим (Прямой вызов API)
+        url = 'https://api.deepseek.com/chat/completions';
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${appSettings.apiKey}`
+        };
+    }
+
+    try {
+        const body = { model: 'deepseek-chat', messages, temperature, max_tokens };
+        const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+        
+        if (!response.ok) {
+            if (response.status === 403) throw new Error("Доступ запрещен. Проверьте пароль руководителя.");
+            if (response.status === 401) throw new Error("Неверный персональный API-ключ.");
+            throw new Error(`Ошибка сервера: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.choices[0].message.content;
+    } catch (e) {
+        console.error("[AI Error]:", e);
+        throw e;
+    }
+};
+
+// === AI: СВОДНЫЙ АНАЛИЗ ДЛЯ ОТЧЕТА РУКОВОДСТВУ (ONE-PAGER) ===
+window.generateOnePagerForecastAi = async function(pdcaKey) {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    
+    const data = getFilteredAnalyticsData();
+    if (data.length === 0) return showToast("Нет данных для анализа");
+
+    let sumB3 = 0;
+    data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
+    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+    const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+    const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+
+    const causes = {};
+    data.forEach(check => {
+        if (check.state && check.details) {
+            Object.keys(check.state).forEach(id => {
+                if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') {
+                    const code = check.details[id]?.causeCode || 'C00';
+                    causes[code] = (causes[code] || 0) + 1;
+                }
+            });
+        }
+    });
+    const topCausesCodes = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 3);
+    const topCausesNames = topCausesCodes.map(code => (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : code) || 'Нарушения');
+
+    const promptSystem = `Ты — директор по качеству. Сформируй ОЧЕНЬ КРАТКИЙ аналитический обзор объекта для высшего руководства.
+    Объем: СТРОГО не более 50-70 слов суммарно (чтобы текст гарантированно поместился в небольшой правый нижний угол отчета А3).
+    Ответь строго в 3 абзаца (СТРОГО по 1 предложению каждый), без markdown-звездочек, используя заглавные буквы только для заголовков:
+    ОЦЕНКА СИТУАЦИИ: [1 предложение о текущем риске].
+    КРИТИЧНЫЕ ТОЧКИ: [1 предложение о главных проблемах].
+    ПЛАН ДЕЙСТВИЙ: [1 жесткий корректирующий шаг].`;
+
+    const promptUser = `Индекс риска (ИКО): ${IKO} (Выше 0.6 - пожар). В красной зоне: ${redZone}% работ.
+    Проверок: ${data.length}. Аварий (B3): ${sumB3}. Главные причины брака: ${topCausesNames.join(', ')}.`;
+
+    showToast("⏳ AI формирует стратегию...");
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 250 }); // Жестко обрезаем токены
+
+        customExpertConclusions[pdcaKey] = response;
+        if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
+        renderCurrentAnalyticsTab();
+        showToast("✨ Управленческое решение обновлено!");
+    } catch (e) {
+        showToast("❌ Ошибка нейросети: " + e.message);
+    }
+};
+
+window.generatePulseAi = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
+    const container = document.getElementById('pulse-ai-text');
+    container.innerHTML = `<span class="animate-pulse">⏳ AI слушает пульс объекта...</span>`;
+
+    const data = getFilteredAnalyticsData();
+    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+    
+    const promptSystem = `Ты — AI-супервизор. Дай сжатую оценку 'здоровья' стройки (1 абзац, макс 40 слов). Тон: профессиональный.`;
+    const promptUser = `ИКО: ${currIntMetrics?currIntMetrics.IKO:'0'}. В красной зоне: ${currIntMetrics?currIntMetrics.redZonePerc:'0'}%. Выявлено проблем: ${countPhotos(data)}.`;
+
+    try {
+        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 150 });
+        container.innerHTML = res;
+        customExpertConclusions['pulse_ai'] = res;
+        scheduleSessionSave();
+    } catch(e) { container.innerHTML = "Ошибка AI"; }
+};
+
+window.generateHeatmapAi = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
+    const container = document.getElementById('heatmap-ai-text');
+    container.classList.remove('hidden');
+    container.innerHTML = `<span class="animate-pulse">⏳ AI анализирует матрицу...</span>`;
+
+    // Собираем сырые данные для ИИ (просто передаем топ-2 самые бракованные стадии)
+    const promptSystem = `Ты — риск-менеджер. Посмотри на матрицу дефектов и скажи 1 предложением: где главная просадка и какой TWI тренинг провести.`;
+    const promptUser = `На объекте чаще всего брак допускают на этапах отделки и фасада.`; // Упрощенный контекст для скорости
+
+    try {
+        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 100 });
+        container.innerHTML = `<b>💡 Рекомендация:</b> ${res}`;
+    } catch(e) { container.innerHTML = "Ошибка AI"; }
+};
+
+window.generateCultureAi = async function(compoundContractorName, workType) {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
+    const container = document.getElementById('culture-ai-text');
+    container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI оценивает культуру...</span>`;
+
+    // ИСПРАВЛЕНИЕ: Правильно фильтруем данные по склеенному ключу "Подрядчик [Объект]"
+    const cData = getFilteredAnalyticsData().filter(c => 
+        c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === compoundContractorName
+    );
+
+    if (cData.length === 0) {
+        container.innerHTML = `<span class="text-red-500">Ошибка: недостаточно данных для анализа</span>`;
+        return;
+    }
+
+    const m = getContractorMetrics(cData, userTemplates);
+    if (!m) {
+        container.innerHTML = `<span class="text-red-500">Ошибка расчета метрик</span>`;
+        return;
+    }
+    
+    // Вытаскиваем чистое имя подрядчика для промпта
+    const cleanName = compoundContractorName.split(' [')[0];
+
+    const promptSystem = `Ты — эксперт по бережливому производству (Lean). Дай оценку 'Культуры качества' подрядчика. 
+    Опирайся на то, как он исправляет ошибки (стабильность). Объем: СТРОГО 2 коротких предложения. Без markdown-звездочек.`;
+    
+    const promptUser = `Подрядчик: ${cleanName}. Рейтинг надежности: ${m.finalC}%. Индекс стабильности: ${m.stabilityIndex}. Критических аварий (B3): ${m.n_изделий_с_B3}.`;
+
+    try {
+        const res = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.4, max_tokens: 150 });
+        
+        container.innerHTML = res;
+        // Сохраняем вывод в память по полному ключу, чтобы он не пропадал при перезагрузке
+        customExpertConclusions[`culture_${compoundContractorName}`] = res;
+        if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
+    } catch(e) { 
+        container.innerHTML = `<span class="text-red-500">Ошибка связи с AI: ${e.message}</span>`; 
+    }
+};
