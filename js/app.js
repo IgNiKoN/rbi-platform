@@ -115,34 +115,49 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         setupNavigation();
      initHorizontalMouseScroll();
-     // НОВОЕ: Глобальный наблюдатель для "ленивой" подгрузки фото из IndexedDB
-        const imgObserver = new MutationObserver((mutations) => {
-            mutations.forEach(mutation => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach(node => {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            const imgs = node.tagName === 'IMG' ? [node] : node.querySelectorAll('img');
-                            imgs.forEach(async img => {
-                                const src = img.getAttribute('src');
-                                if (src && src.startsWith('local://')) {
-                                    // Ставим серый квадратик, пока грузится из БД
-                                    img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="100%" height="100%" fill="%23f1f5f9"/></svg>'; 
-                                    const realUrl = await PhotoManager.getAsyncUrl(src);
-                                    if (realUrl) img.src = realUrl;
-                                }
-                            });
+     // ОПТИМИЗАЦИЯ: Ленивая загрузка фото через IntersectionObserver и легкий MutationObserver
+        const localImgObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(async entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    const src = img.getAttribute('data-local-src');
+                    if (src) {
+                        observer.unobserve(img); // Перестаем следить после загрузки
+                        const realUrl = await PhotoManager.getAsyncUrl(src);
+                        if (realUrl) {
+                            img.src = realUrl;
+                            img.removeAttribute('data-local-src');
                         }
-                    });
-                } else if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
-                    const img = mutation.target;
-                    const src = img.getAttribute('src');
-                    if (src && src.startsWith('local://')) {
-                        PhotoManager.getAsyncUrl(src).then(realUrl => { if (realUrl) img.src = realUrl; });
                     }
                 }
             });
+        }, { rootMargin: "200px" }); // Грузим чуть раньше, чем фото появится на экране
+
+        let imgDebounceTimer = null;
+        const domObserver = new MutationObserver((mutations) => {
+            // Реагируем ТОЛЬКО на добавление новых узлов в DOM (игнорируем стили и классы свайпов)
+            let hasNewNodes = false;
+            for (let i = 0; i < mutations.length; i++) {
+                if (mutations[i].addedNodes.length > 0) {
+                    hasNewNodes = true;
+                    break;
+                }
+            }
+            if (hasNewNodes) {
+                clearTimeout(imgDebounceTimer);
+                imgDebounceTimer = setTimeout(() => {
+                    const imgs = document.querySelectorAll('img[src^="local://"]:not([data-local-src])');
+                    for (let i = 0; i < imgs.length; i++) {
+                        const img = imgs[i];
+                        img.setAttribute('data-local-src', img.src);
+                        img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="100%" height="100%" fill="%23f1f5f9"/></svg>';
+                        localImgObserver.observe(img);
+                    }
+                }, 100); // Легкий Debounce
+            }
         });
-        imgObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+        // ВАЖНО: Убрали attributes: true. Теперь observer "спит" во время свайпов!
+        domObserver.observe(document.body, { childList: true, subtree: true });
     } catch (error) { console.error("Ошибка при загрузке:", error); }
 });
 

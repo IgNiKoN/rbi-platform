@@ -1348,9 +1348,9 @@ function exportPdfFullObjectReport(data, mode = 'script') {
                     ${expertHtml}
                 </td>
                 <td style="width: 75%; vertical-align: top; padding: 0;">
-                    ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
-                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 4, mode)}
-                    ${buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
+                    ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
+                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
+                    ${buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
                 </td>
             </tr>
         </table>
@@ -1689,80 +1689,116 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     }
 
     // ============================================================================
-    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Скрипт)
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Постраничный рендер)
     // ============================================================================
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isWeakDevice = (navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+
     const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = `position: fixed; left: -10000px; top: -10000px; width: ${widthPx + 100}px; background: white; z-index: -1; display: block;`;
+    // Держим блок в координатах экрана с opacity: 0.01, чтобы агрессивный сборщик мусора iOS Safari не удалил его из оперативной памяти
+    hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 100}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
     document.body.appendChild(hiddenDiv);
 
-    // Специфичные стили для изоляции html2canvas (Работаем с пикселями)
     const styleElem = document.createElement('style');
     styleElem.textContent = `
-        #pdf-print-root { width: ${widthPx}px !important; margin: 0 auto !important; padding: 20px !important; background: white !important; font-family: Arial, sans-serif !important; color: black !important; box-sizing: border-box !important; }
-        #pdf-print-root * { box-sizing: border-box !important; }
-        #pdf-print-root img { max-width: 100% !important; display: block !important; }
-        #pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
-        #pdf-print-root .pdf-page-break { page-break-before: always !important; break-before: page !important; display: block !important; height: 1px; clear: both; }
-        #pdf-print-root .no-break, #pdf-print-root tr, #pdf-print-root td, #pdf-print-root img { page-break-inside: avoid !important; break-inside: avoid !important; }
+        .pdf-print-root { width: ${widthPx}px !important; margin: 0 auto !important; padding: 20px !important; background: white !important; font-family: Arial, sans-serif !important; color: black !important; box-sizing: border-box !important; }
+        .pdf-print-root * { box-sizing: border-box !important; }
+        .pdf-print-root img { max-width: 100% !important; display: block !important; }
+        .pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+        .pdf-print-root .no-break, .pdf-print-root tr, .pdf-print-root td, .pdf-print-root img { page-break-inside: avoid !important; break-inside: avoid !important; }
     `;
     hiddenDiv.appendChild(styleElem);
-
-    const rootDiv = document.createElement('div');
-    rootDiv.id = 'pdf-print-root';
-    rootDiv.innerHTML = header + content;
-    hiddenDiv.appendChild(rootDiv);
 
     const cleanup = () => {
         if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
 
-    const images = hiddenDiv.querySelectorAll('img');
-    const imagePromises = Array.from(images).map(img => {
-        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-        return new Promise((resolve) => { img.onload = () => resolve(); img.onerror = () => resolve(); setTimeout(() => resolve(), 5000); });
-    });
-
-    const fontPromise = document.fonts ? document.fonts.ready : Promise.resolve();
-    
-    if (loaderText) loaderText.innerText = "Загрузка изображений...";
-    await Promise.all([fontPromise, ...imagePromises]);
-    
-    if (loaderText) loaderText.innerText = "Создание PDF (высокое качество)...";
-    await new Promise(resolve => setTimeout(resolve, isIOS ? 500 : 200));
-
     const opt = {
         margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
         filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },   
         html2canvas: {
-            scale: HIGH_QUALITY_SCALE,   
+            scale: HIGH_QUALITY_SCALE, // Качество сохраняем максимальным (2.5)  
             useCORS: true,
             letterRendering: true,
-            width: widthPx, // Кристально точная ширина захвата
-            windowWidth: widthPx, // Принудительно заставляем эмулировать экран этой ширины
-            x: 0, // Начинаем захват строго с нуля
-            y: 0,
-            scrollX: 0,
-            scrollY: 0,
-            logging: false,
-            allowTaint: true,
-            backgroundColor: '#ffffff'
+            width: widthPx,
+            windowWidth: widthPx,
+            x: 0, y: 0, scrollX: 0, scrollY: 0,
+            logging: false, allowTaint: true, backgroundColor: '#ffffff'
         },
         jsPDF: { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation, compress: true },
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
     try {
-        await html2pdf().set(opt).from(rootDiv).save();
+        if (loaderText) loaderText.innerText = "Создание PDF (Высокое качество)...";
+        await new Promise(resolve => setTimeout(resolve, 300)); // Даем DOM обновиться
+
+        // Разделяем контент на отдельные страницы по маркеру разрыва
+        const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
+        
+        // Если устройство слабое ИЛИ страниц несколько - рендерим постранично с очисткой RAM!
+        if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
+            let worker = html2pdf().set(opt);
+            
+            for (let i = 0; i < pagesHtml.length; i++) {
+                if (loaderText) loaderText.innerText = `Обработка листа ${i + 1} из ${pagesHtml.length}...`;
+                
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'pdf-print-root';
+                pageDiv.innerHTML = pagesHtml[i];
+                
+                // Очищаем скрытый контейнер от предыдущей страницы (Освобождаем DOM)
+                Array.from(hiddenDiv.children).forEach(c => { if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c); });
+                hiddenDiv.appendChild(pageDiv);
+
+                // Ждем загрузки картинок ИМЕННО ЭТОЙ страницы
+                const images = pageDiv.querySelectorAll('img');
+                const imagePromises = Array.from(images).map(img => {
+                    if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+                    return new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 5000); });
+                });
+                await Promise.all(imagePromises);
+
+                // Рендерим страницу и добавляем в PDF (API html2pdf.js)
+                if (i === 0) {
+                    worker = worker.from(pageDiv).toPdf();
+                } else {
+                    worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
+                }
+                
+                await worker; // Ждем окончания рендера канваса
+                
+                // На слабых устройствах даем сборщику мусора (GC) 800мс на очистку памяти от тяжелого канваса
+                if (isWeakDevice) {
+                    await new Promise(resolve => setTimeout(resolve, 400)); 
+                }
+            }
+            await worker.save();
+        } else {
+            // Обычный рендер одним куском (если страница всего одна и устройство мощное)
+            const rootDiv = document.createElement('div');
+            rootDiv.className = 'pdf-print-root';
+            rootDiv.innerHTML = header + content;
+            hiddenDiv.appendChild(rootDiv);
+            
+            const images = rootDiv.querySelectorAll('img');
+            const imagePromises = Array.from(images).map(img => {
+                if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+                return new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 5000); });
+            });
+            await Promise.all(imagePromises);
+            
+            await html2pdf().set(opt).from(rootDiv).save();
+        }
+        
         cleanup();
         if (typeof showToast === 'function') showToast("✅ PDF высокого качества сохранён!");
     } catch (err) {
         console.error('[PDF Error]', err);
         cleanup();
-        if (typeof showToast === 'function') showToast("❌ Ошибка при генерации PDF. Попробуйте режим печати.");
+        if (typeof showToast === 'function') showToast("❌ Ошибка генерации. Попробуйте режим Печати.");
     }
 }
 
