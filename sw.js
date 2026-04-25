@@ -1,8 +1,8 @@
 /* Файл: sw.js */
-// ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ, чтобы браузер понял, что вышел новый код!
-const CACHE_NAME = 'rbi-quality-v16.9.6'; 
+// ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде! (v16.9.8)
+const CACHE_NAME = 'rbi-quality-v16.9.9'; 
 
-// Оставляем ЗДЕСЬ ТОЛЬКО ЛОКАЛЬНЫЕ ФАЙЛЫ (чтобы установка SW никогда не падала)
+// 1. ПРЕ-КЭШ: ТОЛЬКО 100% локальные файлы (чтобы установка PWA никогда не падала)
 const urlsToCache = [
   './',
   './index.html',
@@ -10,6 +10,8 @@ const urlsToCache = [
   './data/system_docs.js',
   './data/system_nodes.js',
   './data/system_twi.js',
+  './js/config.js',
+  './js/sync.js',
   './js/storage.js',
   './js/templates.js',
   './js/math.js',
@@ -17,22 +19,21 @@ const urlsToCache = [
   './js/analytics.js', 
   './js/export.js',    
   './js/game.js',
-  './manifest.webmanifest',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
+  './manifest.webmanifest'
 ];
 
 // 1. УСТАНОВКА: Скачиваем локальные файлы в память
 self.addEventListener('install', event => {
-  self.skipWaiting(); // ЗАСТАВЛЯЕМ новый SW примениться немедленно (не ждать закрытия вкладок)
+  self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      console.log('[SW] Кэшируем ядро приложения...');
+      console.log('[SW] Кэшируем локальное ядро приложения...');
       return cache.addAll(urlsToCache);
     })
   );
 });
 
-// 2. АКТИВАЦИЯ: Жестко удаляем старые версии кэша
+// 2. АКТИВАЦИЯ: Удаляем старые версии кэша
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -46,35 +47,37 @@ self.addEventListener('activate', event => {
       );
     })
   );
-  self.clients.claim(); // Немедленно перехватываем контроль над всеми открытыми страницами
+  self.clients.claim(); 
 });
 
-// 3. ПЕРЕХВАТ ЗАПРОСОВ: Stale-While-Revalidate (Устаревшее, пока обновляется)
+// 3. ПЕРЕХВАТ ЗАПРОСОВ (Stale-While-Revalidate + Runtime Caching для CDN)
 self.addEventListener('fetch', event => {
-  // Игнорируем запросы, которые не относятся к HTTP/HTTPS (например, chrome-extension://)
+  // Игнорируем запросы не по HTTP (например, chrome-extension://)
   if (!event.request.url.startsWith('http')) return;
-  // Игнорируем всё, кроме GET запросов
   if (event.request.method !== 'GET') return;
+  
+  // Запросы к Supabase (API) мы НЕ кэшируем, они должны ходить в базу данных!
+  if (event.request.url.includes('supabase.co')) return;
 
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       
-      // Фоновый запрос в сеть за свежей версией
+      // Фоновый запрос в сеть за свежей версией файла
       const fetchPromise = fetch(event.request).then(networkResponse => {
-        // Если ответ ок (или это непрозрачный ответ от CDN типа Tailwind) — кэшируем его "на лету"
+        // Проверяем: если ответ успешный (200) ИЛИ это "opaque" ответ от внешнего CDN (Tailwind/Chart.js)
         if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
+            cache.put(event.request, responseToCache); // Сохраняем CDN на лету!
           });
         }
         return networkResponse;
       }).catch(err => {
-        console.log('[SW] Офлайн режим. Сеть недоступна.', err);
+        console.log('[SW] Офлайн: Сеть недоступна, пытаемся отдать из кэша.', event.request.url);
       });
 
-      // СНАЧАЛА отдаем кэш (если он есть). А в фоне уже пошел fetchPromise обновлять файлы.
-      // Если кэша нет (например, впервые грузим Tailwind) — ждем fetchPromise.
+      // Отдаем кэш сразу (если он есть), а в фоне скачиваем обновления.
+      // Если кэша еще нет (первый запуск), ждем ответа от fetchPromise.
       return cachedResponse || fetchPromise;
     })
   );

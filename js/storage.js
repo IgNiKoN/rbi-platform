@@ -249,23 +249,16 @@ async function updateStorageInfo() {
 }
 
 /**
+/**
  * ГЛОБАЛЬНЫЙ МЕНЕДЖЕР ФОТОГРАФИЙ И ФАЙЛОВ (Умный кэш и Офлайн)
  */
 const PhotoManager = {
     cache: {}, // Быстрый кэш для моментальной отрисовки (RAM)
+    activeUrls: new Set(), // Список созданных Blob URL для очистки памяти
 
-    // 1. Загрузка всех ярлыков при старте
+    // 1. Инициализация (Больше не грузим всё в оперативку!)
     async init() {
-        try {
-            const photos = await dbGetAll(STORES.PHOTOS);
-            if (photos) {
-                for (let p of photos) {
-                    const blob = arrayBufferToBlob(p.data, p.mimeType);
-                    this.cache[p.id] = URL.createObjectURL(blob);
-                }
-            }
-            console.log(`[PhotoManager] В кэш загружено ${Object.keys(this.cache).length} файлов`);
-        } catch(e) { console.error("[PhotoManager] Ошибка инициализации", e); }
+        console.log(`[PhotoManager] Инициализация (режим On-Demand). Память чиста.`);
     },
 
     // 2. Сохранение нового фото (Сразу в БД)
@@ -279,17 +272,42 @@ const PhotoManager = {
         await dbPut(STORES.PHOTOS, { id, data: buffer, mimeType });
         
         const blob = arrayBufferToBlob(buffer, mimeType);
-        this.cache[id] = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        this.cache[id] = url;
+        this.activeUrls.add(url);
         return id;
     },
 
-    // 3. Умная выдача ссылки для <img> и <iframe>
+    // 3. Синхронная выдача ссылки для HTML (Оставляем local://, чтобы отловил Observer)
     getSrc(url) {
         if (!url) return '';
-        // Если файл есть в нашей базе (local:// или скачанный https://), отдаем локальный ярлык
-        if (this.cache[url]) return this.cache[url];
-        // Если нет в базе, отдаем как есть (скачается из сети, если есть интернет)
+        if (url.startsWith('local://')) return url; // Оставляем как есть для MutationObserver
+        if (this.cache[url]) return this.cache[url]; // Для внешних ссылок
         return url; 
+    },
+
+    // 3.1. АСИНХРОННАЯ выдача реального Blob URL из базы
+    async getAsyncUrl(localId) {
+        if (this.cache[localId]) return this.cache[localId];
+        try {
+            const record = await dbGet(STORES.PHOTOS, localId);
+            if (record && record.data) {
+                const blob = arrayBufferToBlob(record.data, record.mimeType);
+                const url = URL.createObjectURL(blob);
+                this.cache[localId] = url;
+                this.activeUrls.add(url);
+                return url;
+            }
+        } catch(e) { console.error("Ошибка загрузки фото из БД", e); }
+        return null;
+    },
+
+    // 3.2. ОЧИСТКА ПАМЯТИ (Вызывается при переключении вкладок)
+    clearMemory() {
+        this.activeUrls.forEach(url => URL.revokeObjectURL(url));
+        this.activeUrls.clear();
+        this.cache = {};
+        console.log('[PhotoManager] Оперативная память (RAM) очищена от фото');
     },
 
     // 4. ПРИВЯЗКА: Меняем ключ, когда фото улетело в облако
@@ -305,25 +323,17 @@ const PhotoManager = {
 
     // 5. ФОНОВОЕ СКАЧИВАНИЕ (Для Офлайна)
     async downloadForOffline(url) {
-        // Если это не ссылка или файл уже скачан — пропускаем
         if (!url || !url.startsWith('http') || this.cache[url]) return;
-        
         try {
-            console.log(`[PhotoManager] Скачиваю для офлайна: ${url}`);
             const res = await fetch(url);
             if (!res.ok) throw new Error("Файл недоступен");
-            
             const blob = await res.blob();
             const buffer = await blobToArrayBuffer(blob);
-            
-            // Сохраняем вIndexedDB под ключом URL
             await dbPut(STORES.PHOTOS, { id: url, data: buffer, mimeType: blob.type });
-            
-            // Создаем ярлык для интерфейса
-            this.cache[url] = URL.createObjectURL(blob);
-        } catch(e) { 
-            console.warn("[PhotoManager] Не удалось скачать файл (возможно нет интернета):", url); 
-        }
+            const localUrl = URL.createObjectURL(blob);
+            this.cache[url] = localUrl;
+            this.activeUrls.add(localUrl);
+        } catch(e) { console.warn("[PhotoManager] Ошибка скачивания для офлайна:", url); }
     }
 };
 

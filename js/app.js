@@ -115,6 +115,34 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         setupNavigation();
      initHorizontalMouseScroll();
+     // НОВОЕ: Глобальный наблюдатель для "ленивой" подгрузки фото из IndexedDB
+        const imgObserver = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const imgs = node.tagName === 'IMG' ? [node] : node.querySelectorAll('img');
+                            imgs.forEach(async img => {
+                                const src = img.getAttribute('src');
+                                if (src && src.startsWith('local://')) {
+                                    // Ставим серый квадратик, пока грузится из БД
+                                    img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="100%" height="100%" fill="%23f1f5f9"/></svg>'; 
+                                    const realUrl = await PhotoManager.getAsyncUrl(src);
+                                    if (realUrl) img.src = realUrl;
+                                }
+                            });
+                        }
+                    });
+                } else if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
+                    const img = mutation.target;
+                    const src = img.getAttribute('src');
+                    if (src && src.startsWith('local://')) {
+                        PhotoManager.getAsyncUrl(src).then(realUrl => { if (realUrl) img.src = realUrl; });
+                    }
+                }
+            });
+        });
+        imgObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
     } catch (error) { console.error("Ошибка при загрузке:", error); }
 });
 
@@ -552,6 +580,8 @@ function updateBodyPadding() {
 
 // === НАВИГАЦИЯ И ВКЛАДКИ ===
 function switchTab(tabId, navElement = null) {
+    // ОЧИСТКА RAM: При смене вкладки удаляем старые фото из памяти
+    if (typeof PhotoManager !== 'undefined') PhotoManager.clearMemory();
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     

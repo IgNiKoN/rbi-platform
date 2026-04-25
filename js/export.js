@@ -280,13 +280,13 @@ function exportPdfOnePager(data, mode = 'script') {
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
                         <tr>
                             <td style="padding: 0 4px 8px 0; width:50%;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                                     <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
                                     <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
                                 </div>
                             </td>
                             <td style="padding: 0 0 8px 4px; width:50%;">
-                                <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'};">
+                                <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                                     <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
                                     <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
                                 </div>
@@ -294,13 +294,13 @@ function exportPdfOnePager(data, mode = 'script') {
                         </tr>
                         <tr>
                             <td style="padding: 0 4px 8px 0;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                                     <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
                                     <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
                                 </div>
                             </td>
                             <td style="padding: 0 0 8px 4px;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                                     <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
                                     <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fontSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
                                 </div>
@@ -308,28 +308,28 @@ function exportPdfOnePager(data, mode = 'script') {
                         </tr>
                         <tr>
                             <td style="padding: 0 4px 0 0;">
-                                <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca;">
+                                <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                                     <div style="font-size: ${fontSizeSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
                                     <div style="font-size: ${fontSizeNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
                                 </div>
                             </td>
                             <td style="padding: 0 0 0 4px;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; position: relative; overflow: hidden;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box; position: relative; overflow: hidden;">
                                     <div style="font-size: ${fontSizeSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
-                                    <div style="position:absolute; bottom:0; left:0; width:100%;">${imgSpark}</div>
+                                    <div style="position:absolute; bottom:0; left:0; width:100%; height: 50%;">${imgSpark}</div>
                                 </div>
                             </td>
                         </tr>
                     </table>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
                         <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
                         <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
                     </div>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height:${mode === 'browser' ? '60mm' : '250px'}; overflow: hidden; box-sizing: border-box;">
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
                         <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                        <div style="width: 100%; overflow: hidden;">${ratingHtml}</div>
+                        <div style="width: 100%;">${ratingHtml}</div>
                     </div>
                 </td>
 
@@ -351,18 +351,19 @@ function exportPdfOnePager(data, mode = 'script') {
     printPdfShell("Сводка для Руководства", content, "A3", "landscape", mode);
 }
 
-// 6.5. ГЛОБАЛЬНЫЙ СВОДНЫЙ ОТЧЕТ КОМПАНИИ (Титул + Объекты)
+// 6.5. ГЛОБАЛЬНЫЙ СВОДНЫЙ ОТЧЕТ КОМПАНИИ (Титул + Объекты a-la OnePager)
 function exportPdfGlobalOnePager(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
-    // 1. Считаем глобальные метрики компании
+    // ==========================================
+    // 1. РАСЧЕТ ГЛОБАЛЬНЫХ МЕТРИК И ТРЕНДОВ
+    // ==========================================
     let globalSumUrk = 0;
     data.forEach(i => { if(i.metrics) globalSumUrk += i.metrics.final; });
     const globalAvgUrk = data.length > 0 ? Math.round(globalSumUrk / data.length) : 0;
     
     const globalIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
     const globalIKO = globalIntMetrics ? globalIntMetrics.IKO : "0.00";
-    const globalRedZone = globalIntMetrics ? globalIntMetrics.redZonePerc : 0;
     
     let pdfIkoColorGlobal = "#64748b";
     if (globalIKO >= 0.6) pdfIkoColorGlobal = "#dc2626";
@@ -371,101 +372,336 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
 
     const uniqueContractorsGlobal = new Set(data.map(i => i.contractorName).filter(Boolean)).size;
 
-    // Группируем проверки по объектам
+    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    let prevData = [];
+    const now = new Date();
+    let trendLabel = "к 1-й пол. базы"; 
+    
+    if (selPeriod === 'WEEK') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate()-7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-7);
+        prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
+        trendLabel = "к прош. нед.";
+    } else if (selPeriod === 'MONTH') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate()-30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-30);
+        prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
+        trendLabel = "к прош. мес.";
+    } else if (selPeriod === 'CUSTOM') {
+        trendLabel = "к пред. периоду";
+    } else {
+        const half = Math.floor(data.length / 2);
+        const sortedData = [...data].sort((a,b) => new Date(a.date) - new Date(b.date));
+        prevData = sortedData.slice(0, half);
+    }
+
+    let prevGlobalAvgUrk = 0; let prevGlobalIko = "0.00"; let prevGlobalChecks = prevData.length; let prevGlobalContrs = 0;
+    if (prevData.length > 0) {
+        let pSum = 0; prevData.forEach(i => pSum += (i.metrics?.final || 0));
+        prevGlobalAvgUrk = Math.round(pSum / prevData.length);
+        prevGlobalContrs = new Set(prevData.map(i => i.contractorName).filter(Boolean)).size;
+        const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, userTemplates) : null;
+        if(pInt) prevGlobalIko = pInt.IKO;
+    }
+
+    const renderTrend = (curr, prev, label, inverse = false) => {
+        if (prev === undefined || prev === null || prev === "" || isNaN(prev)) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:${mode === 'browser' ? '7pt' : '10px'}; font-weight:bold; background:#f1f5f9; padding:2px 4px; border-radius:4px;">Нет базы</span></div>`;
+        let diff = (parseFloat(curr) - parseFloat(prev));
+        if (Math.abs(diff) < 0.01) return `<div style="text-align:right;"><span style="color:#94a3b8; font-size:${mode === 'browser' ? '10pt' : '14px'}; font-weight:900;">▬ 0</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+        const isGood = inverse ? diff < 0 : diff > 0;
+        const color = isGood ? '#16a34a' : '#dc2626';
+        const sign = diff > 0 ? '▲' : '▼';
+        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+    };
+
+    const formatTrendInline = (curr, prev, inverse = false) => {
+        if (!prev || isNaN(prev)) return '';
+        let diff = parseFloat(curr) - parseFloat(prev);
+        if (Math.abs(diff) < 0.01) return `<span style="color:#94a3b8; font-size:${mode==='browser'?'7pt':'9px'}; margin-left:4px;">▬ 0</span>`;
+        const isGood = inverse ? diff < 0 : diff > 0;
+        const color = isGood ? '#16a34a' : '#dc2626';
+        const sign = diff > 0 ? '▲' : '▼';
+        return `<span style="color:${color}; font-size:${mode==='browser'?'7pt':'9px'}; margin-left:4px;">${sign}${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span>`;
+    };
+
+    // ==========================================
+    // 2. ГРУППИРОВКА ПО ОБЪЕКТАМ
+    // ==========================================
     const projectsMap = {};
-    data.forEach(item => {
-        const pName = item.projectName || 'Без объекта';
-        if (!projectsMap[pName]) projectsMap[pName] = [];
-        projectsMap[pName].push(item);
-    });
+    data.forEach(item => { const pName = item.projectName || 'Без объекта'; if (!projectsMap[pName]) projectsMap[pName] = []; projectsMap[pName].push(item); });
+
+    const prevProjectsMap = {};
+    prevData.forEach(item => { const pName = item.projectName || 'Без объекта'; if (!prevProjectsMap[pName]) prevProjectsMap[pName] = []; prevProjectsMap[pName].push(item); });
 
     const projectsArray = Object.keys(projectsMap).map(pName => {
         const pData = projectsMap[pName];
-        let pSumUrk = 0;
+        let pSumUrk = 0; let redZone = 0;
         pData.forEach(i => { if(i.metrics) pSumUrk += i.metrics.final; });
         const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
         const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
-        
-        return { name: pName, data: pData, avgUrk: pAvgUrk, IKO: pMetrics ? pMetrics.IKO : "0.00" };
-    }).sort((a,b) => parseFloat(b.IKO) - parseFloat(a.IKO)); // Сортируем объекты по риску (красные в начале)
+        const IKO = pMetrics ? pMetrics.IKO : "0.00";
+        if (pMetrics) redZone = pMetrics.redZonePerc;
 
-    // График сравнения объектов для титульника
-    const barChartUrlGlobal = generatePdfChart({
-        type: 'bar',
-        data: {
-            labels: projectsArray.map(p => p.name.substring(0, 15) + '...'),
-            datasets: [{
-                data: projectsArray.map(p => p.avgUrk),
-                backgroundColor: projectsArray.map(p => p.avgUrk < 70 ? '#ef4444' : (p.avgUrk < 85 ? '#f59e0b' : '#22c55e')),
-                borderRadius: 4
-            }]
-        },
-        options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
-    }, 800, 200);
+        const prevPData = prevProjectsMap[pName] || [];
+        let pPrevAvgUrk = 0; let pPrevIKO = "0.00";
+        if (prevPData.length > 0) {
+            let ppSum = 0; prevPData.forEach(i => ppSum += (i.metrics?.final || 0));
+            pPrevAvgUrk = Math.round(ppSum / prevPData.length);
+            const ppMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevPData, userTemplates) : null;
+            if(ppMetrics) pPrevIKO = ppMetrics.IKO;
+        }
+        
+        let urkGrowth = pPrevAvgUrk ? (pAvgUrk - pPrevAvgUrk) : 0;
+        let ikoDrop = pPrevIKO ? (parseFloat(pPrevIKO) - parseFloat(IKO)) : 0;
+
+        return { name: pName, data: pData, avgUrk: pAvgUrk, prevAvgUrk: pPrevAvgUrk, IKO: IKO, prevIKO: pPrevIKO, urkGrowth, ikoDrop, redZone };
+    });
+
+    // ==========================================
+    // 3. ПОДРЯДЧИКИ В ЗОНЕ РИСКА ПО ВСЕЙ КОМПАНИИ
+    // ==========================================
+    const allContrMap = {};
+    data.forEach(c => {
+        const cKey = `${c.contractorName} [${c.projectName || 'Без объекта'}]`;
+        if(!allContrMap[cKey]) allContrMap[cKey] = [];
+        allContrMap[cKey].push(c);
+    });
+    
+    let riskContractors = [];
+    for (let cKey in allContrMap) {
+        if (allContrMap[cKey].length >= 3) {
+            const m = getContractorMetrics(allContrMap[cKey], userTemplates);
+            if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
+                riskContractors.push({ name: cKey, final: m.finalC, b3: m.n_изделий_с_B3 });
+            }
+        }
+    }
+    riskContractors.sort((a, b) => a.final - b.final); // Худшие сверху
+
+    // ==========================================
+    // 4. ТИТУЛЬНЫЙ ЛИСТ
+    // ==========================================
+    const projectsByUrk = [...projectsArray].sort((a,b) => b.avgUrk - a.avgUrk);
+    
+    // Лидеры динамики (Топ-3)
+    const topGrowth = [...projectsArray].filter(p => p.urkGrowth > 0).sort((a,b) => b.urkGrowth - a.urkGrowth).slice(0, 3);
+    // Антилидеры динамики (Топ-3 падения)
+    const topDrop = [...projectsArray].filter(p => p.urkGrowth < 0).sort((a,b) => a.urkGrowth - b.urkGrowth).slice(0, 3);
+
+    // Сборка единой таблицы всех объектов
+    const renderObjectTableRow = (p) => {
+        const urkColor = p.avgUrk < 70 ? '#ef4444' : (p.avgUrk < 85 ? '#f59e0b' : '#22c55e');
+        const ikoColor = parseFloat(p.IKO) >= 0.6 ? '#dc2626' : (parseFloat(p.IKO) >= 0.3 ? '#f59e0b' : '#16a34a');
+        
+        let urkTrend = "";
+        if (p.prevAvgUrk) {
+            const diff = p.avgUrk - p.prevAvgUrk;
+            if (diff > 0) urkTrend = `<span style="color:#16a34a; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▲${Math.abs(diff)}</span>`;
+            else if (diff < 0) urkTrend = `<span style="color:#dc2626; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▼${Math.abs(diff)}</span>`;
+            else urkTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▬0</span>`;
+        }
+
+        let ikoTrend = "";
+        if (p.prevIKO && p.prevIKO !== "0.00") {
+            const diff = parseFloat(p.IKO) - parseFloat(p.prevIKO);
+            if (diff < 0) ikoTrend = `<span style="color:#16a34a; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▼${Math.abs(diff).toFixed(2)}</span>`;
+            else if (diff > 0) ikoTrend = `<span style="color:#dc2626; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▲${Math.abs(diff).toFixed(2)}</span>`;
+            else ikoTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▬0</span>`;
+        }
+
+        return `
+            <tr>
+                <td style="border-bottom: 1px solid #e2e8f0; padding: 10px 6px; font-size:${mode === 'browser' ? '10pt' : '13px'}; font-weight:bold; color:#0f172a;">${p.name}</td>
+                <td style="border-bottom: 1px solid #e2e8f0; padding: 10px 6px; text-align:center; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900; color:${urkColor}; background: #f8fafc;">${p.avgUrk}% ${urkTrend}</td>
+                <td style="border-bottom: 1px solid #e2e8f0; padding: 10px 6px; text-align:center; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900; color:${ikoColor};">${p.IKO} ${ikoTrend}</td>
+                <td style="border-bottom: 1px solid #e2e8f0; padding: 10px 6px; text-align:center; font-size:${mode === 'browser' ? '11pt' : '14px'}; font-weight:900; color:${p.redZone > 0 ? '#dc2626' : '#64748b'}; background: #f8fafc;">${p.redZone}%</td>
+            </tr>`;
+    };
+
+    const allObjectsTableHtml = `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr style="background: #e2e8f0; color: #475569; font-size: ${mode === 'browser' ? '8pt' : '11px'}; text-transform: uppercase;">
+                    <th style="padding: 10px 6px; text-align: left; border-radius: 8px 0 0 0;">Наименование Объекта</th>
+                    <th style="padding: 10px 6px; text-align: center; width: 22%;">Ср. УрК (+ Тренд)</th>
+                    <th style="padding: 10px 6px; text-align: center; width: 22%;">ИКО (+ Тренд)</th>
+                    <th style="padding: 10px 6px; text-align: center; width: 20%; border-radius: 0 8px 0 0;">В красной зоне</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${projectsByUrk.length > 0 ? projectsByUrk.map(renderObjectTableRow).join('') : `<tr><td colspan="4" style="text-align:center; padding:15px; color:#64748b;">Нет данных</td></tr>`}
+            </tbody>
+        </table>
+    `;
+
+    const renderDynamicsCard = (p, isGrowth) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding: 6px 0; border-bottom: 1px solid ${isGrowth ? '#bbf7d0' : '#fecaca'};">
+            <div style="font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width: 70%;">${p.name}</div>
+            <div style="font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900; color:${isGrowth ? '#16a34a' : '#dc2626'};">${isGrowth ? '+' : ''}${p.urkGrowth}%</div>
+        </div>
+    `;
 
     const fSizeTitle = mode === 'browser' ? '24pt' : '36px';
-    const fSizeNum = mode === 'browser' ? '32pt' : '42px';
-    const fSizeLabel = mode === 'browser' ? '9pt' : '12px';
+    const fSizeNum = mode === 'browser' ? '28pt' : '42px';
+    const fSizeLabel = mode === 'browser' ? '8pt' : '11px';
 
-    // --- ТИТУЛЬНЫЙ ЛИСТ КОМПАНИИ ---
     let content = `
-        <div class="no-break" style="text-align:center; margin-bottom: 30px;">
-            <h1 style="margin: 0; font-size: ${fSizeTitle}; color: #0f172a; text-transform: uppercase; font-weight: 900;">СВОДНЫЙ ОТЧЕТ КОМПАНИИ</h1>
-            <div style="font-size: ${mode === 'browser' ? '12pt' : '18px'}; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 10px;">Статус на ${new Date().toLocaleDateString('ru-RU')}</div>
+        <div class="no-break" style="text-align:center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: ${fSizeTitle}; color: #0f172a; text-transform: uppercase; font-weight: 900; letter-spacing: 1px;">СВОДНЫЙ ОТЧЕТ КОМПАНИИ</h1>
+            <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 5px;">Статус на ${new Date().toLocaleDateString('ru-RU')}</div>
         </div>
 
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 30px;">
+        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
             <tr>
-                <td style="width: 25%; padding: 0 10px 0 0;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                <td style="width: 25%; padding: 0 8px 0 0;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px 10px; text-align: center; height: ${mode === 'browser' ? '30mm' : '100px'}; box-sizing: border-box;">
                         <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Глобальный УрК</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${globalAvgUrk}%</div>
+                        <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${globalAvgUrk}%</td><td>${renderTrend(globalAvgUrk, prevGlobalAvgUrk, trendLabel)}</td></tr></table>
                     </div>
                 </td>
-                <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: ${parseFloat(globalIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(globalIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                <td style="width: 25%; padding: 0 8px;">
+                    <div style="background: ${parseFloat(globalIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(globalIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 15px 10px; text-align: center; height: ${mode === 'browser' ? '30mm' : '100px'}; box-sizing: border-box;">
                         <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: ${pdfIkoColorGlobal}; margin-top: 10px;">${globalIKO}</div>
+                        <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fSizeNum}; font-weight: 900; color: ${pdfIkoColorGlobal}; line-height: 1;">${globalIKO}</td><td>${renderTrend(globalIKO, prevGlobalIko, trendLabel, true)}</td></tr></table>
                     </div>
                 </td>
-                <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                <td style="width: 25%; padding: 0 8px;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px 10px; text-align: center; height: ${mode === 'browser' ? '30mm' : '100px'}; box-sizing: border-box;">
                         <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${data.length}</div>
+                        <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevGlobalChecks, trendLabel)}</td></tr></table>
                     </div>
                 </td>
-                <td style="width: 25%; padding: 0 0 0 10px;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
+                <td style="width: 25%; padding: 0 0 0 8px;">
+                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px 10px; text-align: center; height: ${mode === 'browser' ? '30mm' : '100px'}; box-sizing: border-box;">
                         <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Активных подрядчиков</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${uniqueContractorsGlobal}</div>
+                        <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; line-height: 1;">${uniqueContractorsGlobal}</td><td>${renderTrend(uniqueContractorsGlobal, prevGlobalContrs, trendLabel)}</td></tr></table>
                     </div>
                 </td>
             </tr>
         </table>
 
-        <div class="no-break" style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; margin-bottom: 20px;">
-            <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📊 Рейтинг объектов (Средний УрК)</div>
-            <div style="text-align: center; height: ${mode === 'browser' ? '50mm' : '200px'}; overflow: hidden;">
-                <img src="${barChartUrlGlobal}" style="width:100%; height:100%; object-fit:contain; display:block;">
-            </div>
-        </div>
+        <!-- СРЕДНИЙ БЛОК: СВОДНАЯ ТАБЛИЦА (СЛЕВА) И ТОПЫ/РИСКИ (СПРАВА) -->
+        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+                <td style="width: 60%; padding-right: 15px; vertical-align: top;">
+                    <div style="background: white; border: 2px solid #e2e8f0; border-radius: 12px; padding: 15px; height: ${mode === 'browser' ? '120mm' : '420px'}; box-sizing: border-box; overflow: hidden;">
+                        <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 8px;">🏢 Сводная таблица объектов</div>
+                        ${allObjectsTableHtml}
+                    </div>
+                </td>
+                <td style="width: 40%; vertical-align: top;">
+                    
+                    <!-- ТОП-3 ДИНАМИКА РОСТА -->
+                    <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                        <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #166534; text-transform: uppercase; margin-bottom: 8px;">🚀 ТОП-3 Объектов (Рост УрК)</div>
+                        ${topGrowth.length > 0 ? topGrowth.map(p => renderDynamicsCard(p, true)).join('') : `<div style="color:#166534; font-size:12px; text-align:center; padding:10px 0;">Роста не зафиксировано</div>`}
+                    </div>
+
+                    <!-- ТОП-3 ПАДЕНИЕ (АНТИЛИДЕРЫ) -->
+                    <div style="background: #fff7ed; border: 2px solid #fed7aa; border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                        <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #9a3412; text-transform: uppercase; margin-bottom: 8px;">📉 ТОП-3 Объектов (Падение УрК)</div>
+                        ${topDrop.length > 0 ? topDrop.map(p => renderDynamicsCard(p, false)).join('') : `<div style="color:#9a3412; font-size:12px; text-align:center; padding:10px 0;">Падения не зафиксировано</div>`}
+                    </div>
+
+                    <!-- ПОДРЯДЧИКИ В ЗОНЕ РИСКА -->
+                    <div style="background: #fef2f2; border: 2px solid #fca5a5; border-radius: 12px; padding: 15px; height: auto; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #991b1b; text-transform: uppercase; margin-bottom: 8px;">🚨 Зона риска: Подрядчики (УрК < 70% или B3)</div>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            ${riskContractors.length > 0 ? riskContractors.slice(0, 5).map(r => `
+                                <tr>
+                                    <td style="padding: 6px 0; border-bottom: 1px solid #fecaca; font-size: ${mode === 'browser' ? '8pt' : '11px'}; font-weight: bold; color: #7f1d1d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 70%;">${r.name}</td>
+                                    <td style="padding: 6px 0; border-bottom: 1px solid #fecaca; text-align: right; font-size: ${mode === 'browser' ? '9pt' : '12px'}; font-weight: 900; color: #dc2626;">${r.final}% ${r.b3 > 0 ? `(B3: ${r.b3})` : ''}</td>
+                                </tr>
+                            `).join('') : `<tr><td style="color: #166534; font-weight: bold; font-size: 12px; padding: 10px 0; text-align:center;">Все подрядчики компании в допустимой зоне!</td></tr>`}
+                        </table>
+                        ${riskContractors.length > 5 ? `<div style="font-size: 10px; color: #991b1b; font-weight: bold; text-align: center; margin-top: 8px;">...и ещё ${riskContractors.length - 5} компаний</div>` : ''}
+                    </div>
+
+                </td>
+            </tr>
+        </table>
     `;
 
-    // --- ПЕРЕБОР ОБЪЕКТОВ ---
+    // ==========================================
+
+    // ==========================================
+    // 5. ГЕНЕРАЦИЯ ONE-PAGER ДЛЯ КАЖДОГО ОБЪЕКТА
+    // ==========================================
     projectsArray.forEach(proj => {
         const pData = proj.data;
-        const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
-        const pIKO = pMetrics ? pMetrics.IKO : "0.00";
-        const pRed = pMetrics ? pMetrics.redZonePerc : 0;
         
+        // Сбор метрик для объекта
+        const pChecksCount = pData.length;
+        const pContractorsCount = new Set(pData.map(i => i.contractorName).filter(Boolean)).size;
+
         let pIkoColor = "#64748b";
-        if (pIKO >= 0.6) pIkoColor = "#dc2626";
-        else if (pIKO >= 0.3) pIkoColor = "#d97706";
+        if (proj.IKO >= 0.6) pIkoColor = "#dc2626";
+        else if (proj.IKO >= 0.3) pIkoColor = "#d97706";
         else pIkoColor = "#16a34a";
 
+        // Генерация графиков на лету
+        const sparkLabels = []; const sparkData = [];
+        for(let i=5; i>=0; i--) {
+            const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
+            const dEnd = new Date(); dEnd.setDate(now.getDate() - (i*7));
+            const weekChecks = pData.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
+            let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
+            sparkLabels.push(`-${i}н`);
+            sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
+        }
+
+        const sparkUrl = generatePdfChart({
+            type: 'line',
+            data: { labels: sparkLabels, datasets: [{ data: sparkData, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.2)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4, spanGaps: true }] },
+            options: { scales: { x: { display: false }, y: { display: false, min: 0, max: 100 } }, plugins: { legend: { display: false } }, layout: { padding: 0 } }
+        }, 300, 100);
+        const imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${sparkUrl}">`;
+
+        // Рейтинг подрядчиков на объекте
+        const groupedC = {};
+        pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
+        const ratingData = [];
+        for(let cName in groupedC) {
+            if (groupedC[cName].length >= 3) {
+                const m = getContractorMetrics(groupedC[cName], userTemplates);
+                if (m) ratingData.push({ name: cName, val: m.finalC });
+            }
+        }
+        ratingData.sort((a,b) => b.val - a.val);
+        const topContrs = ratingData.slice(0, 10).map(r => r.name);
+
+        const lineData = buildTrendChartData(pData, 'contractorName', topContrs, 'MONTH');
+        lineData.datasets.forEach(ds => { ds.borderWidth = 2; ds.pointRadius = 2; });
+        const lineUrl = generatePdfChart({
+            type: 'line', data: lineData,
+            options: { scales: { y: { min: 0, max: 100, ticks: { font: {size: 9} } }, x: { ticks: { font: {size: 9} } } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: {size: 8} } } } }
+        }, 600, 200);
+        const imgLine = `<img style="width:100%; height:100%; object-fit:contain; display:block;" src="${lineUrl}">`;
+
+        let ratingHtml = '';
+        if (ratingData.length === 0) {
+            ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 20px;">Нет данных</div>`;
+        } else {
+            const renderRow = (r) => `
+                <table style="width:100%; margin-bottom:6px; border-collapse:collapse; table-layout: fixed;">
+                    <tr>
+                        <td style="width:40%; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${r.name}</td>
+                        <td style="width:45%; vertical-align: middle;">
+                            <div style="background:#e2e8f0; height:10px; border-radius:5px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
+                                <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%;"></div>
+                            </div>
+                        </td>
+                        <td style="width:15%; text-align:right; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">${r.val}%</td>
+                    </tr>
+                </table>`;
+            if (ratingData.length <= 10) ratingHtml = ratingData.map(renderRow).join('');
+            else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
+        }
+
         // Сбор Топ-фото для объекта
-        let b3Map = {}; let b2Map = {}; let okMap = {};
+        let b3Map = {}; let b2Map = {}; let okMap = {}; let sumB3Obj = 0;
         pData.forEach(i => {
+            if (i.metrics && i.metrics.n_B3_fail > 0) sumB3Obj += i.metrics.n_B3_fail;
             if(i.state && i.photos && i.templateKey) {
                 Object.keys(i.state).forEach(id => {
                     const s = i.state[id];
@@ -492,68 +728,93 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
             }
         });
 
-        const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 4);
-        const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 4);
-        const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 4);
+        const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
+        const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
+        const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-        // Рейтинг подрядчиков на объекте
-        const groupedC = {};
-        pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
-        const ratingData = [];
-        for(let cName in groupedC) {
-            if (groupedC[cName].length >= 3) {
-                const m = getContractorMetrics(groupedC[cName], userTemplates);
-                if (m) ratingData.push({ name: cName, val: m.finalC });
-            }
-        }
-        ratingData.sort((a,b) => b.val - a.val);
-        
-        let ratingHtml = '';
-        if (ratingData.length === 0) {
-            ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 10px;">Нет данных</div>`;
-        } else {
-            const renderRow = (r) => `
-                <table style="width:100%; margin-bottom:6px; border-collapse:collapse; table-layout: fixed;">
-                    <tr>
-                        <td style="width:50%; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${r.name}</td>
-                        <td style="width:35%; vertical-align: middle;">
-                            <div style="background:#e2e8f0; height:10px; border-radius:5px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
-                                <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%;"></div>
-                            </div>
-                        </td>
-                        <td style="width:15%; text-align:right; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">${r.val}%</td>
-                    </tr>
-                </table>`;
-            if (ratingData.length <= 7) ratingHtml = ratingData.map(renderRow).join('');
-            else ratingHtml = ratingData.slice(0, 4).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0;">...</div>` + ratingData.slice(-3).map(renderRow).join('');
-        }
+        // PDCA текст
+        const isDanger = parseFloat(proj.IKO) >= 0.60 || sumB3Obj > 0;
+        let pdcaText = `[АНАЛИТИКА ОБЪЕКТА]\nИндекс критичности объекта (ИКО): ${proj.IKO}.\nРаботы в красной зоне: ${proj.redZone}%.\nОхват: ${pChecksCount} проверок.\n\n`;
+        if (isDanger) pdcaText += `1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.\n`;
+        else pdcaText += `Процесс находится в управляемой зоне. Ресурсы направить на профилактику системных дефектов.\n`;
+        const pdfFormattedText = pdcaText.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
+
+        const fsSmall = mode === 'browser' ? '7pt' : '9px';
+        const fsNum = mode === 'browser' ? '18pt' : '26px';
 
         content += `
         <div class="pdf-page-break page-break-before"></div>
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 15px;">
+        <div style="text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 15px;">
+            <h2 style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; color: #0f172a; text-transform: uppercase; margin:0;">ОБЪЕКТ: ${proj.name}</h2>
+        </div>
+        
+        <table class="no-break" style="width: 100%; border-collapse: collapse; table-layout: fixed;">
             <tr>
-                <td style="width: 40%; vertical-align: top; padding-right: 15px;">
-                    <h2 style="margin: 0 0 15px 0; font-size: ${mode === 'browser' ? '14pt' : '18px'}; color: #0f172a; text-transform: uppercase;">Объект: ${proj.name}</h2>
-                    
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center;">
-                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight: bold;">Ср. УрК Объекта</div>
-                        <div style="font-size: ${mode === 'browser' ? '20pt' : '28px'}; font-weight: 900; color: #0f172a;">${proj.avgUrk}%</div>
-                    </div>
-                    
-                    <div style="background: ${parseFloat(pIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 1px solid ${parseFloat(pIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center;">
-                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight: bold;">Индекс Риска (ИКО)</div>
-                        <div style="font-size: ${mode === 'browser' ? '20pt' : '28px'}; font-weight: 900; color: ${pIkoColor};">${pIKO}</div>
+                <td style="width: 32%; vertical-align: top; padding-right: 15px;">
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+                        <tr>
+                            <td style="padding: 0 4px 8px 0; width:50%;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${proj.avgUrk}%</td><td>${renderTrend(proj.avgUrk, proj.prevAvgUrk, trendLabel)}</td></tr></table>
+                                </div>
+                            </td>
+                            <td style="padding: 0 0 8px 4px; width:50%;">
+                                <div style="background: ${parseFloat(proj.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(proj.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pIkoColor}; line-height: 1;">${proj.IKO}</td><td>${renderTrend(proj.IKO, proj.prevIKO, trendLabel, true)}</td></tr></table>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0 4px 8px 0;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pChecksCount}</td><td></td></tr></table>
+                                </div>
+                            </td>
+                            <td style="padding: 0 0 8px 4px;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
+                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pContractorsCount}</td><td></td></tr></table>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0 4px 0 0;">
+                                <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                                    <div style="font-size: ${fsSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                                    <div style="font-size: ${fsNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${proj.redZone}%</div>
+                                </div>
+                            </td>
+                            <td style="padding: 0 0 0 4px;">
+                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box; position: relative; overflow: hidden;">
+                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
+                                    <div style="position:absolute; bottom:0; left:0; width:100%; height: 50%;">${imgSpark}</div>
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
+                        <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
                     </div>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; height: ${mode === 'browser' ? '60mm' : '220px'}; overflow: hidden;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">🏆 Топ Подрядчиков</div>
-                        ${ratingHtml}
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
+                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
+                        <div style="width: 100%;">${ratingHtml}</div>
                     </div>
                 </td>
-                <td style="width: 60%; vertical-align: top;">
-                    ${buildPhotoGridHTML(topB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
-                    ${buildPhotoGridHTML(topB2, '⚠️ Повторяющиеся нарушения (B2)', '#d97706', '#fdba74', '#fff7ed', 4, mode)}
-                    ${buildPhotoGridHTML(topOK, '✅ Эталоны (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
+                <td style="width: 68%; vertical-align: top;">
+                    ${buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
+                    ${buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
+                    ${buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
+
+                    <div class="no-break" style="background: ${isDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
+                        <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+                        <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+                    </div>
                 </td>
             </tr>
         </table>
@@ -867,7 +1128,10 @@ function exportPdfCurrentScreen(data, mode = 'script') {
 function exportPdfFullObjectReport(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
-    const projName = document.getElementById('inp-project')?.value || 'Не указан';
+    let projName = 'Все объекты';
+    if (activeMultiFilters.analytics.project.length > 0) {
+        projName = activeMultiFilters.analytics.project.join(', ');
+    }
     
     // --- ДАННЫЕ ДЛЯ ТИТУЛЬНОГО ЛИСТА ---
     let sumUrkProd = 0;
@@ -1085,7 +1349,7 @@ function exportPdfFullObjectReport(data, mode = 'script') {
                 </td>
                 <td style="width: 75%; vertical-align: top; padding: 0;">
                     ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
-                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fffbeb', '#fde68a', 4, mode)}
+                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 4, mode)}
                     ${buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
                 </td>
             </tr>
@@ -1330,8 +1594,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
-    const projName = document.getElementById('inp-project')?.value || 'Не указан';
-    const inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
+    let projName = document.getElementById('inp-project')?.value || 'Не указан';
+    let inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
+
+    // Умная подстановка для вкладки Аналитики (учитываем мульти-фильтры)
+    if (document.getElementById('tab-analytics')?.classList.contains('active')) {
+        projName = activeMultiFilters.analytics.project.length > 0 ? activeMultiFilters.analytics.project.join(', ') : 'Все объекты';
+        inspName = activeMultiFilters.analytics.inspector.length > 0 ? activeMultiFilters.analytics.inspector.join(', ') : 'Все инспекторы';
+    }
 
     // Константы для PDF режима (в Print режиме они не используются, там работают pt и mm)
     const MARGIN_MM = 10;
