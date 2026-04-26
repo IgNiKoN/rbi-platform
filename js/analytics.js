@@ -26,9 +26,9 @@ function switchAnalyticsSubTab(tabId, btnElement) {
         btnElement.classList.remove('text-[var(--text-muted)]');
     }
 
-    // ЖЕСТКО СКРЫВАЕМ ФИЛЬТРЫ И КНОПКУ НА ВКЛАДКЕ HR
+    // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ И ГРАФИКА
     const filtersBlock = document.getElementById('analytics-filters-block');
-    if (tabId === 'sub-engineer-rating') {
+    if (tabId === 'sub-history' || tabId === 'sub-schedule') {
         if(filtersBlock) filtersBlock.style.display = 'none';
     } else {
         if(filtersBlock) filtersBlock.style.display = 'block';
@@ -126,8 +126,12 @@ function renderCurrentAnalyticsTab() {
     
     if (currentActiveAnalyticsTab === 'sub-contractors') renderContractorsSubTab(data);
     else if (currentActiveAnalyticsTab === 'sub-onepager') renderOnePagerSubTab(data);
-    else if (currentActiveAnalyticsTab === 'sub-engineer-rating') { if(typeof gameRenderDashboard === 'function') gameRenderDashboard(); }
+    else if (currentActiveAnalyticsTab === 'sub-schedule') { if(typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
     else if (currentActiveAnalyticsTab === 'sub-data') renderDataSubTab(data);
+    else if (currentActiveAnalyticsTab === 'sub-history') {
+        renderHistoryTab();
+        initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
+    }
     else if (currentActiveAnalyticsTab === 'sub-rating') renderRatingTab(); // Обратная совместимость
 }
 
@@ -1042,99 +1046,7 @@ function renderOnePagerSubTab(data) {
 }
 
 // 7. Подвкладка: База данных (Таблица)
-async function renderDataSubTab(data) {
-    const container = document.getElementById('sub-data');
-    if(!container) return;
 
-    // Читаем логи из IndexedDB (через обертку)
-    let logs = [];
-    try {
-        const logsObj = await dbGet(STORES.SETTINGS, 'backup_logs');
-        if (logsObj && logsObj.data) logs = logsObj.data;
-    } catch(e) {}
-
-    let logsHtml = logs.length === 0 ? 
-        `<tr><td colspan="4" class="text-center py-4 text-[10px] text-slate-400 italic">Реестр пуст</td></tr>` : 
-        logs.map(l => `
-            <tr class="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                <td class="py-2 pr-2 text-[9px] text-slate-500 whitespace-nowrap">${l.dateStr}</td>
-                <td class="py-2 px-2 text-[10px] font-bold text-slate-800 dark:text-slate-200">${l.type}</td>
-                <td class="py-2 px-2 text-[9px] text-slate-500 text-center">${l.stats?.checks || 0}</td>
-                <td class="py-2 pl-2 text-[8px] text-slate-400 truncate max-w-[100px]" title="${l.fileName}">${l.fileName}</td>
-            </tr>
-        `).join('');
-
-    // Сбор статистики для кнопок
-    const statsFull = { checks: contractorArray.length, photos: countPhotos(contractorArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
-    
-    const lastFullDate = localStorage.getItem('last_full_backup_date');
-    const incArray = lastFullDate ? contractorArray.filter(c => new Date(c.date) > new Date(lastFullDate)) : contractorArray;
-    const statsInc = { checks: incArray.length, photos: countPhotos(incArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
-
-    const filteredArray = getFilteredAnalyticsData();
-    const statsFilt = { checks: filteredArray.length, photos: countPhotos(filteredArray), twi: customTwiCards.length, tmpl: Object.keys(userTemplates).length };
-
-    const btnStyle = "flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-2 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300";
-    const iconStyle = "w-6 h-6 text-indigo-500";
-
-    container.innerHTML = `
-        <div class="space-y-5 mx-1 pb-8 mt-2">
-            
-            <!-- БЛОК 1: СКАЧАТЬ БЭКАП -->
-            <div>
-                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-1">Скачать бэкап</div>
-                <div class="flex gap-2">
-                    <div onclick="handleDataExport('json', 'incremental')" class="${btnStyle} ${statsInc.checks === 0 ? 'opacity-50 pointer-events-none' : ''}">
-                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg>
-                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">Новое</div>
-                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsInc.checks} пров.<br>${statsInc.photos} фото</div>
-                    </div>
-                    <div onclick="handleDataExport('json', 'full')" class="${btnStyle}">
-                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"></path></svg>
-                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">Всё</div>
-                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsFull.checks} пров.<br>${statsFull.photos} фото</div>
-                    </div>
-                    <div onclick="handleDataExport('json', 'filtered')" class="${btnStyle}">
-                        <svg class="${iconStyle}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z"></path></svg>
-                        <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">По фильтру</div>
-                        <div class="text-[8px] font-bold text-slate-500 text-center leading-tight">${statsFilt.checks} пров.<br>${statsFilt.photos} фото</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- БЛОК 2: ВОССТАНОВЛЕНИЕ И ОТПРАВКА -->
-            <div>
-                <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 pl-1">Восстановление и отправка</div>
-                <div class="flex gap-2">
-                    <button onclick="triggerDataImport()" class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-3.5 rounded-xl font-black text-[10px] text-slate-700 dark:text-slate-300 uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
-                        Загрузить файл
-                    </button>
-                    <button onclick="openShareModal()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-md transition-transform flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg>
-                        Отправить бэкап
-                    </button>
-                </div>
-            </div>
-
-            <!-- БЛОК 3: РЕЕСТР -->
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
-                <div class="flex justify-between items-center mb-3">
-                    <div class="text-[10px] font-black uppercase text-slate-800 dark:text-white tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg> Реестр выгруженных бэкапов</div>
-                    <button onclick="clearBackupRegistry()" class="text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-800 active:scale-95 uppercase">Очистить историю</button>
-                </div>
-                <div class="overflow-x-auto custom-scrollbar">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="border-b border-slate-200 dark:border-slate-700 text-[8px] font-black text-slate-400 uppercase tracking-widest">
-                            <tr><th class="py-2 pr-2">Дата и время</th><th class="py-2 px-2">Тип операции</th><th class="py-2 px-2 text-center">Пров.</th><th class="py-2 pl-2">Имя файла</th></tr>
-                        </thead>
-                        <tbody>${logsHtml}</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    `;
-}
 
 // 8. Подвкладка: Детализация подрядчика
 function showContractorDetailView(contractorName) {
@@ -1598,97 +1510,6 @@ function copyExpertText(btnId, textAreaId) {
     }).catch(() => showToast('Ошибка копирования'));
 }
 
-// === ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ (РЕАЛЬНЫЙ DEEPSEEK) ===
-window.generateSmartComment = async function(scenario) {
-    if (!currentEditingExpertKey) return;
-    if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
-
-    const inputField = document.getElementById('modal-expert-input');
-    const originalText = inputField.value;
-    inputField.value = "⏳ Нейросеть DeepSeek анализирует данные...\nФормирование отчета займет несколько секунд.";
-    
-    try {
-        let promptSystem = "";
-        let promptUser = "";
-
-        // 1. Глобальный вывод (Дашборд или One-Pager)
-        if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
-            const data = getFilteredAnalyticsData();
-            if (data.length === 0) throw new Error("Нет данных для анализа");
-            
-            let sumB3 = 0;
-            data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
-            const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-            const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
-            const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
-
-            promptSystem = `Ты — эксперт-аналитик качества. Сформируй ОЧЕНЬ КРАТКИЙ аналитический обзор (СТРОГО не более 60-80 слов суммарно, чтобы текст поместился на 1 печатный лист). Без markdown-звездочек.
-            Структура ответа (каждый пункт - 1 короткое предложение):
-            1. Общая оценка ситуации.
-            2. Главный риск.
-            3. Прогноз на неделю.
-            4. Рекомендуемое действие.`;
-            
-            promptUser = `Статистика: ИКО: ${IKO}. В красной зоне: ${redZone}%. Проверок: ${data.length}. Аварий (B3): ${sumB3}.
-            Сделай вывод для: ${scenario === 'strict' ? 'Жесткое предписание' : (scenario === 'boss' ? 'Доклад директору' : 'Сводка для команды')}`;
-        } 
-        // 2. Вывод по конкретному Подрядчику (Паспорт Подрядчика)
-        else {
-            const parts = currentEditingExpertKey.split('_||_');
-            const cKey = parts[0]; 
-            const tTitle = parts[1];
-            
-            const cDataAll = contractorArray.filter(i => {
-                const itemKey = (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']';
-                return itemKey === cKey && i.templateTitle === tTitle;
-            });
-            
-            const m = getContractorMetrics(cDataAll, userTemplates);
-            
-            const causes = {};
-            cDataAll.forEach(check => {
-                if (check.state && check.details) {
-                    Object.keys(check.state).forEach(id => {
-                        if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') {
-                            const code = check.details[id]?.causeCode || 'C00';
-                            causes[code] = (causes[code] || 0) + 1;
-                        }
-                    });
-                }
-            });
-            const topCausesCodes = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 3);
-            const topCausesNames = topCausesCodes.map(code => (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : code) || 'Нарушения технологии');
-
-            promptSystem = `Ты — независимый эксперт строительного контроля. Сформируй ОЧЕНЬ КРАТКИЙ отчет (СТРОГО не более 50-70 слов, суммарно до 400 символов, чтобы он влез в небольшую ячейку А4). Не используй markdown-звездочки. Используй заглавные буквы для заголовков.
-            Структура ответа (СТРОГО по 1 короткому предложению на блок):
-            СТАТУС: общая оценка.
-            ФАКТЫ: главная проблема.
-            ПРОГНОЗ: риск.
-            РЕКОМЕНДАЦИИ: 1 шаг.`;
-            
-            promptUser = `Подрядчик: ${cKey.split(' [')[0]}. Вид работ: ${tTitle}. Проверок: ${cDataAll.length}.
-            УрК: ${m.finalC}% (<70% плохо, >85% отлично). Ks: ${m.ks} (<1.0 - системный брак).
-            Аварий B3: ${m.rateB3}%. Топ причины: ${topCausesNames.join(', ')}.
-            Сценарий: ${scenario === 'strict' ? 'Официальная претензия' : (scenario === 'action_plan' ? 'План корректирующих действий' : (scenario === 'tech' ? 'Технический аудит' : 'Доклад руководству'))}`;
-        }
-
-        // Ограничиваем max_tokens, чтобы ИИ физически не мог выдать "простыню" текста
-        const aiResponse = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.4, max_tokens: 300 });
-
-        inputField.value = aiResponse;
-        showToast("✨ Текст успешно сгенерирован ИИ!");
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
-
-    } catch (error) {
-        console.error("AI Gen Error:", error);
-        inputField.value = originalText;
-        showToast("❌ Ошибка нейросети: " + error.message);
-    }
-};
-
 // === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА С ПОДДЕРЖКОЙ ОК) ===
 window.rbiPhotoGalleries = {};
 
@@ -1726,180 +1547,5 @@ window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeCl
 // Пустая заглушка, чтобы не сломать старые HTML-кнопки (если они где-то остались в истории)
 window.loadMorePhotos = function() {};
 
-// === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
-window.callAI = async function(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 2000 } = options;
-    const useServer = !appSettings.usePersonalKey || !appSettings.apiKey;
-    
-    let url, headers;
-    
-    if (useServer) {
-        // Корпоративный режим (Edge Function)
-        url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/deepseek-proxy`;
-        
-        // Теперь берем не ПИН руководителя, а отдельный корпоративный пароль для ИИ
-        const token = appSettings.aiCorpPwd;
-        if (!token) throw new Error('Введите пароль доступа к корпоративному AI в Настройках!');
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-        };
-    } else {
-        // Личный режим (Прямой вызов API)
-        url = 'https://api.deepseek.com/chat/completions';
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${appSettings.apiKey}`
-        };
-    }
 
-    try {
-        const body = { model: 'deepseek-chat', messages, temperature, max_tokens };
-        const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-        
-        if (!response.ok) {
-            if (response.status === 403) throw new Error("Доступ запрещен. Проверьте пароль руководителя.");
-            if (response.status === 401) throw new Error("Неверный персональный API-ключ.");
-            throw new Error(`Ошибка сервера: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        return data.choices[0].message.content;
-    } catch (e) {
-        console.error("[AI Error]:", e);
-        throw e;
-    }
-};
 
-// === AI: СВОДНЫЙ АНАЛИЗ ДЛЯ ОТЧЕТА РУКОВОДСТВУ (ONE-PAGER) ===
-window.generateOnePagerForecastAi = async function(pdcaKey) {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    
-    const data = getFilteredAnalyticsData();
-    if (data.length === 0) return showToast("Нет данных для анализа");
-
-    let sumB3 = 0;
-    data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
-    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-    const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
-    const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
-
-    const causes = {};
-    data.forEach(check => {
-        if (check.state && check.details) {
-            Object.keys(check.state).forEach(id => {
-                if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') {
-                    const code = check.details[id]?.causeCode || 'C00';
-                    causes[code] = (causes[code] || 0) + 1;
-                }
-            });
-        }
-    });
-    const topCausesCodes = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 3);
-    const topCausesNames = topCausesCodes.map(code => (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : code) || 'Нарушения');
-
-    const promptSystem = `Ты — директор по качеству. Сформируй ОЧЕНЬ КРАТКИЙ аналитический обзор объекта для высшего руководства.
-    Объем: СТРОГО не более 50-70 слов суммарно (чтобы текст гарантированно поместился в небольшой правый нижний угол отчета А3).
-    Ответь строго в 3 абзаца (СТРОГО по 1 предложению каждый), без markdown-звездочек, используя заглавные буквы только для заголовков:
-    ОЦЕНКА СИТУАЦИИ: [1 предложение о текущем риске].
-    КРИТИЧНЫЕ ТОЧКИ: [1 предложение о главных проблемах].
-    ПЛАН ДЕЙСТВИЙ: [1 жесткий корректирующий шаг].`;
-
-    const promptUser = `Индекс риска (ИКО): ${IKO} (Выше 0.6 - пожар). В красной зоне: ${redZone}% работ.
-    Проверок: ${data.length}. Аварий (B3): ${sumB3}. Главные причины брака: ${topCausesNames.join(', ')}.`;
-
-    showToast("⏳ AI формирует стратегию...");
-    try {
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.3, max_tokens: 250 }); // Жестко обрезаем токены
-
-        customExpertConclusions[pdcaKey] = response;
-        if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-        renderCurrentAnalyticsTab();
-        showToast("✨ Управленческое решение обновлено!");
-    } catch (e) {
-        showToast("❌ Ошибка нейросети: " + e.message);
-    }
-};
-
-window.generatePulseAi = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
-    const container = document.getElementById('pulse-ai-text');
-    container.innerHTML = `<span class="animate-pulse">⏳ AI слушает пульс объекта...</span>`;
-
-    const data = getFilteredAnalyticsData();
-    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-    
-    const promptSystem = `Ты — AI-супервизор. Дай сжатую оценку 'здоровья' стройки (1 абзац, макс 40 слов). Тон: профессиональный.`;
-    const promptUser = `ИКО: ${currIntMetrics?currIntMetrics.IKO:'0'}. В красной зоне: ${currIntMetrics?currIntMetrics.redZonePerc:'0'}%. Выявлено проблем: ${countPhotos(data)}.`;
-
-    try {
-        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 150 });
-        container.innerHTML = res;
-        customExpertConclusions['pulse_ai'] = res;
-        scheduleSessionSave();
-    } catch(e) { container.innerHTML = "Ошибка AI"; }
-};
-
-window.generateHeatmapAi = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
-    const container = document.getElementById('heatmap-ai-text');
-    container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse">⏳ AI анализирует матрицу...</span>`;
-
-    // Собираем сырые данные для ИИ (просто передаем топ-2 самые бракованные стадии)
-    const promptSystem = `Ты — риск-менеджер. Посмотри на матрицу дефектов и скажи 1 предложением: где главная просадка и какой TWI тренинг провести.`;
-    const promptUser = `На объекте чаще всего брак допускают на этапах отделки и фасада.`; // Упрощенный контекст для скорости
-
-    try {
-        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 100 });
-        container.innerHTML = `<b>💡 Рекомендация:</b> ${res}`;
-    } catch(e) { container.innerHTML = "Ошибка AI"; }
-};
-
-window.generateCultureAi = async function(compoundContractorName, workType) {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
-    const container = document.getElementById('culture-ai-text');
-    container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI оценивает культуру...</span>`;
-
-    // ИСПРАВЛЕНИЕ: Правильно фильтруем данные по склеенному ключу "Подрядчик [Объект]"
-    const cData = getFilteredAnalyticsData().filter(c => 
-        c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === compoundContractorName
-    );
-
-    if (cData.length === 0) {
-        container.innerHTML = `<span class="text-red-500">Ошибка: недостаточно данных для анализа</span>`;
-        return;
-    }
-
-    const m = getContractorMetrics(cData, userTemplates);
-    if (!m) {
-        container.innerHTML = `<span class="text-red-500">Ошибка расчета метрик</span>`;
-        return;
-    }
-    
-    // Вытаскиваем чистое имя подрядчика для промпта
-    const cleanName = compoundContractorName.split(' [')[0];
-
-    const promptSystem = `Ты — эксперт по бережливому производству (Lean). Дай оценку 'Культуры качества' подрядчика. 
-    Опирайся на то, как он исправляет ошибки (стабильность). Объем: СТРОГО 2 коротких предложения. Без markdown-звездочек.`;
-    
-    const promptUser = `Подрядчик: ${cleanName}. Рейтинг надежности: ${m.finalC}%. Индекс стабильности: ${m.stabilityIndex}. Критических аварий (B3): ${m.n_изделий_с_B3}.`;
-
-    try {
-        const res = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.4, max_tokens: 150 });
-        
-        container.innerHTML = res;
-        // Сохраняем вывод в память по полному ключу, чтобы он не пропадал при перезагрузке
-        customExpertConclusions[`culture_${compoundContractorName}`] = res;
-        if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-    } catch(e) { 
-        container.innerHTML = `<span class="text-red-500">Ошибка связи с AI: ${e.message}</span>`; 
-    }
-};

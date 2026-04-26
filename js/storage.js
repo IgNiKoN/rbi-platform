@@ -1,15 +1,21 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Увеличиваем версию БД до 3 для обновления структуры фото (v16.8.7)
-const DB_VERSION = 3; 
+// Увеличиваем версию БД до 4 для добавления модуля Инженера (Задачи и Практики) (v17.0)
+const DB_VERSION = 4; 
 
 const STORES = {
-    STATE: 'app_state',       // Текущая сессия
-    HISTORY: 'app_history',   // Архив проверок
-    SETTINGS: 'app_settings', // Настройки
-    TEMPLATES: 'user_templates', // Пользовательские чек-листы
-    PHOTOS: 'app_photos'      // НОВОЕ: Хранилище бинарных фото (ArrayBuffer)
+    STATE: 'app_state',       
+    HISTORY: 'app_history',   
+    SETTINGS: 'app_settings', 
+    TEMPLATES: 'user_templates', 
+    PHOTOS: 'app_photos',
+    // RBI NEW: Новые хранилища для Инженера
+    TASKS: 'rbi_tasks',
+    SCHEDULE: 'rbi_schedule_stages',
+    MEETINGS: 'rbi_meetings',
+    INTERVENTIONS: 'rbi_interventions',
+    PRACTICES: 'rbi_practices'
 };
 
 /**
@@ -28,6 +34,13 @@ function openAppDb() {
             if (!db.objectStoreNames.contains(STORES.SETTINGS)) db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
             if (!db.objectStoreNames.contains(STORES.TEMPLATES)) db.createObjectStore(STORES.TEMPLATES, { keyPath: 'slug' });
             if (!db.objectStoreNames.contains(STORES.PHOTOS)) db.createObjectStore(STORES.PHOTOS, { keyPath: 'id' });
+            
+            // RBI NEW: Хранилища модуля Инженера
+            if (!db.objectStoreNames.contains(STORES.TASKS)) db.createObjectStore(STORES.TASKS, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(STORES.SCHEDULE)) db.createObjectStore(STORES.SCHEDULE, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(STORES.MEETINGS)) db.createObjectStore(STORES.MEETINGS, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(STORES.INTERVENTIONS)) db.createObjectStore(STORES.INTERVENTIONS, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(STORES.PRACTICES)) db.createObjectStore(STORES.PRACTICES, { keyPath: 'id' });
         };
 
         request.onsuccess = () => resolve(request.result);

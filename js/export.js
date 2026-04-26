@@ -2041,15 +2041,19 @@ function generateBackupObject(mode) {
     };
 
     // ДОБАВЛЕНЫ HR ДАННЫЕ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
-    const hrData = {
+     const hrData = {
         weeklyPlanData: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
         engineerAbsence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
-        contractorStatuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : null
+        contractorStatuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : null,
+        tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],
+        schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
+        interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
+        practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
     };
 
     const obj = {
         type: "RBI_FULL_BACKUP",
-        version: "16.8",
+        version: "17.0",
         timestamp: new Date().toISOString(),
         mode: mode,
         data: {
@@ -2057,6 +2061,7 @@ function generateBackupObject(mode) {
             templates: userTemplates, 
             twi: customTwiCards,      
             docs: userDocsToExport,   
+            nodes: typeof customNodes !== 'undefined' ? customNodes : [],
             expert: customExpertConclusions, 
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
             hr: hrData

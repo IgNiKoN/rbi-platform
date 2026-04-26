@@ -458,13 +458,18 @@ window.triggerSync = async function(mode = 'silent') {
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
 
         // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ ИНЖЕНЕРА
+        // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ И ВСЕ ЕГО ЗАДАЧИ В ОБЛАКО (JSON)
         const hrProfileData = {
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
             plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
             absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
             statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {},
             expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
-            settings: typeof appSettings !== 'undefined' ? appSettings : {}
+            settings: typeof appSettings !== 'undefined' ? appSettings : {},
+            tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],
+            schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
+            interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
+            practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
         };
 
         await window.supabaseClient.from('rbi_engineer_profiles').upsert({

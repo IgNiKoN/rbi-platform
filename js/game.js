@@ -2,18 +2,18 @@
 
 let gameActionLogs = []; 
 
-// === ГРЕЙДЫ И ЦВЕТОВЫЕ ТИРЫ (РАНГИ) ===
+// === ГРЕЙДЫ И ЦВЕТОВЫЕ ТИРЫ (РАНГИ - БАЛАНС 1 ГОД) ===
 const PI_GRADES = [
-    { level: 1, name: "Стажёр качества", xpMin: 0, xpMax: 200, color: "from-slate-400 to-slate-500", ring: "ring-slate-400" },
-    { level: 2, name: "Инженер контроля", xpMin: 200, xpMax: 600, color: "from-slate-500 to-slate-600", ring: "ring-slate-500" },
-    { level: 3, name: "Старший инженер", xpMin: 600, xpMax: 1200, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
-    { level: 4, name: "Ведущий аудитор", xpMin: 1200, xpMax: 2500, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
-    { level: 5, name: "Эксперт процессов", xpMin: 2500, xpMax: 4000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
-    { level: 6, name: "Главный эксперт", xpMin: 4000, xpMax: 6000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
-    { level: 7, name: "Мастер качества", xpMin: 6000, xpMax: 9000, color: "from-yellow-400 to-yellow-600", ring: "ring-yellow-500" },
-    { level: 8, name: "Амбассадор TWI", xpMin: 9000, xpMax: 13000, color: "from-emerald-500 to-teal-500", ring: "ring-emerald-500" },
-    { level: 9, name: "Ментор-Аудитор", xpMin: 13000, xpMax: 20000, color: "from-purple-500 to-fuchsia-500", ring: "ring-purple-500" },
-    { level: 10, name: "Легенда Качества", xpMin: 20000, xpMax: 999999, color: "from-rose-500 to-pink-600", ring: "ring-rose-500" }
+    { level: 1, name: "Стажёр качества", xpMin: 0, xpMax: 500, color: "from-slate-400 to-slate-500", ring: "ring-slate-400" },
+    { level: 2, name: "Инженер контроля", xpMin: 500, xpMax: 1500, color: "from-slate-500 to-slate-600", ring: "ring-slate-500" },
+    { level: 3, name: "Старший инженер", xpMin: 1500, xpMax: 3500, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
+    { level: 4, name: "Ведущий аудитор", xpMin: 3500, xpMax: 6000, color: "from-amber-600 to-orange-500", ring: "ring-orange-500" },
+    { level: 5, name: "Эксперт процессов", xpMin: 6000, xpMax: 10000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
+    { level: 6, name: "Главный эксперт", xpMin: 10000, xpMax: 15000, color: "from-indigo-500 to-blue-500", ring: "ring-indigo-500" },
+    { level: 7, name: "Мастер качества", xpMin: 15000, xpMax: 21000, color: "from-yellow-400 to-yellow-600", ring: "ring-yellow-500" },
+    { level: 8, name: "Амбассадор TWI", xpMin: 21000, xpMax: 28000, color: "from-emerald-500 to-teal-500", ring: "ring-emerald-500" },
+    { level: 9, name: "Ментор-Аудитор", xpMin: 28000, xpMax: 36000, color: "from-purple-500 to-fuchsia-500", ring: "ring-purple-500" },
+    { level: 10, name: "Легенда Качества", xpMin: 36000, xpMax: 999999, color: "from-rose-500 to-pink-600", ring: "ring-rose-500" }
 ];
 
 // === СТРОГИЕ SVG-ИКОНКИ ДЛЯ ГРУПП НАВЫКОВ ===
@@ -266,12 +266,22 @@ function gameCalculateAllProfiles() {
         const dStr = new Date(log.date).toLocaleString('ru-RU', {month:'short', year:'2-digit'});
         if(!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
 
+        // --- БАЗОВЫЕ НАВЫКИ ---
         if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
         if (log.action === 'open_twi') { p.pi += 15; p.monthlyPI[dStr] += 15; p.badgesData['mentor']++; }
         if (log.action === 'create_twi') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['methodist'] = 1; }
         if (log.action === 'comment_written') { p.badgesData['communicator']++; }
-        // НАЧИСЛЕНИЕ БОНУСА ЗА ПЕРЕВЫПОЛНЕНИЕ ПЛАНА
         if (log.action === 'overfulfill_bonus') { p.pi += 50; p.monthlyPI[dStr] += 50; }
+
+        // --- НОВЫЕ НАВЫКИ ИЗ ТЗ ---
+        if (log.action === 'escalation_bonus') { p.pi += 10; p.monthlyPI[dStr] += 10; }
+        if (log.action === 'intervention_logged') { p.pi += 30; p.monthlyPI[dStr] += 30; }
+        if (log.action === 'impact_bonus_10') { p.pi += 80; p.monthlyPI[dStr] += 80; p.badgesData['win_win']++; }
+        if (log.action === 'meeting_memo_created') { p.pi += 40; p.monthlyPI[dStr] += 40; }
+        if (log.action === 'practice_created') { p.pi += 120; p.monthlyPI[dStr] += 120; }
+        if (log.action === 'practice_published') { p.pi += 50; p.monthlyPI[dStr] += 50; }
+        if (log.action === 'task_completed_on_time') { p.pi += 15; p.monthlyPI[dStr] += 15; }
+        if (log.action === 'etalon_accepted') { p.pi += 25; p.monthlyPI[dStr] += 25; }
     });
 
     for (let name in profiles) {
@@ -2010,106 +2020,3 @@ window.gameOpenImpactModal = function() {
     modal.style.display = 'flex';
 };
 
-// === AI: ПРОГНОЗ РИСКОВ В КАРТОЧКЕ ЗАДАЧИ ===
-window.generateTaskRiskAi = async function(contractorName, templateKey, containerId) {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const cData = contractorArray.filter(c => c.contractorName === contractorName && c.templateKey === templateKey).sort((a, b) => new Date(a.date) - new Date(b.date));
-    if (cData.length < 3) return showToast("Мало данных для прогноза (нужно хотя бы 3 проверки).");
-
-    container.innerHTML = `<div class="text-center text-[10px] text-indigo-500 font-bold animate-pulse py-3">Анализирую динамику...</div>`;
-
-    const m = getContractorMetrics(cData, userTemplates);
-    const urkHistory = cData.slice(-5).map(c => c.metrics.final).join('%, ') + '%'; 
-
-    const promptSystem = `Ты — аналитик качества. Оцени риск ухудшения качества подрядчика. 
-    Ответь строго в формате:
-    Статус: [Риск растёт / Стабильно / Риск снижается]
-    Обоснование: [1 короткое предложение, почему так]`;
-
-    const promptUser = `Подрядчик: ${contractorName}
-    УрК по последним 5 проверкам (в хронологии): ${urkHistory}
-    Индекс стабильности: ${m.stabilityIndex}/100
-    Доля критических аварий B3: ${m.rateB3}%`;
-
-    try {
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.3, max_tokens: 150 });
-
-        const isBad = response.toLowerCase().includes('растёт') || m.finalC < 75;
-        const isGood = response.toLowerCase().includes('снижается') || (m.finalC > 85 && m.stabilityIndex > 80);
-        const bgColor = isBad ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/30' : (isGood ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/30' : 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/30');
-
-        container.innerHTML = `
-            <div class="${bgColor} border p-3 rounded-xl shadow-sm text-[11px] leading-snug">
-                <div class="font-black uppercase mb-1 flex items-center gap-1">🤖 AI-Прогноз</div>
-                ${response.replace(/\n/g, '<br>')}
-            </div>
-        `;
-    } catch (e) {
-        container.innerHTML = `<button onclick="generateTaskRiskAi('${contractorName}', '${templateKey}', '${containerId}')" class="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 flex justify-center items-center gap-2">❌ Ошибка. Повторить</button>`;
-    }
-};
-
-// === AI: МАРШРУТИЗАТОР (ПЛАН НА ДЕНЬ) ===
-window.generateAiRoutePlan = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    if (!weeklyPlanData || !weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) return showToast("План пуст.");
-
-    const container = document.getElementById('ai-route-container');
-    container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse font-bold">🧠 Нейросеть прокладывает оптимальный маршрут с учетом рисков...</span>`;
-
-    // Собираем контекст по задачам
-    const tasksContext = weeklyPlanData.tasks.map(t => 
-        `- Подрядчик: ${t.contractor}, Работа: ${t.templateTitle}, Статус: ${t.priority}, Долг: ${t.carryOverCount}`
-    ).join('\n');
-
-    const promptSystem = `Ты — AI-логист строительного контроля. Составь оптимальный маршрут на сегодня из списка задач.
-    Верни строго 2 абзаца:
-    МАРШРУТ: [краткий список из 3-4 самых критичных подрядчиков по порядку].
-    ОБОСНОВАНИЕ: [1 предложение, почему выбран такой порядок (например, из-за долгов или аварий)].`;
-
-    try {
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: `Задачи в пуле:\n${tasksContext}` }
-        ], { temperature: 0.2, max_tokens: 200 });
-
-        container.innerHTML = `<b>📍 Рекомендация маршрута:</b><br>${response.replace(/\n/g, '<br>')}`;
-        showToast("✨ Маршрут построен!");
-    } catch (e) {
-        container.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
-    }
-};
-
-// === AI: ТЬЮТОР (СОВЕТ ПО РАЗВИТИЮ) ===
-window.generateAiTutorAdvice = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
-    const container = document.getElementById('ai-tutor-container');
-    container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse">⏳ Анализирую ваш профиль...</span>`;
-
-    const profile = window.currentProfileData;
-    const logs = gameActionLogs.filter(l => l.inspector === profile.name).slice(-20); // Последние 20 действий
-    const actionsMap = {};
-    logs.forEach(l => { actionsMap[l.action] = (actionsMap[l.action] || 0) + 1; });
-
-    const promptSystem = `Ты — наставник инженера. Дай 1 короткий, мотивирующий совет (максимум 2 предложения) по профессиональному росту. 
-    Посмотри на статистику действий и подскажи, чего не хватает (например, мало используют TWI или мало генерируют AI-отчеты). 
-    Без воды, сразу к делу.`;
-
-    const promptUser = `XP инженера: ${profile.pi}. Последние действия: ${JSON.stringify(actionsMap)}. Навыки: ${JSON.stringify(profile.radarData)}.`;
-
-    try {
-        const response = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.5, max_tokens: 150 });
-        container.innerHTML = `<b>💡 Наставление:</b> ${response}`;
-    } catch (e) {
-        container.innerHTML = `<span class="text-red-500">Ошибка AI</span>`;
-    }
-};

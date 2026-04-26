@@ -1,6 +1,6 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде! (v16.9.8)
-const CACHE_NAME = 'rbi-quality-v16.9.9.5'; 
+const CACHE_NAME = 'rbi-quality-v17.0'; 
 
 // 1. ПРЕ-КЭШ: ТОЛЬКО 100% локальные файлы (чтобы установка PWA никогда не падала)
 const urlsToCache = [
@@ -15,6 +15,7 @@ const urlsToCache = [
   './js/storage.js',
   './js/templates.js',
   './js/math.js',
+  './js/ai.js',
   './js/app.js',
   './js/analytics.js', 
   './js/export.js',    
