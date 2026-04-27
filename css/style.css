@@ -674,6 +674,7 @@ body.nav-pos-top #ref-docs-filters {
 
 /* По умолчанию (мобилки, меню снизу): Плавают над нижней навигацией */
 #analytics-subtabs-block,
+#engineer-subtabs-block,
 #reference-subtabs-block {
     position: fixed !important;
     /* 65px (Нижнее меню) + 10px (Зазор) = 75px от низа */
@@ -689,6 +690,7 @@ body.nav-pos-top #ref-docs-filters {
    60px (меню) + 10px (зазор) = 70px.
 */
 body.nav-pos-top #analytics-subtabs-block,
+body.nav-pos-top #engineer-subtabs-block,
 body.nav-pos-top #reference-subtabs-block {
     position: sticky !important;
     top: calc(70px + env(safe-area-inset-top)) !important;
@@ -700,6 +702,7 @@ body.nav-pos-top #reference-subtabs-block {
 
 @media (min-width: 768px) {
     body.nav-pos-auto #analytics-subtabs-block,
+    body.nav-pos-auto #engineer-subtabs-block,
     body.nav-pos-auto #reference-subtabs-block {
         position: sticky !important;
         top: 70px !important;
@@ -765,6 +768,7 @@ body.nav-pos-bottom #fab-download-btn {
 
 /* === ЖЕЛЕЗОБЕТОННЫЕ ПРАВИЛА ДЛЯ МЕНЮ СНИЗУ === */
 body.nav-pos-bottom #analytics-subtabs-block,
+body.nav-pos-bottom #engineer-subtabs-block,
 body.nav-pos-bottom #reference-subtabs-block {
     top: auto !important; /* Принудительно отменяем прилипание к верху */
     bottom: calc(65px + env(safe-area-inset-bottom) + 10px) !important;

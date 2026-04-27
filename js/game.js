@@ -1,6 +1,6 @@
 /* Файл: js/game.js (RBI Quality - Премиальная Геймификация + HR Аналитика) */
 
-let gameActionLogs = []; 
+let gameActionLogs = [];
 
 // === ГРЕЙДЫ И ЦВЕТОВЫЕ ТИРЫ (РАНГИ - БАЛАНС 1 ГОД) ===
 const PI_GRADES = [
@@ -28,24 +28,29 @@ const SKILL_ICONS = {
 
 // === КОМПЕТЕНЦИИ (МНОГОУРОВНЕВЫЕ АЧИВКИ) ===
 const COMPETENCIES = [
-    { id: "win_win", group: "Партнёрство", name: "Win-Win", desc: "Подрядчик перешёл в зелёную зону (>85%).", tiers: [1, 3, 5], maxProgress: 5 },
-    { id: "champ_coach", group: "Партнёрство", name: "Тренер", desc: "Разные подрядчики улучшили рейтинг.", tiers: [1, 3, 5], maxProgress: 5 },
-    { id: "reanimator", group: "Партнёрство", name: "Кризис-менеджер", desc: "Подрядчик выведен из красной зоны.", tiers: [1, 3, 5], maxProgress: 5 },
-    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "Проверки с фотофиксацией эталонов (OK).", tiers: [5, 15, 30], maxProgress: 30 },
-    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактированы ИИ-заключения.", tiers: [5, 15, 30], maxProgress: 30 },
-    { id: "detective", group: "Оформление", name: "Детектив", desc: "Дефекты с фото и указанной причиной.", tiers: [10, 25, 50], maxProgress: 50 },
-    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "Серия проверок со 100% заполнением.", tiers: [10, 25, 50], maxProgress: 50 },
-    { id: "mentor", group: "Обучение", name: "Наставник", desc: "Открыты TWI-карты во время инспекции.", tiers: [5, 15, 30], maxProgress: 30 },
-    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Созданы собственные TWI-карты.", tiers: [1, 3, 5], maxProgress: 5 },
-    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Развернутые комментарии к дефектам.", tiers: [10, 25, 50], maxProgress: 50 },
-    { id: "impartial", group: "Объективность", name: "Независимость", desc: "Строгость в пределах нормы.", tiers: [20, 50, 100], maxProgress: 100 },
-    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "Низкий разброс (волатильность) оценок.", tiers: [10, 20, 40], maxProgress: 40 },
-    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность (недели).", tiers: [4, 8, 12], maxProgress: 12 },
-    { id: "iron_will", group: "Объективность", name: "Железная воля", desc: "Высокий стрик активности (недели).", tiers: [12, 24, 48], maxProgress: 48 },
-    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по разным видам работ.", tiers: [3, 6, 10], maxProgress: 10 },
-    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в различных локациях.", tiers: [10, 20, 30], maxProgress: 30 },
-    { id: "perfection", group: "Редкие", name: "Педантичность", desc: "Оценка 100%, но честно зафиксирован B1.", tiers: [1, 3, 5], maxProgress: 5 },
-    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Созданы карты через 'Магию TWI'.", tiers: [3, 6, 10], maxProgress: 10 }
+    { id: "win_win", group: "Партнёрство", name: "Win-Win", desc: "Подрядчик перешёл в зелёную зону (>85%).", tiers: [1, 3, 5, 10, 20], maxProgress: 20 },
+    { id: "champ_coach", group: "Партнёрство", name: "Тренер", desc: "Разные подрядчики улучшили рейтинг.", tiers: [1, 3, 5, 10, 20], maxProgress: 20 },
+    { id: "reanimator", group: "Партнёрство", name: "Кризис-менеджер", desc: "Подрядчик выведен из красной зоны.", tiers: [1, 3, 5, 10, 20], maxProgress: 20 },
+    { id: "chron_ideal", group: "Оформление", name: "Летописец", desc: "Проверки с фотофиксацией эталонов (OK).", tiers: [5, 15, 30, 50, 100], maxProgress: 100 },
+    { id: "strategist", group: "Оформление", name: "Аналитик", desc: "Отредактированы ИИ-заключения.", tiers: [5, 15, 30, 50, 100], maxProgress: 100 },
+    { id: "detective", group: "Оформление", name: "Детектив", desc: "Дефекты с фото и указанной причиной.", tiers: [10, 25, 50, 70, 100], maxProgress: 100 },
+    { id: "meticulous", group: "Оформление", name: "Скрупулёзность", desc: "Серия проверок со 100% заполнением.", tiers: [10, 25, 50, 100, 150], maxProgress: 150 },
+    { id: "mentor", group: "Обучение", name: "Наставник", desc: "Открыты TWI-карты во время инспекции.", tiers: [5, 15, 30, 45, 70], maxProgress: 70 },
+    { id: "methodist", group: "Обучение", name: "Методолог", desc: "Созданы собственные TWI-карты.", tiers: [1, 3, 5, 25, 50], maxProgress: 50 },
+    { id: "communicator", group: "Обучение", name: "Коммуникация", desc: "Развернутые комментарии к дефектам.", tiers: [10, 25, 50, 75, 100], maxProgress: 100 },
+    { id: "impartial", group: "Объективность", name: "Независимость", desc: "Строгость в пределах нормы.", tiers: [20, 50, 100, 150, 200], maxProgress: 200 },
+    { id: "stable_eng", group: "Объективность", name: "Стабильность", desc: "Низкий разброс (волатильность) оценок.", tiers: [10, 20, 40, 70, 100], maxProgress: 100 },
+    { id: "reliable", group: "Объективность", name: "Надёжность", desc: "Непрерывная активность (недели).", tiers: [4, 8, 12, 16, 20], maxProgress: 20 },
+    { id: "iron_will", group: "Объективность", name: "Железная воля", desc: "Высокий стрик активности (недели).", tiers: [12, 24, 48, 65, 80], maxProgress: 80 },
+    { id: "universal", group: "Охват", name: "Универсальность", desc: "Проверки по разным видам работ.", tiers: [3, 6, 10, 15, 30], maxProgress: 30 },
+    { id: "pathfinder", group: "Охват", name: "Полевой аудит", desc: "Проверки в различных локациях.", tiers: [10, 20, 30, 40, 50], maxProgress: 50 },
+    { id: "perfection", group: "Редкие", name: "Педантичность", desc: "Оценка 100%, но честно зафиксирован B1.", tiers: [1, 3, 5, 10, 25], maxProgress: 25 },
+    { id: "magic_creator", group: "Обучение", name: "Магистр TWI", desc: "Созданы карты через 'Магию TWI'.", tiers: [3, 6, 10, 25, 50], maxProgress: 50 },
+    { id: "fmea_master", group: "Оформление", name: "Мастер FMEA", desc: "Заполнены FMEA таблицы с помощью ИИ.", tiers: [2, 5, 10, 25, 50], maxProgress: 50 },
+    { id: "meeting_master", group: "Обучение", name: "Meeting Master", desc: "Проведены совещания и созданы ИИ-мемо.", tiers: [3, 8, 15, 45, 70], maxProgress: 70 },
+    { id: "impact_maker", group: "Партнёрство", name: "Impact Maker", desc: "Зафиксировано улучшение подрядчиков (Impact > 0.2).", tiers: [2, 5, 10, 20, 25], maxProgress: 25 },
+    { id: "initiator", group: "Охват", name: "Инициатор", desc: "Успешно опубликованы лучшие практики.", tiers: [1, 3, 5, 10, 25], maxProgress: 25 },
+    { id: "discipline", group: "Объективность", name: "Дисциплина", desc: "Закрытие всех плановых задач без долгов.", tiers: [5, 15, 30, 45, 70], maxProgress: 70 },
 ];
 
 // Функция определения уровня (Тира)
@@ -61,9 +66,9 @@ function getBadgeTier(badge, progress) {
 
 // Генератор SVG Медалей
 // Генератор SVG Медалей (Строго по ТЗ, градиент ложится на обводку, а не на фон)
-window.getBadgeSvg = function(badgeId, tier, sizeCls) {
+window.getBadgeSvg = function (badgeId, tier, sizeCls) {
     const uid = Math.random().toString(36).substring(2, 8) + '_' + badgeId;
-    
+
     // Градиенты для ОБВОДКИ (stroke)
     const defs = `
         <defs>
@@ -85,30 +90,34 @@ window.getBadgeSvg = function(badgeId, tier, sizeCls) {
     if (tier === 4) { strokeColor = `url(#g4_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 6px rgba(234,179,8,0.5));"; }
     if (tier >= 5) { strokeColor = `url(#g5_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 8px rgba(236,72,153,0.5));"; }
 
-    let path = "";
+      let path = "";
     switch(badgeId) {
         case 'win_win': path = `<path d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/>`; break;
-        case 'champ_coach': path = `<path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>`; break;
+        case 'champ_coach': path = `<path d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z"/><path d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z"/>`; break;
         case 'reanimator': path = `<path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-4.5v9m-4.5-4.5h9"/>`; break;
-        case 'chron_ideal': path = `<path d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z"/><path d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z"/>`; break;
-        case 'strategist': path = `<path d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"/><path d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"/>`; break;
-        case 'detective': path = `<path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>`; break;
+        case 'chron_ideal': path = `<path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>`; break;
+        case 'strategist': path = `<path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>`; break;
+        case 'detective': path = `<path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/><path d="M10.5 7.5v6m3-3h-6"/>`; break;
         case 'meticulous': path = `<path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`; break;
         case 'mentor': path = `<path d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/>`; break;
         case 'methodist': path = `<path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>`; break;
-        case 'communicator': path = `<path d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>`; break;
+        case 'communicator': path = `<path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/>`; break;
         case 'impartial': path = `<path d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/>`; break;
-        case 'stable_eng': path = `<path d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>`; break;
+        case 'stable_eng': path = `<path d="M3 13h2.25l2.25-6 4.5 12 2.25-6H21"/>`; break;
         case 'reliable': path = `<path d="M9 12.75L11.25 15 15 9.75M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>`; break;
         case 'iron_will': path = `<path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>`; break;
         case 'universal': path = `<path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/>`; break;
-        case 'pathfinder': path = `<path d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.715V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z"/>`; break;
-        case 'perfection': path = `<path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>`; break;
-        case 'magic_creator': path = `<path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>`; break;
+        case 'pathfinder': path = `<path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/>`; break;
+        case 'perfection': path = `<path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>`; break;
+        case 'magic_creator': path = `<path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>`; break;
+        case 'fmea_master': path = `<path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/><path d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.82 1.508-2.316a7.5 7.5 0 10-7.516 0c.85.496 1.508 1.333 1.508 2.316V18"/>`; break;
+        case 'meeting_master': path = `<path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>`; break;
+        case 'impact_maker': path = `<path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/>`; break;
+        case 'initiator': path = `<path d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.82 1.508-2.316a7.5 7.5 0 10-7.516 0c.85.496 1.508 1.333 1.508 2.316V18"/>`; break;
+        case 'discipline': path = `<path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`; break;
         default: path = `<path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>`; break;
     }
 
-    // ВАЖНО: Красим линии, а фон (fill) оставляем прозрачным!
     return `<svg class="${sizeCls} ${opacityCls} mx-auto transition-all duration-300" style="${shadow}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${defs}${path}</svg>`;
 }
 
@@ -128,23 +137,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function gameSaveLogs() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
-    try { await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs }); } 
+    try { await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs }); }
     catch (e) { console.error("Ошибка сохранения логов", e); }
 }
 
-window.gameLogAction = function(actionType, targetId = null) {
+window.gameLogAction = function (actionType, targetId = null) {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
-    if (!currentInspector) return; 
-    
+    if (!currentInspector) return;
+
     if (actionType === 'ai_generate') {
         const today = new Date().toDateString();
         const hasToday = gameActionLogs.some(l => l.action === 'ai_generate' && l.inspector === currentInspector && new Date(l.date).toDateString() === today);
-        if (hasToday) return; 
+        if (hasToday) return;
     }
 
     gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: actionType, target: targetId });
     gameSaveLogs();
-    
+
     if (document.getElementById('sub-engineer-rating') && !document.getElementById('sub-engineer-rating').classList.contains('hidden')) {
         gameRenderDashboard();
     }
@@ -153,12 +162,12 @@ window.gameLogAction = function(actionType, targetId = null) {
 // === ВЫЧИСЛИТЕЛЬНОЕ ЯДРО ===
 function gameCalculateAllProfiles() {
     let profiles = {};
-    
+
     contractorArray.forEach(check => {
         const name = check.inspectorName || 'Не указан';
         if (!profiles[name]) {
-            profiles[name] = { 
-                name: name, pi: 0, checksCount: 0, 
+            profiles[name] = {
+                name: name, pi: 0, checksCount: 0,
                 locations: new Set(), templates: new Set(),
                 monthlyPI: {}, weeksActive: new Set(),
                 badgesData: {}, rawChecks: [], objectName: check.projectName
@@ -168,10 +177,10 @@ function gameCalculateAllProfiles() {
         profiles[name].rawChecks.push(check);
         profiles[name].locations.add(check.location);
         profiles[name].templates.add(check.templateKey);
-        
+
         const d = new Date(check.date);
         const wYear = d.getFullYear();
-        const wNum = Math.ceil((((d - new Date(wYear,0,1))/86400000)+1)/7);
+        const wNum = Math.ceil((((d - new Date(wYear, 0, 1)) / 86400000) + 1) / 7);
         profiles[name].weeksActive.add(`${wYear}-${wNum}`);
     });
 
@@ -195,12 +204,12 @@ function gameCalculateAllProfiles() {
 
             p.checksCount++;
             let earnedPI = 0;
-            const dStr = new Date(check.date).toLocaleString('ru-RU', {month:'short', year:'2-digit'});
-            if(!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
+            const dStr = new Date(check.date).toLocaleString('ru-RU', { month: 'short', year: '2-digit' });
+            if (!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
 
             earnedPI += 20; // Базовый опыт за нормальную проверку
 
-            if (check.isCompleted) { earnedPI += 10; continuous100++; } 
+            if (check.isCompleted) { earnedPI += 10; continuous100++; }
             else { continuous100 = 0; }
 
             let hasFails = false; let allFailsDocumented = true;
@@ -234,24 +243,24 @@ function gameCalculateAllProfiles() {
         const sortedWeeks = Array.from(p.weeksActive).sort();
         if (sortedWeeks.length > 0) {
             p.currentStreak = 1;
-            for(let i = sortedWeeks.length - 1; i > 0; i--) {
+            for (let i = sortedWeeks.length - 1; i > 0; i--) {
                 const wCurr = parseInt(sortedWeeks[i].split('-')[1]);
-                const wPrev = parseInt(sortedWeeks[i-1].split('-')[1]);
+                const wPrev = parseInt(sortedWeeks[i - 1].split('-')[1]);
                 if (wCurr - wPrev === 1 || (wCurr === 1 && wPrev >= 52)) p.currentStreak++;
                 else break;
             }
         }
         if (p.currentStreak >= 8) p.badgesData['reliable'] = 8;
         if (p.currentStreak >= 16) p.badgesData['iron_will'] = 16;
-        
+
         // ВЛИЯНИЕ IMPACT SCORE НА РЕЙТИНГ ИНЖЕНЕРА (Бонус и Штраф)
         let totalImpact = 0; let impactCount = 0;
         const contractorsSet = new Set(p.rawChecks.map(c => c.contractorName));
         contractorsSet.forEach(cName => {
             const cChecks = p.rawChecks.filter(c => c.contractorName === cName);
-            if (cChecks.length < 6) return; 
-            const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
-            const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+            if (cChecks.length < 6) return;
+            const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey] || 0) + 1);
+            const topTemplate = Object.keys(templatesCount).sort((a, b) => templatesCount[b] - templatesCount[a])[0];
             const impact = calculateImpactScore(p.name, cName, topTemplate);
             if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
         });
@@ -263,8 +272,8 @@ function gameCalculateAllProfiles() {
     gameActionLogs.forEach(log => {
         const p = profiles[log.inspector];
         if (!p) return;
-        const dStr = new Date(log.date).toLocaleString('ru-RU', {month:'short', year:'2-digit'});
-        if(!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
+        const dStr = new Date(log.date).toLocaleString('ru-RU', { month: 'short', year: '2-digit' });
+        if (!p.monthlyPI[dStr]) p.monthlyPI[dStr] = 0;
 
         // --- БАЗОВЫЕ НАВЫКИ ---
         if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
@@ -292,11 +301,11 @@ function gameCalculateAllProfiles() {
         }
         p.earnedBadges = [];
         COMPETENCIES.forEach(b => { if (p.badgesData[b.id] >= b.maxProgress) p.earnedBadges.push(b); });
-        
+
         p.radarData = {};
         const groupTotals = {}; const groupEarned = {};
         COMPETENCIES.forEach(b => {
-            if(!groupTotals[b.group]) { groupTotals[b.group] = 0; groupEarned[b.group] = 0; }
+            if (!groupTotals[b.group]) { groupTotals[b.group] = 0; groupEarned[b.group] = 0; }
             groupTotals[b.group] += b.maxProgress;
             groupEarned[b.group] += Math.min(p.badgesData[b.id] || 0, b.maxProgress);
         });
@@ -322,7 +331,7 @@ function getSmartQuest(profile) {
     });
 
     if (closestBadge) {
-        return `<div class="text-[10px] sm:text-[11px] lg:text-[13px] font-black text-indigo-900 dark:text-indigo-200 mb-0.5 lg:mb-1 leading-tight">Прокачайте «${closestBadge.name}» (${Math.round(maxRatio*100)}%)</div>
+        return `<div class="text-[10px] sm:text-[11px] lg:text-[13px] font-black text-indigo-900 dark:text-indigo-200 mb-0.5 lg:mb-1 leading-tight">Прокачайте «${closestBadge.name}» (${Math.round(maxRatio * 100)}%)</div>
                 <div class="text-[9px] sm:text-[10px] lg:text-[11px] text-indigo-700 dark:text-indigo-400 leading-snug"><b>Цель:</b> ${closestBadge.desc}</div>`;
     } else {
         return `<div class="text-[10px] sm:text-[11px] lg:text-[13px] font-black text-indigo-900 dark:text-indigo-200 mb-0.5 lg:mb-1 leading-tight">Профиль сбалансирован</div>
@@ -340,16 +349,16 @@ function getWeekId(date = new Date()) {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
-    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     return `${d.getUTCFullYear()}-W${weekNo}`;
 }
 
 function getStartOfWeek(date = new Date()) {
     const d = new Date(date);
-    const day = d.getDay() || 7; 
+    const day = d.getDay() || 7;
     if (day !== 1) d.setHours(-24 * (day - 1));
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     return d;
 }
 
@@ -357,7 +366,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
         const storedPlan = await dbGet(STORES.SETTINGS, 'weekly_plan_data');
         if (storedPlan && storedPlan.data) weeklyPlanData = storedPlan.data;
-        
+
         const storedAbsence = await dbGet(STORES.SETTINGS, 'engineer_absence');
         if (storedAbsence && storedAbsence.data) engineerAbsence = storedAbsence.data;
 
@@ -367,9 +376,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 async function saveWeeklyPlan() {
-    if (typeof isDemoMode !== 'undefined' && isDemoMode) return; 
-    try { 
-        await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData }); 
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
+    try {
+        await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
         await dbPut(STORES.SETTINGS, { key: 'engineer_absence', data: engineerAbsence });
         await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
     } catch (e) { console.error("Ошибка сохранения плана", e); }
@@ -387,8 +396,8 @@ function calculateImpactScore(inspector, contractor, template) {
 
     if (!baseMetrics || !currMetrics) return { score: 0, trend: 'Ошибка расчета', color: 'text-slate-500' };
 
-    let deltaUrk = Math.max(-1, Math.min(1, (currMetrics.finalC - baseMetrics.finalC) / 100)); 
-    let deltaStab = Math.max(-1, Math.min(1, (currMetrics.stabilityIndex - baseMetrics.stabilityIndex) / 100)); 
+    let deltaUrk = Math.max(-1, Math.min(1, (currMetrics.finalC - baseMetrics.finalC) / 100));
+    let deltaStab = Math.max(-1, Math.min(1, (currMetrics.stabilityIndex - baseMetrics.stabilityIndex) / 100));
     let deltaB3 = (baseMetrics.n_изделий_с_B3 > 0 ? 1 : 0) - (currMetrics.n_изделий_с_B3 > 0 ? 1 : 0);
 
     const impactScore = (deltaUrk * 0.5) + (deltaStab * 0.3) + (deltaB3 * 0.2);
@@ -400,6 +409,7 @@ function calculateImpactScore(inspector, contractor, template) {
     return { score: impactScore, trend, color, baseUrk: baseMetrics.finalC, currUrk: currMetrics.finalC };
 }
 
+// === ГЕНЕРАТОР ЗАДАЧ (ПОЛНЫЙ СПИСОК ИЗ ТЗ) ===
 window.gameGenerateWeeklyPlan = function(force = false) {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim();
     if (!currentInspector) return;
@@ -415,39 +425,19 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     const oldPlan = weeklyPlanData.tasks || [];
     let newTasks = [];
 
+    const now = new Date();
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    // ИСПРАВЛЕНИЕ: Формируем план ТОЛЬКО по тем подрядчикам, 
-    // с которыми работал именно ТЕКУЩИЙ инспектор за последний месяц.
-    const recentChecks = contractorArray.filter(c => 
-        new Date(c.date) >= thirtyDaysAgo && 
-        c.inspectorName === currentInspector
-    );
+    const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo && c.inspectorName === currentInspector);
 
     const pairMap = {};
     recentChecks.forEach(c => {
-        const type = c.templateKey.split('_')[0];
-        const key = c.templateKey.replace(type + '_', '');
-        const templateObj = type === 'sys' ? SYSTEM_TEMPLATES[key] : userTemplates[key];
-        const freq = templateObj?.checkFrequency || 'continuous';
-        
-        // УМНАЯ ГРУППИРОВКА:
-        // Непрерывные процессы (Фасад, Отделка) - 1 общая задача на объект.
-        // Этапные процессы (Монолит, Кровля) - задача привязывается к конкретному этажу/участку (instanceId).
         let statusKey = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
-        const instanceId = c.instanceId || 'default';
-        if (freq === 'milestone') {
-            statusKey += `::${instanceId}`;
-        }
-
         if (!pairMap[statusKey]) {
             pairMap[statusKey] = {
                 statusKey: statusKey, project: c.projectName, contractor: c.contractorName,
-                templateKey: c.templateKey, templateTitle: c.templateTitle,
-                frequency: freq, instanceId: instanceId,
-                totalStages: templateObj?.groups ? templateObj.groups.length : 1,
-                checks: [],
+                templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [],
                 allChecksCount: contractorArray.filter(hist => hist.projectName === c.projectName && hist.contractorName === c.contractorName && hist.templateKey === c.templateKey).length
             };
         }
@@ -458,16 +448,10 @@ window.gameGenerateWeeklyPlan = function(force = false) {
         const pair = pairMap[key];
         
         if (!contractorStatuses[key]) {
-            contractorStatuses[key] = {
-                status: "active", progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 },
-                milestoneProgress: { completedStages: [], totalStages: pair.totalStages },
-                etalonCompleted: false, lastUpdate: new Date().toISOString()
-            };
+            contractorStatuses[key] = { status: "active", progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 }, etalonCompleted: false, lastUpdate: new Date().toISOString() };
         }
-
         const st = contractorStatuses[key];
 
-        // --- ЛОГИКА ЭТАЛОНА ---
         const hasAnyCheck = contractorArray.some(c => c.contractorName === pair.contractor && c.projectName === pair.project && (c.templateKey === 'sys_etalon_act' || c.templateKey === pair.templateKey));
         if (hasAnyCheck || pair.allChecksCount >= 1) st.etalonCompleted = true;
         let needsEtalon = !st.etalonCompleted;
@@ -475,71 +459,100 @@ window.gameGenerateWeeklyPlan = function(force = false) {
         const isPaused = st.status === 'paused';
         const isManuallyCompleted = st.status === 'completed';
 
-        if (pair.frequency === 'continuous') {
-            let priority = "Низкий"; let priorityLvl = 1; let target = 1;
-            let hasB3InLast = false;
+        let priority = "Низкий"; let priorityLvl = 1; let target = 1;
+        let hasB3InLast = false;
 
-            // --- СТРОГАЯ ЛОГИКА ТАРГЕТОВ ПО ТЗ ---
-            if (pair.allChecksCount < 3) {
-                priority = "Новый"; priorityLvl = 3; target = 7;
-            } else {
-                const m = getContractorMetrics(pair.checks, userTemplates);
-                if (m) {
-                    const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
-                    hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
-
-                    if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) { 
-                        priority = "Критично"; priorityLvl = 4; target = 5; 
-                    } else if (m.finalC >= 70 && m.finalC <= 84) { 
-                        priority = "В плане"; priorityLvl = 2; target = 3; 
-                    } else { 
-                        priority = "Низкий"; priorityLvl = 1; target = 1; 
-                    }
-                }
-            }
-
-            if (hasB3InLast && priority !== "Новый") {
-                target = Math.min(target * 2, 7);
-                priority = "Критично (Недавний B3)"; priorityLvl = 4;
-            }
-
-            // --- ПЕРЕНОС ДОЛГОВ ---
-            const oldTask = oldPlan.find(t => t.statusKey === key);
-            let deficit = 0; let carryOverCount = 0;
-            
-            if (oldTask && oldTask.done < oldTask.target && !needsEtalon && !isPaused && !isManuallyCompleted) {
-                deficit = oldTask.target - oldTask.done;
-                carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
-                target = Math.min(target + deficit, 7); 
-                
-                if (priorityLvl < 4) {
-                    priorityLvl++;
-                    if (priorityLvl === 2) priority = "В плане (Долг)";
-                    if (priorityLvl === 3) priority = "Критично (Долг)";
-                    if (priorityLvl === 4) priority = "Критично (Старый Долг)";
-                }
-            }
-
-            newTasks.push({
-                id: 'task_' + Date.now().toString(36), statusKey: key, type: 'continuous',
-                contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-                priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
-                deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon,
-                isPaused: isPaused, isCompletedManually: isManuallyCompleted
-            });
+        if (pair.allChecksCount < 3) {
+            priority = "Новый"; priorityLvl = 3; target = 7;
         } else {
-            const completedLen = st.milestoneProgress.completedStages ? st.milestoneProgress.completedStages.length : 0;
-            const tTotal = st.milestoneProgress.totalStages || pair.totalStages;
+            const m = getContractorMetrics(pair.checks, userTemplates);
+            if (m) {
+                const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+                hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
 
-            newTasks.push({
-                id: 'task_' + Date.now().toString(36), statusKey: key, type: 'milestone',
-                contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-                // Для Milestone добавляем в название Локацию, чтобы инспектор понимал, ЧТО именно он проверяет
-                priority: `Этап (${pair.instanceId.replace('_', ' ')})`, priorityLvl: 2, target: tTotal, done: completedLen,
-                needsEtalon: needsEtalon, isPaused: isPaused, isCompletedManually: isManuallyCompleted || (completedLen >= tTotal)
-            });
+                if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) { 
+                    priority = "Критично"; priorityLvl = 4; target = 5; 
+                } else if (m.finalC >= 70 && m.finalC <= 84) { 
+                    priority = "В плане"; priorityLvl = 2; target = 3; 
+                } else { 
+                    priority = "Низкий"; priorityLvl = 1; target = 1; 
+                }
+
+                // АВТО-ЗАДАЧА: Входной контроль материалов (Если у подрядчика плохой УрК)
+                if (m.finalC < 75 && !newTasks.find(t => t.taskType === 'Входной контроль' && t.contractor === pair.contractor)) {
+                    newTasks.push({
+                        id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5), statusKey: key + '_mat', type: 'method', taskType: 'Входной контроль',
+                        contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: 'Входной контроль материалов',
+                        title: `Входной контроль`, desc: `Проверить качество поставляемых материалов (УрК < 75%).`,
+                        priority: "Разовая", priorityLvl: 2, target: 1, done: 0, carryOverCount: 0, needsEtalon: false,
+                        isPaused: false, isCompletedManually: false, date: new Date().toISOString()
+                    });
+                }
+            }
         }
+
+        if (hasB3InLast && priority !== "Новый") {
+            target = Math.min(target * 2, 7);
+            priority = "Критично (B3)"; priorityLvl = 4;
+        }
+
+        const oldTask = oldPlan.find(t => t.statusKey === key && t.taskType === 'Плановая');
+        let deficit = 0; let carryOverCount = 0;
+        
+        if (oldTask && oldTask.done < oldTask.target && !needsEtalon && !isPaused && !isManuallyCompleted) {
+            deficit = oldTask.target - oldTask.done;
+            carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
+            target = Math.min(target + deficit, 7); 
+            if (priorityLvl < 4) priorityLvl++;
+        }
+
+        newTasks.push({
+            id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5), statusKey: key, type: 'continuous', taskType: 'Плановая',
+            contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
+            title: `Инспекция: ${pair.contractor}`, desc: `Целевой объем проверок на неделю.`,
+            priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
+            deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon,
+            isPaused: isPaused, isCompletedManually: isManuallyCompleted, date: new Date().toISOString()
+        });
     }
+
+    // ==========================================
+    // АВТОМАТИЧЕСКИЕ МЕТОДИЧЕСКИЕ ЗАДАЧИ ИЗ ТЗ
+    // ==========================================
+    const addTask = (idSuffix, title, desc, type, lvl, target, contractor = "Все подрядчики", project = "Все объекты") => {
+        newTasks.push({
+            id: 'task_' + Date.now().toString(36) + idSuffix, statusKey: 'sys_' + idSuffix, type: 'method', taskType: type,
+            contractor: contractor, project: project, templateKey: '', templateTitle: 'Аналитика и Отчеты',
+            title: title, desc: desc, priority: "Рутина", priorityLvl: lvl, target: target, done: 0,
+            carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false, date: new Date().toISOString()
+        });
+    };
+
+    const dayOfWeek = now.getDay(); 
+    const isFirstDayOfMonth = now.getDate() === 1;
+
+    if (dayOfWeek === 5) {
+        addTask('fmea_weekly', 'Заполнить FMEA таблицу', 'ИИ соберет дефекты (B2/B3) за неделю, укажите корректирующие действия.', 'ППР', 3, 1);
+        addTask('poster_weekly', 'Распечатать Плакат качества', 'Повесить плакат с рейтингом подрядчиков на видном месте стройплощадки.', 'ППР', 2, 1);
+    }
+    if (dayOfWeek === 2) {
+        addTask('meeting_weekly', 'Еженедельный разбор качества', 'Провести совещание с подрядчиками по повестке из Meeting Workspace.', 'Инструктаж', 4, 1);
+    }
+    if (isFirstDayOfMonth) {
+        addTask('onepager_monthly', 'Ежемесячный отчет One-Pager', 'Отправить руководителю выгрузку сводного статуса объекта.', 'ППР', 4, 1);
+    }
+    // Раз в месяц заводской контроль
+    if (isFirstDayOfMonth) {
+        addTask('factory_visit', 'Выездной контроль на заводе', 'Проверка производственной площадки критичного поставщика.', 'Входной контроль', 2, 1);
+    }
+    // Раз в квартал
+    if (now.getMonth() % 3 === 0 && now.getDate() === 15) {
+        addTask('handover_warranty', 'Передача в гарантию', 'Сформировать сводку дефектов за квартал по завершенным этапам.', 'ППР', 2, 1);
+    }
+
+    oldPlan.filter(t => t.type === 'manual' || t.type === 'auto').forEach(t => {
+        if (t.status !== 'done') newTasks.push(t);
+    });
 
     newTasks.sort((a, b) => b.priorityLvl - a.priorityLvl);
     weeklyPlanData = { weekId: currentWeekId, tasks: newTasks, completed: false };
@@ -548,7 +561,187 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     gameUpdatePlanProgress();
 };
 
-window.gameUpdatePlanProgress = function() {
+// --- РЕНДЕР: Вкладка "Инженер -> Задачи" (Новый UI без скрытых меню) ---
+window.rbi_renderTasksList = async function() {
+    const container = document.getElementById('rbi-tasks-container');
+    if (!container) return;
+
+    const activeTasks = (weeklyPlanData && weeklyPlanData.tasks) ? weeklyPlanData.tasks : [];
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const startW = getStartOfWeek(today);
+    const endW = new Date(startW); endW.setDate(startW.getDate() + 6); endW.setHours(23,59,59,999);
+    
+    document.getElementById('rbi-week-number').innerText = getWeekNumber(today);
+    document.getElementById('rbi-week-dates').innerText = `${startW.toLocaleDateString('ru-RU', {day:'numeric', month:'short'})} — ${endW.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year:'numeric'})}`;
+
+    // ГЛОБАЛЬНЫЕ КНОПКИ УПРАВЛЕНИЯ ПЛАНОМ (На самом виду)
+    let globalActionsHtml = `
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+            <button onclick="gameForceUpdatePlan()" class="bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Обновить план
+            </button>
+            <button onclick="rbi_openTaskModal()" class="bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> + Задача
+            </button>
+            <button onclick="generateAiRoutePlan()" class="bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
+                🧠 AI-Маршрут
+            </button>
+            <button onclick="gameToggleAbsence()" class="bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
+                🏖️ Отпуск/Статус
+            </button>
+        </div>
+        <div id="ai-route-container" class="hidden mb-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 text-[11px] text-purple-900 dark:text-purple-200 leading-relaxed shadow-inner"></div>
+    `;
+
+    if (engineerAbsence.isActive) {
+        container.innerHTML = globalActionsHtml + `
+            <div class="bg-white/80 dark:bg-slate-800/80 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center text-amber-700 dark:text-amber-400 shadow-sm mt-4">
+                <div class="text-[14px] font-black uppercase tracking-wider mb-1">Режим: ${engineerAbsence.reason}</div>
+                <div class="text-[11px] font-bold opacity-80">Задачи на эту неделю приостановлены. Отдыхайте!</div>
+            </div>`;
+        return;
+    }
+
+    if (activeTasks.length === 0) {
+        container.innerHTML = globalActionsHtml + `
+            <div class="bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm mt-4">
+                <div class="text-[14px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">План чист</div>
+                <div class="text-[11px] text-slate-500 font-medium">Сделайте хотя бы одну проверку или загрузите график работ, чтобы ИИ построил план.</div>
+            </div>`;
+        document.getElementById('rbi-tasks-progress-text').innerText = `0/0`;
+        document.getElementById('rbi-tasks-progress-bar').style.width = `0%`;
+        return;
+    }
+
+    let overdue = []; let todayTasks = []; let weekTasks = [];
+    let weekTotal = 0; let weekDone = 0;
+
+    activeTasks.forEach(t => {
+        if (t.isCompletedManually || t.done >= t.target) {
+            weekTotal++; weekDone++;
+            return; 
+        }
+        const tDate = t.date ? new Date(t.date) : new Date();
+        tDate.setHours(0,0,0,0);
+        if (tDate < today) { overdue.push(t); weekTotal++; } 
+        else if (tDate.getTime() === today.getTime()) { todayTasks.push(t); weekTotal++; } 
+        else { weekTasks.push(t); weekTotal++; }
+    });
+
+    document.getElementById('rbi-tasks-progress-text').innerText = `${weekDone}/${weekTotal}`;
+    document.getElementById('rbi-tasks-progress-bar').style.width = weekTotal > 0 ? `${(weekDone/weekTotal)*100}%` : '0%';
+
+    const renderCard = (t, isOverdue) => {
+        const icon = RBI_TASK_ICONS[t.taskType] || RBI_TASK_ICONS['Плановая'];
+        const dateStr = t.date ? new Date(t.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : 'Без даты';
+        const dateTag = isOverdue ? `<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[9px] font-black uppercase">Проср: ${dateStr}</span>` : `<span class="text-[10px] text-slate-400 font-bold">${dateStr}</span>`;
+        
+        let tagClass = 'text-green-600 bg-green-50 border-green-200';
+        let barColor = 'bg-indigo-500';
+
+        if (t.isPaused) { tagClass = 'text-orange-600 bg-orange-50 border-orange-200'; barColor = 'bg-slate-400'; } 
+        else if (t.priorityLvl === 4) { tagClass = 'text-red-600 bg-red-50 border-red-200'; barColor = 'bg-red-500'; } 
+        else if (t.priorityLvl === 3) { tagClass = 'text-blue-600 bg-blue-50 border-blue-200'; } 
+        else if (t.priorityLvl === 2) { tagClass = 'text-orange-600 bg-orange-50 border-orange-200'; barColor = 'bg-orange-500'; }
+
+        let filterCat = 'control'; 
+        if (t.taskType === 'ППР' || t.taskType === 'Входной контроль') filterCat = 'method';
+        if (t.taskType === 'Инструктаж' || t.taskType === 'meeting_weekly') filterCat = 'meeting';
+
+        const progressPerc = Math.min((t.done / t.target) * 100, 100);
+        const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
+
+        // ЯВНЫЕ КНОПКИ ВМЕСТО МЕНЮ
+        let actionButtonsHtml = '';
+        if (['Эталон', 'Старт', 'Плановая', 'Финал'].includes(t.taskType)) {
+            actionButtonsHtml += `<button onclick="rbi_startTaskAudit('${t.id}')" class="flex-1 bg-indigo-600 text-white border border-indigo-700 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-md flex justify-center items-center gap-1">📋 Проверить</button>`;
+        } else {
+            actionButtonsHtml += `<button onclick="rbi_openTaskAction('${t.id}')" class="flex-1 bg-[var(--hover-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 flex justify-center items-center gap-1">✅ Решить</button>`;
+        }
+        actionButtonsHtml += `<button onclick="rbi_markTaskSuccess('${t.id}')" class="flex-1 bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:border-green-800 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1">🎉 Успех</button>`;
+
+        return `
+        <div data-category="${filterCat}" class="task-card-item bg-[var(--card-bg)] border ${isOverdue ? 'border-red-300 shadow-md' : 'border-[var(--card-border)] shadow-sm'} rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden transition-all duration-300 ${opacityClass}">
+            ${isOverdue ? '<div class="absolute top-0 left-0 w-1 h-full bg-red-500"></div>' : ''}
+            
+            <div class="flex items-center gap-2 mb-1 min-w-0 pl-1 border-b border-[var(--card-border)] pb-2">
+                <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center border border-[var(--card-border)] shrink-0">${icon}</div>
+                <div class="min-w-0">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight truncate">${t.title || 'Задача'}</div>
+                    <div class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 truncate">${t.templateTitle || 'Методика'} • ${t.contractor || 'Организация'}</div>
+                </div>
+            </div>
+            
+            <div class="flex flex-wrap gap-1 items-center">
+                <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'ПАУЗА' : t.priority}</span>
+                ${t.needsEtalon ? '<span class="text-[8px] bg-blue-100 text-blue-600 px-1 rounded font-black border border-blue-200">ЭТАЛОН</span>' : ''}
+                ${t.carryOverCount > 0 ? '<span class="text-[8px] bg-red-100 text-red-600 px-1 rounded font-black border border-red-200">ДОЛГ</span>' : ''}
+            </div>
+
+            <div class="mt-auto">
+                <div class="flex justify-between items-end mb-1">
+                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">${dateTag}</span>
+                    <span class="text-[11px] font-black ${t.done >= t.target ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)] mb-2">
+                    <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
+                </div>
+                
+                <!-- ЯВНЫЕ КНОПКИ УПРАВЛЕНИЯ -->
+                <div class="flex gap-1.5 w-full">
+                    ${actionButtonsHtml}
+                    <button onclick="rbi_openTaskAction('${t.id}')" class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] text-slate-400 hover:text-indigo-600 flex items-center justify-center shrink-0 border border-[var(--card-border)] active:scale-90" title="Перенести">📅</button>
+                </div>
+            </div>
+        </div>`;
+    };
+
+    const filterHtml = `
+        <div class="flex gap-1.5 mb-3 pb-2 overflow-x-auto no-scrollbar" id="hub-filters">
+            <button onclick="rbi_filterTaskHub('all', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все</button>
+            <button onclick="rbi_filterTaskHub('control', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Контроль</button>
+            <button onclick="rbi_filterTaskHub('method', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Методика</button>
+            <button onclick="rbi_filterTaskHub('meeting', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Встречи</button>
+        </div>
+    `;
+
+    let html = globalActionsHtml + filterHtml;
+
+    if (overdue.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">🚨 Просрочено (${overdue.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-overdue">${overdue.map(t => renderCard(t, true)).join('')}</div></div>`;
+    if (todayTasks.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">📌 Сегодня (${todayTasks.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-today">${todayTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
+    if (weekTasks.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">🔜 До конца недели (${weekTasks.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-week">${weekTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
+
+    container.innerHTML = html;
+};
+
+// Исправленная логика фильтров 
+window.rbi_filterTaskHub = function(category, btnElement) {
+    const container = document.getElementById('hub-filters');
+    if (container) {
+        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
+            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
+        });
+    }
+    if (btnElement) {
+        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
+    }
+
+    const cards = document.querySelectorAll('.task-card-item');
+    cards.forEach(card => {
+        if (category === 'all') {
+            card.style.display = 'flex';
+        } else {
+            if (card.dataset.category === category) {
+                card.style.display = 'flex';
+            } else {
+                card.style.display = 'none';
+            }
+        }
+    });
+};
+
+window.gameUpdatePlanProgress = function () {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim();
     if (!currentInspector || !weeklyPlanData.tasks) return;
 
@@ -558,12 +751,12 @@ window.gameUpdatePlanProgress = function() {
 
     weeklyPlanData.tasks.forEach(task => {
         const st = contractorStatuses[task.statusKey];
-        
+
         // АВТОМАТИЧЕСКОЕ СНЯТИЕ ЭТАЛОНА
         if (task.needsEtalon) {
-            const hasEtalonCheck = contractorArray.some(c => 
-                c.contractorName === task.contractor && 
-                c.projectName === task.project && 
+            const hasEtalonCheck = contractorArray.some(c =>
+                c.contractorName === task.contractor &&
+                c.projectName === task.project &&
                 c.templateKey === 'sys_etalon_act'
             );
             if (hasEtalonCheck) {
@@ -576,7 +769,7 @@ window.gameUpdatePlanProgress = function() {
         }
 
         const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
-        
+
         if (task.type === 'continuous') {
             let validChecksCount = 0; let sumFillRate = 0; let totalFails = 0; let failsWithPhotoOrComment = 0;
 
@@ -584,7 +777,7 @@ window.gameUpdatePlanProgress = function() {
                 if (c.metrics && c.metrics.checkedCount >= 3) {
                     validChecksCount++;
                     sumFillRate += (c.metrics.checkedCount / c.metrics.totalCount) * 100;
-                    
+
                     if (c.state) {
                         Object.keys(c.state).forEach(id => {
                             if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
@@ -601,14 +794,14 @@ window.gameUpdatePlanProgress = function() {
             task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
 
             if (task.done < task.target) allTasksDone = false;
-            
+
             if (task.priorityLvl === 4 && task.done > task.target) {
-                const overCheck = matchedChecks[validChecksCount - 1]; 
+                const overCheck = matchedChecks[validChecksCount - 1];
                 if (!gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
                     gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'overfulfill_bonus', target: overCheck.id });
                 }
             }
-            
+
         } else if (task.type === 'milestone') {
             if (st && st.milestoneProgress) {
                 matchedChecks.forEach(c => {
@@ -623,7 +816,7 @@ window.gameUpdatePlanProgress = function() {
                 task.done = st.milestoneProgress.completedStages.length;
                 task.target = st.milestoneProgress.totalStages;
                 if (task.done < task.target) allTasksDone = false;
-                else st.status = 'completed'; 
+                else st.status = 'completed';
             }
         }
     });
@@ -680,9 +873,9 @@ function injectAbsenceModal() {
     document.body.insertAdjacentHTML('beforeend', html);
 }
 
-window.gameToggleAbsence = function() {
+window.gameToggleAbsence = function () {
     if (engineerAbsence.isActive) {
-        if(confirm("Прервать период отсутствия и вернуться к работе? План будет пересчитан.")) {
+        if (confirm("Прервать период отсутствия и вернуться к работе? План будет пересчитан.")) {
             engineerAbsence.isActive = false; engineerAbsence.endDate = null; saveWeeklyPlan();
             gameGenerateWeeklyPlan(true); gameRenderDashboard();
         }
@@ -695,7 +888,7 @@ window.gameToggleAbsence = function() {
     }
 };
 
-window.saveAbsencePeriod = function() {
+window.saveAbsencePeriod = function () {
     const reason = document.getElementById('abs-reason').value;
     const start = document.getElementById('abs-start').value;
     const end = document.getElementById('abs-end').value;
@@ -712,36 +905,36 @@ window.saveAbsencePeriod = function() {
     gameRenderDashboard();
 };
 
-window.checkAutoExpireAbsence = function() {
+window.checkAutoExpireAbsence = function () {
     if (engineerAbsence.isActive && engineerAbsence.endDate && new Date() > new Date(engineerAbsence.endDate)) {
         engineerAbsence.isActive = false; engineerAbsence.endDate = null; saveWeeklyPlan();
         gameGenerateWeeklyPlan(true); showToast("С возвращением! План работы возобновлен.");
     }
 };
 
-window.gameForceUpdatePlan = function() {
-    if(confirm("Принудительно пересчитать план на эту неделю на основе свежих рисков по объекту?")) {
+window.gameForceUpdatePlan = function () {
+    if (confirm("Принудительно пересчитать план на эту неделю на основе свежих рисков по объекту?")) {
         gameGenerateWeeklyPlan(true); showToast("План успешно пересчитан!"); gameRenderDashboard();
     }
 };
 
 // === НОВАЯ МОДАЛКА: СПИСОК УРОВНЕЙ ИНЖЕНЕРА ===
-window.gameShowLevelsModal = function() {
+window.gameShowLevelsModal = function () {
     const myPi = window.currentProfileData ? window.currentProfileData.pi : 0;
-    
+
     let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
-    
+
     PI_GRADES.forEach((grade, idx) => {
         const isCurrent = myPi >= grade.xpMin && myPi < grade.xpMax;
         const isPassed = myPi >= grade.xpMax;
         const isMaxLevel = (idx === PI_GRADES.length - 1) && myPi >= grade.xpMin;
-        
-        let statusIcon = isPassed ? `<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>` 
-                       : (isCurrent || isMaxLevel ? `<span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>` 
-                       : `<svg class="w-5 h-5 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`);
-                       
+
+        let statusIcon = isPassed ? `<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`
+            : (isCurrent || isMaxLevel ? `<span class="relative flex h-3 w-3"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>`
+                : `<svg class="w-5 h-5 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>`);
+
         let bgClass = isCurrent || isMaxLevel ? `bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-600 shadow-sm transform scale-[1.02]` : `bg-[var(--card-bg)] border-[var(--card-border)] opacity-${isPassed ? '60' : '100'}`;
-        
+
         html += `
         <div class="p-3 border rounded-xl flex items-center justify-between transition-all ${bgClass}">
             <div class="flex items-center gap-3">
@@ -759,12 +952,12 @@ window.gameShowLevelsModal = function() {
     document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg></div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Карьерная лестница</div>`;
     document.getElementById('modal-body').innerHTML = html;
-    
+
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
-// === ЕДИНЫЙ ДАШБОРД ИНЖЕНЕРА (iOS STYLE) ===
+// === ЕДИНЫЙ ДАШБОРД ИНЖЕНЕРА (БЕЗ ЗАДАЧ - ПЕРЕНЕСЕНО) ===
 window.gameRenderDashboard = function() {
     const container = document.getElementById('game-dashboard-container');
     if (!container) return;
@@ -772,7 +965,21 @@ window.gameRenderDashboard = function() {
     checkAutoExpireAbsence(); 
     if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan();
 
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
+    // ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ИМЕНИ
+    let savedName = localStorage.getItem('force_eng_name');
+    if (savedName && typeof appSettings !== 'undefined') appSettings.engineerName = savedName;
+
+    const currentInspector = document.getElementById('inp-inspector')?.value.trim() || appSettings.engineerName || 'Неизвестный инспектор';
+    
+    // Логика показа/скрытия поля ввода имени
+    if (!currentInspector || currentInspector === 'Неизвестный инспектор') {
+        document.getElementById('profile-name-edit-container')?.classList.remove('hidden');
+        document.getElementById('profile-title-text')?.classList.add('hidden');
+    } else {
+        document.getElementById('profile-name-edit-container')?.classList.add('hidden');
+        document.getElementById('profile-title-text')?.classList.remove('hidden');
+    }
+
     const profiles = gameCalculateAllProfiles();
     window.currentProfileData = profiles[currentInspector] || { 
         name: currentInspector, pi: 0, checksCount: 0, currentStreak: 0, 
@@ -783,23 +990,6 @@ window.gameRenderDashboard = function() {
     const myProfile = window.currentProfileData;
     const piProgress = myProfile.pi >= myProfile.levelObj.xpMax ? 100 : ((myProfile.pi - myProfile.levelObj.xpMin) / (myProfile.levelObj.xpMax - myProfile.levelObj.xpMin)) * 100;
 
-    // Считаем задачи на неделю
-    let totalTasks = 0, doneTasks = 0, debtTasks = 0;
-    if (weeklyPlanData && weeklyPlanData.tasks) {
-        totalTasks = weeklyPlanData.tasks.length;
-        weeklyPlanData.tasks.forEach(t => {
-            if (t.done >= t.target) doneTasks++;
-            if (t.carryOverCount > 0 && !t.needsEtalon) debtTasks++;
-        });
-    }
-
-    // Даты текущей недели
-    const startOfWeek = getStartOfWeek();
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(endOfWeek.getDate() + 6);
-    const weekStr = `${startOfWeek.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'})} - ${endOfWeek.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit', year:'numeric'})}`;
-
-    // Топ очивок и квест
     let activeBadges = [];
     COMPETENCIES.forEach(b => {
         const progress = myProfile.badgesData[b.id] || 0;
@@ -807,10 +997,10 @@ window.gameRenderDashboard = function() {
         if (tier > 0) activeBadges.push({ ...b, tier, progress });
     });
     activeBadges.sort((a,b) => b.tier - a.tier);
-    const topBadges = activeBadges.slice(0, 3); // Оставил 3, чтобы влез квест
+    const topBadges = activeBadges.slice(0, 3);
     const smartQuestHtml = getSmartQuest(myProfile);
 
-    // Считаем Impact и Рейтинг для объединенных блоков
+    // Считаем Impact
     let totalImpact = 0; let impactCount = 0;
     const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
     contractorsSet.forEach(cName => {
@@ -822,73 +1012,62 @@ window.gameRenderDashboard = function() {
         if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
     });
     const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
+    
     let globalImpactText = "Нейтральное"; let globalImpactColor = "text-slate-600 dark:text-slate-400"; let globalImpactBg = "bg-[var(--hover-bg)]";
     let globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16"></path></svg>`;
     if (avgImpact > 0.2) { globalImpactText = "Позитивное"; globalImpactColor = "text-green-600 dark:text-green-500"; globalImpactBg = "bg-green-50 dark:bg-green-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`; } 
     else if (avgImpact < -0.2) { globalImpactText = "Отрицательное"; globalImpactColor = "text-red-600 dark:text-red-500"; globalImpactBg = "bg-red-50 dark:bg-red-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"></path></svg>`; }
 
-    // НОВОЕ: Определяем свою позицию по глобальному серверному рейтингу (если доступен)
-    let myRank = 1;
-    let totalEng = 1;
-    
+    let myRank = 1; let totalEng = 1;
     if (window.serverGlobalRating && Array.isArray(window.serverGlobalRating)) {
         const sortedServer = window.serverGlobalRating.sort((a, b) => b.pi - a.pi);
         myRank = sortedServer.findIndex(p => p.name === myProfile.name) + 1;
         totalEng = sortedServer.length;
-        if (myRank === 0) myRank = '-'; // Если инженера еще нет на сервере
+        if (myRank === 0) myRank = '-'; 
     } else {
         const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
         myRank = allProfilesArr.findIndex(p => p.name === myProfile.name) + 1;
         totalEng = allProfilesArr.length;
     }
 
-    let html = '';
-
-    // ====================================================================
-    // СЕКЦИЯ 1: ПРОФИЛЬ И НАГРАДЫ
-    // ====================================================================
-    html += `
-        <div class="grid grid-cols-2 gap-2 sm:gap-3 mx-1 mb-4">
-            <!-- КАРТОЧКА ПРОФИЛЯ -->
-            <!-- КАРТОЧКА ПРОФИЛЯ -->
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-2 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
-            <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
-            
-            <div class="flex justify-between items-start mb-2 sm:mb-4 relative z-10">
-                <div class="flex items-center gap-1.5 sm:gap-4 min-w-0 pr-1">
-                    <div class="w-9 h-9 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-base sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
-                        ${myProfile.name.substring(0,1).toUpperCase()}
-                    </div>
-                    <div class="overflow-hidden">
-                        <div class="flex items-center gap-1 sm:gap-2">
-                            <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal">${myProfile.name}</div>
+    // РЕНДЕР HTML (БЕЗ БЛОКА ЗАДАЧ)
+    let html = `
+        <div class="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div class="flex justify-between items-start mb-2 sm:mb-4 relative z-10">
+                    <div class="flex items-center gap-1.5 sm:gap-4 min-w-0 pr-1">
+                        <div class="w-9 h-9 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-base sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
+                            ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0,1).toUpperCase()}
                         </div>
-                        <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
+                        <div class="overflow-hidden">
+                            <div class="flex items-center gap-1 sm:gap-2">
+                                <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal cursor-pointer" 
+                                     onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
+                                    ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
+                                </div>
+                            </div>
+                            <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0 ml-1 sm:ml-0">
+                        <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">Стрик</div>
+                        <div class="text-[13px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
                     </div>
                 </div>
-                <div class="text-right shrink-0 ml-1 sm:ml-0">
-                    <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">Стрик</div>
-                    <div class="text-[13px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
+
+                <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
+                    <div class="flex justify-between text-[8px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1 sm:mb-2 uppercase tracking-wider">
+                        <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
+                        <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
+                    </div>
+                    <div class="w-full h-1.5 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
+                        <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
+                    </div>
                 </div>
             </div>
 
-            <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
-                <div class="flex justify-between text-[8px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1 sm:mb-2 uppercase tracking-wider">
-                    <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
-                    <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
-                </div>
-                <div class="w-full h-1.5 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
-                    <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-center mt-2 sm:mt-3 pt-1.5 sm:pt-3 border-t border-[var(--card-border)]">
-                <div class="text-[8px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest">План недели: <span class="font-black ${doneTasks === totalTasks && totalTasks > 0 ? 'text-green-600' : 'text-slate-800 dark:text-white'}">${doneTasks} / ${totalTasks}</span></div>
-                ${debtTasks > 0 ? `<div class="text-[7px] sm:text-[9px] font-black uppercase bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-1.5 sm:px-2 py-0.5 rounded">Долг: ${debtTasks}</div>` : `<div class="text-[7px] sm:text-[9px] font-bold text-green-500 uppercase">Долгов нет</div>`}
-            </div>
-        </div>
-
-            <!-- ТОП НАГРАДЫ И КВЕСТ -->
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm flex flex-col justify-between w-full">
                 <div>
                     <div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 flex justify-between items-center">
@@ -897,11 +1076,7 @@ window.gameRenderDashboard = function() {
                     </div>
                     <div class="flex items-center justify-start gap-3 overflow-x-auto no-scrollbar pb-2">
                         ${topBadges.length > 0 
-                            ? topBadges.map(b => `
-                                <div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform w-16 shrink-0" onclick="gameShowBadgeInfo('${b.id}', ${b.progress})" title="${b.name}">
-                                    ${getBadgeSvg(b.id, b.tier, "w-10 h-10")}
-                                    <span class="text-[8px] font-bold text-slate-600 dark:text-slate-400 uppercase mt-1 text-center truncate w-full">${b.name}</span>
-                                </div>`).join('')
+                            ? topBadges.map(b => `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform w-16 shrink-0" onclick="gameShowBadgeInfo('${b.id}', ${b.progress})" title="${b.name}">${getBadgeSvg(b.id, b.tier, "w-10 h-10")}<span class="text-[8px] font-bold text-slate-600 dark:text-slate-400 uppercase mt-1 text-center truncate w-full">${b.name}</span></div>`).join('')
                             : `<div class="text-[9px] font-bold text-slate-400 uppercase">Пока пусто.</div>`
                         }
                     </div>
@@ -911,18 +1086,11 @@ window.gameRenderDashboard = function() {
                 </div>
             </div>
         </div>
-    `;
 
-    // ====================================================================
-    // СЕКЦИЯ 2: ПРОФИЛЬ НАВЫКОВ И ВЛИЯНИЕ (ОБЪЕДИНЕНЫ, СВЕРНУТЫ)
-    // ====================================================================
-    html += `
-        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+        <details class="mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
                 <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">📊 Профиль навыков и Влияние</span>
-                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                </span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
@@ -938,186 +1106,16 @@ window.gameRenderDashboard = function() {
                     <div>
                         <div class="text-[42px] font-black ${globalImpactColor} leading-none mb-2">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(2)}</div>
                         <div class="text-[12px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Статус: ${globalImpactText}</div>
-                        <div class="text-[10px] text-slate-500 mt-3 font-medium">Impact Score показывает вашу реальную пользу. Сравнивает качество до ваших проверок и после.</div>
+                        <div class="text-[10px] text-slate-500 mt-3 font-medium">Impact Score оценивает качество "до" и "после" ваших инспекций.</div>
                     </div>
                 </button>
             </div>
         </details>
-    `;
 
-    // ====================================================================
-    // СЕКЦИЯ 3: ПЛАН ЗАДАЧ (ВЫДЕЛЕН ЦВЕТОМ, РАЗВЕРНУТ)
-    // ====================================================================
-    let taskBlockHeaderColor = engineerAbsence.isActive ? "bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-800" : "bg-indigo-100 dark:bg-indigo-900/40 border-indigo-200 dark:border-indigo-800";
-    let taskBlockBodyColor = engineerAbsence.isActive ? "bg-amber-50 dark:bg-amber-900/10" : "bg-indigo-50/50 dark:bg-indigo-900/10";
-    
-    html += `
-        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border-2 ${taskBlockHeaderColor} rounded-2xl shadow-md overflow-hidden [&_summary::-webkit-details-marker]:hidden" open>
-            <summary class="p-4 cursor-pointer flex justify-between items-center ${taskBlockHeaderColor} transition-colors select-none border-b border-[var(--card-border)]">
-                <div>
-                    <span class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2 mb-1">
-                        <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-                        Недельный план задач
-                    </span>
-                    <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 tracking-wider">${weekStr} | Задач: ${doneTasks}/${totalTasks}</span>
-                </div>
-                <div class="flex flex-col gap-1.5 items-end">
-                    <button onclick="gameForceUpdatePlan(); event.stopPropagation();" class="text-[9px] font-black text-indigo-700 bg-white/80 dark:bg-slate-800/80 border border-indigo-300 dark:border-indigo-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Обновить план
-                    </button>
-                    <button onclick="generateAiRoutePlan(); event.stopPropagation();" class="text-[9px] font-black text-purple-700 bg-purple-100 dark:bg-purple-900/50 border border-purple-300 dark:border-purple-700 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
-                        🧠 AI-Маршрут
-                    </button>
-                    <button onclick="gameToggleAbsence(); event.stopPropagation();" class="text-[9px] font-black text-slate-600 bg-white/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-600 px-3 py-1.5 rounded-lg active:scale-95 transition-colors uppercase shadow-sm flex items-center gap-1">
-                        🏖️ Отпуск/Статус
-                    </button>
-                </div>
-            </summary>
-            
-            <div class="p-3 ${taskBlockBodyColor} space-y-4">
-            <div id="ai-route-container" class="hidden bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 text-[11px] text-purple-900 dark:text-purple-200 leading-relaxed shadow-inner"></div>
-    `;
-
-    if (engineerAbsence.isActive) {
-        html += `<div class="bg-white/80 dark:bg-slate-800/80 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center text-amber-700 dark:text-amber-400 shadow-sm">
-                    <div class="text-[14px] font-black uppercase tracking-wider mb-1">Режим: ${engineerAbsence.reason}</div>
-                    <div class="text-[11px] font-bold opacity-80">Задачи на эту неделю приостановлены. Отдыхайте!</div>
-                 </div>`;
-    } else if (!weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) {
-        html += `<div class="bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6 text-center text-indigo-600 dark:text-indigo-400 shadow-sm">
-                    <div class="text-[14px] font-black uppercase tracking-wider mb-1">План чист</div>
-                    <div class="text-[11px] font-bold opacity-80">Все проверки выполнены или объектов в работе нет.</div>
-                 </div>`;
-    } else {
-    const renderTaskCard = (t) => {
-        const isDone = t.isCompletedManually || t.done >= t.target;
-        const progressPerc = Math.min((t.done / t.target) * 100, 100);
-        
-        let tagClass = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400';
-        let barColor = 'bg-indigo-500';
-        
-        if (t.isPaused) {
-            tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400';
-            barColor = 'bg-slate-400';
-        } else if (isDone) {
-            barColor = 'bg-green-500';
-        } else if (t.priorityLvl === 4) { 
-            tagClass = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'; barColor = 'bg-red-500'; 
-        } else if (t.priorityLvl === 3) { 
-            tagClass = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400'; 
-        } else if (t.priorityLvl === 2) { 
-            tagClass = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'; barColor = 'bg-orange-500'; 
-        }
-
-        const etalonBadge = t.needsEtalon ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-blue-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> Нужен Эталон</span>` : '';
-        const debtBadge = (t.carryOverCount > 0 && !t.needsEtalon && !t.isPaused) ? `<span class="text-[9px] font-black uppercase flex items-center gap-1 text-red-600"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Долг</span>` : '';
-        const statusBadge = t.isPaused ? `<span class="text-[9px] font-black uppercase text-orange-600">⏸ НА ПАУЗЕ</span>` : (t.isCompletedManually ? `<span class="text-[9px] font-black uppercase text-green-600">✅ ЗАВЕРШЕНО</span>` : '');
-
-        const safeContractor = t.contractor.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const safeStatusKey = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const safeProject = t.project.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        
-        const safeStatusKeyForHtml = t.statusKey.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
-
-        return `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform flex flex-col h-full ${opacityClass}" onclick="gameOpenTaskDetails('${safeStatusKeyForHtml}', event)">
-            <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
-                <div class="flex-1 min-w-0 pr-2">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${t.contractor}</div>
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${t.templateTitle}</div>
-                </div>
-            </div>
-            
-            <div class="flex flex-wrap gap-2 items-center mb-3">
-                <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'Остановлено' : t.priority}</span>
-                ${etalonBadge} ${debtBadge} ${statusBadge}
-            </div>
-            
-            <div class="mt-auto">
-                <div class="flex justify-between items-end mb-1">
-                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Прогресс</span>
-                    <span class="text-[11px] font-black ${isDone ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)]">
-                    <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
-                </div>
-            </div>
-        </div>`;
-    };
-
-    // --- ФИЛЬТРЫ-ЧИПСЫ И СЕТКА КАРТОЧЕК ---
-    let tasksHtml = '';
-    let priorityCount = { 1: 0, 2: 0, 3: 0, 4: 0 };
-    weeklyPlanData.tasks.forEach(t => {
-        if (!t.isPaused && !t.isCompletedManually) {
-            priorityCount[t.priorityLvl] = (priorityCount[t.priorityLvl] || 0) + 1;
-        }
-        const taskCard = renderTaskCard(t);
-        tasksHtml += `<div data-priority="${t.priorityLvl}" data-status="${t.isPaused ? 'paused' : (t.isCompletedManually ? 'completed' : 'active')}" class="task-card-item">${taskCard}</div>`;
-    });
-
-    html += `
-        <div class="flex flex-wrap gap-1.5 mb-3 pb-1 overflow-x-auto no-scrollbar" id="task-filters-container">
-            <button data-filter="all" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-indigo-600 text-white shadow-sm">Все <span class="ml-1 bg-white/20 px-1 rounded">${weeklyPlanData.tasks.length}</span></button>
-            <button data-filter="4" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🔴 Критичные <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[4] || 0}</span></button>
-            <button data-filter="3" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🔵 Новые <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[3] || 0}</span></button>
-            <button data-filter="2" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🟡 В плане <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[2] || 0}</span></button>
-            <button data-filter="1" class="filter-chip px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">🟢 Низкий <span class="ml-1 bg-slate-200 dark:bg-slate-700 px-1 rounded">${priorityCount[1] || 0}</span></button>
-        </div>
-
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-container">
-            ${tasksHtml}
-        </div>
-    `;
-
-    // Инициализация фильтров после вставки в DOM
-    setTimeout(() => {
-        const container = document.getElementById('tasks-grid-container');
-        if (!container) return;
-        const chips = document.querySelectorAll('.filter-chip');
-        function filterTasks(filterValue) {
-            const items = container.querySelectorAll('.task-card-item');
-            items.forEach(item => {
-                const priority = item.getAttribute('data-priority');
-                if (filterValue === 'all') {
-                    item.style.display = '';
-                } else {
-                    item.style.display = priority === filterValue ? '' : 'none';
-                }
-            });
-            chips.forEach(chip => {
-                const filterVal = chip.getAttribute('data-filter');
-                if (filterVal === filterValue) {
-                    chip.classList.add('bg-indigo-600', 'text-white', 'shadow-sm');
-                    chip.classList.remove('bg-slate-100', 'text-slate-700', 'dark:bg-slate-800', 'dark:text-slate-300');
-                } else {
-                    chip.classList.remove('bg-indigo-600', 'text-white', 'shadow-sm');
-                    chip.classList.add('bg-slate-100', 'text-slate-700', 'dark:bg-slate-800', 'dark:text-slate-300');
-                }
-            });
-        }
-        chips.forEach(chip => {
-            chip.addEventListener('click', (e) => {
-                e.stopPropagation();
-                filterTasks(chip.getAttribute('data-filter'));
-            });
-        });
-        filterTasks('all');
-    }, 50);
-}
-html += `</div></details>`;
-
-    // ====================================================================
-    // СЕКЦИЯ 4: АКТИВНОСТЬ И РЕЙТИНГ ИНЖЕНЕРОВ (ОБЪЕДИНЕНЫ, СВЕРНУТЫ)
-    // ====================================================================
-    html += `
-        <details class="mx-1 mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+        <details class="mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
                 <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🔥 Активность и Рейтинг</span>
-                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                </span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
@@ -1132,53 +1130,78 @@ html += `</div></details>`;
                     <div>
                         <div class="text-[42px] font-black text-slate-800 dark:text-white leading-none mb-2">#${myRank} <span class="text-[16px] text-[var(--text-muted)]">из ${totalEng}</span></div>
                         <div class="text-[12px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Ваша позиция в топе</div>
-                        <div class="text-[10px] text-slate-500 mt-3 font-medium">Нажмите, чтобы увидеть таблицу лидеров и сравнить свои результаты.</div>
                     </div>
                 </button>
             </div>
         </details>
-    `;
 
-    // ====================================================================
-    // СЕКЦИЯ 5: ВСЕ ДОСТИЖЕНИЯ (СВЕРНУТЫ)
-    // ====================================================================
-    html += `
-        <details id="badges-section" class="mx-1 mb-8 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+        <details id="badges-section" class="mb-8 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
                 <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🏅 Коллекция наград <span class="bg-white dark:bg-slate-800 border border-[var(--card-border)] px-1.5 py-0.5 rounded text-[9px] ml-1">${myProfile.earnedBadges.length}/${COMPETENCIES.length}</span></span>
-                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                </span>
+                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-4 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-y-6 gap-x-2 bg-[var(--hover-bg)]">
-    `;
-    COMPETENCIES.forEach(badge => {
-        const progress = myProfile.badgesData[badge.id] || 0;
-        const tier = getBadgeTier(badge, progress);
-        
-        html += `
-            <div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})" title="${badge.desc}">
-                ${getBadgeSvg(badge.id, tier, "w-12 h-12")}
-                <div class="font-bold text-[8px] uppercase text-center leading-tight mt-2 h-6 flex items-center ${tier > 0 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}">${badge.name}</div>
+                ${COMPETENCIES.map(badge => {
+                    const progress = myProfile.badgesData[badge.id] || 0;
+                    const tier = getBadgeTier(badge, progress);
+                    return `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})" title="${badge.desc}">${getBadgeSvg(badge.id, tier, "w-12 h-12")}<div class="font-bold text-[8px] uppercase text-center leading-tight mt-2 h-6 flex items-center ${tier > 0 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}">${badge.name}</div></div>`;
+                }).join('')}
             </div>
-        `;
-    });
-    html += `</div></details>`; 
+        </details>
+    `;
 
     container.innerHTML = html;
-    
-    // Вызов отрисовки графиков
     renderRadarChart();
     renderStatsCharts();
 };
 
-window.renderRadarChart = function() {
+// Функция жесткого сохранения и блокировки имени
+let profileLockTimer = null;
+window.profileNameLockStart = function(e) {
+    if (e) e.preventDefault();
+    profileLockTimer = setTimeout(() => {
+        document.getElementById('profile-name-edit-container').classList.remove('hidden');
+        document.getElementById('profile-title-text').classList.add('hidden');
+        const inp = document.getElementById('profile-name-input');
+        if (inp) {
+            inp.value = appSettings.engineerName || '';
+            inp.focus();
+        }
+    }, 800); // Долгое нажатие
+};
+window.profileNameLockCancel = function() {
+    if (profileLockTimer) clearTimeout(profileLockTimer);
+};
+window.saveEngineerNameForce = function(name) {
+    const cleanName = name.trim();
+    if(!cleanName) return showToast("⚠️ Имя не может быть пустым!");
+    
+    appSettings.engineerName = cleanName;
+    dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+    localStorage.setItem('force_eng_name', cleanName); // Жесткий бэкап
+    
+    const inpInspector = document.getElementById('inp-inspector');
+    if (inpInspector) inpInspector.value = cleanName;
+
+    if (typeof window.syncConfig !== 'undefined') {
+        window.syncConfig.engineerName = cleanName;
+        localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    }
+
+    document.getElementById('profile-name-edit-container').classList.add('hidden');
+    document.getElementById('profile-title-text').classList.remove('hidden');
+    
+    showToast("✅ Имя зафиксировано!");
+    gameRenderDashboard();
+};
+
+window.renderRadarChart = function () {
     setTimeout(() => {
         const ctxRadar = document.getElementById('pi-radar-chart');
         if (ctxRadar && window.currentProfileData && window.currentProfileData.radarData) {
             const labels = Object.keys(window.currentProfileData.radarData);
             const data = Object.values(window.currentProfileData.radarData);
-            if (Math.max(...data) === 0) data[0] = 1; 
+            if (Math.max(...data) === 0) data[0] = 1;
 
             if (window.piRadarChartInstance) window.piRadarChartInstance.destroy();
             window.piRadarChartInstance = new Chart(ctxRadar, {
@@ -1190,7 +1213,7 @@ window.renderRadarChart = function() {
     }, 50);
 };
 
-window.renderStatsCharts = function() {
+window.renderStatsCharts = function () {
     setTimeout(() => {
         const ctxBar = document.getElementById('game-progress-chart');
         if (ctxBar && window.currentProfileData && window.currentProfileData.monthlyPI) {
@@ -1200,54 +1223,54 @@ window.renderStatsCharts = function() {
             window.gameChartInstance = new Chart(ctxBar, {
                 type: 'bar',
                 data: { labels: labels, datasets: [{ data: data, backgroundColor: '#4f46e5', borderRadius: 4 }] },
-                options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: {font: {size: 9}} }, y: { border: { display: false }, ticks: {font: {size: 9}} } } }
+                options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { font: { size: 9 } } }, y: { border: { display: false }, ticks: { font: { size: 9 } } } } }
             });
         }
     }, 50);
 };
 
-window.gameShowBadgeInfo = function(badgeId, progress) {
+window.gameShowBadgeInfo = function (badgeId, progress) {
     const badge = COMPETENCIES.find(b => b.id === badgeId);
-    if(!badge) return;
-    
+    if (!badge) return;
+
     const tier = getBadgeTier(badge, progress);
-    
+
     // По умолчанию (Уровень 0 - Заблокировано)
     let target = badge.tiers[0];
-    let levelName = "Заблокировано"; 
-    let color = "text-slate-400"; 
+    let levelName = "Заблокировано";
+    let color = "text-slate-400";
     let bg = "bg-slate-300";
-    
+
     // Синхронизируем цвета и названия со стилями SVG медалей
-    if (tier === 1) { 
-        target = badge.tiers[0]; 
-        levelName = "Обычная"; 
-        color = "text-slate-500"; 
-        bg = "bg-slate-400"; 
+    if (tier === 1) {
+        target = badge.tiers[0];
+        levelName = "Обычная";
+        color = "text-slate-500";
+        bg = "bg-slate-400";
     }
-    else if (tier === 2) { 
-        target = badge.tiers[1]; 
-        levelName = "Редкая"; 
-        color = "text-amber-600"; 
-        bg = "bg-amber-500"; 
+    else if (tier === 2) {
+        target = badge.tiers[1];
+        levelName = "Редкая";
+        color = "text-amber-600";
+        bg = "bg-amber-500";
     }
-    else if (tier === 3) { 
-        target = badge.tiers[2]; 
-        levelName = "Эпическая"; 
-        color = "text-indigo-500"; 
-        bg = "bg-indigo-500"; 
+    else if (tier === 3) {
+        target = badge.tiers[2];
+        levelName = "Эпическая";
+        color = "text-indigo-500";
+        bg = "bg-indigo-500";
     }
-    else if (tier === 4) { 
-        target = badge.maxProgress; 
-        levelName = "Легендарная"; 
-        color = "text-yellow-600"; 
-        bg = "bg-yellow-500"; 
+    else if (tier === 4) {
+        target = badge.maxProgress;
+        levelName = "Легендарная";
+        color = "text-yellow-600";
+        bg = "bg-yellow-500";
     }
-    else if (tier >= 5) { 
-        target = badge.maxProgress; 
-        levelName = "Мифическая"; 
-        color = "text-pink-600"; 
-        bg = "bg-pink-500"; 
+    else if (tier >= 5) {
+        target = badge.maxProgress;
+        levelName = "Мифическая";
+        color = "text-pink-600";
+        bg = "bg-pink-500";
         progress = target; // Визуально ограничиваем прогресс-бар, чтобы он не вылезал за 100%
     }
 
@@ -1258,14 +1281,14 @@ window.gameShowBadgeInfo = function(badgeId, progress) {
             ${getBadgeSvg(badge.id, tier, "w-20 h-20")}
         </div>
     `;
-    
+
     document.getElementById('modal-title').innerHTML = `
         <div class="text-center text-[18px] uppercase tracking-tight text-slate-800 dark:text-white font-black">${badge.name}</div>
         <div class="text-center text-[10px] ${color} font-bold uppercase tracking-widest mt-1.5 flex justify-center items-center gap-1.5">
             <span class="w-2 h-2 rounded-full ${bg}"></span> ${levelName}
         </div>
     `;
-    
+
     document.getElementById('modal-body').innerHTML = `
         <div class="text-center text-[13px] text-slate-600 dark:text-slate-300 mb-6 leading-relaxed px-4">${badge.desc}</div>
         <div class="bg-[var(--hover-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-inner">
@@ -1278,7 +1301,7 @@ window.gameShowBadgeInfo = function(badgeId, progress) {
             </div>
         </div>
     `;
-    
+
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
@@ -1351,13 +1374,13 @@ function gameInjectManagerModals() {
     document.body.insertAdjacentHTML('beforeend', html);
 }
 
-window.gameOpenManagerPanelAuth = function() {
+window.gameOpenManagerPanelAuth = function () {
     gameInjectManagerModals();
     document.getElementById('manager-pin-input').value = '';
     document.getElementById('manager-auth-modal').style.display = 'flex';
 };
 
-window.gameVerifyManagerPin = function() {
+window.gameVerifyManagerPin = function () {
     const pin = document.getElementById('manager-pin-input').value;
     if (hashString(pin) === MANAGER_PIN_HASH) {
         document.getElementById('manager-auth-modal').style.display = 'none';
@@ -1369,7 +1392,7 @@ window.gameVerifyManagerPin = function() {
     }
 };
 
-window.switchManagerTab = function(tab) {
+window.switchManagerTab = function (tab) {
     const btnHr = document.getElementById('btn-man-hr');
     const btnAudit = document.getElementById('btn-man-audit');
     const tabHr = document.getElementById('manager-tab-hr');
@@ -1386,7 +1409,7 @@ window.switchManagerTab = function(tab) {
     }
 }
 
-window.gameGenerateAuditPlan = function() {
+window.gameGenerateAuditPlan = function () {
     showToast("⚙️ Нейросеть анализирует аномалии (протыкивания, завышения)...");
     setTimeout(() => {
         const now = new Date();
@@ -1403,14 +1426,14 @@ window.gameGenerateAuditPlan = function() {
 
         const anomalies = [];
         const checkedInspectors = new Set();
-        
+
         // Сортируем по дате, чтобы искать "быстрые протыкивания"
         recentChecks.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         for (let i = 1; i < recentChecks.length; i++) {
             const curr = recentChecks[i];
-            const prev = recentChecks[i-1];
-            
+            const prev = recentChecks[i - 1];
+
             // Если один и тот же инспектор сдал 2 разные проверки с разницей меньше 60 секунд = "Протыкивание"
             if (curr.inspectorName === prev.inspectorName && curr.location !== prev.location) {
                 const timeDiff = (new Date(curr.date) - new Date(prev.date)) / 1000; // в секундах
@@ -1425,7 +1448,7 @@ window.gameGenerateAuditPlan = function() {
         const perfectChecks = recentChecks.filter(c => c.metrics && c.metrics.final === 100);
         perfectChecks.forEach(c => {
             const contrAll = recentChecks.filter(x => x.contractorName === c.contractorName);
-            const avg = contrAll.reduce((sum, x) => sum + (x.metrics?x.metrics.final:0), 0) / contrAll.length;
+            const avg = contrAll.reduce((sum, x) => sum + (x.metrics ? x.metrics.final : 0), 0) / contrAll.length;
             if (avg < 75) {
                 anomalies.push({ check: c, type: 'Завышение (Подрядчик в красной зоне)', color: 'bg-orange-100 text-orange-800 border-orange-200' });
                 checkedInspectors.add(c.inspectorName);
@@ -1436,9 +1459,9 @@ window.gameGenerateAuditPlan = function() {
         recentChecks.forEach(c => {
             if (c.metrics && c.metrics.n_B3_fail > 0) {
                 let hasPhotoOrComment = false;
-                if(c.state) {
-                    Object.keys(c.state).forEach(id => { 
-                        if (c.state[id] === 'fail_escalated' || (c.state[id] === 'fail' && c.photos && c.photos[id])) hasPhotoOrComment = true; 
+                if (c.state) {
+                    Object.keys(c.state).forEach(id => {
+                        if (c.state[id] === 'fail_escalated' || (c.state[id] === 'fail' && c.photos && c.photos[id])) hasPhotoOrComment = true;
                         if (c.details && c.details[id] && c.details[id].comment) hasPhotoOrComment = true;
                     });
                 }
@@ -1454,7 +1477,7 @@ window.gameGenerateAuditPlan = function() {
         allInspectors.forEach(insp => {
             if (!checkedInspectors.has(insp)) {
                 const inspChecks = recentChecks.filter(c => c.inspectorName === insp);
-                if(inspChecks.length > 0) {
+                if (inspChecks.length > 0) {
                     const randCheck = inspChecks[Math.floor(Math.random() * inspChecks.length)];
                     anomalies.push({ check: randCheck, type: 'Плановый перекрёстный аудит', color: 'bg-slate-100 text-slate-700 border-slate-300' });
                 }
@@ -1473,7 +1496,7 @@ window.gameGenerateAuditPlan = function() {
             <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm flex flex-col hover:border-indigo-400 transition-colors">
                 <div class="flex justify-between items-start mb-2">
                     <span class="px-2 py-1 rounded text-[9px] font-black uppercase border ${item.color}">${item.type}</span>
-                    <span class="text-[10px] font-bold text-slate-400">#${idx+1}</span>
+                    <span class="text-[10px] font-bold text-slate-400">#${idx + 1}</span>
                 </div>
                 <div class="text-[14px] font-black text-slate-800 dark:text-white mb-1 leading-tight">${c.contractorName}</div>
                 <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-3">${c.location} | ${c.templateTitle}</div>
@@ -1492,7 +1515,7 @@ window.gameGenerateAuditPlan = function() {
                     <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
                         👁️ Открыть Акт
                     </button>
-                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}');" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
+                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
                         ⚖️ Провести аудит
                     </button>
                 </div>
@@ -1502,7 +1525,7 @@ window.gameGenerateAuditPlan = function() {
         html += `</div>`;
         document.getElementById('manager-audit-list').innerHTML = html;
         showToast("✅ План аудита сформирован! Найдены аномалии.");
-    }, 800); 
+    }, 800);
 };
 
 function gameCalculateManagerMetrics() {
@@ -1568,8 +1591,8 @@ function gameCalculateManagerMetrics() {
         if (totalDebt > 15) oldDebtWarning = true;
 
         const avgUrk = sumUrk / p.checksCount;
-        const strictness = globalAvgUrk - avgUrk; 
-        
+        const strictness = globalAvgUrk - avgUrk;
+
         let volatility = 0;
         if (urkValues.length > 1) {
             const variance = urkValues.reduce((acc, val) => acc + Math.pow(val - avgUrk, 2), 0) / (urkValues.length - 1);
@@ -1578,17 +1601,17 @@ function gameCalculateManagerMetrics() {
 
         const photoRate = checksWithFails > 0 ? (checksWithFailsAndPhotos / checksWithFails) * 100 : 100;
         const completeness = sumCompleteness / p.checksCount;
-        
+
         let totalImpact = 0; let impactCount = 0; let improvedContrs = 0; let degradedContrs = 0;
         const contractorsSet = new Set(p.rawChecks.map(c => c.contractorName));
-        
+
         contractorsSet.forEach(cName => {
             const cChecks = p.rawChecks.filter(c => c.contractorName === cName);
-            if (cChecks.length < 6) return; 
-            
+            if (cChecks.length < 6) return;
+
             const templatesCount = {};
-            cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
-            const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+            cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey] || 0) + 1);
+            const topTemplate = Object.keys(templatesCount).sort((a, b) => templatesCount[b] - templatesCount[a])[0];
 
             if (typeof calculateImpactScore === 'function') {
                 const impact = calculateImpactScore(p.name, cName, topTemplate);
@@ -1601,11 +1624,11 @@ function gameCalculateManagerMetrics() {
         });
 
         const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
-        
-        managerStats.push({ 
-            name: p.name, pi: p.pi, level: p.levelObj.level, 
-            checks: p.checksCount, avgUrk: avgUrk, strictness: strictness, 
-            volatility: volatility, photoRate: photoRate, completeness: completeness, 
+
+        managerStats.push({
+            name: p.name, pi: p.pi, level: p.levelObj.level,
+            checks: p.checksCount, avgUrk: avgUrk, strictness: strictness,
+            volatility: volatility, photoRate: photoRate, completeness: completeness,
             b3Found: b3Found, avgImpact: avgImpact, improved: improvedContrs, degraded: degradedContrs,
             totalDebt: totalDebt, oldDebtWarning: oldDebtWarning,
             // Добавляем статус, если этот профиль совпадает с профилем, выгрузившим бэкап
@@ -1613,13 +1636,13 @@ function gameCalculateManagerMetrics() {
         });
     });
 
-    return managerStats.sort((a,b) => b.pi - a.pi);
+    return managerStats.sort((a, b) => b.pi - a.pi);
 }
 
 function gameRenderManagerAnalytics() {
     const stats = gameCalculateManagerMetrics();
     const container = document.getElementById('manager-panel-content');
-    
+
     if (stats.length === 0) {
         container.innerHTML = `<div class="text-center py-10 text-slate-500 font-bold text-xs uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">Соберите данные от инженеров (через загрузку бэкапа), чтобы увидеть аналитику</div>`;
         return;
@@ -1712,9 +1735,9 @@ function gameRenderManagerAnalytics() {
     container.innerHTML = html;
 }
 
-window.gameOpenTaskDetails = function(statusKey, e) {
+window.gameOpenTaskDetails = function (statusKey, e) {
     if (e) e.stopPropagation();
-    
+
     // Ищем задачу в плане
     const task = weeklyPlanData.tasks.find(t => t.statusKey === statusKey);
     if (!task) return;
@@ -1807,20 +1830,21 @@ window.gameOpenTaskDetails = function(statusKey, e) {
     document.getElementById('modal-icon').innerHTML = '';
     document.getElementById('modal-title').innerHTML = `<div class="flex justify-between items-center"><span>📋 Детали задачи</span><button onclick="document.getElementById('task-details-modal').style.display='none'" class="text-slate-400 hover:text-red-500 px-2 active:scale-90">✕</button></div>`;
     document.getElementById('task-details-body').innerHTML = html;
-    
+
     document.getElementById('task-details-modal').style.display = 'flex';
 };
 
-function startInspectionWithValues(contractor, templateKey, statusKey = null, project = null) {
+// Функция запуска инспекции (с предзаполнением)
+window.startInspectionWithValues = function(contractor, templateKey, statusKey = null, project = null, originalAuditId = null) {
     switchTab('tab-audit'); 
     changeTemplate(templateKey);
     
-    // Ждем полной очистки DOM перед вставкой
-    setTimeout(() => {
+    // Очищаем предыдущий аудит
+    auditOriginalData = null;
+
+    setTimeout(async () => {
         const contrInput = document.getElementById('inp-contractor');
-        if (contrInput && !contrInput.hasAttribute('readonly')) { 
-            contrInput.value = contractor; 
-        }
+        if (contrInput && !contrInput.hasAttribute('readonly')) contrInput.value = contractor; 
         
         const projInput = document.getElementById('inp-project');
         if (projInput && !projInput.hasAttribute('readonly')) {
@@ -1832,36 +1856,76 @@ function startInspectionWithValues(contractor, templateKey, statusKey = null, pr
             }
         }
         
-        const locInput = document.getElementById('inp-location');
-        if (locInput) locInput.value = '';
-        ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
+        ['inp-location', 'inp-section', 'inp-floor', 'inp-room'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
         if (statusKey) {
             const selEl = document.getElementById('checklist-selector');
             if (selEl) selEl.dataset.pendingStatusKey = statusKey;
+            
+            const task = weeklyPlanData?.tasks?.find(t => t.statusKey === statusKey);
+            
+            // 1. ЛОГИКА ЭТАПНЫХ ЗАДАЧ (MILESTONE) - Предзаполнение галочек
+            if (task && task.type === 'milestone') {
+                const instanceId = task.priority.replace('Этап (', '').replace(')', ''); 
+                const parts = instanceId.split(' ');
+                if (parts.length >= 2) {
+                    const secInput = document.getElementById('inp-section');
+                    const floorInput = document.getElementById('inp-floor');
+                    if (secInput) secInput.value = parts[0];
+                    if (floorInput) floorInput.value = parts[1];
+                    updateLocationFromStructured();
+
+                    const lastCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey && c.instanceId === `${parts[0].replace(/\D/g, '')}_${parts[1].replace(/\D/g, '')}`);
+                    if (lastCheck && lastCheck.state) {
+                        state = JSON.parse(JSON.stringify(lastCheck.state));
+                        details = JSON.parse(JSON.stringify(lastCheck.details || {}));
+                        photos = JSON.parse(JSON.stringify(lastCheck.photos || {}));
+                        showToast("📥 Предзагружены данные прошлого обхода этого этапа");
+                    }
+                }
+            }
+
+            // 2. ЛОГИКА ЭТАЛОНА ("Было/Стало")
+            if (task && task.needsEtalon) {
+                // Ищем, был ли БРАК у этого подрядчика по этому виду работ раньше
+                const pastFailCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey && c.metrics && c.metrics.n_B3_fail > 0);
+                if (pastFailCheck) {
+                    auditOriginalData = { isEtalonCompare: true, photos: pastFailCheck.photos, state: pastFailCheck.state };
+                    showToast("🔍 Режим Эталона: Подгружены старые фото брака для сравнения 'Было/Стало'");
+                }
+            }
+        }
+
+        // 3. ЛОГИКА ПЕРЕКРЕСТНОГО АУДИТА (Панель Руководителя)
+        if (originalAuditId) {
+            const originalCheck = contractorArray.find(c => c.id === originalAuditId);
+            if (originalCheck) {
+                auditOriginalData = { isCrossAudit: true, state: originalCheck.state, photos: originalCheck.photos, inspector: originalCheck.inspectorName };
+                
+                // Предзаполняем локацию, чтобы аудит был в том же месте
+                ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el && originalCheck[id.replace('inp-', '')]) el.value = originalCheck[id.replace('inp-', '')];
+                });
+                updateLocationFromStructured();
+
+                showToast(`⚖️ Режим Аудита: Вы проверяете работу инспектора ${originalCheck.inspectorName}`);
+            }
         }
         
+        render(); 
         if (typeof updateDataSummary === 'function') updateDataSummary();
         
-        // ИСПРАВЛЕНИЕ СКРОЛЛА: Динамически вычисляем высоту шапки
         setTimeout(() => {
             const headerEl = document.getElementById('main-header');
             const offset = headerEl ? headerEl.offsetHeight : 140;
-            // Делаем микро-скролл, чтобы шапка свернулась, и контент встал ровно
             window.scrollTo({top: offset - 60, behavior: 'smooth'});
-            
-            // Принудительно обновляем паддинги
             if (typeof updateBodyPadding === 'function') updateBodyPadding();
         }, 50);
-
-        showToast("Задача загружена. Данные заполнены!");
     }, 150);
-}
+};
 
-window.gameChangeTaskStatus = function(statusKey, newStatus) {
+window.gameChangeTaskStatus = function (statusKey, newStatus) {
     if (contractorStatuses[statusKey]) {
         contractorStatuses[statusKey].status = newStatus;
         saveWeeklyPlan();
@@ -1873,7 +1937,7 @@ window.gameChangeTaskStatus = function(statusKey, newStatus) {
 };
 
 // Интеграция Требования Эталона при нажатии на задачу
-window.gameStartTask = function(contractor, templateKey) {
+window.gameStartTask = function (contractor, templateKey) {
     // Проверка на потребность в эталоне
     const task = weeklyPlanData.tasks.find(t => t.contractor === contractor && t.templateKey === templateKey);
     if (task && task.needsEtalon) {
@@ -1894,11 +1958,9 @@ window.gameOpenTopModal = function() {
     let sortedProfiles = [];
     const myName = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
 
-    // НОВОЕ: Если есть серверный глобальный рейтинг - используем его (важно для режима "Только мои")
     if (window.serverGlobalRating && Array.isArray(window.serverGlobalRating)) {
         sortedProfiles = window.serverGlobalRating.sort((a, b) => b.pi - a.pi);
     } else if (window.allProfilesData) {
-        // Иначе считаем локально из того, что есть в памяти
         sortedProfiles = Object.values(window.allProfilesData).sort((a, b) => b.pi - a.pi);
     }
 
@@ -1906,16 +1968,13 @@ window.gameOpenTopModal = function() {
 
     let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
     
-    // Добавляем пометку, если рейтинг серверный
     if (window.serverGlobalRating) {
         html += `<div class="text-[10px] text-center text-slate-500 font-bold mb-3 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 py-1 rounded">Глобальный рейтинг сервера</div>`;
     }
     
     sortedProfiles.forEach((p, idx) => {
         const isMe = p.name === myName;
-        const isGold = idx === 0;
-        const isSilver = idx === 1;
-        const isBronze = idx === 2;
+        const isGold = idx === 0; const isSilver = idx === 1; const isBronze = idx === 2;
         
         let rankClass = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700';
         if (isGold) rankClass = 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white border-yellow-500 shadow-md';
@@ -1924,13 +1983,29 @@ window.gameOpenTopModal = function() {
 
         let bgClass = isMe ? 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-600 shadow-sm' : 'bg-[var(--card-bg)] border-[var(--card-border)]';
 
+        // ИСПРАВЛЕНИЕ: Ищем ТОП-3 бейджа этого инженера
+        let badgesHtml = '';
+        if (p.badgesData) {
+            let activeBadges = [];
+            COMPETENCIES.forEach(b => {
+                const progress = p.badgesData[b.id] || 0;
+                const tier = getBadgeTier(b, progress);
+                if (tier > 0) activeBadges.push({ id: b.id, tier });
+            });
+            activeBadges.sort((a,b) => b.tier - a.tier); // Самые редкие вперед
+            badgesHtml = activeBadges.slice(0, 3).map(b => `<div class="w-5 h-5" title="Тир ${b.tier}">${getBadgeSvg(b.id, b.tier, "w-5 h-5")}</div>`).join('');
+        }
+
         html += `
         <div class="p-3 border rounded-xl flex items-center justify-between transition-all ${bgClass}">
             <div class="flex items-center gap-3 min-w-0 pr-2">
                 <div class="w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm shrink-0 border ${rankClass}">${idx + 1}</div>
                 <div class="min-w-0">
                     <div class="font-black text-[12px] text-slate-800 dark:text-white truncate ${isMe ? 'text-indigo-700 dark:text-indigo-400' : ''}">${p.name} ${isMe ? '(Вы)' : ''}</div>
-                    <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest truncate mt-0.5">${p.levelObj.name} (Ур. ${p.levelObj.level})</div>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest truncate">${p.levelObj.name}</div>
+                        <div class="flex gap-0.5 ml-2 border-l border-slate-300 dark:border-slate-600 pl-2">${badgesHtml}</div>
+                    </div>
                 </div>
             </div>
             <div class="shrink-0 text-right">
@@ -1951,9 +2026,9 @@ window.gameOpenTopModal = function() {
 };
 
 // === МОДАЛКА ДЕТАЛИЗАЦИИ ВЛИЯНИЯ (IMPACT SCORE) ===
-window.gameOpenImpactModal = function() {
+window.gameOpenImpactModal = function () {
     if (!window.currentProfileData) return;
-    
+
     const myProfile = window.currentProfileData;
     let totalImpact = 0; let impactCount = 0;
     const detailsHtml = [];
@@ -1962,18 +2037,18 @@ window.gameOpenImpactModal = function() {
     const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
     contractorsSet.forEach(cName => {
         const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
-        if (cChecks.length < 6) return; 
-        
-        const templatesCount = {}; 
-        cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
-        const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+        if (cChecks.length < 6) return;
+
+        const templatesCount = {};
+        cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey] || 0) + 1);
+        const topTemplate = Object.keys(templatesCount).sort((a, b) => templatesCount[b] - templatesCount[a])[0];
         const templateTitle = cChecks.find(c => c.templateKey === topTemplate)?.templateTitle || 'Вид работ';
 
         const impact = calculateImpactScore(myProfile.name, cName, topTemplate);
-        if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { 
-            totalImpact += impact.score; 
-            impactCount++; 
-            
+        if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') {
+            totalImpact += impact.score;
+            impactCount++;
+
             let badge = impact.score > 0 ? 'bg-green-100 text-green-700 border-green-200' : (impact.score < 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200');
             let icon = impact.score > 0 ? '📈' : (impact.score < 0 ? '📉' : '➖');
 
@@ -1994,7 +2069,7 @@ window.gameOpenImpactModal = function() {
     });
 
     const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
-    
+
     let html = `
         <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl mb-4 shadow-sm text-indigo-900 dark:text-indigo-200 text-[11px] leading-relaxed">
             <b>Impact Score</b> оценивает вашу эффективность как инженера. Система сравнивает качество работы подрядчика на первых 3-х ваших проверках и на 3-х последних.<br><br>Если после ваших предписаний и TWI-карт УрК и стабильность подрядчика выросли, а доля брака B3 упала — ваш счет растет.
@@ -2014,9 +2089,218 @@ window.gameOpenImpactModal = function() {
     document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2 text-2xl">🎯</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Ваше влияние (Impact)</div>`;
     document.getElementById('modal-body').innerHTML = html;
-    
+
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
+// Функция обновления единого имени инженера из Профиля
+window.gameUpdateEngineerName = function (newName) {
+    const cleanName = newName.trim();
+    if (!cleanName) return showToast("⚠️ Имя не может быть пустым!");
+
+    // Сохраняем глобально
+    if (typeof appSettings !== 'undefined') {
+        appSettings.engineerName = cleanName;
+        dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+    }
+
+    // Обновляем скрытое поле в шапке осмотра
+    const inpInspector = document.getElementById('inp-inspector');
+    if (inpInspector) inpInspector.value = cleanName;
+
+    // Обновляем в настройках синхронизации
+    if (typeof window.syncConfig !== 'undefined') {
+        window.syncConfig.engineerName = cleanName;
+        localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    }
+
+    showToast("✅ Профиль обновлен!");
+
+    // Перерисовываем дашборд, чтобы обновилась аватарка (буква имени)
+    setTimeout(() => { gameRenderDashboard(); }, 200);
+};
+
+/* ============================================================================ */
+/* RBI NEW: МОДУЛЬ FMEA-АНАЛИЗА (АВТОМАТИЗАЦИЯ ПОИСКА КОРЕННЫХ ПРИЧИН)          */
+/* ============================================================================ */
+
+window.rbi_fmeaRecords = []; // Массив для будущих сохранений (пока работаем с черновиком)
+
+window.rbi_renderFmeaHistory = function() {
+    // В будущем тут можно выводить сохраненные FMEA.
+    // Сейчас мы просто оставляем кнопку "Собрать дефекты"
+};
+
+// ГЕНЕРАЦИЯ FMEA-ТАБЛИЦЫ НА ЛЕТУ
+window.rbi_generateFmeaTable = function() {
+    const container = document.getElementById('rbi-fmea-container');
+    
+    const d = new Date();
+    const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
+    const weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
+    
+    let defectsList = [];
+    
+    weekChecks.forEach(c => {
+        if(c.state && c.templateKey) {
+            Object.keys(c.state).forEach(id => {
+                if(c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                    const flat = getFlatList(userTemplates[c.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_','')]?.groups);
+                    const item = flat.find(x => x.id == id);
+                    if (item && (item.w === 3 || c.state[id] === 'fail_escalated' || item.w === 2)) {
+                        // Ищем причину и коммент
+                        let cause = 'Не указана';
+                        if (c.details && c.details[id] && c.details[id].comment) {
+                            cause = c.details[id].comment;
+                        }
+                        
+                        defectsList.push({
+                            contractor: c.contractorName,
+                            defectName: item.n,
+                            isB3: c.state[id] === 'fail_escalated' || item.w === 3,
+                            cause: cause
+                        });
+                    }
+                }
+            });
+        }
+    });
+
+    if (defectsList.length === 0) {
+        container.innerHTML = `<div class="text-center py-10 text-green-600 font-bold text-[11px] uppercase bg-green-50 rounded-xl border border-green-200">Дефектов B2/B3 за 7 дней не найдено!</div>`;
+        return;
+    }
+
+    // Убираем дубликаты
+    const uniqueDefects = [];
+    defectsList.forEach(d => {
+        if (!uniqueDefects.find(x => x.contractor === d.contractor && x.defectName === d.defectName)) {
+            uniqueDefects.push(d);
+        }
+    });
+
+    let rowsHtml = uniqueDefects.map((def, idx) => `
+        <tr class="fmea-row hover:bg-purple-50/50 transition-colors">
+            <!-- Скрытые данные для ИИ -->
+            <input type="hidden" class="fmea-meta-contr" value="${def.contractor}">
+            <input type="hidden" class="fmea-meta-defect" value="${def.defectName}">
+            <input type="hidden" class="fmea-meta-cause" value="${def.cause}">
+            
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
+                <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight mb-1">${def.contractor}</div>
+                <div class="text-[10px] text-slate-600 dark:text-slate-400 font-medium leading-snug">
+                    ${def.isB3 ? '<span class="bg-red-600 text-white px-1 rounded mr-1">B3</span>' : ''}${def.defectName}
+                </div>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
+                <textarea class="fmea-ai-cause input-base w-full h-16 resize-none text-[10px] p-1.5" placeholder="Коренная причина...">${def.cause}</textarea>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
+                <textarea class="fmea-ai-effect input-base w-full h-16 resize-none text-[10px] p-1.5" placeholder="Последствия (Риски)..."></textarea>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
+                <textarea class="fmea-ai-action input-base w-full h-16 resize-none text-[10px] p-1.5 bg-purple-50 dark:bg-purple-900/20" placeholder="Корректирующее действие..."></textarea>
+            </td>
+        </tr>
+    `).join('');
+
+    const html = `
+        <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-2xl shadow-sm p-4 animate-fadeIn overflow-x-auto custom-scrollbar">
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-[11px] font-black text-purple-700 uppercase tracking-widest flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg> 
+                    Рабочая таблица FMEA
+                </div>
+                <button onclick="rbi_fillFmeaWithAi()" id="btn-fmea-ai" class="bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1">
+                    🤖 AI-Автозаполнение
+                </button>
+            </div>
+            
+            <table class="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                    <tr class="bg-slate-100 dark:bg-slate-900 text-slate-500 uppercase text-[9px] font-bold tracking-wider">
+                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Проблема (Подрядчик / Дефект)</th>
+                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Коренная причина (Почему?)</th>
+                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Последствия (Риск)</th>
+                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4 text-purple-600">Действие (Что делаем)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
+            
+            <div class="mt-4 flex gap-2">
+                <!-- Кнопка выгрузки пока делает простой алерт, так как Excel-экспорт FMEA - это отдельный плагин -->
+                <button onclick="showToast('Выгрузка FMEA в Excel будет доступна в следующем обновлении.')" class="bg-green-50 text-green-700 border border-green-200 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95 transition-transform flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В Excel
+                </button>
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+};
+
+// АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
+window.rbi_fillFmeaWithAi = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    
+    const rows = document.querySelectorAll('.fmea-row');
+    if (rows.length === 0) return;
+
+    const btn = document.getElementById('btn-fmea-ai');
+    btn.innerHTML = `<span class="animate-pulse">⏳ Идет анализ...</span>`;
+    btn.disabled = true;
+
+    // Собираем дефекты в один промпт (чтобы сэкономить токены, шлем пачкой)
+    let defectsContext = [];
+    rows.forEach((row, idx) => {
+        const defect = row.querySelector('.fmea-meta-defect').value;
+        const cause = row.querySelector('.fmea-meta-cause').value;
+        defectsContext.push(`Дефект ${idx}: [${defect}]. Комментарий инженера: [${cause}].`);
+    });
+
+    const promptSystem = `Ты — эксперт качества (Quality Manager). Проведи FMEA-анализ списка дефектов.
+    Твоя задача — для каждого дефекта предложить: 1. Коренную причину (если не указана). 2. Риски (Последствия). 3. Конкретное корректирующее действие.
+    Отвечай СТРОГО в формате JSON-массива, где каждый объект имеет ключи: "cause", "effect", "action".
+    Порядок объектов в массиве должен СТРОГО совпадать с порядком дефектов в запросе. Пиши ОЧЕНЬ коротко (1-2 предложения).`;
+
+    try {
+        const responseText = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: `Вот список дефектов:\n${defectsContext.join('\n')}` }
+        ], { temperature: 0.2, max_tokens: 1500 });
+
+        // Извлекаем JSON из ответа нейросети
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) throw new Error("Нейросеть не вернула JSON");
+        
+        const aiData = JSON.parse(jsonMatch[0]);
+
+        // Раскидываем ответы по ячейкам
+        rows.forEach((row, idx) => {
+            if (aiData[idx]) {
+                const causeInput = row.querySelector('.fmea-ai-cause');
+                const effectInput = row.querySelector('.fmea-ai-effect');
+                const actionInput = row.querySelector('.fmea-ai-action');
+                
+                // Если инженер не писал свою причину - ставим причину от ИИ
+                if (causeInput.value === 'Не указана' || causeInput.value.trim() === '') causeInput.value = aiData[idx].cause;
+                
+                effectInput.value = aiData[idx].effect;
+                actionInput.value = aiData[idx].action;
+            }
+        });
+
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'fmea_table');
+        showToast("✨ FMEA таблица заполнена нейросетью!");
+    } catch (e) {
+        showToast("❌ Ошибка ИИ (попробуйте еще раз): " + e.message);
+    } finally {
+        btn.innerHTML = `🤖 AI-Автозаполнение`;
+        btn.disabled = false;
+    }
+};

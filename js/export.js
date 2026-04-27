@@ -2396,3 +2396,115 @@ function processDataImport(event) {
     reader.readAsText(file);
     event.target.value = '';
 }
+
+window.exportPersonalContractorReport = async function(contractorName) {
+    const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
+    if (data.length === 0) return showToast('Нет данных для отчета');
+    
+    showToast("⚙️ Подготовка персонального отчета...");
+
+    const cName = contractorName.split(' [')[0];
+    const workType = data[0].templateTitle;
+    
+    const m = getContractorMetrics(data, userTemplates);
+    const colorMain = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
+    const bgMain = m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4');
+    const borderMain = m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0');
+
+    const dates = []; const urkData = [];
+    data.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
+        dates.push(`#${i+1}`); urkData.push(check.metrics.final);
+    });
+
+    const lineChartUrl = generatePdfChart({
+        type: 'line',
+        data: { labels: dates, datasets: [{ data: urkData, borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.1)', tension: 0.3, borderWidth: 2, fill: true, pointRadius: 2 }] },
+        options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+    }, 600, 200);
+
+    let photosB3 = []; let photosB2 = []; let photosOK = [];
+    let b1 = 0, b2 = 0, b3 = 0;
+    data.forEach(check => {
+        if(check.metrics) { b1 += check.metrics.n_B1_fail; b2 += check.metrics.n_B2_fail; b3 += check.metrics.n_B3_fail; }
+        if(check.state && check.photos) {
+            Object.keys(check.state).forEach(id => {
+                const s = check.state[id];
+                let defName = "Дефект";
+                const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                const item = flatList.find(x => x.id == id);
+                if (item) defName = item.n;
+
+                if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
+                    if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src: check.photos[id], name: defName });
+                    else photosB2.push({ src: check.photos[id], name: defName });
+                } else if (s === 'ok' && check.photos[id]) {
+                    photosOK.push({ src: check.photos[id], name: defName });
+                }
+            });
+        }
+    });
+
+    let expertHtml = getExpertConclusion(m, cName, workType, data.length, contractorName.replace(/\W/g, '_'), customExpertConclusions).pdfHtml;
+    expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 11px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 8px');
+
+    const content = `
+    <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 10px; margin-bottom: 20px;">
+        <h1 style="margin: 0 0 5px 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Отчет о качестве СМР: ${cName}</h1>
+        <div style="font-size: 14px; font-weight: bold; color: #4f46e5; text-transform: uppercase;">Вид работ: ${workType} | Объект: ${contractorName.split(' [')[1].replace(']','')}</div>
+    </div>
+
+    <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 25%; padding: 0 8px 0 0;">
+                <div style="background: ${bgMain}; border: 2px solid ${borderMain}; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 900; margin-bottom: 8px;">Рейтинг Надежности</div>
+                    <div style="font-size: 32px; font-weight: 900; color: ${colorMain}; line-height: 1;">${m.finalC}%</div>
+                </div>
+            </td>
+            <td style="width: 20%; padding: 0 8px;">
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 8px;">Ср. УрК Изделий</div>
+                    <div style="font-size: 24px; font-weight: 900; color: #0f172a; line-height: 1;">${m.baseUrkContrPerc}%</div>
+                </div>
+            </td>
+            <td style="width: 20%; padding: 0 8px;">
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
+                    <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 8px;">Стабильность</div>
+                    <div style="font-size: 24px; font-weight: 900; color: ${m.stabColor}; line-height: 1;">${m.stabilityIndex}</div>
+                </div>
+            </td>
+            <td style="width: 35%; padding: 0 0 0 8px;">
+                <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px; height: 110px; box-sizing: border-box;">
+                    <div style="font-size: 10px; color: #0f172a; text-transform: uppercase; font-weight: bold; text-align:center;">Динамика проверок</div>
+                    <div style="height: 70px; text-align: center; margin-top: 5px;"><img src="${lineChartUrl}" style="width: 100%; height: 100%; object-fit: contain;"></div>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 40%; vertical-align: top; padding-right: 15px;">
+                ${expertHtml}
+                <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-top: 15px;">
+                    <h3 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: #334155;">Статистика дефектов</h3>
+                    <div style="font-size: 14px; font-weight: bold;">Всего проверок: ${m.count}</div>
+                    <div style="margin-top: 10px; display:flex; justify-content: space-between; font-size:12px; font-weight:bold;">
+                        <span style="color:#3b82f6">B1: ${b1} шт.</span>
+                        <span style="color:#d97706">B2: ${b2} шт.</span>
+                        <span style="color:#dc2626">B3: ${b3} шт.</span>
+                    </div>
+                </div>
+            </td>
+            <td style="width: 60%; vertical-align: top; padding: 0;">
+                ${buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
+                ${buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
+                ${buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
+            </td>
+        </tr>
+    </table>
+    `;
+
+    await printPdfShell(`Отчет для ${cName}`, content, "A4", "landscape", "script");
+    if (typeof gameLogAction === 'function') gameLogAction('ai_copy', 'sent_report'); 
+};

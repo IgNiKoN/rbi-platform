@@ -1,8 +1,8 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Увеличиваем версию БД до 4 для добавления модуля Инженера (Задачи и Практики) (v17.0)
-const DB_VERSION = 4; 
+// УВЕЛИЧИВАЕМ ВЕРСИЮ ДЛЯ СОЗДАНИЯ НОВЫХ ТАБЛИЦ (TASKS, MEETINGS и т.д.)
+const DB_VERSION = 5; 
 
 const STORES = {
     STATE: 'app_state',       
@@ -10,7 +10,7 @@ const STORES = {
     SETTINGS: 'app_settings', 
     TEMPLATES: 'user_templates', 
     PHOTOS: 'app_photos',
-    // RBI NEW: Новые хранилища для Инженера
+    // Новые хранилища
     TASKS: 'rbi_tasks',
     SCHEDULE: 'rbi_schedule_stages',
     MEETINGS: 'rbi_meetings',
@@ -28,14 +28,14 @@ function openAppDb() {
         request.onupgradeneeded = function(event) {
             const db = event.target.result;
             
-            // Создаем новые хранилища, если их нет
+            // Старые хранилища
             if (!db.objectStoreNames.contains(STORES.STATE)) db.createObjectStore(STORES.STATE, { keyPath: 'key' });
             if (!db.objectStoreNames.contains(STORES.HISTORY)) db.createObjectStore(STORES.HISTORY, { keyPath: 'id' });
             if (!db.objectStoreNames.contains(STORES.SETTINGS)) db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
             if (!db.objectStoreNames.contains(STORES.TEMPLATES)) db.createObjectStore(STORES.TEMPLATES, { keyPath: 'slug' });
             if (!db.objectStoreNames.contains(STORES.PHOTOS)) db.createObjectStore(STORES.PHOTOS, { keyPath: 'id' });
             
-            // RBI NEW: Хранилища модуля Инженера
+            // Новые хранилища Инженера
             if (!db.objectStoreNames.contains(STORES.TASKS)) db.createObjectStore(STORES.TASKS, { keyPath: 'id' });
             if (!db.objectStoreNames.contains(STORES.SCHEDULE)) db.createObjectStore(STORES.SCHEDULE, { keyPath: 'id' });
             if (!db.objectStoreNames.contains(STORES.MEETINGS)) db.createObjectStore(STORES.MEETINGS, { keyPath: 'id' });

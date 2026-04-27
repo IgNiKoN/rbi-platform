@@ -116,7 +116,8 @@ window.renderSyncUI = function() {
                 <div class="space-y-3">
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ваше Имя (Фамилия И.О.) *</label>
-                        <input type="text" id="sync-name" class="input-base" placeholder="Иванов И.И." value="${engName}">
+                        <input type="text" id="sync-name" class="input-base ${engName ? 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-900' : ''}" placeholder="Иванов И.И." value="${engName}" ${engName ? 'readonly' : ''}>
+                        ${engName ? '<div class="text-[8px] text-indigo-500 mt-1 font-bold">Имя подтянуто из вашего Профиля.</div>' : '<div class="text-[8px] text-orange-500 mt-1 font-bold">Заполните имя во вкладке Инженер -> Профиль.</div>'}
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код проекта команды *</label>

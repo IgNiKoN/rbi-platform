@@ -18,6 +18,7 @@ let activeMultiFilters = {
 };
 let currentFilterContext = ''; // 'history' или 'analytics'
 let currentFilterType = '';    // 'project', 'contractor' и т.д.
+let auditOriginalData = null; // Для перекрестного аудита (сравнение двух проверок)
 
 // Переменные зума фото
 let currentZoom = 1;
@@ -617,7 +618,7 @@ function switchTab(tabId, navElement = null) {
     if (tabId === 'tab-audit' && typeof render === 'function') {
         render(); updateUI();
     } else if (tabId === 'tab-engineer') {
-        // Заглушка, сам модуль Инженера добавим на следующих шагах
+        // Запускаем рендер вкладки Инженера (он сам решит, Задачи это или Профиль)
         if (typeof rbi_renderEngineerTab === 'function') rbi_renderEngineerTab();
     } else if (tabId === 'tab-analytics' && typeof updateAnalyticsFilters === 'function') {
         updateAnalyticsFilters(); 
@@ -1936,6 +1937,45 @@ function updateCardDOM(id, itemData = null) {
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
     `;
+    // === ЛОГИКА ОТОБРАЖЕНИЯ АУДИТА И ЭТАЛОНА (БЫЛО/СТАЛО) ===
+    let auditHtml = '';
+    
+    if (auditOriginalData) {
+        const origState = auditOriginalData.state[id];
+        const origPhoto = auditOriginalData.photos ? auditOriginalData.photos[id] : null;
+        
+        if (origState) {
+            if (auditOriginalData.isCrossAudit) {
+                // ПЕРЕКРЕСТНЫЙ АУДИТ: Показываем оценку прошлого инспектора
+                const badgeColor = origState === 'ok' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200';
+                const badgeText = origState === 'ok' ? 'OK' : 'FAIL';
+                const photoBlock = origPhoto ? `<img src="${window.getPhotoSrc(origPhoto)}" class="w-8 h-8 object-cover rounded cursor-pointer border border-slate-300" onclick="openPhotoViewer('${origPhoto}')">` : '';
+                
+                auditHtml = `
+                    <div class="mt-2 bg-slate-100 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 p-2 rounded-lg flex justify-between items-center w-full">
+                        <div>
+                            <div class="text-[8px] font-black uppercase text-slate-400 mb-0.5">Оценка инженера (${auditOriginalData.inspector})</div>
+                            <span class="text-[9px] font-black px-1.5 py-0.5 rounded border ${badgeColor}">${badgeText}</span>
+                        </div>
+                        ${photoBlock}
+                    </div>
+                `;
+            } else if (auditOriginalData.isEtalonCompare && (origState === 'fail' || origState === 'fail_escalated')) {
+                // ПРИЕМКА ЭТАЛОНА: Показываем фото прошлого брака "БЫЛО"
+                if (origPhoto) {
+                    auditHtml = `
+                        <div class="mt-2 bg-orange-50 dark:bg-orange-900/10 border border-dashed border-orange-200 dark:border-orange-800 p-2 rounded-lg flex items-center gap-3 w-full">
+                            <img src="${window.getPhotoSrc(origPhoto)}" class="w-12 h-12 object-cover rounded cursor-pointer border border-orange-300" onclick="openPhotoViewer('${origPhoto}')">
+                            <div>
+                                <div class="text-[9px] font-black uppercase text-orange-600 mb-0.5">📸 Было (Брак)</div>
+                                <div class="text-[9px] font-bold text-orange-800 dark:text-orange-400 leading-tight">Прикрепите новое фото "СТАЛО", чтобы зафиксировать исправление эталона.</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        }
+    }
 
     let contentHtml = '';
 
@@ -2181,6 +2221,7 @@ function updateUI() {
 
 // === СОХРАНЕНИЕ / ОЧИСТКА ===
 // === СОХРАНЕНИЕ В ИСТОРИЮ (С ПОЛЯМИ СЕКЦИЯ/ЭТАЖ/ПОМЕЩЕНИЕ) ===
+// === СОХРАНЕНИЕ В ИСТОРИЮ (С ЖЕЛЕЗНОЙ ПРИВЯЗКОЙ ИМЕНИ) ===
 async function saveProductToArray() {
     const projInput = document.getElementById('inp-project');
     const inspInput = document.getElementById('inp-inspector');
@@ -2190,10 +2231,20 @@ async function saveProductToArray() {
     const roomInput = document.getElementById('inp-room');
     const locHidden = document.getElementById('inp-location');
 
+    // 1. ПРИНУДИТЕЛЬНО тянем имя из настроек Профиля
+    if (typeof appSettings !== 'undefined' && appSettings.engineerName) {
+        if (inspInput) inspInput.value = appSettings.engineerName;
+    }
+
+    // 2. Проверяем скрытое поле инспектора отдельно
+    if (!inspInput || !inspInput.value.trim()) {
+        return showToast('⚠️ Укажите ваше Имя во вкладке "Инженер -> Профиль" перед сохранением!');
+    }
+
     let hasError = false;
     
-    // Красим в красный если пусто (Обязательные поля)
-    [projInput, inspInput, contrInput, secInput].forEach(el => {
+    // 3. Красим в красный пустые ВИДИМЫЕ поля (Объект, Подрядчик, Секция)
+    [projInput, contrInput, secInput].forEach(el => {
         if (el && !el.value.trim()) {
             el.classList.add('border-red-500', 'bg-red-50');
             setTimeout(() => el.classList.remove('border-red-500', 'bg-red-50'), 3000);
@@ -2202,10 +2253,11 @@ async function saveProductToArray() {
     });
 
     if (hasError) {
-        showToast('⚠️ Заполните все поля со звездочкой (Объект, Проверяющий, Подрядчик, Секция)!');
+        showToast('⚠️ Заполните все поля со звездочкой (Объект, Подрядчик, Секция)!');
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
         return;
     }
+
     // --- ЗАЩИТА ОТ ДУБЛИКАТОВ ---
     const locVal = locHidden.value.trim();
     const projVal = projInput.value.trim();
@@ -2221,13 +2273,9 @@ async function saveProductToArray() {
     if (isDuplicate) {
         return showToast('⚠️ Проверка с такой локацией уже существует в Истории!');
     }
-    // ----------------------------
-    // --- УМНАЯ ФИКСАЦИЯ ПОСЛЕ ПЕРВОГО СОХРАНЕНИЯ ---
+    
+    // --- УМНАЯ ФИКСАЦИЯ ОБЪЕКТА ПОСЛЕ ПЕРВОГО СОХРАНЕНИЯ ---
     let settingsChanged = false;
-    if (!appSettings.engineerName && inspInput.value.trim()) {
-        appSettings.engineerName = inspInput.value.trim();
-        settingsChanged = true;
-    }
     if (!appSettings.defaultProject && projInput.value.trim()) {
         appSettings.defaultProject = projInput.value.trim();
         settingsChanged = true;
@@ -2236,7 +2284,6 @@ async function saveProductToArray() {
         dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
         applySmartLocks();
     }
-    // ----------------------------------------------
 
     let mergedState = {};
     let mergedDetails = {};
@@ -2268,11 +2315,11 @@ async function saveProductToArray() {
     const finalMetrics = getProductMetrics(mergedState, stagesToMetric);
     const isFullCheck = checkedStageNames.length === currentChecklist.length;
     const stageNameLabel = isFullCheck ? 'Полная проверка' : 'Частичная проверка';
-    // Геймификация: Эскалация >1.5
+    
+    // Геймификация
     if (finalMetrics.escalated_found && typeof gameLogAction === 'function') {
         gameLogAction('escalation_bonus', 'esc');
     }
-    // Геймификация: Приемка эталона с фото
     if (currentTemplateKey === 'sys_etalon_act' && Object.keys(mergedPhotos).length > 0 && typeof gameLogAction === 'function') {
         gameLogAction('etalon_accepted', 'etalon');
     }
@@ -2280,7 +2327,6 @@ async function saveProductToArray() {
     const selectEl = document.getElementById('checklist-selector');
     const tTitle = selectEl.options[selectEl.selectedIndex].text.replace('▼', '').trim();
     
-    // Определяем Milestone (Экземпляр = Секция + Этаж)
     let instanceId = "default";
     if (secInput.value && floorInput.value) instanceId = `${secInput.value.replace(/\D/g, '')}_${floorInput.value.replace(/\D/g, '')}`;
 
@@ -2294,8 +2340,6 @@ async function saveProductToArray() {
             dbPhotos[id] = photoData;
         }
     }
-    // -----------------------------------------
-    // -----------------------------------------
 
     const newItem = { 
         id: Date.now() + Math.floor(Math.random() * 1000), 
@@ -2309,7 +2353,7 @@ async function saveProductToArray() {
         floor: floorInput.value.trim(),
         room: roomInput.value.trim(),
         location: locHidden.value.trim(), 
-        instanceId: instanceId, // Идентификатор для milestone
+        instanceId: instanceId, 
         stageId: 0, 
         stageName: stageNameLabel,
         checkedStagesInfo: checkedStageNames, 
@@ -2325,26 +2369,21 @@ async function saveProductToArray() {
         await dbPut(STORES.HISTORY, newItem); 
     }
 
-    // Обновляем кэш автозаполнения для смарт-инпутов
     updateSmartInputCache('projectName', projInput.value.trim());
-    updateSmartInputCache('inspectorName', inspInput.value.trim());
     updateSmartInputCache('contractorName', contrInput.value.trim());
     updateSmartInputCache('section', secInput.value.trim());
     updateSmartInputCache('floor', floorInput.value.trim());
     updateSmartInputCache('room', roomInput.value.trim());
     
-    // --- АВТООБНОВЛЕНИЕ ПЛАНА ПРИ НОВОМ ПОДРЯДЧИКЕ/ВИДЕ РАБОТ ---
+    // Обновляем план, если появилась новая связка
     const pastChecks = contractorArray.filter(c => c.contractorName === contrInput.value.trim() && c.templateKey === currentTemplateKey);
     if (pastChecks.length === 1 && typeof gameGenerateWeeklyPlan === 'function') {
-        gameGenerateWeeklyPlan(true); // Принудительно генерируем новый план, т.к. появилась новая связка
+        gameGenerateWeeklyPlan(true); 
     } else if (typeof gameUpdatePlanProgress === 'function') {
-        gameUpdatePlanProgress(); // Иначе просто обновляем прогресс
+        gameUpdatePlanProgress(); 
     }
     
-    // Очищаем стейт ответов
     state = {}; details = {}; photos = {}; 
-    
-    // Очищаем ТОЛЬКО локационные поля
     secInput.value = ''; floorInput.value = ''; roomInput.value = ''; locHidden.value = '';
     
     scheduleSessionSave(); 
@@ -2354,7 +2393,7 @@ async function saveProductToArray() {
     
     render(); 
     updateUI();
- if (typeof triggerSync === 'function') triggerSync('full');
+    if (typeof triggerSync === 'function') triggerSync('full');
 }
 
 // === ОБНОВЛЕНИЕ ПАМЯТИ ПОЛЕЙ ВВОДА (АВТОКОМПЛИТ) ===
@@ -5524,7 +5563,12 @@ async function exitDemoMode() {
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit) { fabExit.classList.add('hidden'); fabExit.style.display = 'none'; }
     
-    // 3. Жестко зачищаем DOM-поля шапки перед восстановлением
+    // 3. ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ИСХОДНЫХ МАССИВОВ (чтобы демо-данные не ушли в БД)
+    contractorArray = JSON.parse(JSON.stringify(realContractorArray));
+    customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
+    customDocs = JSON.parse(JSON.stringify(realCustomDocs));
+    
+    // 4. Очищаем шапку
     ['inp-project', 'inp-inspector', 'inp-contractor', 'inp-section', 'inp-floor', 'inp-room', 'inp-location'].forEach(id => {
         if(document.getElementById(id)) {
             document.getElementById(id).value = '';
@@ -5532,52 +5576,39 @@ async function exitDemoMode() {
             document.getElementById(id).classList.remove('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
         }
     });
-    // Скрываем замочки
     if(document.getElementById('lock-inp-inspector')) document.getElementById('lock-inp-inspector').classList.add('hidden');
     if(document.getElementById('lock-inp-project')) document.getElementById('lock-inp-project').classList.add('hidden');
     
-    // 4. Восстанавливаем массивы, которые не хранятся в сессии
-    customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
-    customDocs = JSON.parse(JSON.stringify(realCustomDocs));
-    
-    // === ИСПРАВЛЕНИЕ: Жесткая очистка логов HR и плана задач ===
-    // Так как демо-режим не писал в БД, мы просто загружаем реальные данные обратно из базы
+    // 5. Загружаем реальные HR и Task данные из базы
     if (typeof gameActionLogs !== 'undefined') {
-        gameActionLogs = []; // Очищаем демо-логи
+        gameActionLogs = []; 
         try {
             const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
             if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
             
-            // Восстанавливаем реальный план задач, чтобы убрать демо-квесты
             const storedPlan = await dbGet(STORES.SETTINGS, 'weekly_plan_data');
             if (storedPlan && storedPlan.data) weeklyPlanData = storedPlan.data; else weeklyPlanData = { tasks: [] };
+            
+            // Восстанавливаем реальные задачи инженера
+            const tasksObj = await dbGetAll(STORES.TASKS);
+            if (tasksObj) window.rbi_tasksData = tasksObj.filter(t => !t._deleted); else window.rbi_tasksData = [];
 
-            const storedAbsence = await dbGet(STORES.SETTINGS, 'engineer_absence');
-            if (storedAbsence && storedAbsence.data) engineerAbsence = storedAbsence.data; else engineerAbsence = { isActive: false };
-
-            const storedStatuses = await dbGet(STORES.SETTINGS, 'contractor_statuses');
-            if (storedStatuses && storedStatuses.data) contractorStatuses = storedStatuses.data; else contractorStatuses = {};
-        } catch (e) { console.error("Ошибка восстановления HR-данных", e); }
+        } catch (e) { console.error("Ошибка восстановления данных", e); }
     }
 
-    // 5. Восстанавливаем сохраненную сессию (проверки)
+    // 6. Восстанавливаем сессию (черновик проверки)
     await restoreSession();
 
-    // 6. ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА ГЛАВНЫЙ СТАРТОВЫЙ ЭКРАН (HOME)
+    // 7. Переход на Главный экран
     switchTab('tab-audit');
     changeTemplate('HOME');
     
-    // 7. Обновляем фоновые списки и перерисовываем все дашборды
-    updateDataSummary(); 
-    renderHistoryTab(); 
-    renderTwiList();
+    updateDataSummary(); renderHistoryTab(); renderTwiList();
     if (typeof renderDocsList === 'function') renderDocsList();
     if (typeof renderNodesList === 'function') renderNodesList();
-    
-    // Принудительно перерисовываем вкладку инженера с чистыми реальными данными
     if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
     
-    showToast('Возврат к реальным данным (Главный экран)');
+    showToast('Возврат к реальным данным');
 }
 
 function generateDemoHistory() {
@@ -6295,45 +6326,128 @@ window.rbi_renderEngineerTab = async function() {
     }
 };
 
-window.rbi_renderTasksList = async function() {
-    const container = document.getElementById('rbi-tasks-container');
-    if (!container) return;
-
-    // 1. Грузим из базы
-    try {
-        const stored = await dbGetAll(STORES.TASKS);
-        if (stored) rbi_tasksData = stored;
-    } catch(e) { console.error("Ошибка загрузки задач", e); }
-
-    // 2. Обновляем плашку недели
-    const d = new Date();
-    const wNum = getWeekNumber(d);
-    document.getElementById('rbi-week-number').innerText = wNum;
-    
-    const startW = getStartOfWeek(d);
-    const endW = new Date(startW); endW.setDate(startW.getDate() + 6);
-    document.getElementById('rbi-week-dates').innerText = `${startW.toLocaleDateString('ru-RU', {day:'numeric', month:'short'})} — ${endW.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year:'numeric'})}`;
-
-    if (rbi_tasksData.length === 0) {
-        container.innerHTML = `
-            <div class="bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm">
-                <svg class="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
-                <div class="text-[14px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">План чист</div>
-                <div class="text-[11px] text-slate-500 font-medium">Загрузите график работ (Excel) или добавьте задачу вручную.</div>
-            </div>`;
-        return;
-    }
-
-    // Пока просто рисуем заглушку, что данные есть. Логику сортировки напишем на следующем шаге.
-    container.innerHTML = `<div class="text-center text-xs text-indigo-500 font-bold">Найдено задач: ${rbi_tasksData.length}. Логика рендера будет добавлена на следующем шаге.</div>`;
-};
-
 window.rbi_importScheduleExcel = function() {
     showToast("Модуль парсинга Excel-графика будет добавлен на следующем шаге.");
 };
 
+// --- ЛОГИКА РУЧНОЙ ЗАДАЧИ ---
+// --- ЛОГИКА РУЧНОЙ ЗАДАЧИ ---
 window.rbi_openTaskModal = function() {
-    showToast("Модуль создания ручной задачи в разработке...");
+    const cSelect = document.getElementById('manual-task-contractor');
+    if (cSelect) {
+        const uniqueContrs = [...new Set(contractorArray.map(c => c.contractorName).filter(Boolean))].sort();
+        cSelect.innerHTML = `<option value="">-- Общая задача --</option>` + uniqueContrs.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
+    }
+    document.getElementById('manual-task-title').value = '';
+    document.getElementById('manual-task-date').value = new Date().toISOString().split('T')[0];
+
+    const modal = document.getElementById('manual-task-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+};
+
+window.rbi_closeTaskModal = function() {
+    document.getElementById('manual-task-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+};
+
+window.rbi_saveManualTask = async function() {
+    const title = document.getElementById('manual-task-title').value.trim();
+    const typeCat = document.getElementById('manual-task-type').value;
+    const contr = document.getElementById('manual-task-contractor').value;
+    const dateStr = document.getElementById('manual-task-date').value;
+
+    if (!title) return showToast("⚠️ Укажите название задачи!");
+
+    const tDate = dateStr ? new Date(dateStr) : new Date();
+    tDate.setHours(12,0,0,0);
+
+    const newTask = {
+        id: 'task_man_' + Date.now().toString(36),
+        statusKey: 'man_' + Date.now().toString(36),
+        type: 'manual',
+        taskType: typeCat === 'meeting' ? 'Инструктаж' : (typeCat === 'method' ? 'ППР' : 'Плановая'),
+        contractor: contr || "Общая",
+        project: document.getElementById('inp-project')?.value || "Все",
+        templateKey: '', templateTitle: 'Поручение',
+        title: title, desc: 'Создано инженером вручную.',
+        priority: "Ручная", priorityLvl: 3, target: 1, done: 0,
+        carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false,
+        date: tDate.toISOString()
+    };
+
+    if (!weeklyPlanData.tasks) weeklyPlanData.tasks = [];
+    weeklyPlanData.tasks.unshift(newTask); // Наверх списка
+    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
+    
+    showToast("✅ Задача добавлена в план!");
+    rbi_closeTaskModal();
+    rbi_renderTasksList();
+};
+
+window.rbi_markTaskSuccess = async function(taskId) {
+    const taskIndex = weeklyPlanData.tasks.findIndex(t => t.id === taskId);
+    if(taskIndex === -1) return;
+
+    weeklyPlanData.tasks[taskIndex].status = 'done'; // Завершаем
+    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
+    
+    if (typeof gameLogAction === 'function') gameLogAction('overfulfill_bonus', taskId); // Используем существующий бонус
+    
+    showToast("🎉 Успех отмечен! Начислено +XP");
+    rbi_renderTasksList();
+};
+
+window.rbi_closeTaskModal = function() {
+    document.getElementById('manual-task-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+};
+
+window.rbi_saveManualTask = async function() {
+    const title = document.getElementById('manual-task-title').value.trim();
+    const typeCat = document.getElementById('manual-task-type').value;
+    const contr = document.getElementById('manual-task-contractor').value;
+    const dateStr = document.getElementById('manual-task-date').value;
+
+    if (!title) return showToast("⚠️ Укажите название задачи!");
+
+    const tDate = dateStr ? new Date(dateStr) : new Date();
+    tDate.setHours(12,0,0,0);
+
+    const newTask = {
+        id: 'task_man_' + Date.now().toString(36),
+        statusKey: 'man_' + Date.now().toString(36),
+        type: 'manual',
+        taskType: typeCat === 'meeting' ? 'Инструктаж' : (typeCat === 'method' ? 'ППР' : 'Плановая'),
+        contractor: contr || "Общая",
+        project: document.getElementById('inp-project')?.value || "Все",
+        templateKey: '', templateTitle: 'Поручение',
+        title: title, desc: 'Создано инженером вручную.',
+        priority: "Ручная", priorityLvl: 3, target: 1, done: 0,
+        carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false,
+        date: tDate.toISOString()
+    };
+
+    if (!weeklyPlanData.tasks) weeklyPlanData.tasks = [];
+    weeklyPlanData.tasks.unshift(newTask); // Наверх списка
+    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
+    
+    showToast("✅ Задача добавлена в план!");
+    rbi_closeTaskModal();
+    rbi_renderTasksList();
+};
+
+window.rbi_markTaskSuccess = async function(taskId) {
+    const taskIndex = weeklyPlanData.tasks.findIndex(t => t.id === taskId);
+    if(taskIndex === -1) return;
+
+    weeklyPlanData.tasks[taskIndex].status = 'done'; // Завершаем
+    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
+    
+    if (typeof gameLogAction === 'function') gameLogAction('overfulfill_bonus', taskId); // Используем существующий бонус
+    
+    showToast("🎉 Успех отмечен! Начислено +XP");
+    rbi_renderTasksList();
 };
 
 /* ============================================================================ */
@@ -6374,15 +6488,21 @@ window.rbi_switchEngineerSubTab = async function(tabId, btnElement) {
 };
 
 window.rbi_renderEngineerTab = async function() {
-    await rbi_loadData(); // Грузим все базы Инженера 1 раз
+    await rbi_loadData(); 
+    
+    // ПРИНУДИТЕЛЬНО генерируем план, чтобы задачи появились!
+    if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(false);
+
     if (currentActiveEngineerTab === 'eng-sub-tasks') {
         rbi_renderTasksList();
     } else if (currentActiveEngineerTab === 'eng-sub-meetings') {
-        if (typeof rbi_renderMeetingTab === 'function') rbi_renderMeetingTab();
+        rbi_renderMeetingTab();
     } else if (currentActiveEngineerTab === 'eng-sub-impact') {
-        if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
+        rbi_renderImpactTab();
     } else if (currentActiveEngineerTab === 'eng-sub-badges') {
-        if(typeof gameRenderDashboard === 'function') gameRenderDashboard();
+        gameRenderDashboard();
+    } else if (currentActiveEngineerTab === 'eng-sub-fmea') {
+        rbi_renderFmeaHistory();
     }
 };
 
@@ -6568,110 +6688,59 @@ window.rbi_generateAutoTasks = async function() {
     rbi_renderTasksList();
 };
 
-// --- РЕНДЕР: Вкладка "Инженер -> Задачи" ---
-window.rbi_renderTasksList = async function() {
-    const container = document.getElementById('rbi-tasks-container');
-    if (!container) return;
 
-    // Обновляем плашку недели
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const startW = getStartOfWeek(today);
-    const endW = new Date(startW); endW.setDate(startW.getDate() + 6); endW.setHours(23,59,59,999);
-    
-    document.getElementById('rbi-week-number').innerText = getWeekNumber(today);
-    document.getElementById('rbi-week-dates').innerText = `${startW.toLocaleDateString('ru-RU', {day:'numeric', month:'short'})} — ${endW.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year:'numeric'})}`;
-
-    if (window.rbi_tasksData.length === 0) {
-        container.innerHTML = `
-            <div class="bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm">
-                <svg class="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
-                <div class="text-[14px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">План чист</div>
-                <div class="text-[11px] text-slate-500 font-medium">Загрузите график работ (Аналитика -> График) или добавьте задачу вручную.</div>
-            </div>`;
-        document.getElementById('rbi-tasks-progress-text').innerText = `0/0`;
-        document.getElementById('rbi-tasks-progress-bar').style.width = `0%`;
-        return;
+// Исправленная логика фильтров (теперь классы применяются правильно)
+window.rbi_filterTaskHub = function(category, btnElement) {
+    const container = document.getElementById('hub-filters');
+    if (container) {
+        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
+            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
+        });
+    }
+    if (btnElement) {
+        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
     }
 
-    // Группировка
-    let overdue = []; let todayTasks = []; let weekTasks = [];
-    let weekTotal = 0; let weekDone = 0;
-
-    window.rbi_tasksData.forEach(t => {
-        if (t.status === 'done') {
-            const tDate = new Date(t.date);
-            if (tDate >= startW && tDate <= endW) { weekTotal++; weekDone++; }
-            return; // Скрываем выполненные из активных списков
-        }
-
-        const tDate = new Date(t.date);
-        tDate.setHours(0,0,0,0);
-
-        if (tDate < today) {
-            overdue.push(t);
-        } else if (tDate.getTime() === today.getTime()) {
-            todayTasks.push(t);
-            weekTotal++;
-        } else if (tDate > today && tDate <= endW) {
-            weekTasks.push(t);
-            weekTotal++;
+    const cards = document.querySelectorAll('.task-card-item');
+    cards.forEach(card => {
+        if (category === 'all') {
+            card.style.display = 'flex';
+        } else {
+            if (card.dataset.category === category) {
+                card.style.display = 'flex';
+            } else {
+                card.style.display = 'none';
+            }
         }
     });
+};
 
-    // Обновляем прогресс бар
-    document.getElementById('rbi-tasks-progress-text').innerText = `${weekDone}/${weekTotal}`;
-    document.getElementById('rbi-tasks-progress-bar').style.width = weekTotal > 0 ? `${(weekDone/weekTotal)*100}%` : '0%';
+// Функция логики для кнопок-фильтров Task Hub
+window.rbi_filterTaskHub = function(category, btnElement) {
+    // Красим кнопки
+    const container = document.getElementById('hub-filters');
+    if (container) {
+        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
+            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
+        });
+    }
+    if (btnElement) {
+        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
+    }
 
-    const renderCard = (t, isOverdue) => {
-        const icon = RBI_TASK_ICONS[t.taskType] || RBI_TASK_ICONS['ППР'];
-        const dateStr = new Date(t.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
-        const dateTag = isOverdue ? `<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[9px] font-black uppercase">План: ${dateStr}</span>` : `<span class="text-[10px] text-slate-400 font-bold">${dateStr}</span>`;
-        
-        let actionBtn = "";
-        if (t.taskType === 'Эталон' || t.taskType === 'Старт' || t.taskType === 'Плановая' || t.taskType === 'Финал') {
-            actionBtn = `<button onclick="rbi_startTaskAudit('${t.id}')" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Открыть Осмотр</button>`;
+    // Скрываем/показываем карточки
+    const cards = document.querySelectorAll('.task-card-item');
+    cards.forEach(card => {
+        if (category === 'all') {
+            card.parentElement.style.display = 'block'; // Показываем родительский div в сетке
+        } else {
+            if (card.dataset.category === category) {
+                card.parentElement.style.display = 'block';
+            } else {
+                card.parentElement.style.display = 'none';
+            }
         }
-
-        return `
-        <div class="bg-[var(--card-bg)] border ${isOverdue ? 'border-red-300 dark:border-red-800 shadow-md' : 'border-[var(--card-border)] shadow-sm'} rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden">
-            ${isOverdue ? '<div class="absolute top-0 left-0 w-1 h-full bg-red-500"></div>' : ''}
-            <div class="flex justify-between items-start pl-1">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center border border-[var(--card-border)] shrink-0">${icon}</div>
-                    <div>
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight">${t.title}</div>
-                        <div class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5">${t.workTitle} • ${t.contractor}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug pl-1">${t.desc}</div>
-            <div class="flex justify-between items-center mt-1 pt-2 border-t border-[var(--card-border)] pl-1">
-                ${dateTag}
-                <div class="flex gap-1">
-                    ${actionBtn}
-                    <button onclick="rbi_openTaskAction('${t.id}')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Действие</button>
-                </div>
-            </div>
-        </div>`;
-    };
-
-    let html = '';
-    if (overdue.length > 0) {
-        html += `<div class="mb-5"><div class="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Просрочено (${overdue.length})</div><div class="space-y-2">${overdue.map(t => renderCard(t, true)).join('')}</div></div>`;
-    }
-    if (todayTasks.length > 0) {
-        html += `<div class="mb-5"><div class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Сегодня (${todayTasks.length})</div><div class="space-y-2">${todayTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
-    }
-    if (weekTasks.length > 0) {
-        html += `<div class="mb-5"><div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">До конца недели (${weekTasks.length})</div><div class="space-y-2">${weekTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
-    }
-
-    if (html === '') {
-        html = `<div class="text-center text-slate-400 font-bold text-[11px] uppercase py-10">Активных задач нет</div>`;
-    }
-
-    container.innerHTML = html;
+    });
 };
 
 // --- РЕНДЕР: Вкладка "Аналитика -> График" ---
@@ -6794,100 +6863,439 @@ window.rbi_startTaskAudit = function(taskId) {
 };
 
 /* ============================================================================ */
-/* RBI NEW: МОДУЛЬ СОВЕЩАНИЙ И ПРОТОКОЛОВ (DEEPSEEK)                            */
+/* RBI NEW: МОДУЛЬ СОВЕЩАНИЙ И ПРОТОКОЛОВ (DEEPSEEK + АВТО-ПОВЕСТКА)            */
 /* ============================================================================ */
 
 window.rbi_renderMeetingTab = function() {
-    // В будущем здесь будем подгружать сохраненные совещания из базы
-};
-
-window.rbi_createMeeting = function() {
     const container = document.getElementById('rbi-meeting-container');
-    const d = new Date().toLocaleDateString('ru-RU');
-    
-    // Собираем просроченные задачи из таск-менеджера
-    let overdueHtml = '';
-    if (window.rbi_tasksData) {
-        const today = new Date(); today.setHours(0,0,0,0);
-        const overdue = window.rbi_tasksData.filter(t => t.status !== 'done' && new Date(t.date) < today);
-        if (overdue.length > 0) {
-            overdueHtml = overdue.map(t => `<div class="text-[11px] text-red-600 dark:text-red-400 mb-1 font-medium">• ${t.title} (${t.contractor})</div>`).join('');
-        } else {
-            overdueHtml = `<div class="text-[11px] text-green-600 dark:text-green-500 font-bold flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Просроченных задач нет</div>`;
-        }
+    if (!container) return;
+
+    if (window.rbi_meetingsData.length === 0) {
+        container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">Активных протоколов нет</div>`;
+        return;
     }
 
-    const html = `
-    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm relative animate-fadeIn">
-        <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">Черновик протокола</div>
-        <div class="font-black text-[14px] text-slate-800 dark:text-white mb-3">Планерка по качеству от ${d}</div>
+    // Сортировка - новые сверху
+    const sorted = [...window.rbi_meetingsData].sort((a,b) => new Date(b.date) - new Date(a.date));
+    
+    let html = sorted.map(m => `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col gap-2">
+            <div class="flex justify-between items-start border-b border-[var(--card-border)] pb-2">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg flex items-center justify-center font-black text-sm">📅</div>
+                    <div>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${m.title}</div>
+                        <div class="text-[9px] font-bold text-[var(--text-muted)]">Автор: ${m.author}</div>
+                    </div>
+                </div>
+                <div class="text-[9px] font-bold text-slate-400 bg-[var(--hover-bg)] px-2 py-1 rounded-md border border-[var(--card-border)]">
+                    ${new Date(m.date).toLocaleDateString('ru-RU')}
+                </div>
+            </div>
+            <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-3 italic">
+                ${m.memoText.replace(/<br>/g, ' ')}
+            </div>
+            <div class="flex gap-2 mt-1 pt-2 border-t border-[var(--card-border)]">
+                <button onclick="rbi_openSavedMeeting('${m.id}')" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm transition-colors">👁️ Открыть</button>
+                <button onclick="rbi_deleteMeeting('${m.id}')" class="bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+
+    container.innerHTML = html;
+};
+
+// Открытие сохраненного мемо
+window.rbi_openSavedMeeting = function(id) {
+    const meet = window.rbi_meetingsData.find(m => m.id === id);
+    if (!meet) return;
+    
+    document.getElementById('modal-icon').innerHTML = `📅`;
+    document.getElementById('modal-title').innerText = meet.title;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-[10px] text-slate-500 mb-4 border-b border-slate-200 pb-2">Составлено: ${new Date(meet.date).toLocaleString('ru-RU')} | Автор: ${meet.author}</div>
+        <div class="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner whitespace-pre-wrap font-medium" id="saved-memo-text">${meet.memoText}</div>
+        <div class="mt-4 flex gap-2">
+            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">📋 Скопировать</button>
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 border border-slate-200 dark:border-slate-700">Закрыть</button>
+        </div>
+    `;
+    const modal = document.getElementById('modal-overlay');
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.rbi_deleteMeeting = async function(id) {
+    if(!confirm("Удалить этот протокол?")) return;
+    window.rbi_meetingsData = window.rbi_meetingsData.filter(m => m.id !== id);
+    await dbDelete(STORES.MEETINGS, id);
+    rbi_renderMeetingTab();
+    showToast("🗑️ Протокол удален");
+};
+
+// СОЗДАНИЕ НОВОГО СОВЕЩАНИЯ (Интерактивная повестка)
+// === СОВЕЩАНИЯ: ДВУХПАНЕЛЬНЫЙ ИНТЕРФЕЙС ===
+window.rbi_createMeeting = function() {
+    const container = document.getElementById('rbi-meeting-container');
+    const d = new Date();
+    const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
+    const weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
+    
+    // Считаем общие метрики
+    const weekMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekChecks, userTemplates) : null;
+    const iko = weekMetrics ? weekMetrics.IKO : '0.00';
+    const ikoColor = weekMetrics ? weekMetrics.ikoColor : 'text-slate-500';
+
+    // 1. СБИРАЕМ ФОТОГРАФИИ ДЛЯ ЛЕВОЙ ПАНЕЛИ
+    let defectPhotosHtml = '';
+    let b3Photos = [];
+    weekChecks.forEach(c => {
+        if(c.state && c.photos) {
+            Object.keys(c.state).forEach(id => {
+                if((c.state[id] === 'fail' || c.state[id] === 'fail_escalated') && c.photos[id]) {
+                    b3Photos.push({ src: c.photos[id], contr: c.contractorName });
+                }
+            });
+        }
+    });
+    // Берем 3 случайных фотки брака
+    b3Photos = b3Photos.sort(() => 0.5 - Math.random()).slice(0, 3);
+    if (b3Photos.length > 0) {
+        defectPhotosHtml = `
+            <div class="mt-3 bg-white dark:bg-slate-800 p-2 rounded-lg border border-[var(--card-border)]">
+                <div class="text-[9px] font-black text-red-600 uppercase mb-2">📸 Фотофиксация брака (Рандом)</div>
+                <div class="flex gap-2 overflow-x-auto no-scrollbar">
+                    ${b3Photos.map(p => `
+                        <div class="shrink-0 w-24 h-24 rounded-lg overflow-hidden border border-red-200 relative">
+                            <img src="${window.getPhotoSrc(p.src)}" class="w-full h-full object-cover">
+                            <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] truncate px-1 pb-0.5">${p.contr}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>`;
+    }
+
+    // 2. ГРУППИРУЕМ ДЕФЕКТЫ ПО ПОДРЯДЧИКАМ (ДЛЯ ПРАВОЙ ПАНЕЛИ)
+    const contrDefects = {};
+    let b3Count = 0;
+    let goodContrs = [];
+
+    const contrMap = {};
+    weekChecks.forEach(c => { contrMap[c.contractorName] = contrMap[c.contractorName] || []; contrMap[c.contractorName].push(c); });
+
+    for(let cName in contrMap) {
+        const m = getContractorMetrics(contrMap[cName], userTemplates);
+        if (m && m.finalC >= 85 && m.n_изделий_с_B3 === 0) {
+            goodContrs.push(cName);
+        }
         
-        <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-xl border border-red-100 dark:border-red-800/50 mb-4 shadow-sm">
-            <div class="text-[10px] font-black text-red-700 dark:text-red-500 uppercase mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Авто-Повестка (Долги):</div>
-            ${overdueHtml}
+        contrMap[cName].forEach(c => {
+            if(c.metrics) b3Count += c.metrics.n_B3_fail;
+            if(c.state && c.templateKey) {
+                Object.keys(c.state).forEach(id => {
+                    if(c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                        const flat = getFlatList(userTemplates[c.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_','')]?.groups);
+                        const item = flat.find(x => x.id == id);
+                        if (item) {
+                            if (!contrDefects[cName]) contrDefects[cName] = [];
+                            let existing = contrDefects[cName].find(d => d.name === item.n);
+                            if (existing) existing.count++;
+                            else contrDefects[cName].push({ name: item.n, count: 1, isB3: c.state[id] === 'fail_escalated' || item.w === 3 });
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    let goodContrsHtml = goodContrs.length > 0 
+        ? goodContrs.map(c => `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-black mr-1 mb-1 inline-block">${c}</span>`).join('') 
+        : '<span class="text-[10px] text-slate-400 font-bold">Кандидатов нет</span>';
+
+    // 3. ГЕНЕРИРУЕМ ИНТЕРАКТИВНЫЕ ЧЕК-БОКСЫ В ПРАВУЮ ПАНЕЛЬ
+    let agendaHtml = '';
+    for (let cName in contrDefects) {
+        agendaHtml += `
+            <div class="bg-white dark:bg-slate-800 rounded-xl p-3 mb-3 border border-[var(--card-border)] shadow-sm">
+                <div class="text-[12px] font-black text-slate-800 dark:text-white mb-2 uppercase border-b border-slate-100 dark:border-slate-700 pb-1">👷‍♂️ ${cName}</div>
+                <div class="space-y-3">
+        `;
+        
+        contrDefects[cName].sort((a, b) => b.isB3 - a.isB3 || b.count - a.count).forEach(def => {
+            agendaHtml += `
+                <div class="meeting-agenda-row border-l-2 ${def.isB3 ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-orange-500 bg-orange-50 dark:bg-orange-900/10'} pl-2 py-1 relative">
+                    <input type="hidden" class="agenda-meta-contr" value="${cName}">
+                    <input type="hidden" class="agenda-meta-defect" value="${def.name}">
+                    
+                    <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 leading-snug">
+                        ${def.isB3 ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded mr-1">B3</span>' : ''}
+                        ${def.name} <span class="text-slate-400">(${def.count} раз)</span>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <label class="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 cursor-pointer">
+                            <input type="checkbox" class="agenda-done-cb w-3.5 h-3.5 accent-green-600"> Решено
+                        </label>
+                        <input type="date" class="agenda-date input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]">
+                        <input type="text" class="agenda-resp input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]" placeholder="Ответственный...">
+                    </div>
+                    <textarea class="agenda-comment input-base mt-2 h-10 resize-none text-[10px]" placeholder="Решение / Тезис..."></textarea>
+                </div>
+            `;
+        });
+        agendaHtml += `</div></div>`;
+    }
+
+    if (!agendaHtml) agendaHtml = '<div class="text-[11px] text-green-600 font-bold text-center py-4 bg-white rounded-xl border border-dashed">Дефектов за неделю не выявлено. Идеально!</div>';
+
+    // --- РЕНДЕР 2-Х ПАНЕЛЕЙ ---
+    const html = `
+    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm relative animate-fadeIn overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center">
+            <div>
+                <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Meeting Workspace</div>
+                <div class="font-black text-[14px] text-slate-800 dark:text-white uppercase">Планерка от ${d.toLocaleDateString('ru-RU')}</div>
+            </div>
+            <button onclick="rbi_renderMeetingTab()" class="text-slate-400 hover:text-red-500 active:scale-95 transition-colors font-black px-2">✕</button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2">
+            <!-- ЛЕВАЯ ПАНЕЛЬ: АНАЛИТИКА -->
+            <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-r border-[var(--card-border)]">
+                <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase mb-3">📈 Статус Объекта (7 дней)</div>
+                
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm">
+                        <div class="text-[8px] font-bold text-slate-400 uppercase">Индекс Риска</div>
+                        <div class="text-[16px] font-black ${ikoColor}">${iko}</div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm">
+                        <div class="text-[8px] font-bold text-slate-400 uppercase">Крит. Аварий B3</div>
+                        <div class="text-[16px] font-black ${b3Count > 0 ? 'text-red-600' : 'text-green-600'}">${b3Count}</div>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm mb-3">
+                    <div class="text-[9px] font-black text-green-600 uppercase mb-1">Благодарности подрядчикам</div>
+                    <div>${goodContrsHtml}</div>
+                </div>
+                
+                ${defectPhotosHtml}
+            </div>
+
+            <!-- ПРАВАЯ ПАНЕЛЬ: ЧЕК-БОКСЫ И ГЕНЕРАТОР -->
+            <div class="p-4 flex flex-col h-full bg-[var(--card-bg)]">
+                <label class="text-[11px] font-black text-slate-800 dark:text-white uppercase mb-2">📋 Решения по дефектам</label>
+                <div class="text-[9px] text-slate-500 mb-3">Отмечайте решенные вопросы прямо на совещании. Нейросеть соберет их в итоговый протокол.</div>
+                
+                <div class="flex-1 overflow-y-auto max-h-[50vh] custom-scrollbar pr-2 mb-4">
+                    ${agendaHtml}
+                    
+                    <div class="mt-4">
+                        <label class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-1 block">Дополнительные вопросы</label>
+                        <textarea id="rbi-meeting-notes" class="input-base h-20 resize-none text-[11px] bg-[var(--hover-bg)]" placeholder="Что еще обсудили на планерке..."></textarea>
+                    </div>
+                </div>
+                
+                <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Сформировать протокол (ИИ)
+                </button>
+            </div>
         </div>
 
-        <div class="mb-4">
-            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тезисы, решения, сроки (кратко)</label>
-            <textarea id="rbi-meeting-notes" class="input-base h-24 resize-none text-[12px]" placeholder="Напр: Иванов - закрыть предписание по фасаду до среды. Сидоров - переделать кровлю..."></textarea>
-        </div>
-
-        <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-            Написать протокол (DeepSeek)
-        </button>
-
-        <div id="rbi-meeting-result" class="mt-4 hidden bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-[var(--card-border)]">
-            <div class="text-[10px] font-black text-green-600 dark:text-green-500 uppercase tracking-widest mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Готовый документ:</div>
-            <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-lg p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-48 shadow-inner mb-2"></textarea>
-            <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3 rounded-lg font-bold text-[10px] uppercase border border-indigo-200 dark:border-indigo-800 active:scale-95 shadow-sm flex justify-center items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Скопировать текст</button>
+        <!-- РЕЗУЛЬТАТ ИИ -->
+        <div id="rbi-meeting-result" class="hidden border-t border-[var(--card-border)] bg-green-50 dark:bg-green-900/10 p-4">
+            <div class="text-[11px] font-black text-green-700 dark:text-green-500 uppercase tracking-widest mb-2">Готовый Протокол:</div>
+            <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/50 rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-64 shadow-inner mb-3 font-medium leading-relaxed"></textarea>
+            
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="rbi_saveMeetingMemo()" class="bg-green-600 text-white py-3 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">💾 Сохранить в Архив</button>
+                <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3 rounded-xl font-bold text-[11px] uppercase border border-indigo-200 dark:border-indigo-800 active:scale-95 shadow-sm">📋 Скопировать</button>
+            </div>
         </div>
     </div>`;
     
     container.innerHTML = html;
 };
 
+// ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
 window.rbi_generateMeetingMemo = async function() {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
     
-    const notes = document.getElementById('rbi-meeting-notes').value.trim();
-    if (!notes) return showToast("⚠️ Напишите хотя бы пару тезисов (кто, что и когда должен сделать)!");
+    let agendaContext = [];
+    const rows = document.querySelectorAll('.meeting-agenda-row');
+    
+    rows.forEach(row => {
+        const contr = row.querySelector('.agenda-meta-contr').value;
+        const defect = row.querySelector('.agenda-meta-defect').value;
+        const isDone = row.querySelector('.agenda-done-cb').checked;
+        const date = row.querySelector('.agenda-date').value;
+        const resp = row.querySelector('.agenda-resp').value.trim();
+        const comment = row.querySelector('.agenda-comment').value.trim();
+
+        if (isDone || date || resp || comment) {
+            agendaContext.push(`Подрядчик: ${contr}. Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Дедлайн: ${date || 'Не указан'}. Ответственный: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
+        }
+    });
+
+    const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
+    
+    if (agendaContext.length === 0 && !extraNotes) {
+        return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
+    }
 
     const btn = document.getElementById('btn-gen-memo');
-    btn.innerHTML = `<span class="animate-pulse flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Нейросеть пишет протокол...</span>`;
+    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
     btn.disabled = true;
-    btn.classList.add('opacity-70');
 
-    const promptSystem = `Ты — строгий секретарь строительного совещания. Твоя задача — превратить обрывочные записи инженера в красивый деловой протокол (Мемо).
+    const promptSystem = `Ты — секретарь совещания. Собери красивый деловой протокол (Мемо).
+    Формат ответа СТРОГО:
+    **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
+    
+    **ПРИНЯТЫЕ РЕШЕНИЯ:**
+    1. Подрядчик [Имя]:
+       - [Суть проблемы]. Ответственный: [...]. Срок: [...]. Решение: [...].
+    ...`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: `ПРИНЯТЫЕ РЕШЕНИЯ:\n${agendaContext.join('\n')}\n\nДОП. ВОПРОСЫ: ${extraNotes}` }
+        ], { temperature: 0.2, max_tokens: 800 });
+
+        document.getElementById('rbi-meeting-result').classList.remove('hidden');
+        document.getElementById('rbi-meeting-memo-text').value = response;
+        
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
+        showToast("✨ Протокол успешно сформирован!");
+    } catch (e) {
+        showToast("❌ Ошибка ИИ: " + e.message);
+    } finally {
+        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сформировать протокол (ИИ)`;
+        btn.disabled = false;
+    }
+};
+
+window.rbi_saveMeetingMemo = async function() {
+    const text = document.getElementById('rbi-meeting-memo-text').value.trim();
+    if (!text) return showToast("Текст протокола пуст!");
+
+    const author = document.getElementById('inp-inspector')?.value.trim() || appSettings.engineerName || 'Инженер';
+    
+    const meet = {
+        id: 'meet_' + Date.now().toString(36),
+        date: new Date().toISOString(),
+        author: author,
+        title: `Совещание от ${new Date().toLocaleDateString('ru-RU')}`,
+        memoText: text
+    };
+
+    // Загружаем актуальную базу перед сохранением
+    const dbData = await dbGetAll(STORES.MEETINGS) || [];
+    window.rbi_meetingsData = dbData;
+    
+    window.rbi_meetingsData.push(meet);
+    await dbPut(STORES.MEETINGS, meet);
+    
+    if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    showToast("💾 Протокол сохранен в архив!");
+    rbi_renderMeetingTab();
+};
+
+// ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
+window.rbi_generateMeetingMemo = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    
+    // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ
+    let agendaContext = [];
+    const rows = document.querySelectorAll('.meeting-agenda-row');
+    
+    rows.forEach(row => {
+        const contr = row.querySelector('.agenda-meta-contr').value;
+        const defect = row.querySelector('.agenda-meta-defect').value;
+        const isDone = row.querySelector('.agenda-done-cb').checked;
+        const date = row.querySelector('.agenda-date').value;
+        const resp = row.querySelector('.agenda-resp').value.trim();
+        const comment = row.querySelector('.agenda-comment').value.trim();
+
+        // Берем только те пункты, по которым инженер дал хоть какую-то резолюцию (галочка, срок, человек или текст)
+        if (isDone || date || resp || comment) {
+            agendaContext.push(`Подрядчик: ${contr}. Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Дедлайн: ${date || 'Не указан'}. Ответственный: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
+        }
+    });
+
+    const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
+    
+    if (agendaContext.length === 0 && !extraNotes) {
+        return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
+    }
+
+    const btn = document.getElementById('btn-gen-memo');
+    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
+    btn.disabled = true;
+
+    const promptSystem = `Ты — строгий секретарь. Составь красивый итоговый протокол совещания (Мемо).
+    Я передам тебе список подрядчиков, их дефектов и принятые по ним решения. Сгруппируй всё красиво.
     Формат ответа СТРОГО:
     **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
     Дата: (сегодняшняя)
     
     **ПРИНЯТЫЕ РЕШЕНИЯ:**
-    1. [Суть решения]. Ответственный: [Фамилия]. Срок: [Срок].
-    2. ...`;
+    1. По подрядчику [Имя]:
+       - Проблема: [Дефект]. Решение: [Что делать]. Ответственный: [...]. Срок: [...].
+    ...`;
+
+    const promptUser = `ПРИНЯТЫЕ РЕШЕНИЯ ПО ДЕФЕКТАМ:\n${agendaContext.join('\n')}\n\nДОП. ВОПРОСЫ: ${extraNotes}`;
 
     try {
         const response = await window.callAI([
             { role: 'system', content: promptSystem },
-            { role: 'user', content: `Вот мои записи с планерки: ${notes}` }
-        ], { temperature: 0.3, max_tokens: 500 });
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.2, max_tokens: 800 });
 
         document.getElementById('rbi-meeting-result').classList.remove('hidden');
         document.getElementById('rbi-meeting-memo-text').value = response;
         
-        // Бонус: Начисляем опыт инженеру за цифровизацию рутины!
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
-        if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', 'memo');
         showToast("✨ Протокол успешно сформирован!");
     } catch (e) {
         showToast("❌ Ошибка ИИ: " + e.message);
     } finally {
-        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Написать протокол (DeepSeek)`;
+        btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сформировать протокол (ИИ)`;
         btn.disabled = false;
-        btn.classList.remove('opacity-70');
     }
 };
+
+
+// СОХРАНЕНИЕ ПРОТОКОЛА В ИСТОРИЮ
+window.rbi_saveMeetingMemo = async function() {
+    const text = document.getElementById('rbi-meeting-memo-text').value.trim();
+    if (!text) return showToast("Текст протокола пуст!");
+
+    const author = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
+    
+    const meet = {
+        id: 'meet_' + Date.now().toString(36),
+        date: new Date().toISOString(),
+        author: author,
+        title: `Совещание от ${new Date().toLocaleDateString('ru-RU')}`,
+        memoText: text
+    };
+
+    window.rbi_meetingsData.push(meet);
+    await dbPut(STORES.MEETINGS, meet);
+    
+    if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    showToast("💾 Протокол сохранен в архив!");
+    rbi_renderMeetingTab();
+};
+
+
 
 /* ============================================================================ */
 /* RBI NEW: МОДУЛЬ ВОЗДЕЙСТВИЙ И IMPACT SCORE                                   */
@@ -6896,6 +7304,9 @@ window.rbi_generateMeetingMemo = async function() {
 window.rbi_interventionsData = [];
 
 // Дополняем загрузчик баз (переопределяем его с добавлением нового стора)
+// --- ЗАГРУЗКА БАЗЫ ---
+window.rbi_meetingsData = []; // Локальный массив для протоколов
+
 window.rbi_loadData = async function() {
     try {
         const scheduleObj = await dbGetAll(STORES.SCHEDULE);
@@ -6906,6 +7317,10 @@ window.rbi_loadData = async function() {
 
         const intObj = await dbGetAll(STORES.INTERVENTIONS);
         if (intObj) window.rbi_interventionsData = intObj;
+
+        // Загружаем сохраненные совещания
+        const meetObj = await dbGetAll(STORES.MEETINGS);
+        if (meetObj) window.rbi_meetingsData = meetObj;
     } catch(e) { console.error("Ошибка загрузки баз Инженера", e); }
 };
 
@@ -7005,129 +7420,115 @@ window.rbi_renderImpactTab = function() {
     const container = document.getElementById('rbi-impact-dashboard');
     if (!container) return;
 
-    if (window.rbi_interventionsData.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-10 text-slate-500 text-sm font-bold bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">
-                Вы еще не фиксировали свои воздействия.<br>Нажмите кнопку выше после разбора ошибок с подрядчиком.
-            </div>`;
-        return;
-    }
+    const myProfile = window.currentProfileData;
+    if (!myProfile) return container.innerHTML = 'Загрузка...';
 
-    // Сортировка от новых к старым
-    const sorted = [...window.rbi_interventionsData].sort((a,b) => new Date(b.date) - new Date(a.date));
-    
-    // Расчет кумулятивного Impact Score
-    let totalScore = 0;
-    let positiveCount = 0;
+    // Показываем мгновенный лоадер
+    container.innerHTML = `<div class="flex flex-col items-center justify-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-3"></div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Анализ эффективности...</div></div>`;
 
-    let html = `<div class="grid grid-cols-1 gap-3">`;
-
-    sorted.forEach((intItem, idx) => {
-        const dateStr = new Date(intItem.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
+    // Выносим тяжелую математику в асинхронную очередь
+    setTimeout(() => {
+        let twiCount = 0; let pracCount = 0; let meetCount = 0; let etalonCount = 0;
         
-        // 1. АВТОРАСЧЕТ ЭФФЕКТА (DELTA)
-        // Берем все проверки ПОСЛЕ даты воздействия
-        const myName = document.getElementById('inp-inspector')?.value.trim();
-        const checksAfter = contractorArray.filter(c => 
-            c.inspectorName === myName && 
-            c.contractorName === intItem.contractor && 
-            c.templateKey === intItem.templateKey &&
-            new Date(c.date) > new Date(intItem.date)
-        ).sort((a,b) => new Date(a.date) - new Date(b.date));
+        if (typeof gameActionLogs !== 'undefined') {
+            gameActionLogs.forEach(l => {
+                if (l.inspector !== myProfile.name) return;
+                if (l.action === 'create_twi' || l.action === 'magic_creator') twiCount++;
+                if (l.action === 'etalon_accepted' || l.action === 'chron_ideal') etalonCount++;
+                if (l.action === 'meeting_memo_created') meetCount++;
+                if (l.action === 'practice_created' || l.action === 'practice_published') pracCount++;
+            });
+        }
 
-        let currentUrk = intItem.baseUrk;
-        let delta = 0;
-        let statusText = "Ожидание данных (нужно 3 проверки после)";
-        let statusColor = "text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700";
-        let score = 0;
-
-        if (checksAfter.length >= 3) {
-            const mAfter = getContractorMetrics(checksAfter, userTemplates);
-            if (mAfter) {
-                currentUrk = mAfter.finalC;
-                delta = currentUrk - intItem.baseUrk;
-                
-                // Взвешиваем результат на коэффициент сложности инструмента
-                score = delta * intItem.typeCoef;
-                
-                if (delta > 5) {
-                    statusText = `📈 Эффект доказан (+${delta}%)`;
-                    statusColor = "text-green-700 bg-green-50 border-green-200 dark:bg-green-900/30 dark:text-green-400";
-                    positiveCount++;
-                    
-                    // Геймификация: Очень крутой результат
-                    if (delta >= 10) {
-                        const hasBonusLog = gameActionLogs.find(l => l.action === 'impact_bonus_10' && l.target === intItem.id);
-                        if (!hasBonusLog && typeof gameLogAction === 'function') gameLogAction('impact_bonus_10', intItem.id);
-                    }
-                } else if (delta < -5) {
-                    statusText = `📉 Ситуация ухудшилась (${delta}%)`;
-                    statusColor = "text-red-700 bg-red-50 border-red-200 dark:bg-red-900/30 dark:text-red-400";
-                } else {
-                    statusText = `➖ Без изменений (0%)`;
-                    statusColor = "text-orange-700 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400";
-                }
-                
-                totalScore += score;
+        let totalScore = 0; let impactCount = 0;
+        let positiveCount = 0; let negativeCount = 0; let neutralCount = 0;
+        
+        const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
+        contractorsSet.forEach(cName => {
+            const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
+            if (cChecks.length < 6) return; 
+            
+            const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
+            const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+            const impact = calculateImpactScore(myProfile.name, cName, topTemplate);
+            
+            if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { 
+                totalScore += impact.score; impactCount++; 
+                if (impact.score > 0.2) positiveCount++;
+                else if (impact.score < -0.2) negativeCount++;
+                else neutralCount++;
             }
-        }
+        });
 
-        // Обновляем запись в БД в фоне (чтобы не пересчитывать вечно)
-        if (intItem.finalImpact !== score) {
-            intItem.finalImpact = score;
-            intItem.deltaUrk = delta;
-            dbPut(STORES.INTERVENTIONS, intItem);
-        }
+        const avgImpact = impactCount > 0 ? (totalScore / impactCount) : 0;
+        let impactColor = avgImpact > 0.2 ? 'text-green-500' : (avgImpact < -0.2 ? 'text-red-500' : 'text-slate-400');
 
-        html += `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative overflow-hidden">
-            <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
-                <div class="flex-1 min-w-0 pr-2">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${intItem.contractor}</div>
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mt-0.5">${intItem.templateTitle}</div>
+        let html = `
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 animate-fadeIn">
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                    <div class="text-[20px] sm:text-[24px] font-black text-indigo-600 dark:text-indigo-400 leading-none mb-1">${twiCount}</div>
+                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">TWI-сессии</div>
                 </div>
-                <div class="text-right shrink-0">
-                    <div class="text-[9px] font-bold text-slate-400 uppercase">${dateStr}</div>
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                    <div class="text-[20px] sm:text-[24px] font-black text-orange-500 leading-none mb-1">${meetCount}</div>
+                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Совещания</div>
                 </div>
-            </div>
-            
-            <div class="text-[11px] font-black text-indigo-700 dark:text-indigo-400 mb-1 leading-snug">${intItem.typeText}</div>
-            ${intItem.comment ? `<div class="text-[10px] text-slate-600 dark:text-slate-400 italic leading-snug mb-2">«${intItem.comment}»</div>` : ''}
-            
-            <div class="mt-2 pt-2 border-t border-[var(--card-border)] flex justify-between items-center">
-                <div class="text-[10px] font-bold px-2 py-1 rounded border ${statusColor} uppercase tracking-wider">${statusText}</div>
-                <div class="text-right">
-                    <div class="text-[8px] font-black uppercase text-slate-400 tracking-widest">УрК до ➔ после</div>
-                    <div class="text-[11px] font-black text-slate-700 dark:text-slate-300">${intItem.baseUrk}% ➔ ${currentUrk}%</div>
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                    <div class="text-[20px] sm:text-[24px] font-black text-blue-500 leading-none mb-1">${etalonCount}</div>
+                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Эталоны (ОК)</div>
+                </div>
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                    <div class="text-[20px] sm:text-[24px] font-black text-yellow-500 leading-none mb-1">${pracCount}</div>
+                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Лучшие Практики</div>
                 </div>
             </div>
-        </div>`;
-    });
 
-    html += `</div>`;
-
-    // Вставляем агрегированную плашку (Дашборд) сверху
-    const dashHtml = `
-        <div class="bg-gradient-to-r from-indigo-500 to-blue-600 rounded-xl p-4 text-white shadow-md mb-4 relative overflow-hidden">
-            <div class="absolute -right-4 -top-4 opacity-10">
-                <svg class="w-32 h-32" fill="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-            </div>
-            <div class="text-[10px] font-black uppercase tracking-widest text-indigo-100 mb-1 relative z-10">Total Impact Score</div>
-            <div class="text-[36px] font-black leading-none mb-3 relative z-10">${totalScore > 0 ? '+' : ''}${totalScore.toFixed(0)}</div>
-            <div class="flex gap-4 border-t border-indigo-400/50 pt-2 relative z-10">
-                <div>
-                    <div class="text-[8px] uppercase text-indigo-200 font-bold">Всего актов</div>
-                    <div class="text-[14px] font-black">${sorted.length}</div>
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4 flex flex-col md:flex-row items-center gap-6 animate-fadeIn">
+                <div class="w-full md:w-1/2 relative h-48 flex items-center justify-center">
+                    <canvas id="impact-map-chart"></canvas>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-2">
+                        <div class="text-[28px] font-black ${impactColor} leading-none">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(1)}</div>
+                        <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Impact Score</div>
+                    </div>
                 </div>
-                <div>
-                    <div class="text-[8px] uppercase text-indigo-200 font-bold">Доказан эффект</div>
-                    <div class="text-[14px] font-black">${positiveCount}</div>
+                <div class="w-full md:w-1/2 space-y-3">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase mb-2 border-b border-[var(--card-border)] pb-2">Влияние на подрядчиков</div>
+                    <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-lg border border-green-100 dark:border-green-800/50">
+                        <span class="text-[11px] font-bold text-green-700 dark:text-green-400">Улучшили качество</span>
+                        <span class="text-[14px] font-black text-green-600">${positiveCount}</span>
+                    </div>
+                    <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300">Без изменений</span>
+                        <span class="text-[14px] font-black text-slate-500">${neutralCount}</span>
+                    </div>
+                    <div class="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg border border-red-100 dark:border-red-800/50">
+                        <span class="text-[11px] font-bold text-red-700 dark:text-red-400">Ухудшили качество</span>
+                        <span class="text-[14px] font-black text-red-600">${negativeCount}</span>
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
 
-    container.innerHTML = dashHtml + html;
+            <button onclick="showToast('Выгрузка Истории работы появится в следующем обновлении (Зависит от плагина PDF).')" class="w-full bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 animate-fadeIn">
+                📄 Выгрузить Отчет "История моей работы" (PDF)
+            </button>
+        `;
+
+        container.innerHTML = html;
+
+        setTimeout(() => {
+            const ctx = document.getElementById('impact-map-chart');
+            if (ctx) {
+                if (window.impactChartInstance) window.impactChartInstance.destroy();
+                let dataArr = [positiveCount, neutralCount, negativeCount];
+                if (positiveCount === 0 && neutralCount === 0 && negativeCount === 0) dataArr = [0, 1, 0];
+                window.impactChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: ['Улучшили', 'Без изменений', 'Ухудшили'], datasets: [{ data: dataArr, backgroundColor: ['#22c55e', '#cbd5e1', '#ef4444'], borderWidth: 0, cutout: '75%' }] },
+                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }
+        }, 50);
+    }, 50); // Делаем задержку в 50мс, чтобы браузер успел отрисовать лоадер
 };
 
 /* ============================================================================ */

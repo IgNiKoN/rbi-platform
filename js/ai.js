@@ -129,48 +129,59 @@ window.generateHeatmapAi = async function() {
     } catch(e) { container.innerHTML = "Ошибка AI"; }
 };
 
-window.generateCultureAi = async function(compoundContractorName, workType) {
+window.generateContractorForecastAi = async function(contractorName) {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    const container = document.getElementById('ai-forecast-container');
+    if (!container) return;
+
+    // Фильтр по старому формату
+    const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
+    
+    if (data.length < 5) {
+        container.innerHTML = `<div class="text-[11px] text-slate-500 font-bold bg-slate-50 p-3 rounded-lg border border-dashed border-slate-300">Слишком мало данных для нейросети (нужно от 5 проверок). Продолжайте инспекции.</div>`;
+        return;
+    }
+
+    const m = getContractorMetrics(data, window.userTemplates);
+    const trend = data.slice(-5).map(c => c.metrics.final).join('% ➔ ') + '%';
+
+    container.innerHTML = `<span class="animate-pulse font-bold text-indigo-600 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Нейросеть вычисляет тренд...</span>`;
+
+    const promptSystem = `Ты — предиктивный AI-советник по строительству. Твоя задача — спрогнозировать рейтинг подрядчика через 2 недели и дать ОДИН главный совет инженеру.
+    Ответь СТРОГО в 2 абзаца:
+    1. Прогноз УрК через 2 недели: [XX]% (Укажи тренд: Рост/Падение/Стагнация).
+    2. Фокус для инженера: [Что именно сделать, чтобы переломить тренд или удержать качество].`;
+
+    const promptUser = `Подрядчик: ${contractorName}\nДинамика последних 5 оценок: ${trend}\nИндекс стабильности: ${m.stabilityIndex}/100\nЧастота критических B3: ${m.rateB3}%`;
+
+    try {
+        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 150 });
+        container.innerHTML = `<div class="text-[12px] leading-relaxed text-indigo-900 dark:text-indigo-200 font-medium whitespace-pre-wrap">${res}</div>`;
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'forecast');
+    } catch(e) {
+        container.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
+    }
+};
+
+window.generateCultureAi = async function(contractorName) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const container = document.getElementById('culture-ai-text');
     container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI оценивает культуру...</span>`;
 
-    // ИСПРАВЛЕНИЕ: Правильно фильтруем данные по склеенному ключу "Подрядчик [Объект]"
-    const cData = getFilteredAnalyticsData().filter(c => 
-        c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === compoundContractorName
-    );
-
-    if (cData.length === 0) {
-        container.innerHTML = `<span class="text-red-500">Ошибка: недостаточно данных для анализа</span>`;
-        return;
-    }
+    const cData = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
+    if (cData.length === 0) return container.innerHTML = `<span class="text-red-500">Ошибка данных</span>`;
 
     const m = getContractorMetrics(cData, userTemplates);
-    if (!m) {
-        container.innerHTML = `<span class="text-red-500">Ошибка расчета метрик</span>`;
-        return;
-    }
-    
-    // Вытаскиваем чистое имя подрядчика для промпта
-    const cleanName = compoundContractorName.split(' [')[0];
-
     const promptSystem = `Ты — эксперт по бережливому производству (Lean). Дай оценку 'Культуры качества' подрядчика. 
     Опирайся на то, как он исправляет ошибки (стабильность). Объем: СТРОГО 2 коротких предложения. Без markdown-звездочек.`;
-    
-    const promptUser = `Подрядчик: ${cleanName}. Рейтинг надежности: ${m.finalC}%. Индекс стабильности: ${m.stabilityIndex}. Критических аварий (B3): ${m.n_изделий_с_B3}.`;
+    const promptUser = `Подрядчик: ${contractorName.split(' [')[0]}. Рейтинг: ${m.finalC}%. Стабильность: ${m.stabilityIndex}. Аварий (B3): ${m.n_изделий_с_B3}.`;
 
     try {
-        const res = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.4, max_tokens: 150 });
-        
+        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.4, max_tokens: 150 });
         container.innerHTML = res;
-        // Сохраняем вывод в память по полному ключу, чтобы он не пропадал при перезагрузке
-        customExpertConclusions[`culture_${compoundContractorName}`] = res;
+        customExpertConclusions[`culture_${contractorName}`] = res;
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-    } catch(e) { 
-        container.innerHTML = `<span class="text-red-500">Ошибка связи с AI: ${e.message}</span>`; 
-    }
+    } catch(e) { container.innerHTML = `<span class="text-red-500">Ошибка связи с AI</span>`; }
 };
 
 // === AI: ГЕНЕРАЦИЯ ЧЕРНОВИКА TWI КАРТЫ ===
@@ -451,6 +462,8 @@ window.generateAiHintForDefect = async function() {
         aiHint.classList.add('hidden'); 
     }
 };
+
+
 // Остальные функции (generatePulseAi, generateHeatmapAi, generateCultureAi, generateTaskRiskAi, generateAiRoutePlan, generateAiTutorAdvice, generatePrescriptionAi, generateTwiDraftAi, generateAiHintForDefect) 
 // просто переносятся сюда из analytics.js и app.js без изменения логики.
 // Для экономии токенов в этом ответе я показал структуру файла. Полный перенос подразумевает Ctrl+X из старых файлов и Ctrl+V сюда.

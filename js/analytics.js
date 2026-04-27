@@ -1049,6 +1049,7 @@ function renderOnePagerSubTab(data) {
 
 
 // 8. Подвкладка: Детализация подрядчика
+// 8. Подвкладка: Детализация подрядчика (с Предиктивным ИИ)
 function showContractorDetailView(contractorName) {
     currentDetailedContractor = contractorName;
     document.getElementById('contractors-main-view').classList.add('hidden');
@@ -1066,15 +1067,10 @@ function showContractorDetailView(contractorName) {
 
     let cStageData = {}; let cFailCounts = {}; let cB3Counts = {}; 
     let sumB1 = 0, sumB2 = 0, sumB3 = 0;
-    
-    // ВАЖНО: Инициализируем все 3 массива фотографий
     let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
     
     data.forEach(unit => {
-        const stagesArray = (unit.checkedStagesInfo && unit.checkedStagesInfo.length > 0) 
-                            ? unit.checkedStagesInfo 
-                            : [unit.stageName || 'Этап не указан'];
-        
+        const stagesArray = (unit.checkedStagesInfo && unit.checkedStagesInfo.length > 0) ? unit.checkedStagesInfo : [unit.stageName || 'Этап не указан'];
         stagesArray.forEach(stName => {
             if(!cStageData[stName]) cStageData[stName] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0 };
             cStageData[stName].checks++;
@@ -1086,9 +1082,7 @@ function showContractorDetailView(contractorName) {
                 cStageData[stName].b3 += unit.metrics.n_B3_fail;
                 
                 if (stagesArray.indexOf(stName) === 0) {
-                    sumB1 += unit.metrics.n_B1_fail;
-                    sumB2 += unit.metrics.n_B2_fail;
-                    sumB3 += unit.metrics.n_B3_fail;
+                    sumB1 += unit.metrics.n_B1_fail; sumB2 += unit.metrics.n_B2_fail; sumB3 += unit.metrics.n_B3_fail;
                 }
             }
         });
@@ -1111,14 +1105,10 @@ function showContractorDetailView(contractorName) {
 
                 if (s === 'ok' && cStageData[parentStage]) {
                     cStageData[parentStage].ok++;
-                    // Собираем фото эталонов
-                    if (photo) {
-                        allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
-                    }
+                    if (photo) allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                 }
                 if ((s === 'fail' || s === 'fail_escalated') && cStageData[parentStage]) {
                     cStageData[parentStage].fail++;
-                    
                     const flatList = getFlatList(cl);
                     const foundItem = flatList.find(x => x.id == id);
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
@@ -1173,11 +1163,17 @@ function showContractorDetailView(contractorName) {
 
     const expertObj = getExpertConclusion(m, contractorName, workType, data.length, contractorName.replace(/\W/g, '_'), customExpertConclusions);
     const expertUiHtml = expertObj.uiHtml;
+    const safeContractorNameForHtml = contractorName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     container.innerHTML = `
+        <!-- НОВАЯ КНОПКА: ПЕРСОНАЛЬНЫЙ ОТЧЕТ -->
+        <button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отправить Отчет Подрядчику
+        </button>
+
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm mb-4">
             <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">
-                <div onclick="openContractorMathModal('${contractorName.replace(/'/g, "\\'")}')" class="cursor-pointer active:scale-95 transition-transform bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
+                <div onclick="openContractorMathModal('${safeContractorNameForHtml}')" class="cursor-pointer active:scale-95 transition-transform bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК)</div>
                     <div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>
                 </div>
@@ -1207,9 +1203,22 @@ function showContractorDetailView(contractorName) {
             </div>
         </div>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
+        <!-- НОВЫЙ БЛОК: ПРЕДИКТИВНЫЙ ИИ ПРОГНОЗ -->
+        <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="p-3 font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
-                <span class="flex items-center gap-2">📝 Экспертное заключение ИИ</span>
+                <span class="flex items-center gap-2">🔮 Предиктивный прогноз (AI)</span>
+                <span class="transition-transform group-open:rotate-180">▼</span>
+            </summary>
+            <div class="border-t border-indigo-100 dark:border-indigo-800 p-4 bg-white dark:bg-slate-800">
+                <div id="ai-forecast-container">
+                    <button onclick="generateContractorForecastAi('${safeContractorNameForHtml}')" class="w-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm border border-slate-200 dark:border-slate-600 transition-transform">🤖 Рассчитать прогноз на 2 недели</button>
+                </div>
+            </div>
+        </details>
+
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">📝 Классическое заключение (PDCA)</span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="border-t border-[var(--card-border)] p-1">
@@ -1223,7 +1232,7 @@ function showContractorDetailView(contractorName) {
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
-                <button onclick="generateCultureAi('${contractorName.replace(/'/g, "\\'")}', '${workType}')" class="w-full bg-white border border-indigo-200 text-indigo-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 mb-2">🤖 Оценить вовлеченность</button>
+                <button onclick="generateCultureAi('${safeContractorNameForHtml}')" class="w-full bg-white border border-indigo-200 text-indigo-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 mb-2">🤖 Оценить вовлеченность</button>
                 <div id="culture-ai-text" class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
                     ${customExpertConclusions[`culture_${contractorName}`] || 'Нажмите кнопку для генерации оценки вовлеченности подрядчика.'}
                 </div>
@@ -1241,7 +1250,7 @@ function showContractorDetailView(contractorName) {
         </details>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
                 <summary class="p-3 font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                     <span>📉 Динамика по проверкам</span><span>▼</span>
                 </summary>
@@ -1265,7 +1274,6 @@ function showContractorDetailView(contractorName) {
             </details>
         </div>
 
-        <!-- ГАЛЕРЕИ (С ЭТАЛОНАМИ OK) -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                 <span class="flex items-center gap-2">📸 Фотогалереи (Брак и Эталоны)</span>
