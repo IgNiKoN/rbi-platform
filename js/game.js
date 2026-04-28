@@ -121,20 +121,6 @@ window.getBadgeSvg = function (badgeId, tier, sizeCls) {
     return `<svg class="${sizeCls} ${opacityCls} mx-auto transition-all duration-300" style="${shadow}" viewBox="0 0 24 24" fill="none" stroke="${strokeColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${defs}${path}</svg>`;
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-    try {
-        const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
-        if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
-    } catch (e) { console.error("Ошибка загрузки логов HR-метрик", e); }
-});
-
-document.addEventListener("DOMContentLoaded", async () => {
-    try {
-        const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
-        if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
-    } catch (e) { console.error("Ошибка загрузки логов HR-метрик", e); }
-});
-
 async function gameSaveLogs() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
     try { await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs }); }
@@ -409,157 +395,179 @@ function calculateImpactScore(inspector, contractor, template) {
     return { score: impactScore, trend, color, baseUrk: baseMetrics.finalC, currUrk: currMetrics.finalC };
 }
 
-// === ГЕНЕРАТОР ЗАДАЧ (ПОЛНЫЙ СПИСОК ИЗ ТЗ) ===
-window.gameGenerateWeeklyPlan = function (force = false) {
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim();
+// ==========================================
+// 3. УМНЫЙ ГЕНЕРАТОР ЗАДАЧ (ENTERPRISE LOGIC)
+// ==========================================
+
+// ==========================================
+// 3. УМНЫЙ ГЕНЕРАТОР ЗАДАЧ (ENTERPRISE LOGIC)
+// ==========================================
+window.gameForceUpdatePlan = async function() {
+    showToast("🧠 ИИ анализирует базу и перестраивает план...");
+    await gameGenerateWeeklyPlan(true);
+    rbi_renderTasksList();
+}
+
+window.gameGenerateWeeklyPlan = async function(force = false) {
+    const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     if (!currentInspector) return;
 
-    const currentWeekId = getWeekId();
-    if (weeklyPlanData.weekId === currentWeekId && !force) {
+    if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) return;
+
+    const now = new Date();
+    const currentWeekId = getWeekId(now);
+
+    if (weeklyPlanData.weekId === currentWeekId && !force && window.rbi_tasksData.length > 0) {
         gameUpdatePlanProgress();
         return;
     }
 
-    if (engineerAbsence.isActive) return;
+    const startOfThisWeek = getStartOfWeek(now);
+    const endOfThisWeek = new Date(startOfThisWeek); 
+    endOfThisWeek.setDate(startOfThisWeek.getDate() + 6);
+    endOfThisWeek.setHours(23, 59, 59, 999);
 
-    const oldPlan = weeklyPlanData.tasks || [];
-    let newTasks = [];
+    const allMyChecks = contractorArray.filter(c => c.inspectorName === currentInspector);
 
-    const now = new Date();
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // ИСПРАВЛЕНИЕ 1: Мягкая очистка задач. Не удаляем активные (pending) задачи, созданные сегодня!
+    let tasksToKeep = window.rbi_tasksData.filter(t => 
+        t.type === 'manual' || 
+        t.status !== 'pending' || 
+        (t.type === 'auto' && t.status === 'pending' && new Date(t.date).toDateString() === now.toDateString())
+    );
+    await dbClear(STORES.TASKS);
+    window.rbi_tasksData = [...tasksToKeep];
+    for (let t of tasksToKeep) { await dbPut(STORES.TASKS, t); }
 
-    const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo && c.inspectorName === currentInspector);
+    let newTasksCount = 0;
+
+    const addTask = (idSuffix, cat, icon, title, workTitle, contractor, prompt, lvl, tDate, tmplKey = '', needsEtalon = false) => {
+        // ИСПРАВЛЕНИЕ 2: Жесткая проверка на дубликаты. Если такая задача УЖЕ висит в ожидании — не создаем новую.
+        const exists = window.rbi_tasksData.find(t => t.title === title && t.contractor === contractor && t.status === 'pending');
+        if (exists) return;
+
+        const task = {
+            id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random()*1000),
+            source: 'ai', type: 'auto', category: cat, icon: icon,
+            contractor: contractor, project: document.getElementById('inp-project')?.value || "Все",
+            templateKey: tmplKey, workTitle: workTitle,
+            title: title, prompt: prompt,
+            status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
+            target: 1, done: 0, carryOverCount: 0, needsEtalon: needsEtalon
+        };
+        window.rbi_tasksData.push(task);
+        dbPut(STORES.TASKS, task);
+        newTasksCount++;
+    };
 
     const pairMap = {};
-    recentChecks.forEach(c => {
-        let statusKey = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
-        if (!pairMap[statusKey]) {
-            pairMap[statusKey] = {
-                statusKey: statusKey, project: c.projectName, contractor: c.contractorName,
+    allMyChecks.forEach(c => {
+        if (c.templateKey === 'sys_etalon_act') return;
+        let key = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
+        if (!pairMap[key]) {
+            pairMap[key] = {
+                project: c.projectName, contractor: c.contractorName,
                 templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [],
-                allChecksCount: contractorArray.filter(hist => hist.projectName === c.projectName && hist.contractorName === c.contractorName && hist.templateKey === c.templateKey).length
+                allTimeCount: 0, checksThisWeek: 0, lastCheckDate: new Date(0)
             };
         }
-        pairMap[statusKey].checks.push(c);
+        pairMap[key].checks.push(c);
+        pairMap[key].allTimeCount++;
+        const cDate = new Date(c.date);
+        if (cDate > pairMap[key].lastCheckDate) pairMap[key].lastCheckDate = cDate;
+        if (cDate >= startOfThisWeek) pairMap[key].checksThisWeek++;
     });
 
     for (let key in pairMap) {
         const pair = pairMap[key];
-
-        if (!contractorStatuses[key]) {
-            contractorStatuses[key] = { status: "active", progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 }, etalonCompleted: false, lastUpdate: new Date().toISOString() };
+        
+        const hasEtalon = contractorArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act' && c.templateTitle === pair.templateTitle);
+        if (!hasEtalon) {
+            addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, true);
         }
-        const st = contractorStatuses[key];
 
-        const hasAnyCheck = contractorArray.some(c => c.contractorName === pair.contractor && c.projectName === pair.project && (c.templateKey === 'sys_etalon_act' || c.templateKey === pair.templateKey));
-        if (hasAnyCheck || pair.allChecksCount >= 1) st.etalonCompleted = true;
-        let needsEtalon = !st.etalonCompleted;
+        const m = pair.allTimeCount > 0 ? getContractorMetrics(pair.checks, userTemplates) : null;
+        let requiredChecksPerWeek = 1;
+        let promptText = "Плановый поддерживающий контроль (Зеленая зона).";
+        let lvl = 1;
 
-        const isPaused = st.status === 'paused';
-        const isManuallyCompleted = st.status === 'completed';
+        if (pair.allTimeCount === 0) {
+            requiredChecksPerWeek = 4; promptText = "Новый этап работ. Проведите первые инспекции."; lvl = 3;
+        } else if (pair.allTimeCount < 7) {
+            requiredChecksPerWeek = 4; promptText = "Новый подрядчик. Собираем базу для рейтинга надежности. Цель: 7 проверок."; lvl = 3;
+        } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
+            requiredChecksPerWeek = 5; promptText = "Красная зона! Обязательный аудит. При наличии B3 - останавливайте работы."; lvl = 4;
+        } else if (m && m.finalC >= 70 && m.finalC <= 84) {
+            requiredChecksPerWeek = 2; promptText = "Желтая зона. Подрядчик допускает системный брак. Проверьте выполнение предписаний."; lvl = 3;
+        }
 
-        let priority = "Низкий"; let priorityLvl = 1; let target = 1;
-        let hasB3InLast = false;
+        const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
+        if (pair.allTimeCount > 0 && daysSinceLastCheck > 14) {
+            promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите аудит.`;
+            lvl = 4;
+            requiredChecksPerWeek = Math.max(requiredChecksPerWeek, 2);
+        }
 
-        if (pair.allChecksCount < 3) {
-            priority = "Новый"; priorityLvl = 3; target = 7;
-        } else {
-            const m = getContractorMetrics(pair.checks, userTemplates);
-            if (m) {
-                const lastCheck = pair.checks.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-                hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
-
-                if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) {
-                    priority = "Критично"; priorityLvl = 4; target = 5;
-                } else if (m.finalC >= 70 && m.finalC <= 84) {
-                    priority = "В плане"; priorityLvl = 2; target = 3;
-                } else {
-                    priority = "Низкий"; priorityLvl = 1; target = 1;
-                }
-
-                // АВТО-ЗАДАЧА: Входной контроль материалов (Если у подрядчика плохой УрК)
-                if (m.finalC < 75 && !newTasks.find(t => t.taskType === 'Входной контроль' && t.contractor === pair.contractor)) {
-                    newTasks.push({
-                        id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5), statusKey: key + '_mat', type: 'method', taskType: 'Входной контроль',
-                        contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: 'Входной контроль материалов',
-                        title: `Входной контроль`, desc: `Проверить качество поставляемых материалов (УрК < 75%).`,
-                        priority: "Разовая", priorityLvl: 2, target: 1, done: 0, carryOverCount: 0, needsEtalon: false,
-                        isPaused: false, isCompletedManually: false, date: new Date().toISOString()
-                    });
-                }
+        const deficit = requiredChecksPerWeek - pair.checksThisWeek;
+        if (deficit > 0) {
+            for (let i = 0; i < deficit; i++) {
+                let taskDate = new Date(now);
+                if (daysSinceLastCheck > 14) { taskDate.setDate(now.getDate() - 1); } 
+                else { taskDate.setDate(now.getDate() + i); if (taskDate > endOfThisWeek) taskDate = new Date(now); }
+                addTask(`aud_${i}`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, !hasEtalon);
             }
         }
 
-        if (hasB3InLast && priority !== "Новый") {
-            target = Math.min(target * 2, 7);
-            priority = "Критично (B3)"; priorityLvl = 4;
+        if (m) {
+            if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now);
+            
+            // ИСПРАВЛЕНИЕ 3: Воркшоп только если есть минимум 5 проверок И дефект повторился минимум 3 раза!
+            if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
+                let defectCounts = {};
+                pair.checks.forEach(c => {
+                    if(c.state) {
+                        Object.keys(c.state).forEach(id => {
+                            if(c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                                defectCounts[id] = (defectCounts[id] || 0) + 1;
+                            }
+                        });
+                    }
+                });
+                
+                const sortedIds = Object.keys(defectCounts).sort((a,b) => defectCounts[b] - defectCounts[a]);
+                if (sortedIds.length > 0 && defectCounts[sortedIds[0]] >= 3) {
+                    const topId = sortedIds[0];
+                    const tType = pair.templateKey.split('_')[0];
+                    const tKey = pair.templateKey.replace(tType + '_', '');
+                    const flat = getFlatList(tType === 'sys' ? SYSTEM_TEMPLATES[tKey]?.groups : userTemplates[tKey]?.groups);
+                    const found = flat.find(x => String(x.id) === String(topId));
+                    const topDefectName = found ? found.n : "Системные нарушения";
+
+                    addTask('workshop', 'dev', 'Развитие', `Воркшоп: ${topDefectName.substring(0,25)}...`, pair.templateTitle, pair.contractor, `Дефект "${topDefectName}" повторился ${defectCounts[topId]} раз. Проведите точечное обучение с бригадой.`, 3, now);
+                }
+            }
         }
-
-        const oldTask = oldPlan.find(t => t.statusKey === key && t.taskType === 'Плановая');
-        let deficit = 0; let carryOverCount = 0;
-
-        if (oldTask && oldTask.done < oldTask.target && !needsEtalon && !isPaused && !isManuallyCompleted) {
-            deficit = oldTask.target - oldTask.done;
-            carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
-            target = Math.min(target + deficit, 7);
-            if (priorityLvl < 4) priorityLvl++;
-        }
-
-        newTasks.push({
-            id: 'task_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5), statusKey: key, type: 'continuous', taskType: 'Плановая',
-            contractor: pair.contractor, project: pair.project, templateKey: pair.templateKey, templateTitle: pair.templateTitle,
-            title: `Инспекция: ${pair.contractor}`, desc: `Целевой объем проверок на неделю.`,
-            priority: priority, priorityLvl: priorityLvl, target: target, done: 0,
-            deficit: deficit, carryOverCount: carryOverCount, needsEtalon: needsEtalon,
-            isPaused: isPaused, isCompletedManually: isManuallyCompleted, date: new Date().toISOString()
-        });
     }
-
-    // ==========================================
-    // АВТОМАТИЧЕСКИЕ МЕТОДИЧЕСКИЕ ЗАДАЧИ ИЗ ТЗ
-    // ==========================================
-    const addTask = (idSuffix, title, desc, type, lvl, target, contractor = "Все подрядчики", project = "Все объекты") => {
-        newTasks.push({
-            id: 'task_' + Date.now().toString(36) + idSuffix, statusKey: 'sys_' + idSuffix, type: 'method', taskType: type,
-            contractor: contractor, project: project, templateKey: '', templateTitle: 'Аналитика и Отчеты',
-            title: title, desc: desc, priority: "Рутина", priorityLvl: lvl, target: target, done: 0,
-            carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false, date: new Date().toISOString()
-        });
-    };
 
     const dayOfWeek = now.getDay();
-    const isFirstDayOfMonth = now.getDate() === 1;
-
+    const isFirstDayOfMonth = now.getDate() <= 3;
     if (dayOfWeek === 5) {
-        addTask('fmea_weekly', 'Заполнить FMEA таблицу', 'ИИ соберет дефекты (B2/B3) за неделю, укажите корректирующие действия.', 'ППР', 3, 1);
-        addTask('poster_weekly', 'Распечатать Плакат качества', 'Повесить плакат с рейтингом подрядчиков на видном месте стройплощадки.', 'ППР', 2, 1);
+        addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Зайдите в Инженер -> FMEA и позвольте ИИ проанализировать коренные причины брака за неделю.', 3, now);
+        addTask('poster_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте в Аналитике плакат А3 и повесьте в штабе.', 2, now);
     }
-    if (dayOfWeek === 2) {
-        addTask('meeting_weekly', 'Еженедельный разбор качества', 'Провести совещание с подрядчиками по повестке из Meeting Workspace.', 'Инструктаж', 4, 1);
+    if (dayOfWeek === 1 || dayOfWeek === 2) {
+        addTask('meet_w', 'meeting', 'Совещание', 'Еженедельный разбор', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку по худшим подрядчикам.', 4, now);
     }
     if (isFirstDayOfMonth) {
-        addTask('onepager_monthly', 'Ежемесячный отчет One-Pager', 'Отправить руководителю выгрузку сводного статуса объекта.', 'ППР', 4, 1);
-    }
-    // Раз в месяц заводской контроль
-    if (isFirstDayOfMonth) {
-        addTask('factory_visit', 'Выездной контроль на заводе', 'Проверка производственной площадки критичного поставщика.', 'Входной контроль', 2, 1);
-    }
-    // Раз в квартал
-    if (now.getMonth() % 3 === 0 && now.getDate() === 15) {
-        addTask('handover_warranty', 'Передача в гарантию', 'Сформировать сводку дефектов за квартал по завершенным этапам.', 'ППР', 2, 1);
+        addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса объекта.', 3, now);
     }
 
-    oldPlan.filter(t => t.type === 'manual' || t.type === 'auto').forEach(t => {
-        if (t.status !== 'done') newTasks.push(t);
-    });
-
-    newTasks.sort((a, b) => b.priorityLvl - a.priorityLvl);
-    weeklyPlanData = { weekId: currentWeekId, tasks: newTasks, completed: false };
-
+    weeklyPlanData = { weekId: currentWeekId, tasks: window.rbi_tasksData, completed: false };
     saveWeeklyPlan();
-    gameUpdatePlanProgress();
+
+    if (force) showToast(`✅ План актуализирован. Добавлено ${newTasksCount} задач.`);
 };
+
 
 window.gameUpdatePlanProgress = function () {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim();
@@ -729,12 +737,6 @@ window.checkAutoExpireAbsence = function () {
     if (engineerAbsence.isActive && engineerAbsence.endDate && new Date() > new Date(engineerAbsence.endDate)) {
         engineerAbsence.isActive = false; engineerAbsence.endDate = null; saveWeeklyPlan();
         gameGenerateWeeklyPlan(true); showToast("С возвращением! План работы возобновлен.");
-    }
-};
-
-window.gameForceUpdatePlan = function () {
-    if (confirm("Принудительно пересчитать план на эту неделю на основе свежих рисков по объекту?")) {
-        gameGenerateWeeklyPlan(true); showToast("План успешно пересчитан!"); gameRenderDashboard();
     }
 };
 

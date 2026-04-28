@@ -459,8 +459,13 @@ window.triggerSync = async function(mode = 'silent') {
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
 
         // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ ИНЖЕНЕРА
-        // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ И ВСЕ ЕГО ЗАДАЧИ В ОБЛАКО (JSON)
+        // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ, ЗАДАЧИ И ТЕКУЩИЙ ЧЕРНОВИК В ОБЛАКО
+        // Читаем текущий черновик из БД (если он есть)
+        const currentSession = await dbGet(STORES.STATE, 'current_session') || {};
+        
         const hrProfileData = {
+            timestamp: Date.now(), // Метка времени для определения актуальности
+            session: currentSession, // <-- Тот самый черновик (state, photos, details)
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
             plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
             absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
@@ -722,9 +727,10 @@ window.mergeCloudData = async function(teamData) {
         await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
     }
 
+    // ВОССТАНОВЛЕНИЕ ЛИЧНЫХ ДАННЫХ И ЧЕРНОВИКА (ДЛЯ БЕСШОВНОЙ РАБОТЫ)
     if (personalDataToRestore && typeof state !== 'undefined') {
-        const isSafeToRestoreSession = Object.keys(state).length === 0;
-
+        
+        // 1. Восстанавливаем настройки
         if (personalDataToRestore.settings && typeof appSettings !== 'undefined') {
             appSettings = { ...appSettings, ...personalDataToRestore.settings };
             if (typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
@@ -732,6 +738,22 @@ window.mergeCloudData = async function(teamData) {
             if (typeof applySmartLocks === 'function') applySmartLocks();
         }
         
+        // 2. Восстанавливаем Задачи
+        if (personalDataToRestore.tasks && Array.isArray(personalDataToRestore.tasks)) {
+            // Мягкое слияние задач: если пришедшая задача новее или наша не существует, берем из облака
+            for (const t of personalDataToRestore.tasks) {
+                const existing = window.rbi_tasksData.find(x => x.id === t.id);
+                if (!existing) {
+                    window.rbi_tasksData.push(t);
+                    await dbPut(STORES.TASKS, t);
+                } else if (existing.status === 'pending' && t.status !== 'pending') {
+                    // Облако знает, что задача закрыта на ПК, а телефон думает, что она открыта
+                    Object.assign(existing, t);
+                    await dbPut(STORES.TASKS, existing);
+                }
+            }
+        }
+
         if (personalDataToRestore.plan && typeof weeklyPlanData !== 'undefined') {
             weeklyPlanData = personalDataToRestore.plan;
             if (typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
@@ -742,18 +764,47 @@ window.mergeCloudData = async function(teamData) {
             if (typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'engineer_absence', data: engineerAbsence });
         }
 
-        if (isSafeToRestoreSession && personalDataToRestore.session) {
-            currentTemplateKey = personalDataToRestore.session.templateKey || '';
-            state = personalDataToRestore.session.state || {};
-            details = personalDataToRestore.session.details || {};
-            photos = personalDataToRestore.session.photos || {};
-            customExpertConclusions = personalDataToRestore.session.expert || {};
-            
-            if (currentTemplateKey) {
-                const type = currentTemplateKey.split('_')[0];
-                const key = currentTemplateKey.replace(type + '_', '');
-                currentChecklist = type === 'sys' ? SYSTEM_TEMPLATES[key].groups : userTemplates[key].groups;
-                if (typeof render === 'function') render();
+        // 3. Восстанавливаем Черновик (Если облачный свежее)
+        if (personalDataToRestore.session) {
+            const localSession = await dbGet(STORES.STATE, 'current_session') || {};
+            // Если локальный черновик пуст или облачный явно новее
+            const shouldOverrideDraft = Object.keys(state).length === 0 || (personalDataToRestore.timestamp > (localSession.timestamp || 0));
+
+            if (shouldOverrideDraft) {
+                currentTemplateKey = personalDataToRestore.session.templateKey || '';
+                state = personalDataToRestore.session.state || {};
+                details = personalDataToRestore.session.details || {};
+                photos = personalDataToRestore.session.photos || {};
+                customExpertConclusions = personalDataToRestore.session.customExpertConclusions || {};
+                
+                // Распаковываем фото в ОЗУ
+                for (let k in photos) {
+                    if (photos[k] && photos[k].startsWith('local://')) {
+                        const localUrl = await PhotoManager.getAsyncUrl(photos[k]);
+                        if (localUrl) photos[k] = localUrl;
+                    }
+                }
+
+                if (currentTemplateKey) {
+                    const type = currentTemplateKey.split('_')[0];
+                    const key = currentTemplateKey.replace(type + '_', '');
+                    currentChecklist = type === 'sys' && SYSTEM_TEMPLATES[key] ? SYSTEM_TEMPLATES[key].groups : (userTemplates[key] ? userTemplates[key].groups : []);
+                    
+                    // Обновляем поля шапки
+                    const p = personalDataToRestore.session;
+                    if(document.getElementById('inp-project')) document.getElementById('inp-project').value = p.project || '';
+                    if(document.getElementById('inp-contractor')) document.getElementById('inp-contractor').value = p.contractor || '';
+                    if(document.getElementById('inp-section')) document.getElementById('inp-section').value = p.section || '';
+                    if(document.getElementById('inp-floor')) document.getElementById('inp-floor').value = p.floor || '';
+                    if(document.getElementById('inp-room')) document.getElementById('inp-room').value = p.room || '';
+
+                    if (typeof updateLocationFromStructured === 'function') updateLocationFromStructured();
+                    
+                    if (document.getElementById('tab-audit')?.classList.contains('active')) {
+                        if (typeof render === 'function') render();
+                        if (typeof updateUI === 'function') updateUI();
+                    }
+                }
             }
         }
     }

@@ -76,42 +76,24 @@
     </div>
     <!-- === МОДАЛКА ВЫБОРА ИСТОЧНИКА ФОТО === -->
     <div id="photo-source-modal"
-        class="fixed inset-0 bg-slate-900/70 z-[3000] hidden items-center justify-center p-4 backdrop-blur-sm"
+        class="fixed inset-0 bg-slate-900/70 z-[9999] hidden items-center justify-center p-4 backdrop-blur-sm"
         onclick="this.style.display='none'">
         <div class="bg-[var(--card-bg)] w-full max-w-xs p-6 rounded-2xl shadow-2xl flex flex-col gap-3"
             onclick="event.stopPropagation()">
-            <div
-                class="font-black text-center text-[14px] uppercase tracking-tight mb-2 text-slate-800 dark:text-white">
+            <div class="font-black text-center text-[14px] uppercase tracking-tight mb-2 text-slate-800 dark:text-white">
                 Добавить фото</div>
-            <button
-                onclick="document.getElementById('photo-input-camera').click(); document.getElementById('photo-source-modal').style.display='none';"
-                class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md flex items-center justify-center gap-2 active:scale-95">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z">
-                    </path>
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z"></path>
-                </svg>
+            <button onclick="document.getElementById('photo-input-camera').click(); document.getElementById('photo-source-modal').style.display='none';" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md flex items-center justify-center gap-2 active:scale-95">
                 Сделать снимок
             </button>
-            <button
-                onclick="document.getElementById('photo-input-gallery').click(); document.getElementById('photo-source-modal').style.display='none';"
-                class="w-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-sm flex items-center justify-center gap-2 active:scale-95 border border-slate-200 dark:border-slate-700">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z">
-                    </path>
-                </svg>
+            <button onclick="document.getElementById('photo-input-gallery').click(); document.getElementById('photo-source-modal').style.display='none';" class="w-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-sm flex items-center justify-center gap-2 active:scale-95 border border-slate-200 dark:border-slate-700">
                 Из галереи
             </button>
-            <button onclick="document.getElementById('photo-source-modal').style.display='none'"
-                class="w-full mt-1 text-slate-400 py-2 font-bold text-[10px] uppercase active:scale-95">Отмена</button>
+            <button onclick="document.getElementById('photo-source-modal').style.display='none'" class="w-full mt-1 text-slate-400 py-2 font-bold text-[10px] uppercase active:scale-95">Отмена</button>
         </div>
     </div>
 
     <!-- === ФОТОРЕДАКТОР (РИСОВАНИЕ СТРЕЛОК) === -->
-    <div id="photo-editor-overlay" class="fixed inset-0 bg-slate-900 z-[2500] hidden flex-col">
+    <div id="photo-editor-overlay" class="fixed inset-0 bg-slate-900 z-[10000] hidden flex-col">
         <div class="flex justify-between items-center p-4 bg-slate-900 text-white border-b border-slate-700">
             <button onclick="cancelPhotoEditor()"
                 class="text-sm font-bold text-slate-400 active:scale-95">Отмена</button>
@@ -142,7 +124,6 @@
             </button>
         </div>
     </div>
-
     <!-- === МОДАЛКА ДОБАВЛЕНИЯ НОРМАТИВА (НД) === -->
     <div id="add-doc-modal-overlay"
         class="fixed inset-0 bg-slate-900/80 z-[2000] hidden items-center justify-center p-4 backdrop-blur-sm"
@@ -893,15 +874,7 @@
                         </div>
                     </div>
                 </div>
-
-                <button onclick="rbi_openTaskModal()"
-                    class="w-full bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 mb-4">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
-                    </svg>
-                    Добавить задачу вручную
-                </button>
-
+                
                 <div id="rbi-tasks-container" class="space-y-4 pb-8"></div>
             </div>
 
@@ -3118,19 +3091,28 @@
             </div>
         </div>
     </div>
-    <!-- === НОВАЯ МОДАЛКА ИНФОРМАЦИИ О ЗАДАЧЕ === -->
-    <div id="task-details-modal"
-        class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm"
-        onclick="this.style.display='none'">
-        <div class="bg-[var(--card-bg)] w-full max-w-sm p-5 rounded-3xl shadow-2xl transition-transform border border-[var(--card-border)] flex flex-col"
-            onclick="event.stopPropagation()">
-            <div id="modal-icon"></div>
-            <div id="modal-title"
-                class="font-black text-[14px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 text-slate-800 dark:text-white">
+    
+    <!-- === СУПЕР-МОДАЛКА ДЕТАЛИЗАЦИИ ЗАДАЧИ (V2.0) === -->
+    <!-- === СУПЕР-МОДАЛКА ДЕТАЛИЗАЦИИ ЗАДАЧИ (V2.0) === -->
+    <div id="task-details-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm" onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
+        <div class="bg-[var(--card-bg)] w-full max-w-lg max-h-[95vh] rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2" id="task-details-header-title">
+                    📋 Детализация задачи
+                </div>
+                <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
             </div>
-            <div id="task-details-body" class="overflow-y-auto max-h-[70vh] custom-scrollbar pr-1"></div>
+            
+            <div id="task-details-body" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+                <!-- Контент генерируется через JS -->
+            </div>
+            
+            <div id="task-details-footer" class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 shrink-0 flex flex-col gap-2">
+                <!-- Кнопки действий генерируются через JS -->
+            </div>
         </div>
     </div>
+    <input type="file" id="task-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleTaskCompletionPhoto(event)">
 
     <!-- === МОДАЛКА AI-ЧАТА ПО НОРМАТИВАМ === -->
     <div id="ai-chat-modal"
@@ -3188,55 +3170,7 @@
         </div>
     </div>
 
-    <!-- RBI NEW: МОДАЛКА ВЫПОЛНЕНИЯ / ПЕРЕНОСА ЗАДАЧИ -->
-    <div id="rbi-task-action-modal" class="fixed inset-0 bg-slate-900/80 z-[8000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="rbi_closeTaskActionModal()">
-        <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
-                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2" id="rbi-task-modal-title">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Действие по задаче
-                </div>
-                <button onclick="rbi_closeTaskActionModal()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
-            </div>
-            
-            <div class="p-4 space-y-4">
-                <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 p-3 rounded-xl text-[11px] font-bold text-indigo-900 dark:text-indigo-200" id="rbi-task-modal-desc">
-                    <!-- Описание задачи -->
-                </div>
-
-                <!-- Режим: ВЫПОЛНИТЬ -->
-                <div id="rbi-task-mode-complete" class="space-y-3 hidden">
-                    <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Комментарий / Результат</label>
-                        <textarea id="rbi-task-comment" class="input-base h-20 resize-none" placeholder="Что решили/выявили..."></textarea>
-                    </div>
-                    <button onclick="rbi_saveTaskComplete()" class="w-full bg-green-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Подтвердить выполнение
-                    </button>
-                </div>
-
-                <!-- Режим: ПЕРЕНЕСТИ -->
-                <div id="rbi-task-mode-reschedule" class="space-y-3 hidden">
-                    <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Новая дата</label>
-                        <input type="date" id="rbi-task-new-date" class="input-base">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Причина переноса</label>
-                        <select id="rbi-task-reschedule-reason" class="input-base">
-                            <option value="Подрядчик не готов">Подрядчик не готов</option>
-                            <option value="Нет материалов">Нет материалов на объекте</option>
-                            <option value="Погодные условия">Погодные условия</option>
-                            <option value="Сдвиг графика">Официальный сдвиг графика</option>
-                            <option value="Иное">Иное</option>
-                        </select>
-                    </div>
-                    <button onclick="rbi_saveTaskReschedule()" class="w-full bg-orange-500 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Перенести задачу
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    
 
     <!-- RBI NEW: МОДАЛКА ВОЗДЕЙСТВИЙ НА ПОДРЯДЧИКА -->
     <div id="rbi-intervention-modal"

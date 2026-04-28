@@ -31,7 +31,18 @@ window.openEtalonConstructor = function(contractor, templateKey, templateTitle, 
 
     // Добавляем первый пустой элемент по умолчанию
     addEtalonElement();
-
+    // ИСПРАВЛЕНИЕ: Динамически внедряем кнопки "Сохранить" и "Печать"
+    const headerContainer = document.getElementById('etalon-title-text').parentElement;
+    headerContainer.innerHTML = `
+        <button onclick="closeEtalonConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+        </button>
+        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center flex-1 truncate px-2" id="etalon-title-text">${contractor} | ${templateTitle}</div>
+        <div class="flex gap-1.5 shrink-0">
+            <button onclick="saveEtalonAct(false)" class="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">Сохранить</button>
+            <button onclick="saveEtalonAct(true)" class="text-[10px] font-bold text-white bg-indigo-600 px-3 py-2 rounded-lg active:scale-95 shadow-md transition-colors flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
+        </div>
+    `;
     const view = document.getElementById('etalon-constructor-view');
     view.classList.remove('hidden');
     document.body.classList.add('modal-open');
@@ -67,25 +78,32 @@ window.addEtalonElement = function() {
 
 window.triggerEtalonPhotoUpload = function(elId) {
     currentEtalonUploadId = elId;
-    document.getElementById('etalon-photo-input').click();
+    window.activePhotoContext = 'etalon'; // Говорим системе, что фото идет в Эталон
+    document.getElementById('photo-source-modal').style.display = 'flex'; // Открываем выбор: Камера/Галерея
 };
 
-window.handleEtalonPhotoUpload = function(event) {
-    if (!event.target.files[0] || !currentEtalonUploadId) return;
+// Функция, которая вызывается ПОСЛЕ того, как инженер порисовал на фото и нажал "Сохранить"
+window.saveEtalonMarkupPhoto = async function() {
+    if (!editorCanvas || !currentEtalonUploadId) return;
     
-    showToast("Обработка фото...");
+    // Получаем картинку с рисунками
+    const base64 = editorCanvas.toDataURL('image/jpeg', 0.85);
+    showToast("⚙️ Сохранение фото в базу...");
     
-    compressImageToBase64(event.target.files[0], 1000, 0.8, async (base64) => {
-        const localUrl = await PhotoManager.saveLocal(base64, 'etalon');
-        const container = document.getElementById(currentEtalonUploadId).querySelector('.etalon-photo-container');
-        container.dataset.photo = localUrl;
-        container.innerHTML = `
-            <div class="relative w-full h-40 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900">
-                <img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover cursor-pointer" onclick="openPhotoViewer('${localUrl}')">
-                <button onclick="removeEtalonPhoto('${currentEtalonUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
-            </div>`;
-        event.target.value = '';
-    });
+    // Мгновенно сохраняем в бинарную базу данных телефона
+    const localUrl = await PhotoManager.saveLocal(base64, 'etalon');
+    
+    const container = document.getElementById(currentEtalonUploadId).querySelector('.etalon-photo-container');
+    container.dataset.photo = localUrl;
+    
+    container.innerHTML = `
+        <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
+            <img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-contain cursor-pointer active:scale-95 transition-transform" onclick="setTimeout(() => openPhotoViewer('${localUrl}'), 100)">
+            <button onclick="removeEtalonPhoto('${currentEtalonUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
+        </div>`;
+        
+    showToast("📸 Фото эталона сохранено!");
+    cancelPhotoEditor(); // Закрываем редактор
 };
 
 window.removeEtalonPhoto = function(elId) {
@@ -93,11 +111,12 @@ window.removeEtalonPhoto = function(elId) {
     container.dataset.photo = '';
     container.innerHTML = `
         <button onclick="triggerEtalonPhotoUpload('${elId}')" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
-            📸 Прикрепить фото узла
+            📸 Прикрепить фото (Камера / Галерея)
         </button>`;
 };
 
-window.saveEtalonAct = async function() {
+
+window.saveEtalonAct = async function(printAfter = false) {
     const location = document.getElementById('etalon-location').value.trim();
     const participants = document.getElementById('etalon-participants').value.trim();
     const deviations = document.getElementById('etalon-deviations').value.trim() || 'Отклонений не выявлено';
@@ -114,36 +133,29 @@ window.saveEtalonAct = async function() {
 
     if (elements.length === 0) return showToast("⚠️ Добавьте хотя бы один элемент эталона!");
 
-    // Сохраняем Эталон в общую историю как спец-проверку (чтобы работали фильтры и аналитика)
     const etalonRecord = {
         id: Date.now() + Math.floor(Math.random() * 1000), 
         date: new Date().toISOString(), 
         projectName: document.getElementById('inp-project')?.value || "Объект", 
         inspectorName: document.getElementById('inp-inspector')?.value || "Инженер", 
         contractorName: currentEtalonContext.contractor,
-        templateKey: 'sys_etalon_act', // Спец-ключ для логики
-        templateTitle: currentEtalonContext.templateTitle, // Настоящее название работы
+        templateKey: 'sys_etalon_act', 
+        templateTitle: currentEtalonContext.templateTitle, 
         location: location, 
         instanceId: "etalon", 
         stageId: 0, 
         stageName: "Акт-Эталон",
         checkedStagesInfo: ["Фиксация эталона"], 
         isCompleted: true,
-        // Специальные данные акта
-        state: { '9901': 'ok' }, // Фейковый успешный пункт для аналитики
+        state: { '9901': 'ok' }, 
         photos: {},
-        details: {
-            participants: participants,
-            deviations: deviations,
-            elements: elements
-        },
+        details: { participants: participants, deviations: deviations, elements: elements },
         metrics: { final: 100, baseUrkPerc: 100, checkedCount: 1, totalCount: 1, n_B1_fail: 0, n_B2_fail: 0, n_B3_fail: 0, kc: 1, kcrit: 1, statusTxt: "ЭТАЛОН", statusCls: "tag-blue" }
     };
 
     contractorArray.push(etalonRecord); 
     await dbPut(STORES.HISTORY, etalonRecord);
 
-    // Закрываем задачу в Плане
     if (currentEtalonContext.statusKey && weeklyPlanData.tasks) {
         const task = weeklyPlanData.tasks.find(t => t.statusKey === currentEtalonContext.statusKey);
         if (task) {
@@ -154,39 +166,68 @@ window.saveEtalonAct = async function() {
     }
 
     if (typeof gameLogAction === 'function') gameLogAction('etalon_accepted', etalonRecord.id);
-
+    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ ЭТАЛОНА
+    if (window.activeTaskId) {
+        const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
+        if (task) {
+            task.status = 'done';
+            task.resultComment = 'Эталон зафиксирован';
+            dbPut(STORES.TASKS, task);
+        }
+        window.activeTaskId = null;
+    }
     showToast("✅ Акт-Эталон успешно сохранен!");
-    closeEtalonConstructor();
     
-    // Предлагаем сразу распечатать
-    setTimeout(() => { printEtalonAct(etalonRecord.id); }, 500);
+    // Если нажали кнопку "Печать" — открываем PDF
+    if (printAfter) {
+        setTimeout(() => { printEtalonAct(etalonRecord.id); }, 500);
+    } else {
+        closeEtalonConstructor();
+    }
     
-    // Перезагружаем интерфейс
-    if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    // ИСПРАВЛЕНИЕ: Принудительно обновляем все кэши, чтобы Эталон мгновенно появился везде!
+    setTimeout(() => {
+        if (typeof gameCalculateAllProfiles === 'function') gameCalculateAllProfiles();
+        if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
+        if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
+        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+        if (typeof renderHistoryTab === 'function') renderHistoryTab();
+    }, 200);
 };
 
-window.printEtalonAct = function(historyId) {
+window.printEtalonAct = async function(historyId) {
     const record = contractorArray.find(c => c.id === historyId);
     if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
 
-    const mode = 'script'; // Всегда генерируем PDF для скачивания
+    const mode = 'script'; 
     const d = record.details;
 
-    let elementsHtml = d.elements.map((el, idx) => `
-        <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #4f46e5; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
-            <tr>
-                <td style="padding: 15px; vertical-align: top;">
-                    <h3 style="color: #312e81; margin: 0 0 5px 0; font-size: 14px; text-transform: uppercase;">${idx + 1}. ${el.name}</h3>
-                    <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0;">${el.desc || 'Описание отсутствует'}</p>
-                </td>
-                ${el.photo ? `<td style="width: 200px; padding: 15px; vertical-align: top; text-align: right;">
-                    <div style="width: 100%; height: 150px; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
-                        <img src="${window.getPhotoSrc(el.photo)}" style="width: 100%; height: 100%; object-fit: contain;">
-                    </div>
-                </td>` : ''}
-            </tr>
-        </table>
-    `).join('');
+    // АСИНХРОННОЕ ИЗВЛЕЧЕНИЕ ФОТО: Дожидаемся, пока все фотки выгрузятся из БД в оперативную память
+    let elementsHtml = '';
+    for (let i = 0; i < d.elements.length; i++) {
+        const el = d.elements[i];
+        let realPhotoSrc = '';
+        if (el.photo) {
+            // Если фото лежит в БД, достаем его физический URL
+            realPhotoSrc = await PhotoManager.getAsyncUrl(el.photo) || window.getPhotoSrc(el.photo) || el.photo;
+        }
+
+        elementsHtml += `
+            <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #4f46e5; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
+                <tr>
+                    <td style="padding: 15px; vertical-align: top;">
+                        <h3 style="color: #312e81; margin: 0 0 5px 0; font-size: 14px; text-transform: uppercase;">${i + 1}. ${el.name}</h3>
+                        <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0;">${el.desc || 'Описание отсутствует'}</p>
+                    </td>
+                    ${realPhotoSrc ? `<td style="width: 200px; padding: 15px; vertical-align: top; text-align: right;">
+                        <div style="width: 100%; height: 150px; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
+                            <img src="${realPhotoSrc}" style="width: 100%; height: 100%; object-fit: contain;">
+                        </div>
+                    </td>` : ''}
+                </tr>
+            </table>
+        `;
+    }
 
     const content = `
         <div style="text-align: center; margin-bottom: 20px;">

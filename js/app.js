@@ -8,6 +8,7 @@ let contractorArray = [];
 let userTemplates = {};
 let currentTemplateKey = ''; 
 let currentChecklist = [];
+window.activeTaskId = null; // Глобальная переменная для отслеживания текущей выполняемой задачи
 let currentPhotoId = null;
 let chartInstances = {};
 let customExpertConclusions = {};
@@ -26,8 +27,12 @@ let isDragging = false;
 let startX, startY, translateX = 0, translateY = 0;
 
 // Демо-режим
+// Демо-режим и резервные хранилища реальных данных
 let isDemoMode = false;
 let realState = {}, realDetails = {}, realPhotos = {}, realContractorArray = [], realTemplateKey = '';
+let real_rbi_tasksData = [], real_weeklyPlanData = {}, real_gameActionLogs = [];
+let real_rbi_meetingsData = [], real_rbi_interventionsData = [], real_rbi_practicesData = [];
+let realTwiCards = [], realCustomDocs = [], realCustomNodes = [];
 
 // Настройки приложения (v16.0)
 let appSettings = {
@@ -177,19 +182,21 @@ async function saveSessionData() {
     try {
         await dbPut(STORES.STATE, {
             key: 'current_session',
+            timestamp: Date.now(), // <-- КРИТИЧЕСКИ ВАЖНО ДЛЯ БЕСШОВНОЙ РАБОТЫ МЕЖДУ ПК И ТЕЛЕФОНОМ
             templateKey: currentTemplateKey,
             project: document.getElementById('inp-project') ? document.getElementById('inp-project').value : '',
             inspector: document.getElementById('inp-inspector') ? document.getElementById('inp-inspector').value : '',
             contractor: document.getElementById('inp-contractor') ? document.getElementById('inp-contractor').value : '',
             location: document.getElementById('inp-location') ? document.getElementById('inp-location').value : '',
             state, details, photos,
-            customExpertConclusions  // ← ДОБАВЛЕНО: сохраняем редактуры заключений
+            customExpertConclusions
         });
     } catch (e) {
         console.error('Ошибка сохранения в IndexedDB:', e);
-        showToast('⚠️ Ошибка автосохранения!');  // ← ДОБАВЛЕНО: уведомляем пользователя
-    if (typeof triggerSync === 'function') triggerSync('silent');
+        showToast('⚠️ Ошибка автосохранения!');
     }
+    
+    if (typeof triggerSync === 'function') triggerSync('silent');
 }
 
 async function restoreSession() {
@@ -1553,9 +1560,12 @@ function showHistoryDetail(id) {
         ${item.metrics.reason ? `<div class="text-[10px] font-bold text-red-600 mb-3 bg-red-50 p-3 rounded-lg border border-red-100 shadow-sm">${item.metrics.reason}</div>` : ''}
         
         ${item.templateKey === 'sys_etalon_act' 
-            ? `<button onclick="closeModal(); setTimeout(() => printEtalonAct(${item.id}), 300)" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
-                   📥 Скачать Акт-Эталон (PDF)
-               </button>`
+            ? `<div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 mb-4 text-center shadow-sm">
+                   <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Это Акт-Эталон</div>
+                   <button onclick="closeModal(); setTimeout(() => printEtalonAct(${item.id}), 300)" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                       🖨️ РАСПЕЧАТАТЬ (PDF)
+                   </button>
+               </div>`
             : `<button onclick="closeModal(); setTimeout(() => generatePrescriptionAi(${item.id}), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
                    📄 Создать предписание (ИИ)
                </button>`
@@ -2387,7 +2397,16 @@ async function saveProductToArray() {
     } else if (typeof gameUpdatePlanProgress === 'function') {
         gameUpdatePlanProgress(); 
     }
-    
+    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ АУДИТА
+    if (window.activeTaskId) {
+        const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
+        if (task) {
+            task.status = 'done';
+            task.resultComment = 'Аудит проведен';
+            dbPut(STORES.TASKS, task);
+        }
+        window.activeTaskId = null; // Сбрасываем
+    }
     state = {}; details = {}; photos = {}; 
     secInput.value = ''; floorInput.value = ''; roomInput.value = ''; locHidden.value = '';
     
@@ -2851,7 +2870,10 @@ let editorImgElement = null; // Оригинальное изображение 
 
 function handlePhotoUpload(event) {
     const file = event.target.files[0];
-    if (!file || !currentPhotoId) return;
+    if (!file) return;
+
+    // В обычном режиме проверяем, есть ли currentPhotoId. Если это Эталон - пропускаем.
+    if (window.activePhotoContext !== 'etalon' && !currentPhotoId) return;
 
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -2862,6 +2884,14 @@ function handlePhotoUpload(event) {
             document.body.classList.add('modal-open');
             
             initPhotoEditor();
+
+            // УМНЫЙ РОУТИНГ: Куда сохранять фото после рисования?
+            const saveBtn = document.querySelector('#photo-editor-overlay button.text-green-400');
+            if (window.activePhotoContext === 'etalon') {
+                saveBtn.onclick = saveEtalonMarkupPhoto;
+            } else {
+                saveBtn.onclick = saveEditedPhoto;
+            }
         }
         editorImgElement.src = e.target.result;
     }
@@ -2960,6 +2990,7 @@ function cancelPhotoEditor() {
     document.body.classList.remove('modal-open');
     currentPhotoId = null;
     editorImgElement = null;
+    window.activePhotoContext = null; // Очищаем контекст, чтобы не ломать другие загрузки
 }
 
 function saveEditedPhoto() {
@@ -5433,19 +5464,29 @@ function initHorizontalMouseScroll() {
 // ============================================================================
 // === БЛОК: СОВЕРШЕННЫЙ ДЕМО-РЕЖИМ (150+ ПРОВЕРОК + БОГАТАЯ БАЗА) ===
 // ============================================================================
-let realTwiCards = [];
-let realGameLogs = []; 
-let realCustomDocs = [];
 
-function startDemoMode(silent = false) {
-    // 1. Сохраняем реальные данные, чтобы вернуть их при выходе
+// ============================================================================
+// === БЛОК: СОВЕРШЕННЫЙ ДЕМО-РЕЖИМ (ПОЛНОЕ ПОКРЫТИЕ ФУНКЦИОНАЛА) ===
+// ============================================================================
+
+window.startDemoMode = function(silent = false) {
+    // 1. БЕЗОПАСНОСТЬ: СОХРАНЯЕМ РЕАЛЬНЫЕ ДАННЫЕ В ПАМЯТИ
     realState = JSON.parse(JSON.stringify(state));
     realDetails = JSON.parse(JSON.stringify(details));
     realPhotos = JSON.parse(JSON.stringify(photos));
     realContractorArray = JSON.parse(JSON.stringify(contractorArray));
-    realTwiCards = JSON.parse(JSON.stringify(customTwiCards));
-    realCustomDocs = JSON.parse(JSON.stringify(customDocs));
     realTemplateKey = currentTemplateKey;
+    
+    real_rbi_tasksData = JSON.parse(JSON.stringify(window.rbi_tasksData || []));
+    real_weeklyPlanData = JSON.parse(JSON.stringify(typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : {}));
+    real_gameActionLogs = JSON.parse(JSON.stringify(typeof gameActionLogs !== 'undefined' ? gameActionLogs : []));
+    real_rbi_meetingsData = JSON.parse(JSON.stringify(window.rbi_meetingsData || []));
+    real_rbi_interventionsData = JSON.parse(JSON.stringify(window.rbi_interventionsData || []));
+    real_rbi_practicesData = JSON.parse(JSON.stringify(window.rbi_practicesData || []));
+    
+    realTwiCards = JSON.parse(JSON.stringify(customTwiCards || []));
+    realCustomDocs = JSON.parse(JSON.stringify(customDocs || []));
+    realCustomNodes = JSON.parse(JSON.stringify(customNodes || []));
 
     isDemoMode = true;
     document.body.classList.add('demo-mode');
@@ -5453,127 +5494,145 @@ function startDemoMode(silent = false) {
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit && !silent) { fabExit.classList.remove('hidden'); fabExit.style.display = 'flex'; }
     
-    // 2. Генерируем 150 проверок
-    contractorArray = generateDemoHistory();
+    const now = new Date();
+    const todayStr = now.toISOString();
 
+    // 2. ГЕНЕРАЦИЯ БАЗЫ ПРОВЕРОК (150+ штук)
     const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
     const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
 
-    // 3. Создаем богатую базу TWI-карт (разные типы)
+    const randomDay = (min, max) => {
+        let d = new Date(); d.setDate(now.getDate() - (Math.floor(Math.random() * (max - min + 1)) + min));
+        return d.toISOString();
+    };
+
+    const metric = (f, b1, b2, b3) => ({ final: f, baseUrkPerc: f, checkedCount: 6, totalCount: 6, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0 });
+
+    contractorArray = [];
+    // Идеальный подрядчик
+    for(let i=0; i<45; i++) {
+        let hasDefect = (i % 10 === 0); 
+        contractorArray.push({ id: 100+i, date: randomDay(1, 120), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', section: `Корпус 1`, floor: `Этаж ${Math.floor(i/4)+1}`, room: `Оси ${i}`, location: `Корпус 1, Этаж ${Math.floor(i/4)+1}`, stageName: "Монтаж", isCompleted: true, state: {'108':'ok', '109':hasDefect?'fail':'ok'}, details: hasDefect ? {'109': {causeCode: 'C01', comment: 'Смещение'}} : {}, photos: hasDefect ? {'109': demoPhotoBad} : {'108': demoPhotoGood}, metrics: metric(hasDefect?80:100, 0, hasDefect?1:0, 0) });
+    }
+    // Проблемный подрядчик
+    for(let i=0; i<35; i++) {
+        let day = Math.floor(Math.random() * 100) + 1; let hasDefect = day < 30; 
+        contractorArray.push({ id: 200+i, date: randomDay(1, 100), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Окна-Про"', templateKey: 'sys_okna_pvh', templateTitle: 'Окна ПВХ', location: `Корпус 2, Этаж ${Math.floor(i/3)+1}`, stageName: "Монтаж окон", isCompleted: true, state: {'1610':hasDefect?'fail':'ok', '1615':'ok'}, details: hasDefect ? {'1610': {causeCode: 'C04', comment: 'Завал рамы'}} : {}, photos: hasDefect ? {'1610': demoPhotoBad} : {}, metrics: metric(hasDefect?75:100, 0, hasDefect?1:0, 0) });
+    }
+    // Аварийный подрядчик (B3)
+    for(let i=0; i<30; i++) {
+        let day = Math.floor(Math.random() * 110) + 1; let hasB3 = (day < 60 && i % 4 === 0); 
+        contractorArray.push({ id: 300+i, date: randomDay(1, 110), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ИП Петров (Бетон)', templateKey: 'sys_monolit', templateTitle: 'Монолитные работы', location: `Корпус 3, Этаж 1`, stageName: "Стены", isCompleted: true, state: {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, details: hasB3 ? {'1014': {causeCode: 'C01', comment: 'Арматура торчит'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, photos: hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, metrics: metric(hasB3?45:80, 0, 1, hasB3?1:0) });
+    }
+    contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 3. ГЕНЕРАЦИЯ ЗАДАЧ (Всех типов)
+    let dOverdue = new Date(now); dOverdue.setDate(now.getDate() - 2);
+    let dToday = new Date(now);
+    let dFuture = new Date(now); dFuture.setDate(now.getDate() + 2);
+
+    window.rbi_tasksData = [
+        // Просроченные
+        { id: 'dt1', type: 'auto', category: 'meeting', icon: 'Совещание', contractor: 'ИП Петров (Бетон)', project: 'ЖК "Демонстрационный"', templateKey: 'sys_monolit', workTitle: 'Монолитные работы', title: 'Совещание по дефектам', prompt: 'Зафиксировано 3 критических дефекта B3. Срочно проведите разбор с прорабом.', status: 'pending', priorityLvl: 4, date: dOverdue.toISOString(), done:0, target:1 },
+        { id: 'dt2', type: 'auto', category: 'method', icon: 'ППР', contractor: 'Системная', project: 'Все', templateKey: '', workTitle: 'Аналитика', title: 'Заполнить FMEA таблицу', prompt: 'ИИ собрал дефекты за неделю. Проанализируйте коренные причины.', status: 'pending', priorityLvl: 3, date: dOverdue.toISOString(), done:0, target:1 },
+        // Сегодня
+        { id: 'dt3', type: 'auto', category: 'control', icon: 'Эталон', contractor: 'ООО "НовичокСтрой"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_kirpich', workTitle: 'Кладка из кирпича', title: 'Приемка Эталона', prompt: 'Новый подрядчик. Перед массовым контролем проведите совместную приемку эталонного узла.', status: 'pending', priorityLvl: 4, date: dToday.toISOString(), done:0, target:1, needsEtalon: true },
+        { id: 'dt4', type: 'auto', category: 'control', icon: 'Контроль', contractor: 'ООО "Окна-Про"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_okna_pvh', workTitle: 'Окна ПВХ', title: 'Плановая Инспекция', prompt: 'Подрядчик в желтой зоне (системный брак).', status: 'pending', priorityLvl: 2, date: dToday.toISOString(), done:0, target:3 },
+        { id: 'dt5', type: 'manual', category: 'method', icon: 'ППР', contractor: 'ООО "Окна-Про"', project: 'ЖК "Демонстрационный"', templateKey: '', workTitle: 'Поручение', title: 'Заводской контроль', prompt: 'Выезд на завод изготовителя. Создано инженером вручную.', status: 'blocked', priorityLvl: 2, date: dToday.toISOString(), done:0, target:1, resultComment: 'Подрядчик не пустил на завод' },
+        // Будущие
+        { id: 'dt6', type: 'auto', category: 'report', icon: 'Отчет', contractor: 'Системная', project: 'Все', templateKey: '', workTitle: 'Отчетность', title: 'Ежемесячный One-Pager', prompt: 'Отправьте руководителю выгрузку Сводного статуса объекта.', status: 'pending', priorityLvl: 3, date: dFuture.toISOString(), done:0, target:1 }
+    ];
+
+    // 4. ГЕНЕРАЦИЯ СОВЕЩАНИЙ, ИНТЕРВЕНЦИЙ, ПРАКТИК
+    window.rbi_meetingsData = [
+        { id: 'm1', date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'Совещание от ' + dOverdue.toLocaleDateString('ru-RU'), memoText: '**ПРОТОКОЛ СОВЕЩАНИЯ**\n\n1. ООО "Окна-Про":\n- Проблема: Завал рамы. Решение: Провести воркшоп с бригадой. Срок: Завтра.' }
+    ];
+
+    window.rbi_interventionsData = [
+        { id: 'int1', date: dOverdue.toISOString(), inspector: 'Иванов И.И.', contractor: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', typeText: 'Разбор с бригадой (TWI-сессия)', typeCoef: 1.5, comment: 'Показал карточку', baseUrk: 75, deltaUrk: 12 }
+    ];
+
+    window.rbi_practicesData = [
+        { id: 'p1', interventionId: 'int0', date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'Правильный крепеж кронштейнов', templateTitle: 'Вент. фасад', deltaUrk: 15, problem: 'Отклонения по осям', solution: 'Внедрен шаблон для разметки', photoBefore: demoPhotoBad, photoAfter: demoPhotoGood, isPublished: true }
+    ];
+
+    // 5. БАЗА ЗНАНИЙ (TWI, УЗЛЫ, ДОКУМЕНТЫ)
     customTwiCards = [
-        {
-            id: "demo_twi_1", title: "Контроль установки кронштейнов", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "INSPECTOR", itemId: "109", 
-            whyImportant: "Превышение допуска приводит к перекосу подсистемы и обрушению фасада при ветровых нагрузках.",
-            howToCheck: "Замерять рулеткой отклонение от проектной оси. Допуск ±10 мм.", photoGood: demoPhotoGood, photoBad: demoPhotoBad
-        },
-        {
-            id: "demo_twi_2", title: "Инструкция: Краевая зона", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "WORKER", itemId: "108",
-            totalTime: 2,
-            steps: [
-                { order: 1, text: "Отмерить от края стены или проема минимум 100 мм.", time: 1, photo: demoPhotoGood },
-                { order: 2, text: "Сделать разметку маркером для бурения отверстия. Бурить строго под углом 90 градусов.", time: 1, photo: null }
-            ]
-        },
-        {
-            id: "demo_twi_3", title: "Регламент очистки отверстий", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "WORKER", itemId: "112",
-            totalTime: 5,
-            steps: [
-                { order: 1, text: "Продуть отверстие ручным насосом 2 раза.", time: 2, photo: null },
-                { order: 2, text: "Прочистить металлическим ершиком соответствующего диаметра.", time: 2, photo: null },
-                { order: 3, text: "Повторно продуть до полного отсутствия бетонной пыли.", time: 1, photo: demoPhotoGood }
-            ]
-        },
-        {
-            id: "demo_twi_4", title: "Альбом тех. решений (Проект)", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "PDF", itemId: "ALL",
-            pdfName: "Проект_Фасад_Том_2.pdf", pdfSize: "4.2 MB", pdfData: null
-        },
-        {
-            id: "demo_twi_5", title: "Завал оконной рамы", checklistKey: "sys_okna_pvh", checklistName: "Окна ПВХ", type: "INSPECTOR", itemId: "1610",
-            whyImportant: "Завал рамы ведет к заклиниванию фурнитуры и самопроизвольному открыванию створок.",
-            howToCheck: "Использовать лазерный построитель плоскостей.", photoGood: demoPhotoGood, photoBad: demoPhotoBad
-        }
+        { id: "demo_twi_1", title: "Контроль установки кронштейнов", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "INSPECTOR", itemId: "109", whyImportant: "Превышение допуска приводит к обрушению.", howToCheck: "Замерять рулеткой.", photoGood: demoPhotoGood, photoBad: demoPhotoBad },
+        { id: "demo_twi_2", title: "Завал оконной рамы", checklistKey: "sys_okna_pvh", checklistName: "Окна ПВХ", type: "INSPECTOR", itemId: "1610", whyImportant: "Завал рамы ведет к заклиниванию.", howToCheck: "Лазерный уровень.", photoGood: demoPhotoGood, photoBad: demoPhotoBad },
+        { id: "demo_twi_3", title: "Регламент очистки", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "WORKER", itemId: "112", totalTime: 5, steps: [{ order: 1, text: "Продуть", time: 2, photo: null }, { order: 2, text: "Прочистить", time: 3, photo: demoPhotoGood }] }
     ];
+    
+    customDocs = [{ id: 'usr_doc_d1', type: 'ПРОЕКТ', code: 'РД-2024-ФАС', title: 'Монтаж вентилируемого фасада. Архитектурные решения (Том 2).', link: '', isSystem: false }];
+    customNodes = [{ id: 'demo_node_1', category: 'ОКНА', title: 'Узел гидроизоляции монтажного шва ПВХ', desc: 'Схема применения ПСУЛ-ленты.', img: demoPhotoGood, materials: [{ name: 'Лента ПСУЛ', qty: 'По периметру' }], linkedDoc: 'ГОСТ 30971-2012', linkedTwiChecklistKey: 'sys_okna_pvh' }];
 
-    // 4. Добавляем пользовательские Нормативы (Справочник НД)
-    customDocs = [
-        { id: 'usr_doc_d1', type: 'ПРОЕКТ', code: 'РД-2024-ФАС', title: 'Монтаж вентилируемого фасада. Архитектурные решения (Том 2).', link: '', isSystem: false },
-        { id: 'usr_doc_d2', type: 'ТУ', code: 'ТУ 5762-001', title: 'Регламент входного контроля теплоизоляционных материалов', link: '', isSystem: false },
-        { id: 'usr_doc_d3', type: 'ИНСТРУКЦИЯ', code: 'ИОТ-12-ВЫС', title: 'Инструкция по технике безопасности при высотных работах', link: '', isSystem: false }
-    ];
-
-    // 5. Временно добавляем демонстрационный Технический Узел
-    if (!SYSTEM_NODES.find(n => n.id === 'demo_node_1')) {
-        SYSTEM_NODES.push({
-            id: 'demo_node_1', category: 'ОКНА', title: 'Узел гидроизоляции монтажного шва ПВХ',
-            desc: 'Схема применения ПСУЛ-ленты и пароизоляции на оконном блоке в соответствии с ГОСТ.',
-            img: demoPhotoGood, // Используем заглушку
-            materials: [ { name: 'Лента ПСУЛ 15х40', qty: 'По периметру' }, { name: 'Пена полиуретановая проф.', qty: '1 баллон/окно' } ],
-            linkedDoc: 'ГОСТ 30971-2012', linkedTwiChecklistKey: 'sys_okna_pvh'
-        });
+    // 6. HR МЕТРИКИ (ОПЫТ)
+    gameActionLogs = [];
+    for(let i=0; i<40; i++) {
+        gameActionLogs.push({ id: 'l'+i, date: randomDay(1, 30), inspector: 'Иванов И.И.', action: ['create_twi', 'ai_generate', 'comment_written', 'task_completed_on_time'][Math.floor(Math.random()*4)] });
     }
 
-    // 6. Предзаполняем поля главного экрана
+    // 7. НАСТРОЙКИ ИНТЕРФЕЙСА ДЛЯ ДЕМО
     document.getElementById('inp-project').value = 'ЖК "Демонстрационный"';
     document.getElementById('inp-inspector').value = 'Иванов И.И.';
     document.getElementById('inp-contractor').value = 'ООО "Фасад-Мастер"';
     document.getElementById('inp-section').value = 'Корпус 1, секция 2';
-    document.getElementById('inp-floor').value = 'Этаж 5';
-    document.getElementById('inp-room').value = 'Оси А-В';
-    updateLocationFromStructured();
-
+    
     currentTemplateKey = 'sys_nvf_facade';
     if(document.getElementById('checklist-selector')) document.getElementById('checklist-selector').value = currentTemplateKey;
     currentChecklist = SYSTEM_TEMPLATES['nvf_facade'].groups;
     
     state = {}; details = {}; photos = {};
-    
-    // Эмулируем действия юзера для туториала (теперь синие кнопки TWI появятся сразу на 3-х карточках)
     state['108'] = 'ok'; photos['108'] = demoPhotoGood; 
-    state['109'] = 'fail'; details['109'] = { causeCode: 'C01', comment: '[Нарушение технологии] Отклонение кронштейна на 18мм' }; photos['109'] = demoPhotoBad; 
-    state['112'] = 'fail'; details['112'] = { causeCode: 'C04', comment: '[Низкая квалификация] Пыль в отверстии' };
+    state['109'] = 'fail'; details['109'] = { causeCode: 'C01', comment: '[Нарушение технологии] Отклонение' }; photos['109'] = demoPhotoBad; 
     
-    // Демо-логи для HR-модуля
-    if (typeof gameActionLogs !== 'undefined') {
-        gameActionLogs = [];
-        for(let i=0; i<40; i++) {
-            gameActionLogs.push({ id: 'l'+i, date: new Date(Date.now() - Math.random()*8640000000).toISOString(), inspector: 'Иванов И.И.', action: ['create_twi', 'ai_generate', 'comment_written'][Math.floor(Math.random()*3)] });
-        }
-    }
-
-    updateDataSummary();
     document.getElementById('empty-checklist-state').style.display = 'none';
     document.getElementById('audit-items').style.display = 'block';
     document.getElementById('audit-actions').style.display = 'grid';
     
-    updateAllDynamicFilters();
-    render(); updateUI(); renderHistoryTab(); renderCurrentAnalyticsTab(); renderTwiList();
+    // 8. ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ВСЕГО
+    updateDataSummary();
+    if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
+    render(); updateUI(); 
+    if (typeof renderHistoryTab === 'function') renderHistoryTab(); 
+    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab(); 
+    if (typeof renderTwiList === 'function') renderTwiList();
     if (typeof renderDocsList === 'function') renderDocsList();
     if (typeof renderNodesList === 'function') renderNodesList();
+    if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
     
     if(!silent) {
-        showToast('🎮 Демо-режим: Загружено 150 проверок, TWI-карты, Узлы и Документы!');
+        showToast('🎮 Демо-режим: Загружено 150 проверок, Задачи, FMEA, TWI и Отчеты!');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-}
+};
 
-async function exitDemoMode() {
-    // 1. Убираем демо-узел из системы
-    const demoNodeIdx = SYSTEM_NODES.findIndex(n => n.id === 'demo_node_1');
-    if(demoNodeIdx !== -1) SYSTEM_NODES.splice(demoNodeIdx, 1);
-
-    // 2. Выключаем режим
+window.exitDemoMode = function() {
     isDemoMode = false;
     document.body.classList.remove('demo-mode');
     
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit) { fabExit.classList.add('hidden'); fabExit.style.display = 'none'; }
     
-    // 3. ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ИСХОДНЫХ МАССИВОВ (чтобы демо-данные не ушли в БД)
+    // ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ВСЕХ ИСХОДНЫХ ДАННЫХ ИЗ ПАМЯТИ
+    state = JSON.parse(JSON.stringify(realState));
+    details = JSON.parse(JSON.stringify(realDetails));
+    photos = JSON.parse(JSON.stringify(realPhotos));
     contractorArray = JSON.parse(JSON.stringify(realContractorArray));
+    currentTemplateKey = realTemplateKey;
+
+    window.rbi_tasksData = JSON.parse(JSON.stringify(real_rbi_tasksData));
+    weeklyPlanData = JSON.parse(JSON.stringify(real_weeklyPlanData));
+    gameActionLogs = JSON.parse(JSON.stringify(real_gameActionLogs));
+    window.rbi_meetingsData = JSON.parse(JSON.stringify(real_rbi_meetingsData));
+    window.rbi_interventionsData = JSON.parse(JSON.stringify(real_rbi_interventionsData));
+    window.rbi_practicesData = JSON.parse(JSON.stringify(real_rbi_practicesData));
+    
     customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
     customDocs = JSON.parse(JSON.stringify(realCustomDocs));
+    customNodes = JSON.parse(JSON.stringify(realCustomNodes));
     
-    // 4. Очищаем шапку
     ['inp-project', 'inp-inspector', 'inp-contractor', 'inp-section', 'inp-floor', 'inp-room', 'inp-location'].forEach(id => {
         if(document.getElementById(id)) {
             document.getElementById(id).value = '';
@@ -5581,106 +5640,25 @@ async function exitDemoMode() {
             document.getElementById(id).classList.remove('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
         }
     });
+    
     if(document.getElementById('lock-inp-inspector')) document.getElementById('lock-inp-inspector').classList.add('hidden');
     if(document.getElementById('lock-inp-project')) document.getElementById('lock-inp-project').classList.add('hidden');
     
-    // 5. Загружаем реальные HR и Task данные из базы
-    if (typeof gameActionLogs !== 'undefined') {
-        gameActionLogs = []; 
-        try {
-            const storedLogs = await dbGet(STORES.SETTINGS, 'game_action_logs');
-            if (storedLogs && storedLogs.data) gameActionLogs = storedLogs.data;
-            
-            const storedPlan = await dbGet(STORES.SETTINGS, 'weekly_plan_data');
-            if (storedPlan && storedPlan.data) weeklyPlanData = storedPlan.data; else weeklyPlanData = { tasks: [] };
-            
-            // Восстанавливаем реальные задачи инженера
-            const tasksObj = await dbGetAll(STORES.TASKS);
-            if (tasksObj) window.rbi_tasksData = tasksObj.filter(t => !t._deleted); else window.rbi_tasksData = [];
-
-        } catch (e) { console.error("Ошибка восстановления данных", e); }
-    }
-
-    // 6. Восстанавливаем сессию (черновик проверки)
-    await restoreSession();
-
-    // 7. Переход на Главный экран
+    restoreSession(); // Дополнительно тянем из БД, чтобы точно всё было как до демо
     switchTab('tab-audit');
     changeTemplate('HOME');
     
-    updateDataSummary(); renderHistoryTab(); renderTwiList();
+    updateDataSummary(); 
+    if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
+    if (typeof renderHistoryTab === 'function') renderHistoryTab(); 
+    if (typeof renderTwiList === 'function') renderTwiList();
     if (typeof renderDocsList === 'function') renderDocsList();
     if (typeof renderNodesList === 'function') renderNodesList();
+    if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
     if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
     
     showToast('Возврат к реальным данным');
-}
-
-function generateDemoHistory() {
-    let mockArray = [];
-    const now = new Date();
-    
-    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
-    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
-
-    const randomDay = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-    const createRecord = (id, daysAgo, proj, insp, contr, tmplKey, tmplTitle, sec, flr, rm, stageId, stageName, states, detailsData, photoData, m) => {
-        let d = new Date(now); d.setDate(now.getDate() - daysAgo);
-        const loc = `${sec}, ${flr}, ${rm}`;
-        return {
-            id: id + Math.floor(Math.random() * 10000), date: d.toISOString(), projectName: proj, inspectorName: insp,
-            contractorName: contr, templateKey: tmplKey, templateTitle: tmplTitle, 
-            section: sec, floor: flr, room: rm, location: loc, instanceId: `${sec}_${flr}`,
-            stageId, stageName, isCompleted: true, state: states, details: detailsData, photos: photoData, metrics: m
-        };
-    };
-
-    const metric = (f, b1, b2, b3) => ({
-        final: f, baseUrkPerc: f, checkedCount: 6, totalCount: 6, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0
-    });
-
-    // 1. Идеальный подрядчик (45 проверок)
-    for(let i=0; i<45; i++) {
-        let hasDefect = (i % 10 === 0); 
-        mockArray.push(createRecord(100+i, randomDay(1, 120), 'ЖК "Демонстрационный"', 'Иванов И.И.', 'ООО "Фасад-Мастер"', 'sys_nvf_facade', 'Вент. фасад', 
-            `Корпус 1`, `Этаж ${Math.floor(i/4)+1}`, `Оси ${i}`, 2, "3. Монтаж кронштейнов", 
-            {'108':'ok', '109':hasDefect?'fail':'ok', '110':'ok'}, hasDefect ? {'109': {causeCode: 'C01', comment: 'Смещение'}} : {}, hasDefect ? {'109': demoPhotoBad} : {'108': demoPhotoGood}, metric(hasDefect?80:100, 0, hasDefect?1:0, 0)));
-    }
-
-    // 2. Скатывающийся подрядчик (35 проверок)
-    for(let i=0; i<35; i++) {
-        let day = randomDay(1, 100); let hasDefect = day < 30; // Последний месяц косячит
-        mockArray.push(createRecord(200+i, day, 'ЖК "Демонстрационный"', 'Смирнов А.А.', 'ООО "Окна-Про"', 'sys_okna_pvh', 'Окна ПВХ', 
-            `Корпус 2`, `Этаж ${Math.floor(i/3)+1}`, `Кв. ${i}`, 1, "2. Монтаж окон", 
-            {'1610':hasDefect?'fail':'ok', '1615':'ok'}, hasDefect ? {'1610': {causeCode: 'C04', comment: 'Завал рамы'}} : {}, hasDefect ? {'1610': demoPhotoBad} : {}, metric(hasDefect?75:100, 0, hasDefect?1:0, 0)));
-    }
-
-    // 3. Опасный подрядчик (30 проверок, есть B3)
-    for(let i=0; i<30; i++) {
-        let day = randomDay(1, 110); let hasB3 = (day < 60 && i % 4 === 0); 
-        mockArray.push(createRecord(300+i, day, 'ЖК "Демонстрационный"', 'Иванов И.И.', 'ИП Петров (Бетон)', 'sys_monolit', 'Монолитные работы', 
-            `Корпус 3`, `Этаж 1`, `Пилон ${i}`, 2, "2. Стены", 
-            {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, hasB3 ? {'1014': {causeCode: 'C01', comment: 'Арматура торчит'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, metric(hasB3?45:80, 0, 1, hasB3?1:0)));
-    }
-
-    // 4. Прорыв (25 проверок)
-    for(let i=0; i<25; i++) {
-        let day = randomDay(1, 100); let hasDefect = day > 40; // Исправился недавно
-        mockArray.push(createRecord(400+i, day, 'БЦ "Восточный"', 'Смирнов А.А.', 'ООО "Кровля-Инвест"', 'sys_krovlya', 'Устройство кровли', 
-            `Кровля`, `Кровля`, `Участок ${i}`, 2, "3. Пароизоляция", 
-            {'909':hasDefect?'fail':'ok'}, hasDefect ? {'909': {causeCode: 'C01', comment: 'Нет нахлеста'}} : {}, hasDefect ? {'909': demoPhotoBad} : {'909': demoPhotoGood}, metric(hasDefect?70:100, 0, hasDefect?2:0, 0)));
-    }
-
-    // 5. Новичок (Всего 2 проверки - вызовет запрос Эталона)
-    for(let i=0; i<2; i++) {
-        mockArray.push(createRecord(500+i, randomDay(1, 5), 'БЦ "Восточный"', 'Иванов И.И.', 'ООО "НовичокСтрой"', 'sys_kirpich', 'Кладка из кирпича', 
-            `Секция 1`, `Этаж 2`, `Ось ${i}`, 1, "3. Геометрия", 
-            {'710':'ok', '711':'fail'}, {'711': {causeCode: 'C04', comment: 'Завал'}}, {'711': demoPhotoBad}, metric(84, 0, 1, 0)));
-    }
-
-    return mockArray.sort((a, b) => new Date(b.date) - new Date(a.date));
-}
+};
 
 // ============================================================================
 // === БЛОК: ИНТЕРАКТИВНЫЙ 25-ШАГОВЫЙ ТУТОРИАЛ (АБСОЛЮТНО ВСЕ ФУНКЦИИ) ===
@@ -6847,34 +6825,6 @@ window.rbi_generateMeetingMemo = async function() {
     }
 };
 
-window.rbi_saveMeetingMemo = async function() {
-    const text = document.getElementById('rbi-meeting-memo-text').value.trim();
-    if (!text) return showToast("Текст протокола пуст!");
-
-    const author = document.getElementById('inp-inspector')?.value.trim() || appSettings.engineerName || 'Инженер';
-    
-    const meet = {
-        id: 'meet_' + Date.now().toString(36),
-        date: new Date().toISOString(),
-        author: author,
-        title: `Совещание от ${new Date().toLocaleDateString('ru-RU')}`,
-        memoText: text
-    };
-
-    // Загружаем актуальную базу перед сохранением
-    const dbData = await dbGetAll(STORES.MEETINGS) || [];
-    window.rbi_meetingsData = dbData;
-    
-    window.rbi_meetingsData.push(meet);
-    await dbPut(STORES.MEETINGS, meet);
-    
-    if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
-    if (typeof triggerSync === 'function') triggerSync('silent');
-
-    showToast("💾 Протокол сохранен в архив!");
-    rbi_renderMeetingTab();
-};
-
 // ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
 window.rbi_generateMeetingMemo = async function() {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
@@ -6942,6 +6892,7 @@ window.rbi_generateMeetingMemo = async function() {
 
 // СОХРАНЕНИЕ ПРОТОКОЛА В ИСТОРИЮ
 window.rbi_saveMeetingMemo = async function() {
+     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
     const text = document.getElementById('rbi-meeting-memo-text').value.trim();
     if (!text) return showToast("Текст протокола пуст!");
 
@@ -6960,7 +6911,16 @@ window.rbi_saveMeetingMemo = async function() {
     
     if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
     if (typeof triggerSync === 'function') triggerSync('silent');
-
+    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ СОВЕЩАНИЯ
+    if (window.activeTaskId) {
+        const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
+        if (task) {
+            task.status = 'done';
+            task.resultComment = 'Протокол сформирован';
+            dbPut(STORES.TASKS, task);
+        }
+        window.activeTaskId = null;
+    }
     showToast("💾 Протокол сохранен в архив!");
     rbi_renderMeetingTab();
 };
@@ -7041,6 +7001,7 @@ window.rbi_updateInterventionTemplates = function() {
 };
 
 window.rbi_saveIntervention = async function() {
+     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
     const cName = document.getElementById('rbi-int-contractor').value;
     const tKey = document.getElementById('rbi-int-template').value;
     const typeSelect = document.getElementById('rbi-int-type');
@@ -7086,119 +7047,160 @@ window.rbi_saveIntervention = async function() {
     rbi_renderImpactTab();
 };
 
+// ==========================================
+// ВКЛАДКА ЭФФЕКТИВНОСТЬ (С РЕЕСТРОМ ЭТАЛОНОВ)
+// ==========================================
 window.rbi_renderImpactTab = function() {
     const container = document.getElementById('rbi-impact-dashboard');
     if (!container) return;
 
-    const myProfile = window.currentProfileData;
-    if (!myProfile) return container.innerHTML = 'Загрузка...';
+    // ИСПРАВЛЕНИЕ: Гарантируем, что профиль рассчитан, даже если мы не заходили на вкладку
+    if (!window.currentProfileData || !window.currentProfileData.rawChecks) {
+        const profiles = gameCalculateAllProfiles();
+        const currentInspector = document.getElementById('inp-inspector')?.value.trim() || appSettings.engineerName || 'Неизвестный инспектор';
+        window.currentProfileData = profiles[currentInspector] || { name: currentInspector, pi: 0, rawChecks: [] };
+    }
 
-    // Показываем мгновенный лоадер
+    const myProfile = window.currentProfileData;
+    if (!myProfile) return container.innerHTML = '<div class="text-center text-slate-500 py-4">Профиль загружается...</div>';
+
     container.innerHTML = `<div class="flex flex-col items-center justify-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-3"></div><div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Анализ эффективности...</div></div>`;
 
-    // Выносим тяжелую математику в асинхронную очередь
     setTimeout(() => {
-        let twiCount = 0; let pracCount = 0; let meetCount = 0; let etalonCount = 0;
-        
-        if (typeof gameActionLogs !== 'undefined') {
-            gameActionLogs.forEach(l => {
-                if (l.inspector !== myProfile.name) return;
-                if (l.action === 'create_twi' || l.action === 'magic_creator') twiCount++;
-                if (l.action === 'etalon_accepted' || l.action === 'chron_ideal') etalonCount++;
-                if (l.action === 'meeting_memo_created') meetCount++;
-                if (l.action === 'practice_created' || l.action === 'practice_published') pracCount++;
-            });
-        }
-
-        let totalScore = 0; let impactCount = 0;
-        let positiveCount = 0; let negativeCount = 0; let neutralCount = 0;
-        
-        const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
-        contractorsSet.forEach(cName => {
-            const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
-            if (cChecks.length < 6) return; 
+        try {
+            let twiCount = 0; let pracCount = 0; let meetCount = 0; let etalonCount = 0;
+            const rawChecks = myProfile.rawChecks || [];
             
-            const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
-            const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
-            const impact = calculateImpactScore(myProfile.name, cName, topTemplate);
-            
-            if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { 
-                totalScore += impact.score; impactCount++; 
-                if (impact.score > 0.2) positiveCount++;
-                else if (impact.score < -0.2) negativeCount++;
-                else neutralCount++;
-            }
-        });
-
-        const avgImpact = impactCount > 0 ? (totalScore / impactCount) : 0;
-        let impactColor = avgImpact > 0.2 ? 'text-green-500' : (avgImpact < -0.2 ? 'text-red-500' : 'text-slate-400');
-
-        let html = `
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 animate-fadeIn">
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
-                    <div class="text-[20px] sm:text-[24px] font-black text-indigo-600 dark:text-indigo-400 leading-none mb-1">${twiCount}</div>
-                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">TWI-сессии</div>
-                </div>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
-                    <div class="text-[20px] sm:text-[24px] font-black text-orange-500 leading-none mb-1">${meetCount}</div>
-                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Совещания</div>
-                </div>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
-                    <div class="text-[20px] sm:text-[24px] font-black text-blue-500 leading-none mb-1">${etalonCount}</div>
-                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Эталоны (ОК)</div>
-                </div>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
-                    <div class="text-[20px] sm:text-[24px] font-black text-yellow-500 leading-none mb-1">${pracCount}</div>
-                    <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Лучшие Практики</div>
-                </div>
-            </div>
-
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4 flex flex-col md:flex-row items-center gap-6 animate-fadeIn">
-                <div class="w-full md:w-1/2 relative h-48 flex items-center justify-center">
-                    <canvas id="impact-map-chart"></canvas>
-                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-2">
-                        <div class="text-[28px] font-black ${impactColor} leading-none">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(1)}</div>
-                        <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Impact Score</div>
-                    </div>
-                </div>
-                <div class="w-full md:w-1/2 space-y-3">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase mb-2 border-b border-[var(--card-border)] pb-2">Влияние на подрядчиков</div>
-                    <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-lg border border-green-100 dark:border-green-800/50">
-                        <span class="text-[11px] font-bold text-green-700 dark:text-green-400">Улучшили качество</span>
-                        <span class="text-[14px] font-black text-green-600">${positiveCount}</span>
-                    </div>
-                    <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300">Без изменений</span>
-                        <span class="text-[14px] font-black text-slate-500">${neutralCount}</span>
-                    </div>
-                    <div class="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg border border-red-100 dark:border-red-800/50">
-                        <span class="text-[11px] font-bold text-red-700 dark:text-red-400">Ухудшили качество</span>
-                        <span class="text-[14px] font-black text-red-600">${negativeCount}</span>
-                    </div>
-                </div>
-            </div>
-
-            <button onclick="showToast('Выгрузка Истории работы появится в следующем обновлении (Зависит от плагина PDF).')" class="w-full bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 animate-fadeIn">
-                📄 Выгрузить Отчет "История моей работы" (PDF)
-            </button>
-        `;
-
-        container.innerHTML = html;
-
-        setTimeout(() => {
-            const ctx = document.getElementById('impact-map-chart');
-            if (ctx) {
-                if (window.impactChartInstance) window.impactChartInstance.destroy();
-                let dataArr = [positiveCount, neutralCount, negativeCount];
-                if (positiveCount === 0 && neutralCount === 0 && negativeCount === 0) dataArr = [0, 1, 0];
-                window.impactChartInstance = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: { labels: ['Улучшили', 'Без изменений', 'Ухудшили'], datasets: [{ data: dataArr, backgroundColor: ['#22c55e', '#cbd5e1', '#ef4444'], borderWidth: 0, cutout: '75%' }] },
-                    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            if (typeof gameActionLogs !== 'undefined') {
+                gameActionLogs.forEach(l => {
+                    if (l.inspector !== myProfile.name) return;
+                    if (l.action === 'create_twi' || l.action === 'magic_creator') twiCount++;
+                    if (l.action === 'etalon_accepted' || l.action === 'chron_ideal') etalonCount++;
+                    if (l.action === 'meeting_memo_created') meetCount++;
+                    if (l.action === 'practice_created' || l.action === 'practice_published') pracCount++;
                 });
             }
-        }, 50);
-    }, 50); // Делаем задержку в 50мс, чтобы браузер успел отрисовать лоадер
+
+            let totalScore = 0; let impactCount = 0;
+            let positiveCount = 0; let negativeCount = 0; let neutralCount = 0;
+            
+            const contractorsSet = new Set(rawChecks.map(c => c.contractorName));
+            contractorsSet.forEach(cName => {
+                const cChecks = rawChecks.filter(c => c.contractorName === cName);
+                if (cChecks.length < 6) return; 
+                
+                const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
+                const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+                const impact = calculateImpactScore(myProfile.name, cName, topTemplate);
+                
+                if (impact && (impact.score !== 0 || impact.trend !== 'Недостаточно данных')) { 
+                    totalScore += impact.score; impactCount++; 
+                    if (impact.score > 0.2) positiveCount++;
+                    else if (impact.score < -0.2) negativeCount++;
+                    else neutralCount++;
+                }
+            });
+
+            const avgImpact = impactCount > 0 ? (totalScore / impactCount) : 0;
+            let impactColor = avgImpact > 0.2 ? 'text-green-500' : (avgImpact < -0.2 ? 'text-red-500' : 'text-slate-400');
+
+            const myEtalons = contractorArray.filter(c => c.inspectorName === myProfile.name && c.templateKey === 'sys_etalon_act');
+            let etalonsHtml = '';
+            
+            if (myEtalons.length > 0) {
+                etalonsHtml = myEtalons.sort((a,b) => new Date(b.date) - new Date(a.date)).map(e => `
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-[var(--card-border)] flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-400 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${e.id})">
+                        <div class="min-w-0 pr-3">
+                            <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${e.contractorName}</div>
+                            <div class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold truncate">${e.templateTitle}</div>
+                            <div class="text-[9px] text-slate-400 mt-1">${new Date(e.date).toLocaleDateString('ru-RU')} | ${e.location}</div>
+                        </div>
+                        <button onclick="event.stopPropagation(); printEtalonAct(${e.id})" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 p-2.5 rounded-lg active:scale-90 shadow-sm flex items-center justify-center shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                etalonsHtml = `<div class="text-center text-slate-400 text-[10px] font-bold py-4">Вы еще не оформляли Акты-Эталоны.</div>`;
+            }
+
+            let html = `
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 animate-fadeIn">
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-[20px] sm:text-[24px] font-black text-indigo-600 dark:text-indigo-400 leading-none mb-1">${twiCount}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">TWI-сессии</div>
+                    </div>
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-[20px] sm:text-[24px] font-black text-orange-500 leading-none mb-1">${meetCount}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Совещания</div>
+                    </div>
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-[20px] sm:text-[24px] font-black text-blue-500 leading-none mb-1">${etalonCount}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Эталоны (ОК)</div>
+                    </div>
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-[20px] sm:text-[24px] font-black text-yellow-500 leading-none mb-1">${pracCount}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest">Практики</div>
+                    </div>
+                </div>
+
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4 flex flex-col md:flex-row items-center gap-6 animate-fadeIn">
+                    <div class="w-full md:w-1/2 relative h-48 flex items-center justify-center">
+                        <canvas id="impact-map-chart"></canvas>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-2">
+                            <div class="text-[28px] font-black ${impactColor} leading-none">${avgImpact > 0 ? '+' : ''}${avgImpact.toFixed(1)}</div>
+                            <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">Impact Score</div>
+                        </div>
+                    </div>
+                    <div class="w-full md:w-1/2 space-y-3 w-full">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase mb-2 border-b border-[var(--card-border)] pb-2">Влияние на подрядчиков</div>
+                        <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-lg border border-green-100 dark:border-green-800/50">
+                            <span class="text-[11px] font-bold text-green-700 dark:text-green-400">Улучшили качество</span>
+                            <span class="text-[14px] font-black text-green-600">${positiveCount}</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-800 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                            <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300">Без изменений</span>
+                            <span class="text-[14px] font-black text-slate-500">${neutralCount}</span>
+                        </div>
+                        <div class="flex justify-between items-center bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg border border-red-100 dark:border-red-800/50">
+                            <span class="text-[11px] font-bold text-red-700 dark:text-red-400">Ухудшили качество</span>
+                            <span class="text-[14px] font-black text-red-600">${negativeCount}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
+                    <summary class="p-4 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl transition-colors select-none group-open:border-b border-indigo-100 dark:border-indigo-800">
+                        <span class="flex items-center gap-2">📐 Реестр Актов-Эталонов (${myEtalons.length})</span>
+                        <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
+                    </summary>
+                    <div class="p-3 bg-slate-50 dark:bg-slate-900/50 space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
+                        ${etalonsHtml}
+                    </div>
+                </details>
+            `;
+
+            container.innerHTML = html;
+
+            setTimeout(() => {
+                const ctx = document.getElementById('impact-map-chart');
+                if (ctx) {
+                    if (window.impactChartInstance) window.impactChartInstance.destroy();
+                    let dataArr = [positiveCount, neutralCount, negativeCount];
+                    if (positiveCount === 0 && neutralCount === 0 && negativeCount === 0) dataArr = [0, 1, 0];
+                    window.impactChartInstance = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: { labels: ['Улучшили', 'Без изменений', 'Ухудшили'], datasets: [{ data: dataArr, backgroundColor: ['#22c55e', '#cbd5e1', '#ef4444'], borderWidth: 0, cutout: '75%' }] },
+                        options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                    });
+                }
+            }, 100);
+
+        } catch (e) {
+            console.error("Ошибка в рендере Impact", e);
+            container.innerHTML = `<div class="text-center text-red-500 font-bold p-6 bg-red-50 rounded-xl border border-red-200">❌ Ошибка расчета эффективности. ${e.message}</div>`;
+        }
+    }, 100); 
 };
 
 /* ============================================================================ */

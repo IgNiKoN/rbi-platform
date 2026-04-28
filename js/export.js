@@ -2362,14 +2362,30 @@ function processDataImport(event) {
                 }
                 
                 // ИМПОРТ HR ДАННЫХ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
+                // ИМПОРТ HR ДАННЫХ (Задачи, Планы, Статусы)
                 if (parsed.data.hr) {
-                    // Загружаем логи только если их не было (примитивное слияние)
                     if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
                     if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
+                    
+                    // Сливаем статусы подрядчиков
                     if (parsed.data.hr.contractorStatuses && typeof contractorStatuses !== 'undefined') {
-                        // Сливаем статусы задач
                         for (let k in parsed.data.hr.contractorStatuses) {
                             if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
+                        }
+                    }
+
+                    // Сливаем задачи (Умный Merge)
+                    if (parsed.data.hr.tasks && Array.isArray(parsed.data.hr.tasks)) {
+                        for (const incomingTask of parsed.data.hr.tasks) {
+                            const existing = window.rbi_tasksData.find(t => t.id === incomingTask.id);
+                            if (!existing) {
+                                window.rbi_tasksData.push(incomingTask);
+                                await dbPut(STORES.TASKS, incomingTask);
+                            } else if (existing.status === 'pending' && incomingTask.status !== 'pending') {
+                                // Если в бэкапе задача закрыта, а у нас висит открытой - обновляем
+                                Object.assign(existing, incomingTask);
+                                await dbPut(STORES.TASKS, existing);
+                            }
                         }
                     }
                 }
@@ -2539,4 +2555,196 @@ window.startMeetingFlow = function() {
     if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
     // 3. Открываем рабочую область совещания
     setTimeout(() => { rbi_createMeeting(); }, 300);
+};
+
+// ============================================================================
+// НОВЫЙ МОДУЛЬ: КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА (Мега-отчет)
+// ============================================================================
+
+window.rbi_generateQualityDayReport = async function(taskId) {
+    if (!appSettings.aiEnabled) {
+        showToast("⚠️ Для формирования отчета Дня Качества требуется включить DeepSeek AI в настройках!");
+        return;
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200 animate-pulse">🤖</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Сборка Дня Качества</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="flex flex-col items-center justify-center py-4">
+            <div class="text-[11px] font-bold text-slate-500 text-center space-y-2">
+                <div>📥 Агрегируем метрики подрядчиков...</div>
+                <div>📊 Рассчитываем Impact Score команды...</div>
+                <div>🏆 Выбираем лучшие практики месяца...</div>
+                <div class="text-indigo-600 font-black mt-2">DeepSeek пишет управленческое резюме...</div>
+            </div>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+
+    try {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+        // 1. БАЗА ПРОВЕРОК
+        const currentData = contractorArray.filter(c => new Date(c.date) >= startOfMonth && new Date(c.date) <= endOfMonth);
+        const prevData = contractorArray.filter(c => new Date(c.date) >= prevMonthStart && new Date(c.date) <= prevMonthEnd);
+        
+        let sumUrk = 0; currentData.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
+        const currAvgUrk = currentData.length > 0 ? Math.round(sumUrk / currentData.length) : 0;
+        
+        const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, userTemplates) : null;
+        const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+        const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+
+        // 2. HR МЕТРИКИ (КОМАНДА)
+        let hrStats = [];
+        if (typeof gameCalculateManagerMetrics === 'function') hrStats = gameCalculateManagerMetrics();
+        let totalImpact = 0; let totalInterventions = 0;
+        hrStats.forEach(h => { totalImpact += h.avgImpact; totalInterventions += (h.improved + h.degraded); });
+        const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
+        const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных" };
+
+        // 3. ТОП ПРАКТИК (Отбираем 2 лучшие)
+        let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом месяце не публиковалось.</div>`;
+        if (typeof rbi_practicesData !== 'undefined' && rbi_practicesData.length > 0) {
+            const topPrac = [...rbi_practicesData].filter(p => new Date(p.date) >= startOfMonth).sort((a,b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
+            if (topPrac.length > 0) {
+                topPracticesHtml = topPrac.map(p => `
+                    <div style="border:1px solid #cbd5e1; border-left:4px solid #16a34a; padding:10px; border-radius:6px; margin-bottom:10px; background:white; page-break-inside: avoid;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <strong style="font-size:12px; color:#0f172a;">${p.title}</strong>
+                            <span style="color:#16a34a; font-weight:900;">+${p.deltaUrk}% УрК</span>
+                        </div>
+                        <div style="font-size:10px; color:#64748b; margin-bottom:5px;">Автор: ${p.author} | ${p.templateTitle}</div>
+                        <table style="width:100%; border-collapse:collapse; font-size:10px;">
+                            <tr>
+                                <td style="width:50%; vertical-align:top; padding-right:5px;">
+                                    <div style="color:#dc2626; font-weight:bold; margin-bottom:2px;">❌ Проблема:</div>
+                                    <div style="color:#1e293b;">${p.problem}</div>
+                                </td>
+                                <td style="width:50%; vertical-align:top; padding-left:5px;">
+                                    <div style="color:#16a34a; font-weight:bold; margin-bottom:2px;">✅ Решение:</div>
+                                    <div style="color:#1e293b;">${p.solution}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // 4. КОРЕННЫЕ ПРИЧИНЫ (Парето)
+        const causes = {};
+        currentData.forEach(c => {
+            if (c.state && c.details) {
+                Object.keys(c.state).forEach(id => {
+                    if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                        const code = c.details[id]?.causeCode || 'C00';
+                        causes[code] = (causes[code] || 0) + 1;
+                    }
+                });
+            }
+        });
+        
+        let causesHtml = '';
+        const sortedCauses = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 5);
+        if (sortedCauses.length > 0) {
+            causesHtml = sortedCauses.map(code => {
+                const cName = (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : 'Причина') || 'Иное';
+                return `<div style="display:flex; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding:6px 0; font-size:11px;">
+                    <span style="color:#334155;">${cName}</span>
+                    <span style="font-weight:bold; color:#0f172a;">${causes[code]} шт.</span>
+                </div>`;
+            }).join('');
+        } else {
+            causesHtml = `<div style="color:#64748b; font-size:10px;">Дефектов не выявлено.</div>`;
+        }
+
+        // 5. DEEPSEEK - АНАЛИЗ ДЛЯ РЕЗЮМЕ
+        const promptSystem = `Ты — Директор по качеству (CQC). Сформируй официальное управленческое резюме для отчета "День Качества" за месяц.
+        Тон: деловой, объективный, строгий. Формат: текст, разбитый на абзацы. Без воды.
+        Отрази 3 вещи: 1. Оценку ИКО и тренда. 2. Оценку работы инженеров (Impact Score). 3. Главный риск следующего месяца.`;
+        
+        const promptUser = `ИКО: ${IKO}. Красная зона: ${redZone}%. Средний Impact команды: ${avgTeamImpact.toFixed(2)}. Проверок за месяц: ${currentData.length}. ТОП проблема: ${sortedCauses.length > 0 ? sortedCauses[0] : 'Нет данных'}.`;
+
+        const aiSummary = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 800 });
+
+        closeModal();
+
+        // 6. СБОРКА HTML ДЛЯ ПЕЧАТИ (ОТКРЫВАЕТСЯ СРАЗУ В PDF ОБОЛОЧКЕ)
+        const pdfContent = `
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 24pt; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА</h1>
+                <div style="font-size: 14pt; color: #4f46e5; font-weight: 900; margin-top: 5px; text-transform:uppercase;">ИТОГИ МЕСЯЦА: ${now.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}</div>
+            </div>
+
+            <!-- БЛОК 1: AI-РЕЗЮМЕ -->
+            <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h2 style="color: #4f46e5; margin: 0 0 10px 0; font-size: 14pt; text-transform: uppercase;">🧠 УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ (DEEPSEEK AI)</h2>
+                <div style="font-size: 11pt; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${aiSummary}</div>
+            </div>
+
+            <!-- БЛОК 2: МАКРОПОКАЗАТЕЛИ -->
+            <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+                <tr>
+                    <td style="background:#f8fafc; border:2px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#64748b; text-transform:uppercase; font-weight:bold;">Индекс Риска (ИКО)</div>
+                        <div style="font-size:28pt; font-weight:900; color:${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'};">${IKO}</div>
+                    </td>
+                    <td style="background:#fef2f2; border:2px solid #fca5a5; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#991b1b; text-transform:uppercase; font-weight:bold;">Объем Красной Зоны</div>
+                        <div style="font-size:28pt; font-weight:900; color:#dc2626;">${redZone}%</div>
+                    </td>
+                    <td style="background:#f0fdf4; border:2px solid #bbf7d0; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#166534; text-transform:uppercase; font-weight:bold;">Impact Score Команды</div>
+                        <div style="font-size:28pt; font-weight:900; color:#16a34a;">${avgTeamImpact > 0 ? '+' : ''}${avgTeamImpact.toFixed(2)}</div>
+                    </td>
+                </tr>
+            </table>
+
+            <div style="page-break-before: always;"></div>
+
+            <!-- БЛОК 3: ПРАКТИКИ И ПРИЧИНЫ -->
+            <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
+                <tr>
+                    <td style="width: 50%; vertical-align: top;">
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🏆 Лучшие практики месяца</h2>
+                        ${topPracticesHtml}
+                    </td>
+                    <td style="width: 50%; vertical-align: top;">
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🔍 Топ причин брака (Парето)</h2>
+                        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+                            ${causesHtml}
+                        </div>
+                        
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px; margin-bottom: 15px;">👤 Рейтинг Инженеров</h2>
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+                            <div style="font-size: 11pt; font-weight: bold; color: #1e293b; margin-bottom: 5px;">Лучший по Опыту (XP): <span style="color:#4f46e5;">${bestEng.name}</span></div>
+                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+'+bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        `;
+
+        // Закрываем задачу (Если она была)
+        if (taskId) {
+            const task = window.rbi_tasksData.find(t => t.id === taskId);
+            if(task) { 
+                task.status = 'done'; task.resultComment = 'Отчет сгенерирован'; 
+                await dbPut(STORES.TASKS, task); 
+            }
+        }
+
+        printPdfShell(`День Качества ${now.toLocaleString('ru-RU', {month:'long'})}`, pdfContent, "A4", "landscape", "browser");
+
+    } catch (e) {
+        closeModal();
+        showToast("❌ Ошибка сборки отчета: " + e.message);
+    }
 };
