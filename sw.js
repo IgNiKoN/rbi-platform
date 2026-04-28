@@ -1,6 +1,6 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде! (v16.9.8)
-const CACHE_NAME = 'rbi-quality-v17.1'; 
+const CACHE_NAME = 'rbi-quality-v17.2'; 
 
 // 1. ПРЕ-КЭШ: ТОЛЬКО 100% локальные файлы (чтобы установка PWA никогда не падала)
 const urlsToCache = [
@@ -16,6 +16,9 @@ const urlsToCache = [
   './js/templates.js',
   './js/math.js',
   './js/ai.js',
+  './js/faq.js',      // НОВЫЙ ФАЙЛ: База знаний
+  './js/task.js',     // НОВЫЙ ФАЙЛ: Менеджер задач
+  './js/etalon.js',   // НОВЫЙ ФАЙЛ: Конструктор эталона
   './js/app.js',
   './js/analytics.js', 
   './js/export.js',    

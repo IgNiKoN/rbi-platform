@@ -782,11 +782,20 @@ function renderOnePagerSubTab(data) {
     let uiPdcaText = rawPdcaText.replace(/\n/g, '<br>').replace(/^\[(.*?)\]/gm, '<b class="text-slate-800 dark:text-white text-[11px] block mt-2 mb-1">$1</b>');
 
     // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
+    // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
+    // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
     const heatmapStages = {};
+    const contrCheckCounts = {}; // Считаем проверки для вывода в топы матрицы
+
     data.forEach(check => {
-        if (!check.metrics || check.metrics.final === 100) return; 
-        const stage = check.templateTitle;
-        const contr = check.contractorName;
+        if (!check.metrics) return; 
+        
+        // Бронебойная защита от отсутствия названия
+        const stage = check.templateTitle || check.templateKey || 'Неизвестный этап';
+        const contr = check.contractorName || 'Неизвестно';
+        
+        contrCheckCounts[contr] = (contrCheckCounts[contr] || 0) + 1;
+
         if (!heatmapStages[stage]) heatmapStages[stage] = {};
         if (!heatmapStages[stage][contr]) heatmapStages[stage][contr] = { checks: 0, defects: 0 };
         
@@ -796,11 +805,16 @@ function renderOnePagerSubTab(data) {
 
     let heatmapHtml = '';
     const stageNames = Object.keys(heatmapStages).sort();
-    if (stageNames.length > 0) {
+    
+    // ИСПРАВЛЕНИЕ: Берем топ-5 самых проверяемых подрядчиков ИМЕННО из текущей выборки (без лимита в 3 проверки)
+    const topMatrixContrs = Object.keys(contrCheckCounts)
+        .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a])
+        .slice(0, 5);
+
+    if (stageNames.length > 0 && topMatrixContrs.length > 0) {
         heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2"><table class="w-full text-left border-collapse text-[10px]">
             <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black">Вид работ / Подрядчик</th>`;
         
-        const topMatrixContrs = ratingData.slice(0, 4).map(r => r.name);
         topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold truncate max-w-[80px]" title="${c}">${c.substring(0,10)}</th>`);
         heatmapHtml += `</tr></thead><tbody>`;
 

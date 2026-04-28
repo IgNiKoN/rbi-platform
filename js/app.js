@@ -1552,9 +1552,14 @@ function showHistoryDetail(id) {
         
         ${item.metrics.reason ? `<div class="text-[10px] font-bold text-red-600 mb-3 bg-red-50 p-3 rounded-lg border border-red-100 shadow-sm">${item.metrics.reason}</div>` : ''}
         
-        <button onclick="closeModal(); setTimeout(() => generatePrescriptionAi(${item.id}), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
-            📄 Создать предписание (ИИ)
-        </button>
+        ${item.templateKey === 'sys_etalon_act' 
+            ? `<button onclick="closeModal(); setTimeout(() => printEtalonAct(${item.id}), 300)" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                   📥 Скачать Акт-Эталон (PDF)
+               </button>`
+            : `<button onclick="closeModal(); setTimeout(() => generatePrescriptionAi(${item.id}), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                   📄 Создать предписание (ИИ)
+               </button>`
+        }
         
         <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-4">
             <div class="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-200 dark:border-slate-700 pb-1">Инженерный breakdown</div>
@@ -6137,11 +6142,7 @@ window.showTwiPrintOptions = function() {
 
 // Переход в базу знаний со стартового экрана
 function goToFAQ() {
-    switchTab('tab-reference');
-    setTimeout(() => {
-        const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
-        if (btns[4]) switchReferenceSubTab('ref-sub-faq', btns[4]);
-    }, 150);
+    openFaqModal();
 }
 
 // ============================================================================
@@ -6330,141 +6331,6 @@ window.rbi_importScheduleExcel = function() {
     showToast("Модуль парсинга Excel-графика будет добавлен на следующем шаге.");
 };
 
-// --- ЛОГИКА РУЧНОЙ ЗАДАЧИ ---
-// --- ЛОГИКА РУЧНОЙ ЗАДАЧИ ---
-window.rbi_openTaskModal = function() {
-    const cSelect = document.getElementById('manual-task-contractor');
-    if (cSelect) {
-        const uniqueContrs = [...new Set(contractorArray.map(c => c.contractorName).filter(Boolean))].sort();
-        cSelect.innerHTML = `<option value="">-- Общая задача --</option>` + uniqueContrs.map(c => `<option value="${c.replace(/"/g, '&quot;')}">${c}</option>`).join('');
-    }
-    document.getElementById('manual-task-title').value = '';
-    document.getElementById('manual-task-date').value = new Date().toISOString().split('T')[0];
-
-    const modal = document.getElementById('manual-task-modal');
-    modal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-};
-
-window.rbi_closeTaskModal = function() {
-    document.getElementById('manual-task-modal').style.display = 'none';
-    document.body.classList.remove('modal-open');
-};
-
-window.rbi_saveManualTask = async function() {
-    const title = document.getElementById('manual-task-title').value.trim();
-    const typeCat = document.getElementById('manual-task-type').value;
-    const contr = document.getElementById('manual-task-contractor').value;
-    const dateStr = document.getElementById('manual-task-date').value;
-
-    if (!title) return showToast("⚠️ Укажите название задачи!");
-
-    const tDate = dateStr ? new Date(dateStr) : new Date();
-    tDate.setHours(12,0,0,0);
-
-    const newTask = {
-        id: 'task_man_' + Date.now().toString(36),
-        statusKey: 'man_' + Date.now().toString(36),
-        type: 'manual',
-        taskType: typeCat === 'meeting' ? 'Инструктаж' : (typeCat === 'method' ? 'ППР' : 'Плановая'),
-        contractor: contr || "Общая",
-        project: document.getElementById('inp-project')?.value || "Все",
-        templateKey: '', templateTitle: 'Поручение',
-        title: title, desc: 'Создано инженером вручную.',
-        priority: "Ручная", priorityLvl: 3, target: 1, done: 0,
-        carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false,
-        date: tDate.toISOString()
-    };
-
-    if (!weeklyPlanData.tasks) weeklyPlanData.tasks = [];
-    weeklyPlanData.tasks.unshift(newTask); // Наверх списка
-    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
-    
-    showToast("✅ Задача добавлена в план!");
-    rbi_closeTaskModal();
-    rbi_renderTasksList();
-};
-
-window.rbi_markTaskSuccess = async function(taskId) {
-    const taskIndex = weeklyPlanData.tasks.findIndex(t => t.id === taskId);
-    if(taskIndex === -1) return;
-
-    weeklyPlanData.tasks[taskIndex].status = 'done'; // Завершаем
-    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
-    
-    if (typeof gameLogAction === 'function') gameLogAction('overfulfill_bonus', taskId); // Используем существующий бонус
-    
-    showToast("🎉 Успех отмечен! Начислено +XP");
-    rbi_renderTasksList();
-};
-
-window.rbi_closeTaskModal = function() {
-    document.getElementById('manual-task-modal').style.display = 'none';
-    document.body.classList.remove('modal-open');
-};
-
-window.rbi_saveManualTask = async function() {
-    const title = document.getElementById('manual-task-title').value.trim();
-    const typeCat = document.getElementById('manual-task-type').value;
-    const contr = document.getElementById('manual-task-contractor').value;
-    const dateStr = document.getElementById('manual-task-date').value;
-
-    if (!title) return showToast("⚠️ Укажите название задачи!");
-
-    const tDate = dateStr ? new Date(dateStr) : new Date();
-    tDate.setHours(12,0,0,0);
-
-    const newTask = {
-        id: 'task_man_' + Date.now().toString(36),
-        statusKey: 'man_' + Date.now().toString(36),
-        type: 'manual',
-        taskType: typeCat === 'meeting' ? 'Инструктаж' : (typeCat === 'method' ? 'ППР' : 'Плановая'),
-        contractor: contr || "Общая",
-        project: document.getElementById('inp-project')?.value || "Все",
-        templateKey: '', templateTitle: 'Поручение',
-        title: title, desc: 'Создано инженером вручную.',
-        priority: "Ручная", priorityLvl: 3, target: 1, done: 0,
-        carryOverCount: 0, needsEtalon: false, isPaused: false, isCompletedManually: false,
-        date: tDate.toISOString()
-    };
-
-    if (!weeklyPlanData.tasks) weeklyPlanData.tasks = [];
-    weeklyPlanData.tasks.unshift(newTask); // Наверх списка
-    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
-    
-    showToast("✅ Задача добавлена в план!");
-    rbi_closeTaskModal();
-    rbi_renderTasksList();
-};
-
-window.rbi_markTaskSuccess = async function(taskId) {
-    const taskIndex = weeklyPlanData.tasks.findIndex(t => t.id === taskId);
-    if(taskIndex === -1) return;
-
-    weeklyPlanData.tasks[taskIndex].status = 'done'; // Завершаем
-    await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
-    
-    if (typeof gameLogAction === 'function') gameLogAction('overfulfill_bonus', taskId); // Используем существующий бонус
-    
-    showToast("🎉 Успех отмечен! Начислено +XP");
-    rbi_renderTasksList();
-};
-
-/* ============================================================================ */
-/* RBI NEW: МОДУЛЬ ПЛАНИРОВАНИЯ И АВТОЗАДАЧ (ГРАФИК СМР)                        */
-/* ============================================================================ */
-
-window.rbi_scheduleData = []; // График работ
-window.rbi_tasksData = [];    // Сгенерированные задачи
-
-const RBI_TASK_ICONS = {
-    'ППР': `<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>`,
-    'Инструктаж': `<svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"></path></svg>`,
-    'Эталон': `<svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>`,
-    'Старт': `<svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`,
-    'Плановая': `<svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"></path></svg>`,
-    'Финал': `<svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"></path></svg>`
-};
 
 // --- РОУТЕР ВКЛАДОК ИНЖЕНЕРА ---
 let currentActiveEngineerTab = 'eng-sub-tasks';
@@ -6553,69 +6419,6 @@ function findTemplateKey(titleStr) {
     return null;
 }
 
-window.rbi_handleScheduleImport = async function(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    showToast("⚙️ Чтение графика Excel...");
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-            let importedCount = 0;
-            // Очищаем старый график перед загрузкой нового
-            await dbClear(STORES.SCHEDULE);
-            window.rbi_scheduleData = [];
-
-            // Строка 0 - Заголовки (Вид работ | Начало | Окончание | Подрядчик(опц))
-            for (let i = 1; i < rows.length; i++) {
-                const r = rows[i];
-                if (!r || !r[0]) continue;
-                
-                const wTitle = r[0].toString().trim();
-                const startDate = parseExcelDate(r[1]);
-                const endDate = parseExcelDate(r[2]);
-                const contractor = r[3] ? r[3].toString().trim() : "Не назначен";
-                
-                if (!startDate || !endDate) continue;
-
-                const tmplKey = findTemplateKey(wTitle);
-
-                const stageObj = {
-                    id: 'sch_' + Date.now().toString(36) + '_' + i,
-                    workTitle: wTitle,
-                    templateKey: tmplKey,
-                    contractor: contractor,
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString()
-                };
-
-                window.rbi_scheduleData.push(stageObj);
-                await dbPut(STORES.SCHEDULE, stageObj);
-                importedCount++;
-            }
-
-            showToast(`✅ График загружен! Распознано этапов: ${importedCount}`);
-            // Сразу генерируем задачи
-            await rbi_generateAutoTasks();
-            
-            if (currentActiveAnalyticsTab === 'sub-schedule') rbi_renderScheduleTab();
-            if (currentActiveEngineerTab === 'eng-sub-tasks') rbi_renderTasksList();
-
-        } catch (err) {
-            console.error(err);
-            alert("Ошибка чтения Excel. Формат: 'Вид работ | Начало | Окончание'.");
-        }
-    };
-    reader.readAsArrayBuffer(file);
-    event.target.value = '';
-};
-
 // --- ГЕНЕРАТОР АВТОЗАДАЧ НА ОСНОВЕ ГРАФИКА ---
 window.rbi_generateAutoTasks = async function() {
     showToast("🧠 Нейросеть формирует цепочки задач...");
@@ -6689,59 +6492,6 @@ window.rbi_generateAutoTasks = async function() {
 };
 
 
-// Исправленная логика фильтров (теперь классы применяются правильно)
-window.rbi_filterTaskHub = function(category, btnElement) {
-    const container = document.getElementById('hub-filters');
-    if (container) {
-        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
-            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
-        });
-    }
-    if (btnElement) {
-        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
-    }
-
-    const cards = document.querySelectorAll('.task-card-item');
-    cards.forEach(card => {
-        if (category === 'all') {
-            card.style.display = 'flex';
-        } else {
-            if (card.dataset.category === category) {
-                card.style.display = 'flex';
-            } else {
-                card.style.display = 'none';
-            }
-        }
-    });
-};
-
-// Функция логики для кнопок-фильтров Task Hub
-window.rbi_filterTaskHub = function(category, btnElement) {
-    // Красим кнопки
-    const container = document.getElementById('hub-filters');
-    if (container) {
-        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
-            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
-        });
-    }
-    if (btnElement) {
-        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
-    }
-
-    // Скрываем/показываем карточки
-    const cards = document.querySelectorAll('.task-card-item');
-    cards.forEach(card => {
-        if (category === 'all') {
-            card.parentElement.style.display = 'block'; // Показываем родительский div в сетке
-        } else {
-            if (card.dataset.category === category) {
-                card.parentElement.style.display = 'block';
-            } else {
-                card.parentElement.style.display = 'none';
-            }
-        }
-    });
-};
 
 // --- РЕНДЕР: Вкладка "Аналитика -> График" ---
 window.rbi_renderScheduleTab = async function() {
@@ -6781,86 +6531,6 @@ window.rbi_renderScheduleTab = async function() {
     container.innerHTML = html;
 };
 
-// --- ДЕЙСТВИЯ С ЗАДАЧЕЙ (ВЫПОЛНИТЬ / ПЕРЕНЕСТИ) ---
-let currentActionTaskId = null;
-
-window.rbi_openTaskAction = function(taskId) {
-    currentActionTaskId = taskId;
-    const task = window.rbi_tasksData.find(t => t.id === taskId);
-    if(!task) return;
-
-    document.getElementById('rbi-task-modal-desc').innerHTML = `<b>${task.title}</b><br>${task.workTitle} • ${task.contractor}`;
-    
-    // Показываем обе кнопки (Переход в режимы)
-    document.getElementById('rbi-task-mode-complete').classList.remove('hidden');
-    document.getElementById('rbi-task-mode-reschedule').classList.remove('hidden');
-    
-    // Сброс полей
-    document.getElementById('rbi-task-comment').value = '';
-    document.getElementById('rbi-task-new-date').value = '';
-
-    const modal = document.getElementById('rbi-task-action-modal');
-    modal.style.display = 'flex';
-    document.body.classList.add('modal-open');
-};
-
-window.rbi_closeTaskActionModal = function() {
-    document.getElementById('rbi-task-action-modal').style.display = 'none';
-    document.body.classList.remove('modal-open');
-    currentActionTaskId = null;
-};
-
-window.rbi_saveTaskComplete = async function() {
-    if(!currentActionTaskId) return;
-    const taskIndex = window.rbi_tasksData.findIndex(t => t.id === currentActionTaskId);
-    if(taskIndex === -1) return;
-
-    window.rbi_tasksData[taskIndex].status = 'done';
-    window.rbi_tasksData[taskIndex].resultComment = document.getElementById('rbi-task-comment').value;
-    
-    await dbPut(STORES.TASKS, window.rbi_tasksData[taskIndex]);
-    if (typeof gameLogAction === 'function') gameLogAction('task_completed_on_time', currentActionTaskId);
-    showToast("✅ Задача выполнена!");
-    rbi_closeTaskActionModal();
-    rbi_renderTasksList();
-};
-
-window.rbi_saveTaskReschedule = async function() {
-    if(!currentActionTaskId) return;
-    const taskIndex = window.rbi_tasksData.findIndex(t => t.id === currentActionTaskId);
-    if(taskIndex === -1) return;
-
-    const newDate = document.getElementById('rbi-task-new-date').value;
-    if(!newDate) return showToast("⚠️ Укажите новую дату!");
-
-    window.rbi_tasksData[taskIndex].date = new Date(newDate).toISOString();
-    window.rbi_tasksData[taskIndex].rescheduleReason = document.getElementById('rbi-task-reschedule-reason').value;
-    
-    await dbPut(STORES.TASKS, window.rbi_tasksData[taskIndex]);
-    showToast("🔄 Задача перенесена!");
-    rbi_closeTaskActionModal();
-    rbi_renderTasksList();
-};
-
-// Прямой переход из Задачи во вкладку Осмотра
-window.rbi_startTaskAudit = function(taskId) {
-    const task = window.rbi_tasksData.find(t => t.id === taskId);
-    if(!task || !task.templateKey) return showToast("Нет привязанного чек-листа!");
-
-    switchTab('tab-audit'); 
-    changeTemplate(task.templateKey);
-    
-    setTimeout(() => {
-        const contrInput = document.getElementById('inp-contractor');
-        if (contrInput && !contrInput.hasAttribute('readonly')) contrInput.value = task.contractor; 
-        
-        // Автоматически помечаем задачу как выполненную в фоне
-        task.status = 'done';
-        dbPut(STORES.TASKS, task);
-        
-        showToast("🚀 Чек-лист загружен. Начинаем аудит!");
-    }, 150);
-};
 
 /* ============================================================================ */
 /* RBI NEW: МОДУЛЬ СОВЕЩАНИЙ И ПРОТОКОЛОВ (DEEPSEEK + АВТО-ПОВЕСТКА)            */

@@ -1359,6 +1359,7 @@ function exportPdfFullObjectReport(data, mode = 'script') {
 
     printPdfShell("Полный отчет по объекту", content, "A3", "landscape", mode);
 }
+
 // 4. Плакат Качества (A3 Альбом)
 function exportPdfPoster(data, mode = 'script') {
     let weekData = [];
@@ -2507,4 +2508,35 @@ window.exportPersonalContractorReport = async function(contractorName) {
 
     await printPdfShell(`Отчет для ${cName}`, content, "A4", "landscape", "script");
     if (typeof gameLogAction === 'function') gameLogAction('ai_copy', 'sent_report'); 
+};
+
+window.promptMeetingAfterReport = function() {
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">📅</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Отчет сформирован!</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
+            Данные по объекту собраны. Хотите перейти к формированию протокола (Мемо) для еженедельного совещания с подрядчиками? Система автоматически подтянет все нерешенные задачи и дефекты.
+        </div>
+        <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 shadow-sm">
+                Позже
+            </button>
+            <button onclick="closeModal(); startMeetingFlow();" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">
+                Начать совещание
+            </button>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.startMeetingFlow = function() {
+    // 1. Перекидываем пользователя на вкладку Инженера
+    switchTab('tab-engineer');
+    // 2. Переключаем на подвкладку Совещаний
+    const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+    if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
+    // 3. Открываем рабочую область совещания
+    setTimeout(() => { rbi_createMeeting(); }, 300);
 };

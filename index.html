@@ -2563,67 +2563,15 @@
                 </details>
 
                 <!-- БАЗА ЗНАНИЙ (FAQ) -->
-                <details
-                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                    <summary
-                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
-                                </path>
-                            </svg>
-                            FAQ и Методология
-                        </span>
-                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
-                    </summary>
-                    <div class="p-4 space-y-3 bg-slate-50 dark:bg-slate-900/30">
-                        <details
-                            class="group bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-                            <summary
-                                class="font-bold cursor-pointer p-3 text-[11px] uppercase text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex justify-between items-center">
-                                <span>Философия RBI Quality</span><span
-                                    class="transition group-open:rotate-180">▼</span></summary>
-                            <div
-                                class="p-3 border-t border-slate-100 dark:border-slate-700 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-                                <b>RBI Quality</b> — это риск-ориентированная система на основе данных (Data-Driven).
-                                Роль инженера — не «человек с рулеткой», а независимый аудитор. Задача: проводить
-                                выборочные проверки, выявлять системные проблемы и обучать подрядчиков.
-                            </div>
-                        </details>
-                        <details
-                            class="group bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-                            <summary
-                                class="font-bold cursor-pointer p-3 text-[11px] uppercase text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex justify-between items-center">
-                                <span>Математика УрК и Штрафы</span><span
-                                    class="transition group-open:rotate-180">▼</span></summary>
-                            <div
-                                class="p-3 border-t border-slate-100 dark:border-slate-700 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-                                <b>УрК = База × Kc × Kcrit</b><br>
-                                <b>B1</b> (Мелкий) — эстетика, вес 1.<br>
-                                <b>B2</b> (Значимый) — нарушение технологии, вес 2.<br>
-                                <b>B3</b> (Критический) — угроза безопасности (СТОП), вес 3.<br><br>
-                                <b>Правило Стеклянного потолка (Cap84):</b> Если есть хотя бы один дефект B2 или B3,
-                                итоговая оценка не превышает 84%.
-                            </div>
-                        </details>
-                        <details
-                            class="group bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-                            <summary
-                                class="font-bold cursor-pointer p-3 text-[11px] uppercase text-slate-800 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex justify-between items-center">
-                                <span>Индекс Критичности Объекта (ИКО)</span><span
-                                    class="transition group-open:rotate-180">▼</span></summary>
-                            <div
-                                class="p-3 border-t border-slate-100 dark:border-slate-700 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
-                                ИКО — средневзвешенная «угроза» всех подрядчиков. Отвязан от объема проверок.<br>
-                                🟢 &lt; 0.30 — Низкий риск<br>
-                                🟡 0.30 – 0.60 — Повышенный риск<br>
-                                🔴 ≥ 0.60 — Высокий риск
-                            </div>
-                        </details>
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex justify-between items-center mb-3">
+                    <div>
+                        <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight">Методология RBI</div>
+                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Формулы, логика ИКО и ответы на вопросы</div>
                     </div>
-                </details>
-            </div>
+                    <button onclick="openFaqModal()" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-transform shadow-sm">
+                        Открыть FAQ
+                    </button>
+                </div>
 
             <div class="text-center mt-4 mb-6">
                 <button onclick="fullFactoryReset()"
@@ -2715,6 +2663,9 @@
     <script src="js/templates.js"></script>
     <script src="js/math.js"></script>
     <script src="js/ai.js"></script>
+    <script src="js/faq.js"></script>
+    <script src="js/task.js"></script>
+    <script src="js/etalon.js"></script>
     <script src="js/app.js"></script>
     <script src="js/analytics.js"></script>
     <script src="js/export.js"></script>
@@ -2994,7 +2945,49 @@
 
     <!-- === ИЗОЛИРОВАННЫЙ КОНТЕЙНЕР ДЛЯ БРАУЗЕРНОЙ ПЕЧАТИ === -->
     <div id="print-content" class="print-only"></div>
+     <!-- === КОНСТРУКТОР АКТА-ЭТАЛОНА === -->
+    <div id="etalon-constructor-view" class="hidden bg-[var(--bg-main)] fixed inset-0 z-[3000] h-screen pb-32 overflow-y-auto custom-scrollbar">
+        <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
+            <button onclick="closeEtalonConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+            </button>
+            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center" id="etalon-title-text">Акт-Эталон</div>
+            <button onclick="saveEtalonAct()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-lg active:scale-95 shadow-md transition-colors">Сохранить</button>
+        </div>
 
+        <div class="space-y-4 px-3 max-w-2xl mx-auto">
+            <!-- БЛОК 1: Основные данные -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
+                <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2">Общие данные</div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Расположение эталона (Оси, Этаж) *</label>
+                    <input type="text" id="etalon-location" class="input-base text-[12px]" placeholder="Напр: Секция 1, Этаж 5, Оси А-Б">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Присутствовали при приемке *</label>
+                    <textarea id="etalon-participants" class="input-base text-[11px] h-14 resize-none" placeholder="ФИО, Должность представителей Подрядчика и Заказчика..."></textarea>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допущенные отклонения (если есть)</label>
+                    <textarea id="etalon-deviations" class="input-base text-[11px] h-14 resize-none" placeholder="Напр: Допущено отклонение по вертикали 3мм (вместо 2мм) в связи с..."></textarea>
+                </div>
+            </div>
+
+            <!-- БЛОК 2: Элементы эталона -->
+            <div>
+                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg> Фиксация узлов
+                </div>
+                <div id="etalon-elements-container"></div>
+                <button onclick="addEtalonElement()" class="w-full bg-indigo-50 border border-dashed border-indigo-300 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400 py-4 rounded-2xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить узел эталона
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Невидимый инпут для фото эталона -->
+    <input type="file" id="etalon-photo-input" accept="image/*" style="display:none;" onchange="handleEtalonPhotoUpload(event)">
     <!-- === МОДАЛКА УПРАВЛЕНИЯ СТАТУСОМ ЗАДАЧИ === -->
     <div id="task-status-modal"
         class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm"
@@ -3427,6 +3420,23 @@
                     Добавить в план
                 </button>
             </div>
+        </div>
+    </div>
+    <!-- === НОВОЕ МОДАЛЬНОЕ ОКНО FAQ === -->
+    <div id="faq-modal-overlay" class="fixed inset-0 bg-slate-900/70 z-[8000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeFaqModal()">
+        <div class="bg-[var(--bg-main)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform transform translate-y-full flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-t-3xl sm:rounded-t-2xl z-10">
+                <div class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Справочник FAQ
+                </div>
+                <button onclick="closeFaqModal()" class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">✕</button>
+            </div>
+            <div class="p-3 border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm z-10 relative">
+                <span class="absolute left-6 top-5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                <input type="text" id="faq-search-input" class="input-base text-[12px] !py-2.5 pl-10" placeholder="Поиск по вопросам..." oninput="filterFaq()">
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50" id="faq-list-container"></div>
         </div>
     </div>
 </body>

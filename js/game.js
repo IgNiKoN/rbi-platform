@@ -90,8 +90,8 @@ window.getBadgeSvg = function (badgeId, tier, sizeCls) {
     if (tier === 4) { strokeColor = `url(#g4_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 6px rgba(234,179,8,0.5));"; }
     if (tier >= 5) { strokeColor = `url(#g5_${uid})`; opacityCls = "opacity-100"; shadow = "filter: drop-shadow(0 4px 8px rgba(236,72,153,0.5));"; }
 
-      let path = "";
-    switch(badgeId) {
+    let path = "";
+    switch (badgeId) {
         case 'win_win': path = `<path d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/>`; break;
         case 'champ_coach': path = `<path d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z"/><path d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z"/>`; break;
         case 'reanimator': path = `<path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-4.5v9m-4.5-4.5h9"/>`; break;
@@ -410,7 +410,7 @@ function calculateImpactScore(inspector, contractor, template) {
 }
 
 // === ГЕНЕРАТОР ЗАДАЧ (ПОЛНЫЙ СПИСОК ИЗ ТЗ) ===
-window.gameGenerateWeeklyPlan = function(force = false) {
+window.gameGenerateWeeklyPlan = function (force = false) {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim();
     if (!currentInspector) return;
 
@@ -428,7 +428,7 @@ window.gameGenerateWeeklyPlan = function(force = false) {
     const now = new Date();
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
+
     const recentChecks = contractorArray.filter(c => new Date(c.date) >= thirtyDaysAgo && c.inspectorName === currentInspector);
 
     const pairMap = {};
@@ -446,7 +446,7 @@ window.gameGenerateWeeklyPlan = function(force = false) {
 
     for (let key in pairMap) {
         const pair = pairMap[key];
-        
+
         if (!contractorStatuses[key]) {
             contractorStatuses[key] = { status: "active", progress: { done: 0, target: 1, deficit: 0, carryOverCount: 0 }, etalonCompleted: false, lastUpdate: new Date().toISOString() };
         }
@@ -467,15 +467,15 @@ window.gameGenerateWeeklyPlan = function(force = false) {
         } else {
             const m = getContractorMetrics(pair.checks, userTemplates);
             if (m) {
-                const lastCheck = pair.checks.sort((a,b) => new Date(b.date) - new Date(a.date))[0];
+                const lastCheck = pair.checks.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
                 hasB3InLast = lastCheck.metrics && lastCheck.metrics.n_B3_fail > 0;
 
-                if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) { 
-                    priority = "Критично"; priorityLvl = 4; target = 5; 
-                } else if (m.finalC >= 70 && m.finalC <= 84) { 
-                    priority = "В плане"; priorityLvl = 2; target = 3; 
-                } else { 
-                    priority = "Низкий"; priorityLvl = 1; target = 1; 
+                if (m.finalC < 70 || m.rateB3 >= 20 || m.stabilityIndex < 40 || hasB3InLast) {
+                    priority = "Критично"; priorityLvl = 4; target = 5;
+                } else if (m.finalC >= 70 && m.finalC <= 84) {
+                    priority = "В плане"; priorityLvl = 2; target = 3;
+                } else {
+                    priority = "Низкий"; priorityLvl = 1; target = 1;
                 }
 
                 // АВТО-ЗАДАЧА: Входной контроль материалов (Если у подрядчика плохой УрК)
@@ -498,11 +498,11 @@ window.gameGenerateWeeklyPlan = function(force = false) {
 
         const oldTask = oldPlan.find(t => t.statusKey === key && t.taskType === 'Плановая');
         let deficit = 0; let carryOverCount = 0;
-        
+
         if (oldTask && oldTask.done < oldTask.target && !needsEtalon && !isPaused && !isManuallyCompleted) {
             deficit = oldTask.target - oldTask.done;
             carryOverCount = oldTask.carryOverCount ? oldTask.carryOverCount + 1 : 1;
-            target = Math.min(target + deficit, 7); 
+            target = Math.min(target + deficit, 7);
             if (priorityLvl < 4) priorityLvl++;
         }
 
@@ -528,7 +528,7 @@ window.gameGenerateWeeklyPlan = function(force = false) {
         });
     };
 
-    const dayOfWeek = now.getDay(); 
+    const dayOfWeek = now.getDay();
     const isFirstDayOfMonth = now.getDate() === 1;
 
     if (dayOfWeek === 5) {
@@ -556,189 +556,9 @@ window.gameGenerateWeeklyPlan = function(force = false) {
 
     newTasks.sort((a, b) => b.priorityLvl - a.priorityLvl);
     weeklyPlanData = { weekId: currentWeekId, tasks: newTasks, completed: false };
-    
+
     saveWeeklyPlan();
     gameUpdatePlanProgress();
-};
-
-// --- РЕНДЕР: Вкладка "Инженер -> Задачи" (Новый UI без скрытых меню) ---
-window.rbi_renderTasksList = async function() {
-    const container = document.getElementById('rbi-tasks-container');
-    if (!container) return;
-
-    const activeTasks = (weeklyPlanData && weeklyPlanData.tasks) ? weeklyPlanData.tasks : [];
-
-    const today = new Date(); today.setHours(0,0,0,0);
-    const startW = getStartOfWeek(today);
-    const endW = new Date(startW); endW.setDate(startW.getDate() + 6); endW.setHours(23,59,59,999);
-    
-    document.getElementById('rbi-week-number').innerText = getWeekNumber(today);
-    document.getElementById('rbi-week-dates').innerText = `${startW.toLocaleDateString('ru-RU', {day:'numeric', month:'short'})} — ${endW.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year:'numeric'})}`;
-
-    // ГЛОБАЛЬНЫЕ КНОПКИ УПРАВЛЕНИЯ ПЛАНОМ (На самом виду)
-    let globalActionsHtml = `
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-            <button onclick="gameForceUpdatePlan()" class="bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Обновить план
-            </button>
-            <button onclick="rbi_openTaskModal()" class="bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> + Задача
-            </button>
-            <button onclick="generateAiRoutePlan()" class="bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
-                🧠 AI-Маршрут
-            </button>
-            <button onclick="gameToggleAbsence()" class="bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-1.5">
-                🏖️ Отпуск/Статус
-            </button>
-        </div>
-        <div id="ai-route-container" class="hidden mb-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-3 text-[11px] text-purple-900 dark:text-purple-200 leading-relaxed shadow-inner"></div>
-    `;
-
-    if (engineerAbsence.isActive) {
-        container.innerHTML = globalActionsHtml + `
-            <div class="bg-white/80 dark:bg-slate-800/80 border border-amber-200 dark:border-amber-800 rounded-xl p-6 text-center text-amber-700 dark:text-amber-400 shadow-sm mt-4">
-                <div class="text-[14px] font-black uppercase tracking-wider mb-1">Режим: ${engineerAbsence.reason}</div>
-                <div class="text-[11px] font-bold opacity-80">Задачи на эту неделю приостановлены. Отдыхайте!</div>
-            </div>`;
-        return;
-    }
-
-    if (activeTasks.length === 0) {
-        container.innerHTML = globalActionsHtml + `
-            <div class="bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center shadow-sm mt-4">
-                <div class="text-[14px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">План чист</div>
-                <div class="text-[11px] text-slate-500 font-medium">Сделайте хотя бы одну проверку или загрузите график работ, чтобы ИИ построил план.</div>
-            </div>`;
-        document.getElementById('rbi-tasks-progress-text').innerText = `0/0`;
-        document.getElementById('rbi-tasks-progress-bar').style.width = `0%`;
-        return;
-    }
-
-    let overdue = []; let todayTasks = []; let weekTasks = [];
-    let weekTotal = 0; let weekDone = 0;
-
-    activeTasks.forEach(t => {
-        if (t.isCompletedManually || t.done >= t.target) {
-            weekTotal++; weekDone++;
-            return; 
-        }
-        const tDate = t.date ? new Date(t.date) : new Date();
-        tDate.setHours(0,0,0,0);
-        if (tDate < today) { overdue.push(t); weekTotal++; } 
-        else if (tDate.getTime() === today.getTime()) { todayTasks.push(t); weekTotal++; } 
-        else { weekTasks.push(t); weekTotal++; }
-    });
-
-    document.getElementById('rbi-tasks-progress-text').innerText = `${weekDone}/${weekTotal}`;
-    document.getElementById('rbi-tasks-progress-bar').style.width = weekTotal > 0 ? `${(weekDone/weekTotal)*100}%` : '0%';
-
-    const renderCard = (t, isOverdue) => {
-        const icon = RBI_TASK_ICONS[t.taskType] || RBI_TASK_ICONS['Плановая'];
-        const dateStr = t.date ? new Date(t.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : 'Без даты';
-        const dateTag = isOverdue ? `<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[9px] font-black uppercase">Проср: ${dateStr}</span>` : `<span class="text-[10px] text-slate-400 font-bold">${dateStr}</span>`;
-        
-        let tagClass = 'text-green-600 bg-green-50 border-green-200';
-        let barColor = 'bg-indigo-500';
-
-        if (t.isPaused) { tagClass = 'text-orange-600 bg-orange-50 border-orange-200'; barColor = 'bg-slate-400'; } 
-        else if (t.priorityLvl === 4) { tagClass = 'text-red-600 bg-red-50 border-red-200'; barColor = 'bg-red-500'; } 
-        else if (t.priorityLvl === 3) { tagClass = 'text-blue-600 bg-blue-50 border-blue-200'; } 
-        else if (t.priorityLvl === 2) { tagClass = 'text-orange-600 bg-orange-50 border-orange-200'; barColor = 'bg-orange-500'; }
-
-        let filterCat = 'control'; 
-        if (t.taskType === 'ППР' || t.taskType === 'Входной контроль') filterCat = 'method';
-        if (t.taskType === 'Инструктаж' || t.taskType === 'meeting_weekly') filterCat = 'meeting';
-
-        const progressPerc = Math.min((t.done / t.target) * 100, 100);
-        const opacityClass = (t.isPaused || t.isCompletedManually) ? 'opacity-60' : 'opacity-100';
-
-        // ЯВНЫЕ КНОПКИ ВМЕСТО МЕНЮ
-        let actionButtonsHtml = '';
-        if (['Эталон', 'Старт', 'Плановая', 'Финал'].includes(t.taskType)) {
-            actionButtonsHtml += `<button onclick="rbi_startTaskAudit('${t.id}')" class="flex-1 bg-indigo-600 text-white border border-indigo-700 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-md flex justify-center items-center gap-1">📋 Проверить</button>`;
-        } else {
-            actionButtonsHtml += `<button onclick="rbi_openTaskAction('${t.id}')" class="flex-1 bg-[var(--hover-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 flex justify-center items-center gap-1">✅ Решить</button>`;
-        }
-        actionButtonsHtml += `<button onclick="rbi_markTaskSuccess('${t.id}')" class="flex-1 bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:border-green-800 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1">🎉 Успех</button>`;
-
-        return `
-        <div data-category="${filterCat}" class="task-card-item bg-[var(--card-bg)] border ${isOverdue ? 'border-red-300 shadow-md' : 'border-[var(--card-border)] shadow-sm'} rounded-xl p-3 flex flex-col gap-2 relative overflow-hidden transition-all duration-300 ${opacityClass}">
-            ${isOverdue ? '<div class="absolute top-0 left-0 w-1 h-full bg-red-500"></div>' : ''}
-            
-            <div class="flex items-center gap-2 mb-1 min-w-0 pl-1 border-b border-[var(--card-border)] pb-2">
-                <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center border border-[var(--card-border)] shrink-0">${icon}</div>
-                <div class="min-w-0">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight truncate">${t.title || 'Задача'}</div>
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 truncate">${t.templateTitle || 'Методика'} • ${t.contractor || 'Организация'}</div>
-                </div>
-            </div>
-            
-            <div class="flex flex-wrap gap-1 items-center">
-                <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${tagClass}">${t.isPaused ? 'ПАУЗА' : t.priority}</span>
-                ${t.needsEtalon ? '<span class="text-[8px] bg-blue-100 text-blue-600 px-1 rounded font-black border border-blue-200">ЭТАЛОН</span>' : ''}
-                ${t.carryOverCount > 0 ? '<span class="text-[8px] bg-red-100 text-red-600 px-1 rounded font-black border border-red-200">ДОЛГ</span>' : ''}
-            </div>
-
-            <div class="mt-auto">
-                <div class="flex justify-between items-end mb-1">
-                    <span class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">${dateTag}</span>
-                    <span class="text-[11px] font-black ${t.done >= t.target ? 'text-green-500' : 'text-slate-700 dark:text-slate-300'}">${t.done} / ${t.target}</span>
-                </div>
-                <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden border border-[var(--card-border)] mb-2">
-                    <div class="h-full ${barColor} transition-all duration-500" style="width: ${progressPerc}%"></div>
-                </div>
-                
-                <!-- ЯВНЫЕ КНОПКИ УПРАВЛЕНИЯ -->
-                <div class="flex gap-1.5 w-full">
-                    ${actionButtonsHtml}
-                    <button onclick="rbi_openTaskAction('${t.id}')" class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] text-slate-400 hover:text-indigo-600 flex items-center justify-center shrink-0 border border-[var(--card-border)] active:scale-90" title="Перенести">📅</button>
-                </div>
-            </div>
-        </div>`;
-    };
-
-    const filterHtml = `
-        <div class="flex gap-1.5 mb-3 pb-2 overflow-x-auto no-scrollbar" id="hub-filters">
-            <button onclick="rbi_filterTaskHub('all', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все</button>
-            <button onclick="rbi_filterTaskHub('control', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Контроль</button>
-            <button onclick="rbi_filterTaskHub('method', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Методика</button>
-            <button onclick="rbi_filterTaskHub('meeting', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0">Встречи</button>
-        </div>
-    `;
-
-    let html = globalActionsHtml + filterHtml;
-
-    if (overdue.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">🚨 Просрочено (${overdue.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-overdue">${overdue.map(t => renderCard(t, true)).join('')}</div></div>`;
-    if (todayTasks.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1.5">📌 Сегодня (${todayTasks.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-today">${todayTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
-    if (weekTasks.length > 0) html += `<div class="mb-5"><div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">🔜 До конца недели (${weekTasks.length})</div><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3" id="tasks-grid-week">${weekTasks.map(t => renderCard(t, false)).join('')}</div></div>`;
-
-    container.innerHTML = html;
-};
-
-// Исправленная логика фильтров 
-window.rbi_filterTaskHub = function(category, btnElement) {
-    const container = document.getElementById('hub-filters');
-    if (container) {
-        container.querySelectorAll('.hub-filter-btn').forEach(btn => {
-            btn.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors shrink-0";
-        });
-    }
-    if (btnElement) {
-        btnElement.className = "hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0";
-    }
-
-    const cards = document.querySelectorAll('.task-card-item');
-    cards.forEach(card => {
-        if (category === 'all') {
-            card.style.display = 'flex';
-        } else {
-            if (card.dataset.category === category) {
-                card.style.display = 'flex';
-            } else {
-                card.style.display = 'none';
-            }
-        }
-    });
 };
 
 window.gameUpdatePlanProgress = function () {
@@ -958,11 +778,11 @@ window.gameShowLevelsModal = function () {
     modal.style.display = 'flex';
 };
 // === ЕДИНЫЙ ДАШБОРД ИНЖЕНЕРА (БЕЗ ЗАДАЧ - ПЕРЕНЕСЕНО) ===
-window.gameRenderDashboard = function() {
+window.gameRenderDashboard = function () {
     const container = document.getElementById('game-dashboard-container');
     if (!container) return;
 
-    checkAutoExpireAbsence(); 
+    checkAutoExpireAbsence();
     if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan();
 
     // ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ИМЕНИ
@@ -970,7 +790,7 @@ window.gameRenderDashboard = function() {
     if (savedName && typeof appSettings !== 'undefined') appSettings.engineerName = savedName;
 
     const currentInspector = document.getElementById('inp-inspector')?.value.trim() || appSettings.engineerName || 'Неизвестный инспектор';
-    
+
     // Логика показа/скрытия поля ввода имени
     if (!currentInspector || currentInspector === 'Неизвестный инспектор') {
         document.getElementById('profile-name-edit-container')?.classList.remove('hidden');
@@ -981,8 +801,8 @@ window.gameRenderDashboard = function() {
     }
 
     const profiles = gameCalculateAllProfiles();
-    window.currentProfileData = profiles[currentInspector] || { 
-        name: currentInspector, pi: 0, checksCount: 0, currentStreak: 0, 
+    window.currentProfileData = profiles[currentInspector] || {
+        name: currentInspector, pi: 0, checksCount: 0, currentStreak: 0,
         levelObj: PI_GRADES[0], earnedBadges: [], badgesData: {}, monthlyPI: {}, rawChecks: [], radarData: { "Оформление": 0, "Обучение": 0, "Объективность": 0, "Охват": 0, "Партнёрство": 0 }
     };
     window.allProfilesData = profiles;
@@ -996,7 +816,7 @@ window.gameRenderDashboard = function() {
         const tier = getBadgeTier(b, progress);
         if (tier > 0) activeBadges.push({ ...b, tier, progress });
     });
-    activeBadges.sort((a,b) => b.tier - a.tier);
+    activeBadges.sort((a, b) => b.tier - a.tier);
     const topBadges = activeBadges.slice(0, 3);
     const smartQuestHtml = getSmartQuest(myProfile);
 
@@ -1005,17 +825,17 @@ window.gameRenderDashboard = function() {
     const contractorsSet = new Set(myProfile.rawChecks.map(c => c.contractorName));
     contractorsSet.forEach(cName => {
         const cChecks = myProfile.rawChecks.filter(c => c.contractorName === cName);
-        if (cChecks.length < 6) return; 
-        const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey]||0)+1);
-        const topTemplate = Object.keys(templatesCount).sort((a,b) => templatesCount[b] - templatesCount[a])[0];
+        if (cChecks.length < 6) return;
+        const templatesCount = {}; cChecks.forEach(c => templatesCount[c.templateKey] = (templatesCount[c.templateKey] || 0) + 1);
+        const topTemplate = Object.keys(templatesCount).sort((a, b) => templatesCount[b] - templatesCount[a])[0];
         const impact = calculateImpactScore(currentInspector, cName, topTemplate);
         if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
     });
     const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
-    
+
     let globalImpactText = "Нейтральное"; let globalImpactColor = "text-slate-600 dark:text-slate-400"; let globalImpactBg = "bg-[var(--hover-bg)]";
     let globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16"></path></svg>`;
-    if (avgImpact > 0.2) { globalImpactText = "Позитивное"; globalImpactColor = "text-green-600 dark:text-green-500"; globalImpactBg = "bg-green-50 dark:bg-green-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`; } 
+    if (avgImpact > 0.2) { globalImpactText = "Позитивное"; globalImpactColor = "text-green-600 dark:text-green-500"; globalImpactBg = "bg-green-50 dark:bg-green-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>`; }
     else if (avgImpact < -0.2) { globalImpactText = "Отрицательное"; globalImpactColor = "text-red-600 dark:text-red-500"; globalImpactBg = "bg-red-50 dark:bg-red-900/20"; globalImpactIcon = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"></path></svg>`; }
 
     let myRank = 1; let totalEng = 1;
@@ -1023,7 +843,7 @@ window.gameRenderDashboard = function() {
         const sortedServer = window.serverGlobalRating.sort((a, b) => b.pi - a.pi);
         myRank = sortedServer.findIndex(p => p.name === myProfile.name) + 1;
         totalEng = sortedServer.length;
-        if (myRank === 0) myRank = '-'; 
+        if (myRank === 0) myRank = '-';
     } else {
         const allProfilesArr = Object.values(profiles).sort((a, b) => b.pi - a.pi);
         myRank = allProfilesArr.findIndex(p => p.name === myProfile.name) + 1;
@@ -1039,7 +859,7 @@ window.gameRenderDashboard = function() {
                 <div class="flex justify-between items-start mb-2 sm:mb-4 relative z-10">
                     <div class="flex items-center gap-1.5 sm:gap-4 min-w-0 pr-1">
                         <div class="w-9 h-9 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-base sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
-                            ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0,1).toUpperCase()}
+                            ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0, 1).toUpperCase()}
                         </div>
                         <div class="overflow-hidden">
                             <div class="flex items-center gap-1 sm:gap-2">
@@ -1075,10 +895,10 @@ window.gameRenderDashboard = function() {
                         <button onclick="document.getElementById('badges-section').scrollIntoView({behavior: 'smooth'})" class="text-indigo-500 hover:text-indigo-600 active:scale-95 transition-colors">Все ➔</button>
                     </div>
                     <div class="flex items-center justify-start gap-3 overflow-x-auto no-scrollbar pb-2">
-                        ${topBadges.length > 0 
-                            ? topBadges.map(b => `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform w-16 shrink-0" onclick="gameShowBadgeInfo('${b.id}', ${b.progress})" title="${b.name}">${getBadgeSvg(b.id, b.tier, "w-10 h-10")}<span class="text-[8px] font-bold text-slate-600 dark:text-slate-400 uppercase mt-1 text-center truncate w-full">${b.name}</span></div>`).join('')
-                            : `<div class="text-[9px] font-bold text-slate-400 uppercase">Пока пусто.</div>`
-                        }
+                        ${topBadges.length > 0
+            ? topBadges.map(b => `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform w-16 shrink-0" onclick="gameShowBadgeInfo('${b.id}', ${b.progress})" title="${b.name}">${getBadgeSvg(b.id, b.tier, "w-10 h-10")}<span class="text-[8px] font-bold text-slate-600 dark:text-slate-400 uppercase mt-1 text-center truncate w-full">${b.name}</span></div>`).join('')
+            : `<div class="text-[9px] font-bold text-slate-400 uppercase">Пока пусто.</div>`
+        }
                     </div>
                 </div>
                 <div class="mt-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-3 shadow-sm">
@@ -1142,10 +962,10 @@ window.gameRenderDashboard = function() {
             </summary>
             <div class="p-4 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-y-6 gap-x-2 bg-[var(--hover-bg)]">
                 ${COMPETENCIES.map(badge => {
-                    const progress = myProfile.badgesData[badge.id] || 0;
-                    const tier = getBadgeTier(badge, progress);
-                    return `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})" title="${badge.desc}">${getBadgeSvg(badge.id, tier, "w-12 h-12")}<div class="font-bold text-[8px] uppercase text-center leading-tight mt-2 h-6 flex items-center ${tier > 0 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}">${badge.name}</div></div>`;
-                }).join('')}
+            const progress = myProfile.badgesData[badge.id] || 0;
+            const tier = getBadgeTier(badge, progress);
+            return `<div class="flex flex-col items-center cursor-pointer active:scale-95 transition-transform" onclick="gameShowBadgeInfo('${badge.id}', ${progress})" title="${badge.desc}">${getBadgeSvg(badge.id, tier, "w-12 h-12")}<div class="font-bold text-[8px] uppercase text-center leading-tight mt-2 h-6 flex items-center ${tier > 0 ? 'text-slate-800 dark:text-white' : 'text-slate-400'}">${badge.name}</div></div>`;
+        }).join('')}
             </div>
         </details>
     `;
@@ -1157,7 +977,7 @@ window.gameRenderDashboard = function() {
 
 // Функция жесткого сохранения и блокировки имени
 let profileLockTimer = null;
-window.profileNameLockStart = function(e) {
+window.profileNameLockStart = function (e) {
     if (e) e.preventDefault();
     profileLockTimer = setTimeout(() => {
         document.getElementById('profile-name-edit-container').classList.remove('hidden');
@@ -1169,17 +989,17 @@ window.profileNameLockStart = function(e) {
         }
     }, 800); // Долгое нажатие
 };
-window.profileNameLockCancel = function() {
+window.profileNameLockCancel = function () {
     if (profileLockTimer) clearTimeout(profileLockTimer);
 };
-window.saveEngineerNameForce = function(name) {
+window.saveEngineerNameForce = function (name) {
     const cleanName = name.trim();
-    if(!cleanName) return showToast("⚠️ Имя не может быть пустым!");
-    
+    if (!cleanName) return showToast("⚠️ Имя не может быть пустым!");
+
     appSettings.engineerName = cleanName;
     dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
     localStorage.setItem('force_eng_name', cleanName); // Жесткий бэкап
-    
+
     const inpInspector = document.getElementById('inp-inspector');
     if (inpInspector) inpInspector.value = cleanName;
 
@@ -1190,7 +1010,7 @@ window.saveEngineerNameForce = function(name) {
 
     document.getElementById('profile-name-edit-container').classList.add('hidden');
     document.getElementById('profile-title-text').classList.remove('hidden');
-    
+
     showToast("✅ Имя зафиксировано!");
     gameRenderDashboard();
 };
@@ -1515,9 +1335,9 @@ window.gameGenerateAuditPlan = function () {
                     <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
                         👁️ Открыть Акт
                     </button>
-                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
-                        ⚖️ Провести аудит
-                    </button>
+                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open'); startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
+    ⚖️ Провести аудит
+</button>
                 </div>
             </div>`;
         });
@@ -1835,17 +1655,20 @@ window.gameOpenTaskDetails = function (statusKey, e) {
 };
 
 // Функция запуска инспекции (с предзаполнением)
-window.startInspectionWithValues = function(contractor, templateKey, statusKey = null, project = null, originalAuditId = null) {
-    switchTab('tab-audit'); 
+window.startInspectionWithValues = function (contractor, templateKey, statusKey = null, project = null, originalAuditId = null) {
+    switchTab('tab-audit');
     changeTemplate(templateKey);
-    
+
+    // ИСПРАВЛЕНИЕ: Снимаем блокировку скролла от модальных окон!
+    document.body.classList.remove('modal-open');
+
     // Очищаем предыдущий аудит
     auditOriginalData = null;
 
     setTimeout(async () => {
         const contrInput = document.getElementById('inp-contractor');
-        if (contrInput && !contrInput.hasAttribute('readonly')) contrInput.value = contractor; 
-        
+        if (contrInput && !contrInput.hasAttribute('readonly')) contrInput.value = contractor;
+
         const projInput = document.getElementById('inp-project');
         if (projInput && !projInput.hasAttribute('readonly')) {
             if (project) {
@@ -1855,18 +1678,18 @@ window.startInspectionWithValues = function(contractor, templateKey, statusKey =
                 if (pastCheck && pastCheck.projectName) projInput.value = pastCheck.projectName;
             }
         }
-        
+
         ['inp-location', 'inp-section', 'inp-floor', 'inp-room'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
         if (statusKey) {
             const selEl = document.getElementById('checklist-selector');
             if (selEl) selEl.dataset.pendingStatusKey = statusKey;
-            
+
             const task = weeklyPlanData?.tasks?.find(t => t.statusKey === statusKey);
-            
+
             // 1. ЛОГИКА ЭТАПНЫХ ЗАДАЧ (MILESTONE) - Предзаполнение галочек
             if (task && task.type === 'milestone') {
-                const instanceId = task.priority.replace('Этап (', '').replace(')', ''); 
+                const instanceId = task.priority.replace('Этап (', '').replace(')', '');
                 const parts = instanceId.split(' ');
                 if (parts.length >= 2) {
                     const secInput = document.getElementById('inp-section');
@@ -1901,7 +1724,7 @@ window.startInspectionWithValues = function(contractor, templateKey, statusKey =
             const originalCheck = contractorArray.find(c => c.id === originalAuditId);
             if (originalCheck) {
                 auditOriginalData = { isCrossAudit: true, state: originalCheck.state, photos: originalCheck.photos, inspector: originalCheck.inspectorName };
-                
+
                 // Предзаполняем локацию, чтобы аудит был в том же месте
                 ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
                     const el = document.getElementById(id);
@@ -1912,14 +1735,14 @@ window.startInspectionWithValues = function(contractor, templateKey, statusKey =
                 showToast(`⚖️ Режим Аудита: Вы проверяете работу инспектора ${originalCheck.inspectorName}`);
             }
         }
-        
-        render(); 
+
+        render();
         if (typeof updateDataSummary === 'function') updateDataSummary();
-        
+
         setTimeout(() => {
             const headerEl = document.getElementById('main-header');
             const offset = headerEl ? headerEl.offsetHeight : 140;
-            window.scrollTo({top: offset - 60, behavior: 'smooth'});
+            window.scrollTo({ top: offset - 60, behavior: 'smooth' });
             if (typeof updateBodyPadding === 'function') updateBodyPadding();
         }, 50);
     }, 150);
@@ -1937,24 +1760,27 @@ window.gameChangeTaskStatus = function (statusKey, newStatus) {
 };
 
 // Интеграция Требования Эталона при нажатии на задачу
+// Интеграция Требования Эталона при нажатии на задачу
 window.gameStartTask = function (contractor, templateKey) {
-    // Проверка на потребность в эталоне
     const task = weeklyPlanData.tasks.find(t => t.contractor === contractor && t.templateKey === templateKey);
+    
     if (task && task.needsEtalon) {
         document.getElementById('etalon-prompt-modal').style.display = 'flex';
         document.getElementById('btn-start-etalon').onclick = () => {
             document.getElementById('etalon-prompt-modal').style.display = 'none';
-            // Запускаем системный акт-эталон
-            startInspectionWithValues(contractor, 'sys_etalon_act', task.statusKey);
+            // ВМЕСТО СТАРОЙ ФУНКЦИИ ВЫЗЫВАЕМ НОВЫЙ КОНСТРУКТОР
+            openEtalonConstructor(contractor, templateKey, task.templateTitle, task.statusKey);
         };
-        return; // Блокируем обычный старт
+        return; // Блокируем обычный старт чек-листа
     }
+    
+    // Если эталон не нужен — просто открываем обычную проверку
     startInspectionWithValues(contractor, templateKey);
 };
 
 // === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
 // === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
-window.gameOpenTopModal = function() {
+window.gameOpenTopModal = function () {
     let sortedProfiles = [];
     const myName = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
 
@@ -1967,15 +1793,15 @@ window.gameOpenTopModal = function() {
     if (sortedProfiles.length === 0) return showToast('Нет данных для рейтинга');
 
     let html = `<div class="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">`;
-    
+
     if (window.serverGlobalRating) {
         html += `<div class="text-[10px] text-center text-slate-500 font-bold mb-3 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 py-1 rounded">Глобальный рейтинг сервера</div>`;
     }
-    
+
     sortedProfiles.forEach((p, idx) => {
         const isMe = p.name === myName;
         const isGold = idx === 0; const isSilver = idx === 1; const isBronze = idx === 2;
-        
+
         let rankClass = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700';
         if (isGold) rankClass = 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white border-yellow-500 shadow-md';
         else if (isSilver) rankClass = 'bg-gradient-to-br from-slate-300 to-slate-500 text-white border-slate-400 shadow-sm';
@@ -1992,7 +1818,7 @@ window.gameOpenTopModal = function() {
                 const tier = getBadgeTier(b, progress);
                 if (tier > 0) activeBadges.push({ id: b.id, tier });
             });
-            activeBadges.sort((a,b) => b.tier - a.tier); // Самые редкие вперед
+            activeBadges.sort((a, b) => b.tier - a.tier); // Самые редкие вперед
             badgesHtml = activeBadges.slice(0, 3).map(b => `<div class="w-5 h-5" title="Тир ${b.tier}">${getBadgeSvg(b.id, b.tier, "w-5 h-5")}</div>`).join('');
         }
 
@@ -2019,7 +1845,7 @@ window.gameOpenTopModal = function() {
     document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-2 text-2xl">🏆</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Таблица лидеров</div>`;
     document.getElementById('modal-body').innerHTML = html;
-    
+
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
@@ -2128,26 +1954,26 @@ window.gameUpdateEngineerName = function (newName) {
 
 window.rbi_fmeaRecords = []; // Массив для будущих сохранений (пока работаем с черновиком)
 
-window.rbi_renderFmeaHistory = function() {
+window.rbi_renderFmeaHistory = function () {
     // В будущем тут можно выводить сохраненные FMEA.
     // Сейчас мы просто оставляем кнопку "Собрать дефекты"
 };
 
 // ГЕНЕРАЦИЯ FMEA-ТАБЛИЦЫ НА ЛЕТУ
-window.rbi_generateFmeaTable = function() {
+window.rbi_generateFmeaTable = function () {
     const container = document.getElementById('rbi-fmea-container');
-    
+
     const d = new Date();
     const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
     const weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
-    
+
     let defectsList = [];
-    
+
     weekChecks.forEach(c => {
-        if(c.state && c.templateKey) {
+        if (c.state && c.templateKey) {
             Object.keys(c.state).forEach(id => {
-                if(c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
-                    const flat = getFlatList(userTemplates[c.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_','')]?.groups);
+                if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                    const flat = getFlatList(userTemplates[c.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_', '')]?.groups);
                     const item = flat.find(x => x.id == id);
                     if (item && (item.w === 3 || c.state[id] === 'fail_escalated' || item.w === 2)) {
                         // Ищем причину и коммент
@@ -2155,7 +1981,7 @@ window.rbi_generateFmeaTable = function() {
                         if (c.details && c.details[id] && c.details[id].comment) {
                             cause = c.details[id].comment;
                         }
-                        
+
                         defectsList.push({
                             contractor: c.contractorName,
                             defectName: item.n,
@@ -2245,9 +2071,9 @@ window.rbi_generateFmeaTable = function() {
 };
 
 // АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
-window.rbi_fillFmeaWithAi = async function() {
+window.rbi_fillFmeaWithAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
+
     const rows = document.querySelectorAll('.fmea-row');
     if (rows.length === 0) return;
 
@@ -2277,7 +2103,7 @@ window.rbi_fillFmeaWithAi = async function() {
         // Извлекаем JSON из ответа нейросети
         const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error("Нейросеть не вернула JSON");
-        
+
         const aiData = JSON.parse(jsonMatch[0]);
 
         // Раскидываем ответы по ячейкам
@@ -2286,10 +2112,10 @@ window.rbi_fillFmeaWithAi = async function() {
                 const causeInput = row.querySelector('.fmea-ai-cause');
                 const effectInput = row.querySelector('.fmea-ai-effect');
                 const actionInput = row.querySelector('.fmea-ai-action');
-                
+
                 // Если инженер не писал свою причину - ставим причину от ИИ
                 if (causeInput.value === 'Не указана' || causeInput.value.trim() === '') causeInput.value = aiData[idx].cause;
-                
+
                 effectInput.value = aiData[idx].effect;
                 actionInput.value = aiData[idx].action;
             }
