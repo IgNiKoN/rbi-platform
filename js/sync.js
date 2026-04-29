@@ -1,14 +1,12 @@
-/* Файл: js/sync.js (Финальная боевая версия - Очищенная) */
+/* Файл: js/sync.js (Финальная боевая версия - Отказоустойчивая) */
 console.log("✅ SYNC.JS загружен браузером!");
 
 window.supabaseClient = null;
 window.syncConfig = { enabled: false, engineerName: '', projectCode: '', pinHash: '', deviceId: '', syncMode: 'personal', fullAccessGranted: false };
 window.isSyncing = false;
 
-// Пароль для доступа ко всем проверкам команды 
 const SYNC_FULL_ACCESS_HASH = "16e1fc3fccf0e21ea5c3a37fc6bdfe2db9ee3646ca153ff29ccfbbe868e7ec8b";
 
-// Безопасное чтение памяти
 try {
     let saved = localStorage.getItem('rbi_sync_config');
     if (saved) window.syncConfig = JSON.parse(saved);
@@ -34,7 +32,6 @@ window.hashPin = async function(pin) {
 
 window.initSync = async function() {
     window.renderSyncUI();
-
     try {
         if (window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL && window.APP_CONFIG.SUPABASE_URL.startsWith('http')) {
             window.supabaseClient = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_KEY);
@@ -55,9 +52,7 @@ window.initSync = async function() {
     }
 };
 
-window.isSyncEnabled = function() {
-    return window.syncConfig.enabled;
-};
+window.isSyncEnabled = function() { return window.syncConfig.enabled; };
 
 window.renderSyncUI = function() {
     const container = document.getElementById('sync-settings-block');
@@ -98,7 +93,7 @@ window.renderSyncUI = function() {
                 </select>
             </div>
             <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.isSyncing = false; window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
                 <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform">Отключить облако</button>
             </div>
         `;
@@ -237,7 +232,6 @@ window.uploadBase64ToStorage = async function(base64str, path) {
     } catch(e) { return base64str; }
 };
 
-// Выгрузка фото в облако
 window.extractAndUploadPhotos = async function() {
     let dbUpdated = false;
     
@@ -388,7 +382,7 @@ window.extractAndUploadPhotos = async function() {
 };
 
 // =========================================================================================
-// ЕДИНАЯ И ЧИСТАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ
+// ЕДИНАЯ И ЧИСТАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ (БЕЗ ПАДЕНИЙ)
 // =========================================================================================
 window.triggerSync = async function(mode = 'silent') {
     if (!window.isSyncEnabled() || !window.supabaseClient) {
@@ -396,7 +390,6 @@ window.triggerSync = async function(mode = 'silent') {
         return;
     }
     
-    // Блокировка от двойного запуска
     if (window.isSyncing) {
         if (mode === 'manual') safeToast("⏳ Синхронизация уже идет... Подождите");
         return;
@@ -417,44 +410,51 @@ window.triggerSync = async function(mode = 'silent') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
-        // 1. Отправка Истории (PUSH)
+        // 1. Отправка Истории
         if (currentHistory.length > 0) {
             if (mode === 'manual') safeToast(`🔄 Шаг 2: Отправка проверок (${currentHistory.length} шт)...`);
-            const insps = currentHistory.map(c => ({
-                id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
-                template_key: c.templateKey, location: c.location, date: c.date,
-                inspection_data: {
-                    templateTitle: c.templateTitle, section: c.section, floor: c.floor, room: c.room,
-                    instanceId: c.instanceId, stageId: c.stageId, stageName: c.stageName,
-                    checkedStagesInfo: c.checkedStagesInfo, isCompleted: c.isCompleted,
-                    state: c.state, details: c.details, metrics: c.metrics
-                },
-                photos: c.photos, _deleted: c._deleted || false, _deleted_at: c._deletedAt || null, updated_at: new Date().toISOString()
-            }));
-            
-            for (let i = 0; i < insps.length; i += 100) {
-                const { error } = await window.supabaseClient.from('rbi_inspections').upsert(insps.slice(i, i + 100), { onConflict: 'id' });
-                if (error) throw new Error("Сбой в rbi_inspections: " + error.message);
+            try {
+                const insps = currentHistory.map(c => ({
+                    id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
+                    template_key: c.templateKey, location: c.location, date: c.date,
+                    inspection_data: {
+                        templateTitle: c.templateTitle, section: c.section, floor: c.floor, room: c.room,
+                        instanceId: c.instanceId, stageId: c.stageId, stageName: c.stageName,
+                        checkedStagesInfo: c.checkedStagesInfo, isCompleted: c.isCompleted,
+                        state: c.state, details: c.details, metrics: c.metrics
+                    },
+                    photos: c.photos, _deleted: c._deleted || false, _deleted_at: c._deletedAt || null, updated_at: new Date().toISOString()
+                }));
+                
+                for (let i = 0; i < insps.length; i += 100) {
+                    const { error } = await window.supabaseClient.from('rbi_inspections').upsert(insps.slice(i, i + 100), { onConflict: 'id' });
+                    if (error) throw error;
+                }
+            } catch (e) {
+                console.error("Ошибка таблиц проверок:", e);
+                if (mode === 'manual') safeToast("⚠️ Ошибка отправки проверок (отсутствуют колонки в БД)");
             }
         }
 
-        // 2. Отправка Справочников (PUSH)
+        // 2. Отправка Справочников
         if (mode === 'manual') safeToast('🔄 Шаг 3: Отправка справочников...');
         const pushDict = async (table, dataArr, dataField) => {
             if (!dataArr || dataArr.length === 0) return;
-            const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
-                id: String(item.id), project_code: pCode, [dataField]: item, updated_at: new Date().toISOString()
-            }));
-            if (rows.length > 0) {
-                const { error } = await window.supabaseClient.from(table).upsert(rows, { onConflict: 'id' });
-                if (error) console.warn(`Сбой в ${table}:`, error.message);
-            }
+            try {
+                const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
+                    id: String(item.id), project_code: pCode, [dataField]: item, updated_at: new Date().toISOString()
+                }));
+                if (rows.length > 0) {
+                    const { error } = await window.supabaseClient.from(table).upsert(rows, { onConflict: 'id' });
+                    if (error) throw error;
+                }
+            } catch (e) { console.warn(`Сбой в ${table}:`, e); }
         };
         await pushDict('rbi_custom_twi_cards', typeof customTwiCards !== 'undefined' ? customTwiCards : [], 'card_data');
         await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
 
-        // 3. Отправка Задач и Эталонов (Мягкая)
+        // 3. Отправка Задач и Эталонов
         if (mode === 'manual') safeToast('🔄 Шаг 4: Отправка Задач и Эталонов...');
         if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
             try {
@@ -464,7 +464,7 @@ window.triggerSync = async function(mode = 'silent') {
                 }));
                 for (let i = 0; i < tasks.length; i += 100) {
                     const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasks.slice(i, i + 100), { onConflict: 'id' });
-                    if (error) console.warn("Таблица rbi_tasks недоступна:", error);
+                    if (error) throw error;
                 }
             } catch(e) { console.warn("Пропуск Задач:", e); }
         }
@@ -478,54 +478,56 @@ window.triggerSync = async function(mode = 'silent') {
                 }));
                 for (let i = 0; i < etalons.length; i += 100) {
                     const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalons.slice(i, i + 100), { onConflict: 'id' });
-                    if (error) console.warn("Таблица rbi_etalon_acts недоступна:", error);
+                    if (error) throw error;
                 }
             } catch(e) { console.warn("Пропуск Эталонов:", e); }
         }
 
-        // 4. Отправка Профиля и Черновика (PUSH)
+        // 4. Отправка Профиля
         if (mode === 'manual') safeToast('🔄 Шаг 5: Сохранение черновика...');
-        const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
-        const hrProfileData = {
-            timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
-            plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null, absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
-            statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}, expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
-            settings: typeof appSettings !== 'undefined' ? appSettings : {}, schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
-            interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [], practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
-        };
+        try {
+            const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
+            const hrProfileData = {
+                timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
+                plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null, absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
+                statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}, expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
+                settings: typeof appSettings !== 'undefined' ? appSettings : {}, schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
+                interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [], practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
+            };
 
-        const { error: profileError } = await window.supabaseClient.from('rbi_engineer_profiles').upsert({
-            inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
-            profile_data: hrProfileData, updated_at: new Date().toISOString()
-        }, { onConflict: 'inspector_id' });
-        if (profileError) throw new Error("Сбой профиля: " + profileError.message);
+            const { error: profileError } = await window.supabaseClient.from('rbi_engineer_profiles').upsert({
+                inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
+                profile_data: hrProfileData, updated_at: new Date().toISOString()
+            }, { onConflict: 'inspector_id' });
+            if (profileError) throw profileError;
+        } catch(e) { console.warn("Ошибка профиля:", e); }
 
-        // 5. Загрузка обновлений (PULL)
+        // 5. Загрузка обновлений
         if (mode === 'manual') safeToast('🔄 Шаг 6: Загрузка обновлений из облака...');
         let lastSync = localStorage.getItem('last_cloud_sync_time') || '2000-01-01T00:00:00Z';
 
-        let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
-        const { data: newInspections, error: errInsp } = await query;
-        if (errInsp) throw new Error("Сбой загрузки проверок: " + errInsp.message);
-
-        const { data: newTwi } = await window.supabaseClient.from('rbi_custom_twi_cards').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newNodes } = await window.supabaseClient.from('rbi_custom_nodes').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newDocs } = await window.supabaseClient.from('rbi_custom_docs').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
-
-        let newTasks = [], newEtalons = [];
+        let newInspections = [], newTwi = [], newNodes = [], newDocs = [], newProfiles = [], newTasks = [], newEtalons = [];
+        
         try {
-            const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-            if (resT.data) newTasks = resT.data;
-            const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-            if (resE.data) newEtalons = resE.data;
-        } catch (dbErr) {}
+            let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
+            if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
+            const { data } = await query;
+            if (data) newInspections = data;
+        } catch(e) {}
 
-        const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
-        if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
+        try { const { data } = await window.supabaseClient.from('rbi_custom_twi_cards').select('*').eq('project_code', pCode).gt('updated_at', lastSync); if(data) newTwi = data; } catch(e){}
+        try { const { data } = await window.supabaseClient.from('rbi_custom_nodes').select('*').eq('project_code', pCode).gt('updated_at', lastSync); if(data) newNodes = data; } catch(e){}
+        try { const { data } = await window.supabaseClient.from('rbi_custom_docs').select('*').eq('project_code', pCode).gt('updated_at', lastSync); if(data) newDocs = data; } catch(e){}
+        try { const { data } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode); if(data) newProfiles = data; } catch(e){}
+        try { const { data } = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync); if(data) newTasks = data; } catch(e){}
+        try { const { data } = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync); if(data) newEtalons = data; } catch(e){}
 
-        // 6. Слияние (MERGE)
+        try {
+            const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
+            if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
+        } catch(e){}
+
+        // 6. Слияние
         if (mode === 'manual') safeToast('🔄 Шаг 7: Слияние баз...');
         await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
 
@@ -539,8 +541,8 @@ window.triggerSync = async function(mode = 'silent') {
         if (typeof downloadMissingCloudFiles === 'function') window.downloadMissingCloudFiles();
 
     } catch (e) {
-        console.error("[Sync] Ошибка:", e);
-        if (mode === 'manual') safeToast('❌ Ошибка: ' + e.message.substring(0, 70));
+        console.error("[Sync] Глобальная ошибка:", e);
+        if (mode === 'manual') safeToast('❌ Ошибка связи: ' + (e.message ? e.message.substring(0,50) : 'Неизвестный сбой'));
     } finally {
         window.isSyncing = false;
         window.renderSyncUI(); 
@@ -630,7 +632,7 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
                 if (typeof applySettingsToUI === 'function') applySettingsToUI();
             }
             
-            // ВОССТАНОВЛЕНИЕ ЧЕРНОВИКА (Начал на телефоне -> продолжил на ПК)
+            // ВОССТАНОВЛЕНИЕ ЧЕРНОВИКА
             if (data.session && typeof dbPut !== 'undefined' && typeof dbGet !== 'undefined') {
                 const localSession = await dbGet('app_state', 'current_session');
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
