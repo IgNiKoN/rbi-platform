@@ -172,10 +172,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // === СОХРАНЕНИЕ И ВОССТАНОВЛЕНИЕ СЕССИИ ===
 function scheduleSessionSave() {
+    // Помечаем, что есть локальные изменения.
+    // sync.js отправит их в Supabase только при включенном облаке.
+    localStorage.setItem('rbi_cloud_dirty', '1');
+
     clearTimeout(__saveSessionTimer);
     __saveSessionTimer = setTimeout(() => {
         saveSessionData();
-    }, 500); // Debounce 500ms
+    }, 500);
 }
 
 async function saveSessionData() {
@@ -6308,19 +6312,6 @@ window.rbi_renderBackupRegistry = async function() {
 
 /* RBI NEW: Рендер списка задач (Инженер) */
 window.rbi_tasksData = []; // Локальный массив задач
-
-window.rbi_renderEngineerTab = async function() {
-    if (currentActiveEngineerTab === 'eng-sub-tasks') {
-        await rbi_renderTasksList();
-    } else if (currentActiveEngineerTab === 'eng-sub-meetings') {
-        if (typeof rbi_renderMeetingTab === 'function') rbi_renderMeetingTab();
-    } else if (currentActiveEngineerTab === 'eng-sub-impact') {
-        // Заглушка Impact Score
-    } else if (currentActiveEngineerTab === 'eng-sub-badges') {
-        // Запускаем рендер старого дашборда геймификации
-        if(typeof gameRenderDashboard === 'function') gameRenderDashboard();
-    }
-};
 
 window.rbi_importScheduleExcel = function() {
     showToast("Модуль парсинга Excel-графика будет добавлен на следующем шаге.");
