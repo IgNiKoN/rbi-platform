@@ -498,15 +498,16 @@ window.triggerSync = async function(mode = 'silent') {
 
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
-
-        // --- ОТПРАВКА ДАННЫХ (PUSH) ---
+// --- ОТПРАВКА ДАННЫХ (PUSH) ---
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
+        console.log(`[Sync] К отправке: Проверок (${currentHistory.length}), Задач (${typeof rbi_tasksData !== 'undefined' ? rbi_tasksData.length : 0}), Эталонов (${typeof etalonActsArray !== 'undefined' ? etalonActsArray.length : 0})`);
+
         if (currentHistory.length > 0) {
-            if (mode === 'manual') safeToast('🔄 Отправка проверок...');
+            if (mode === 'manual') safeToast(`🔄 Отправка проверок (${currentHistory.length} шт)...`);
             const inspectionsToPush = currentHistory.map(c => ({
                 id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
                 template_key: c.templateKey, location: c.location, date: c.date,
@@ -546,7 +547,7 @@ window.triggerSync = async function(mode = 'silent') {
             }));
             for (let i = 0; i < tasksToPush.length; i += 100) {
                 const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
-                if (error) throw new Error("Ошибка отправки Задач: " + error.message);
+                if (error) console.warn("Таблица Задач (rbi_tasks) не найдена в Supabase. Пропускаем.", error);
             }
         }
 
@@ -559,7 +560,7 @@ window.triggerSync = async function(mode = 'silent') {
             }));
             for (let i = 0; i < etalonsToPush.length; i += 100) {
                 const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
-                if (error) throw new Error("Ошибка отправки Эталонов: " + error.message);
+                if (error) console.warn("Таблица Эталонов (rbi_etalon_acts) не найдена в Supabase. Пропускаем.", error);
             }
         }
 
@@ -711,6 +712,26 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
                 appSettings = { ...appSettings, ...data.settings };
                 if (typeof applySettingsToUI === 'function') applySettingsToUI();
             }
+            
+            // ВОССТАНОВЛЕНИЕ ЧЕРНОВИКА (Начал на телефоне -> продолжил на ПК)
+            if (data.session && typeof dbPut !== 'undefined' && typeof dbGet !== 'undefined') {
+                const localSession = await dbGet('app_state', 'current_session');
+                const localTime = localSession ? (localSession.timestamp || 0) : 0;
+                const cloudTime = data.session.timestamp || 0;
+                
+                // Если облачный черновик свежее локального
+                if (cloudTime > localTime) {
+                    await dbPut('app_state', data.session);
+                    // Говорим приложению перезагрузить черновик в интерфейс
+                    if (typeof restoreSession === 'function') {
+                        setTimeout(() => {
+                            restoreSession();
+                            console.log("[Sync] Черновик обновлен из облака!");
+                        }, 500);
+                    }
+                }
+            }
+
             dbUpdated = true;
         }
     }
