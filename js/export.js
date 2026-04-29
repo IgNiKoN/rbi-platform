@@ -2341,7 +2341,7 @@ function processDataImport(event) {
                     for(const item of parsed.data.etalonActs) {
                         if(!etalonActsArray.find(x => x.id === item.id)) {
                             etalonActsArray.push(item);
-                            await getDb().then(async () => { await dbPut(STORES.ETALON_ACTS, item); });
+                            await dbPut(STORES.ETALON_ACTS, item);
                         }
                     }
                 }
@@ -2352,14 +2352,14 @@ function processDataImport(event) {
                         const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
                         if (!existing) {
                             rbi_tasksData.push(incomingTask);
-                            await getDb().then(async () => { await dbPut(STORES.TASKS, incomingTask); });
+                            await dbPut(STORES.TASKS, incomingTask);
                         } else {
                             // Если пришедшая задача свежее (по updatedAt), перезаписываем
                             const inTime = new Date(incomingTask.updatedAt || 0).getTime();
                             const exTime = new Date(existing.updatedAt || 0).getTime();
                             if (inTime > exTime) {
                                 Object.assign(existing, incomingTask);
-                                await getDb().then(async () => { await dbPut(STORES.TASKS, existing); });
+                                await dbPut(STORES.TASKS, existing);
                             }
                         }
                     }
