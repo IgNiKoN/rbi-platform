@@ -105,7 +105,7 @@ window.renderSyncUI = function() {
                 </select>
             </div>
             <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.isSyncing = false; window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
                 <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform">Отключить облако</button>
             </div>
         `;
@@ -471,9 +471,14 @@ window.extractAndUploadPhotos = async function() {
     console.log("[Sync] Выгрузка фото и ресурсов завершена.");
 };
 
-// 5. ГЛАВНЫЙ МЕХАНИЗМ СИНХРОНИЗАЦИИ (ИНКРЕМЕНТАЛЬНЫЙ)
+// 5. ГЛАВНЫЙ МЕХАНИЗМ СИНХРОНИЗАЦИИ
 window.triggerSync = async function(mode = 'silent') {
-    if (!window.isSyncEnabled() || window.isSyncing || !window.supabaseClient) return;
+    if (!window.isSyncEnabled() || !window.supabaseClient) return;
+    
+    if (window.isSyncing) {
+        console.log("[Sync] Пропуск: синхронизация уже идет");
+        return;
+    }
     
     window.isSyncing = true;
     window.renderSyncUI(); 
@@ -483,13 +488,12 @@ window.triggerSync = async function(mode = 'silent') {
     try {
         console.log(`[Sync] Старт синхронизации (${mode})...`);
         
-        // 1. Дожидаемся загрузки всех фото в Storage
         await window.extractAndUploadPhotos();
 
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
 
-        // 2. ОТПРАВЛЯЕМ ПРОВЕРКИ (Разбито на пакеты по 100 шт, чтобы не перегружать сеть)
+        // --- ОТПРАВКА ДАННЫХ (PUSH) ---
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
@@ -497,32 +501,19 @@ window.triggerSync = async function(mode = 'silent') {
 
         if (currentHistory.length > 0) {
             const inspectionsToPush = currentHistory.map(c => ({
-                id: c.id,
-                project_code: pCode,
-                inspector_name: c.inspectorName,
-                contractor_name: c.contractorName,
-                template_key: c.templateKey,
-                location: c.location,
-                date: c.date,
+                id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
+                template_key: c.templateKey, location: c.location, date: c.date,
                 inspection_data: {
                     templateTitle: c.templateTitle, section: c.section, floor: c.floor, room: c.room,
                     instanceId: c.instanceId, stageId: c.stageId, stageName: c.stageName,
                     checkedStagesInfo: c.checkedStagesInfo, isCompleted: c.isCompleted,
                     state: c.state, details: c.details, metrics: c.metrics
                 },
-                photos: c.photos,
-                _deleted: c._deleted || false,
-                _deleted_at: c._deletedAt || null,
-                updated_at: new Date().toISOString()
+                photos: c.photos, _deleted: c._deleted || false, _deleted_at: c._deletedAt || null, updated_at: new Date().toISOString()
             }));
-
-            // Отправляем чанками по 100 штук
-            for (let i = 0; i < inspectionsToPush.length; i += 100) {
-                await window.supabaseClient.from('rbi_inspections').upsert(inspectionsToPush.slice(i, i + 100), { onConflict: 'id' });
-            }
+            for (let i = 0; i < inspectionsToPush.length; i += 100) await window.supabaseClient.from('rbi_inspections').upsert(inspectionsToPush.slice(i, i + 100), { onConflict: 'id' });
         }
 
-        // 3. ОТПРАВЛЯЕМ СПРАВОЧНИКИ
         const pushDict = async (table, dataArr, dataField) => {
             if (!dataArr || dataArr.length === 0) return;
             const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
@@ -530,104 +521,69 @@ window.triggerSync = async function(mode = 'silent') {
             }));
             if (rows.length > 0) await window.supabaseClient.from(table).upsert(rows, { onConflict: 'id' });
         };
-
         await pushDict('rbi_custom_twi_cards', typeof customTwiCards !== 'undefined' ? customTwiCards : [], 'card_data');
         await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
-        
-        // 3.5. ОТПРАВЛЯЕМ ЗАДАЧИ И ЭТАЛОНЫ
+
         if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
             const tasksToPush = rbi_tasksData.map(t => ({
-                id: t.id,
-                inspector_id: window.syncConfig.deviceId,
-                inspector_name: iName,
-                project_code: pCode,
-                task_data: t,
-                updated_at: t.updatedAt || new Date().toISOString(),
-                _deleted: t._deleted || false,
-                deleted_at: t._deleted ? new Date().toISOString() : null
+                id: t.id, inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, task_data: t,
+                updated_at: t.updatedAt || new Date().toISOString(), _deleted: t._deleted || false, deleted_at: t._deleted ? new Date().toISOString() : null
             }));
-            // Отправляем чанками по 100
-            for (let i = 0; i < tasksToPush.length; i += 100) {
-                await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
-            }
+            for (let i = 0; i < tasksToPush.length; i += 100) await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
         }
 
         if (typeof etalonActsArray !== 'undefined' && etalonActsArray.length > 0) {
             const etalonsToPush = etalonActsArray.map(c => ({
-                id: c.id,
-                inspector_id: window.syncConfig.deviceId,
-                inspector_name: c.inspectorName,
-                contractor_name: c.contractorName,
-                project_code: pCode,
-                template_key: c.templateKey,
-                act_data: c,
-                updated_at: new Date().toISOString(),
-                _deleted: c._deleted || false,
-                deleted_at: c._deleted ? new Date().toISOString() : null
+                id: c.id, inspector_id: window.syncConfig.deviceId, inspector_name: c.inspectorName, contractor_name: c.contractorName,
+                project_code: pCode, template_key: c.templateKey, act_data: c, updated_at: c.updatedAt || new Date().toISOString(),
+                _deleted: c._deleted || false, deleted_at: c._deleted ? new Date().toISOString() : null
             }));
-            for (let i = 0; i < etalonsToPush.length; i += 100) {
-                await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
-            }
+            for (let i = 0; i < etalonsToPush.length; i += 100) await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
         }
-        // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ ИНЖЕНЕРА
-        // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ, ЗАДАЧИ И ТЕКУЩИЙ ЧЕРНОВИК В ОБЛАКО
-        // Читаем текущий черновик из БД (если он есть)
-        const currentSession = await dbGet(STORES.STATE, 'current_session') || {};
-        
+
+        const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
         const hrProfileData = {
-            timestamp: Date.now(),
-            session: currentSession, 
-            gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
-            plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
-            absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
-            statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {},
-            expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
-            settings: typeof appSettings !== 'undefined' ? appSettings : {},
-            schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
-            interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
-            practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
+            timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
+            plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null, absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
+            statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}, expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
+            settings: typeof appSettings !== 'undefined' ? appSettings : {}, schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
+            interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [], practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
         };
 
         await window.supabaseClient.from('rbi_engineer_profiles').upsert({
-            inspector_id: window.syncConfig.deviceId,
-            inspector_name: iName,
-            project_code: pCode,
-            pin_hash: window.syncConfig.pinHash,
-            profile_data: hrProfileData,
-            updated_at: new Date().toISOString()
+            inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
+            profile_data: hrProfileData, updated_at: new Date().toISOString()
         }, { onConflict: 'inspector_id' });
 
-        // ====================================================================
-        // 5. СКАЧИВАЕМ ТОЛЬКО НОВЫЕ ДАННЫЕ С СЕРВЕРА (Инкрементальный Pull)
-        // ====================================================================
+        // --- СКАЧИВАНИЕ ДАННЫХ (PULL) ---
         let lastSync = localStorage.getItem('last_cloud_sync_time') || '2000-01-01T00:00:00Z';
 
-        // Скачиваем проверки
         let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
         const { data: newInspections } = await query;
 
-        // Скачиваем справочники
         const { data: newTwi } = await window.supabaseClient.from('rbi_custom_twi_cards').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         const { data: newNodes } = await window.supabaseClient.from('rbi_custom_nodes').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         const { data: newDocs } = await window.supabaseClient.from('rbi_custom_docs').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-
-        // Скачиваем HR-профили коллег
         const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
 
-        // Скачиваем серверный глобальный рейтинг
+        // Безопасная загрузка новых таблиц (не вызовет краш, если таблицы в Supabase еще не созданы)
+        let newTasks = [], newEtalons = [];
+        try {
+            const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
+            if (resT.data) newTasks = resT.data;
+            const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
+            if (resE.data) newEtalons = resE.data;
+        } catch (dbErr) {
+            console.warn("[Sync] Таблицы задач/эталонов недоступны, пропускаем их скачивание.");
+        }
+
         const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
         if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
 
-        // Скачиваем Задачи и Эталоны
-        const { data: newTasks } = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newEtalons } = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-
-        // 6. ПЕРЕДАЕМ НА СЛИЯНИЕ В БД ТЕЛЕФОНА
         await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
 
-        // Фиксируем время успешной синхронизации! В следующий раз скачаем только то, что изменится после этого времени
         localStorage.setItem('last_cloud_sync_time', new Date().toISOString());
 
         if (mode === 'manual') safeToast('✅ Данные успешно синхронизированы!');
@@ -635,13 +591,11 @@ window.triggerSync = async function(mode = 'silent') {
         if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
         if (typeof renderSelector === 'function') renderSelector();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
-        
-        // Запускаем фоновое скачивание фото для новых проверок
-        window.downloadMissingCloudFiles();
+        if (typeof downloadMissingCloudFiles === 'function') window.downloadMissingCloudFiles();
 
     } catch (e) {
         console.error("[Sync] Ошибка синхронизации:", e);
-        if (mode === 'manual') safeToast('❌ Ошибка синхронизации. Проверьте интернет.');
+        if (mode === 'manual') safeToast('❌ Ошибка синхронизации. Проверьте консоль.');
     } finally {
         window.isSyncing = false;
         window.renderSyncUI(); 
@@ -652,7 +606,6 @@ window.triggerSync = async function(mode = 'silent') {
 window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons) {
     let dbUpdated = false;
 
-    // ИСПРАВЛЕНИЕ: Жесткая защита от null, если сервер вернул ошибку
     const safeInspections = newInspections || [];
     const safeTwi = newTwi || [];
     const safeNodes = newNodes || [];
@@ -661,65 +614,18 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
     const safeTasks = newTasks || [];
     const safeEtalons = newEtalons || [];
 
-    // 1. Слияние проверок
     if (safeInspections.length > 0) {
         let historyMap = new Map();
-        if (typeof contractorArray !== 'undefined') {
-            contractorArray.forEach(c => historyMap.set(c.id, c));
-        }
+        if (typeof contractorArray !== 'undefined') contractorArray.forEach(c => historyMap.set(c.id, c));
 
         safeInspections.forEach(row => {
-            const item = {
-                id: row.id,
-                date: row.date,
-                projectName: row.project_code,
-                inspectorName: row.inspector_name,
-                contractorName: row.contractor_name,
-                templateKey: row.template_key,
-                location: row.location,
-                ...row.inspection_data, 
-                photos: row.photos,
-                _deleted: row._deleted,
-                _deletedAt: row._deleted_at
-            };
+            const item = { id: row.id, date: row.date, projectName: row.project_code, inspectorName: row.inspector_name, contractorName: row.contractor_name, templateKey: row.template_key, location: row.location, ...row.inspection_data, photos: row.photos, _deleted: row._deleted, _deletedAt: row._deleted_at };
             historyMap.set(item.id, item);
         });
-
         contractorArray = Array.from(historyMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
         dbUpdated = true;
     }
-    // 1.5. Слияние Эталонов
-    if (safeEtalons.length > 0) {
-        let etalonMap = new Map();
-        if (typeof etalonActsArray !== 'undefined') {
-            etalonActsArray.forEach(c => etalonMap.set(c.id, c));
-        }
-        safeEtalons.forEach(row => {
-            const item = { id: row.id, ...row.act_data, _deleted: row._deleted, _deletedAt: row._deleted_at };
-            etalonMap.set(item.id, item);
-        });
-        etalonActsArray = Array.from(etalonMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-        dbUpdated = true;
-    }
 
-    // 1.6. Слияние Задач (Умный Merge по дате)
-    if (safeTasks.length > 0 && typeof rbi_tasksData !== 'undefined') {
-        safeTasks.forEach(row => {
-            const incomingTask = { id: row.id, ...row.task_data, updatedAt: row.updated_at, _deleted: row._deleted };
-            const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
-            if (!existing) {
-                rbi_tasksData.push(incomingTask);
-            } else {
-                const inTime = new Date(incomingTask.updatedAt || 0).getTime();
-                const exTime = new Date(existing.updatedAt || 0).getTime();
-                if (inTime > exTime) {
-                    Object.assign(existing, incomingTask);
-                }
-            }
-        });
-        dbUpdated = true;
-    }
-    // 2. Слияние справочников
     if (safeTwi.length > 0 && typeof customTwiCards !== 'undefined') {
         let map = new Map(customTwiCards.map(c => [c.id, c]));
         safeTwi.forEach(row => map.set(row.id, row.card_data));
@@ -739,9 +645,31 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
         dbUpdated = true;
     }
 
-    // 3. Слияние HR-профилей
+    if (safeEtalons.length > 0 && typeof etalonActsArray !== 'undefined') {
+        let etalonMap = new Map(etalonActsArray.map(c => [c.id, c]));
+        safeEtalons.forEach(row => {
+            const item = { id: row.id, ...row.act_data, _deleted: row._deleted, _deletedAt: row._deleted_at };
+            etalonMap.set(item.id, item);
+        });
+        etalonActsArray = Array.from(etalonMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+        dbUpdated = true;
+    }
+
+    if (safeTasks.length > 0 && typeof rbi_tasksData !== 'undefined') {
+        safeTasks.forEach(row => {
+            const incomingTask = { id: row.id, ...row.task_data, updatedAt: row.updated_at, _deleted: row._deleted };
+            const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
+            if (!existing) rbi_tasksData.push(incomingTask);
+            else {
+                const inTime = new Date(incomingTask.updatedAt || 0).getTime();
+                const exTime = new Date(existing.updatedAt || 0).getTime();
+                if (inTime > exTime) Object.assign(existing, incomingTask);
+            }
+        });
+        dbUpdated = true;
+    }
+
     if (safeProfiles.length > 0) {
-        // Если мы работаем на планшете, восстанавливаем свои настройки с телефона
         const myProfile = safeProfiles.find(p => p.inspector_id !== window.syncConfig.deviceId && p.inspector_name === window.syncConfig.engineerName);
         if (myProfile) {
             const data = myProfile.profile_data;
@@ -762,49 +690,48 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
         }
     }
 
-    // 4. ФИЗИЧЕСКОЕ СОХРАНЕНИЕ И УДАЛЕНИЕ В ИНДЕКС-ДБ
-    if (dbUpdated && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-        for (const item of contractorArray) {
-            if (item._deleted) {
-                await dbDelete(STORES.HISTORY, item.id);
-                if (item.photos) {
-                    for (let k in item.photos) {
-                        if (item.photos[k]) {
-                            await dbDelete(STORES.PHOTOS, item.photos[k]);
-                            delete PhotoManager.cache[item.photos[k]];
+    if (dbUpdated && typeof dbPut !== 'undefined') {
+        if (typeof contractorArray !== 'undefined') {
+            for (const item of contractorArray) {
+                if (item._deleted) {
+                    await dbDelete('app_history', item.id);
+                    if (item.photos) {
+                        for (let k in item.photos) {
+                            if (item.photos[k]) { await dbDelete('app_photos', item.photos[k]); delete PhotoManager.cache[item.photos[k]]; }
                         }
                     }
-                }
-            } else {
-                await dbPut(STORES.HISTORY, item);
+                } else await dbPut('app_history', item);
             }
+            contractorArray = contractorArray.filter(i => !i._deleted);
         }
-        
-        contractorArray = contractorArray.filter(i => !i._deleted);
 
-        // Сохраняем эталоны
-        for (const item of etalonActsArray) {
-            if (item._deleted) await dbDelete(STORES.ETALON_ACTS, item.id);
-            else await dbPut(STORES.ETALON_ACTS, item);
+        if (typeof etalonActsArray !== 'undefined') {
+            for (const item of etalonActsArray) {
+                if (item._deleted) await dbDelete('rbi_etalon_acts', item.id);
+                else await dbPut('rbi_etalon_acts', item);
+            }
+            etalonActsArray = etalonActsArray.filter(i => !i._deleted);
         }
-        etalonActsArray = etalonActsArray.filter(i => !i._deleted);
 
-        // Сохраняем задачи
-        for (const item of rbi_tasksData) {
-            if (item._deleted) await dbDelete(STORES.TASKS, item.id);
-            else await dbPut(STORES.TASKS, item);
+        if (typeof rbi_tasksData !== 'undefined') {
+            for (const item of rbi_tasksData) {
+                if (item._deleted) await dbDelete('rbi_tasks', item.id);
+                else await dbPut('rbi_tasks', item);
+            }
+            rbi_tasksData = rbi_tasksData.filter(i => !i._deleted);
         }
-        rbi_tasksData = rbi_tasksData.filter(i => !i._deleted);
-        
-        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => !String(c.id).startsWith('sys_')) : [] });
-        await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: typeof customNodes !== 'undefined' ? customNodes : [] });
-        await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: typeof customDocs !== 'undefined' ? customDocs.filter(d => !String(d.id).startsWith('sys_')) : [] });
-        await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] });
-        await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {} });
+
+        await dbPut('app_settings', { key: 'custom_twi_cards', data: typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => !String(c.id).startsWith('sys_')) : [] });
+        await dbPut('app_settings', { key: 'custom_docs', data: typeof customDocs !== 'undefined' ? customDocs.filter(d => !String(d.id).startsWith('sys_')) : [] });
+        await dbPut('app_settings', { key: 'custom_nodes', data: typeof customNodes !== 'undefined' ? customNodes : [] }); 
+        await dbPut('app_settings', { key: 'game_action_logs', data: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] });
+        await dbPut('app_settings', { key: 'contractor_statuses', data: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {} });
         
         if (typeof saveSessionData === 'function') saveSessionData();
     }
 };
+
+
 
 // === ЛОГИКА РЕЖИМОВ СИНХРОНИЗАЦИИ ===
 window.changeSyncMode = function(mode) {
