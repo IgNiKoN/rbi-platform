@@ -216,8 +216,18 @@ window.applySyncConnect = function(name, code, hashedPin) {
     if (typeof appSettings !== 'undefined') {
         appSettings.engineerName = name;
 
-        if (typeof dbPut === 'function') {
-            dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+// ВАЖНО: не затираем AI-настройки при подключении облака
+const oldSettings = JSON.parse(localStorage.getItem('rbi_settings_backup') || '{}');
+
+appSettings.aiEnabled = appSettings.aiEnabled ?? oldSettings.aiEnabled ?? false;
+appSettings.aiCorpPwd = appSettings.aiCorpPwd || oldSettings.aiCorpPwd || '';
+appSettings.apiKey = appSettings.apiKey || oldSettings.apiKey || '';
+appSettings.usePersonalKey = appSettings.usePersonalKey ?? oldSettings.usePersonalKey ?? false;
+
+localStorage.setItem('rbi_settings_backup', JSON.stringify(appSettings));
+
+if (typeof dbPut === 'function') {
+    dbPut('app_settings', { key: 'user_prefs', ...appSettings });
         }
     }
 
