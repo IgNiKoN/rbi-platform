@@ -475,39 +475,46 @@ window.extractAndUploadPhotos = async function() {
 window.triggerSync = async function(mode = 'silent') {
     if (!window.isSyncEnabled()) return;
     
-    // 1. Проверяем клиент
     if (!window.supabaseClient) {
-        if (mode === 'manual') safeToast('❌ Ошибка: Облако не подключено (SupabaseClient = null)');
+        if (mode === 'manual') safeToast('❌ Ошибка: Облако не подключено');
         return;
     }
     
+    // Если кнопка зависла - мы ее отпускаем вручную
     if (window.isSyncing) {
-        console.log("[Sync] Пропуск: синхронизация уже идет");
+        if (mode === 'manual') safeToast("⏳ Синхронизация уже идет... Подождите");
         return;
     }
     
     window.isSyncing = true;
     window.renderSyncUI(); 
     
-    if (mode === 'manual') safeToast('🔄 Синхронизация: Сбор данных...');
-    
     try {
+        if (mode === 'manual') safeToast('🔄 Шаг 1: Подготовка...');
         console.log(`[Sync] Старт синхронизации (${mode})...`);
         
-        await window.extractAndUploadPhotos();
+        // 1. Фотографии
+        if (mode === 'manual') safeToast('🔄 Шаг 2: Выгрузка фотографий...');
+        try {
+            await window.extractAndUploadPhotos();
+        } catch (photoErr) {
+            console.warn("[Sync] Ошибка при выгрузке фото, идем дальше:", photoErr);
+        }
 
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
-// --- ОТПРАВКА ДАННЫХ (PUSH) ---
+
+        // 2. Сбор истории
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
-        console.log(`[Sync] К отправке: Проверок (${currentHistory.length}), Задач (${typeof rbi_tasksData !== 'undefined' ? rbi_tasksData.length : 0}), Эталонов (${typeof etalonActsArray !== 'undefined' ? etalonActsArray.length : 0})`);
+        console.log(`[Sync] К отправке подготовлено: Проверок (${currentHistory.length})`);
 
+        // 3. Отправка проверок (PUSH)
         if (currentHistory.length > 0) {
-            if (mode === 'manual') safeToast(`🔄 Отправка проверок (${currentHistory.length} шт)...`);
+            if (mode === 'manual') safeToast(`🔄 Шаг 3: Отправка проверок (${currentHistory.length} шт)...`);
             const inspectionsToPush = currentHistory.map(c => ({
                 id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
                 template_key: c.templateKey, location: c.location, date: c.date,
@@ -521,10 +528,12 @@ window.triggerSync = async function(mode = 'silent') {
             }));
             for (let i = 0; i < inspectionsToPush.length; i += 100) {
                 const { error } = await window.supabaseClient.from('rbi_inspections').upsert(inspectionsToPush.slice(i, i + 100), { onConflict: 'id' });
-                if (error) throw new Error("Ошибка таблиц проверок: " + error.message);
+                if (error) throw new Error("Сбой в rbi_inspections: " + error.message);
             }
         }
 
+        // 4. Справочники
+        if (mode === 'manual') safeToast('🔄 Шаг 4: Отправка справочников...');
         const pushDict = async (table, dataArr, dataField) => {
             if (!dataArr || dataArr.length === 0) return;
             const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
@@ -532,38 +541,44 @@ window.triggerSync = async function(mode = 'silent') {
             }));
             if (rows.length > 0) {
                 const { error } = await window.supabaseClient.from(table).upsert(rows, { onConflict: 'id' });
-                if (error) throw new Error(`Ошибка справочника ${table}: ` + error.message);
+                if (error) console.warn(`Сбой в ${table}:`, error.message);
             }
         };
         await pushDict('rbi_custom_twi_cards', typeof customTwiCards !== 'undefined' ? customTwiCards : [], 'card_data');
         await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
 
+        // 5. Задачи и Эталоны (с мягким перехватом ошибок, если таблиц нет)
+        if (mode === 'manual') safeToast('🔄 Шаг 5: Отправка Задач и Эталонов...');
         if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
-            if (mode === 'manual') safeToast('🔄 Отправка задач...');
-            const tasksToPush = rbi_tasksData.map(t => ({
-                id: t.id, inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, task_data: t,
-                updated_at: t.updatedAt || new Date().toISOString(), _deleted: t._deleted || false, deleted_at: t._deleted ? new Date().toISOString() : null
-            }));
-            for (let i = 0; i < tasksToPush.length; i += 100) {
-                const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
-                if (error) console.warn("Таблица Задач (rbi_tasks) не найдена в Supabase. Пропускаем.", error);
-            }
+            try {
+                const tasksToPush = rbi_tasksData.map(t => ({
+                    id: t.id, inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, task_data: t,
+                    updated_at: t.updatedAt || new Date().toISOString(), _deleted: t._deleted || false, deleted_at: t._deleted ? new Date().toISOString() : null
+                }));
+                for (let i = 0; i < tasksToPush.length; i += 100) {
+                    const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
+                    if (error) console.warn("Таблица rbi_tasks не настроена", error);
+                }
+            } catch(e) { console.warn("Пропуск Задач:", e); }
         }
 
         if (typeof etalonActsArray !== 'undefined' && etalonActsArray.length > 0) {
-            if (mode === 'manual') safeToast('🔄 Отправка эталонов...');
-            const etalonsToPush = etalonActsArray.map(c => ({
-                id: c.id, inspector_id: window.syncConfig.deviceId, inspector_name: c.inspectorName, contractor_name: c.contractorName,
-                project_code: pCode, template_key: c.templateKey, act_data: c, updated_at: c.updatedAt || new Date().toISOString(),
-                _deleted: c._deleted || false, deleted_at: c._deleted ? new Date().toISOString() : null
-            }));
-            for (let i = 0; i < etalonsToPush.length; i += 100) {
-                const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
-                if (error) console.warn("Таблица Эталонов (rbi_etalon_acts) не найдена в Supabase. Пропускаем.", error);
-            }
+            try {
+                const etalonsToPush = etalonActsArray.map(c => ({
+                    id: c.id, inspector_id: window.syncConfig.deviceId, inspector_name: c.inspectorName, contractor_name: c.contractorName,
+                    project_code: pCode, template_key: c.templateKey, act_data: c, updated_at: c.updatedAt || new Date().toISOString(),
+                    _deleted: c._deleted || false, deleted_at: c._deleted ? new Date().toISOString() : null
+                }));
+                for (let i = 0; i < etalonsToPush.length; i += 100) {
+                    const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
+                    if (error) console.warn("Таблица rbi_etalon_acts не настроена", error);
+                }
+            } catch(e) { console.warn("Пропуск Эталонов:", e); }
         }
 
+        // 6. Профиль HR и Черновики
+        if (mode === 'manual') safeToast('🔄 Шаг 6: Сохранение профиля...');
         const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
         const hrProfileData = {
             timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
@@ -577,23 +592,22 @@ window.triggerSync = async function(mode = 'silent') {
             inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
             profile_data: hrProfileData, updated_at: new Date().toISOString()
         }, { onConflict: 'inspector_id' });
-        if (profileError) throw new Error("Ошибка профиля HR: " + profileError.message);
+        if (profileError) throw new Error("Сбой профиля: " + profileError.message);
 
-        // --- СКАЧИВАНИЕ ДАННЫХ (PULL) ---
-        if (mode === 'manual') safeToast('🔄 Загрузка обновлений...');
+        // 7. Скачивание (Pull)
+        if (mode === 'manual') safeToast('🔄 Шаг 7: Загрузка обновлений...');
         let lastSync = localStorage.getItem('last_cloud_sync_time') || '2000-01-01T00:00:00Z';
 
         let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
         const { data: newInspections, error: errInsp } = await query;
-        if (errInsp) throw new Error("Ошибка скачивания проверок: " + errInsp.message);
+        if (errInsp) throw new Error("Сбой загрузки проверок: " + errInsp.message);
 
         const { data: newTwi } = await window.supabaseClient.from('rbi_custom_twi_cards').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         const { data: newNodes } = await window.supabaseClient.from('rbi_custom_nodes').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         const { data: newDocs } = await window.supabaseClient.from('rbi_custom_docs').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
         const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
 
-        // Безопасная загрузка новых таблиц
         let newTasks = [], newEtalons = [];
         try {
             const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
@@ -601,17 +615,19 @@ window.triggerSync = async function(mode = 'silent') {
             const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
             if (resE.data) newEtalons = resE.data;
         } catch (dbErr) {
-            console.warn("[Sync] Таблицы задач/эталонов недоступны, пропускаем их скачивание.");
+            console.warn("[Sync] Пропуск скачивания таблиц задач/эталонов.");
         }
 
         const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
         if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
 
+        // 8. Слияние
+        if (mode === 'manual') safeToast('🔄 Шаг 8: Слияние баз...');
         await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
 
         localStorage.setItem('last_cloud_sync_time', new Date().toISOString());
 
-        if (mode === 'manual') safeToast('✅ Данные успешно синхронизированы!');
+        if (mode === 'manual') safeToast('✅ Готово! Синхронизация завершена!');
         
         if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
         if (typeof renderSelector === 'function') renderSelector();
@@ -620,8 +636,8 @@ window.triggerSync = async function(mode = 'silent') {
 
     } catch (e) {
         console.error("[Sync] Ошибка синхронизации:", e);
-        // ТЕПЕРЬ ОШИБКА БУДЕТ ВЫВЕДЕНА НА ЭКРАН
-        safeToast('❌ Сбой: ' + e.message.substring(0, 50));
+        // Выводим ошибку крупно на экран
+        if (mode === 'manual') safeToast('❌ Ошибка: ' + e.message.substring(0, 70));
     } finally {
         window.isSyncing = false;
         window.renderSyncUI(); 
