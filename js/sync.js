@@ -1134,7 +1134,47 @@ act.updatedAt = row.updated_at;
                 }
             }
         }
+                  // =====================================================
+        // 5.1. PUSH: акты-эталоны в rbi_etalon_acts
+        // =====================================================
+        try {
+            const etalons = typeof dbGetAll === 'function'
+                ? (await dbGetAll('rbi_etalon_acts') || [])
+                : (typeof etalonActsArray !== 'undefined' ? etalonActsArray : []);
 
+            for (const act of etalons) {
+                if (!act || !act.id) continue;
+
+                let uploadedAct = act;
+
+                if (typeof window.uploadObjectFilesToCloud === 'function') {
+                    uploadedAct = await window.uploadObjectFilesToCloud(
+                        act,
+                        'inspection-photos',
+                        `${pCode}/etalons/${act.id}`,
+                        'etalon'
+                    );
+                }
+
+                const { error: etalonError } = await window.supabaseClient
+                    .from('rbi_etalon_acts')
+                    .upsert({
+                        id: String(uploadedAct.id),
+                        project_code: pCode,
+                        engineer_name: uploadedAct.inspectorName || uploadedAct.engineerName || iName,
+                        contractor_name: uploadedAct.contractorName || uploadedAct.contractor || '',
+                        template_key: uploadedAct.templateKey || 'sys_etalon_act',
+                        template_title: uploadedAct.templateTitle || '',
+                        act_data: uploadedAct,
+                        is_deleted: uploadedAct._deleted || false,
+                        updated_at: uploadedAct.updatedAt || uploadedAct.updated_at || new Date().toISOString()
+                    }, { onConflict: 'id' });
+
+                if (etalonError) throw etalonError;
+            }
+        } catch (e) {
+            console.warn("[Sync] Эталоны не отправлены:", e.message);
+        }
         // =====================================================
         // 6. PUSH: черновик
         // =====================================================
@@ -1176,34 +1216,53 @@ act.updatedAt = row.updated_at;
             }
         }
 
-        // =====================================================
+                // =====================================================
         // 7. PUSH: профиль инженера для совместимости
         // =====================================================
-        const currentSession = (typeof dbGet !== 'undefined')
-            ? (await dbGet('app_state', 'current_session') || {})
-            : {};
+        try {
+            const currentSession = (typeof dbGet !== 'undefined')
+                ? (await dbGet('app_state', 'current_session') || {})
+                : {};
 
-        await window.supabaseClient
-            .from('rbi_engineer_profiles')
-            .upsert({
+            const profilePayload = {
                 inspector_id: stableInspectorId,
                 inspector_name: iName,
                 engineer_name: iName,
                 project_code: pCode,
-                pin_hash: window.syncConfig.pinHash,
+                pin_hash: window.syncConfig.pinHash || '',
                 profile_data: {
                     timestamp: Date.now(),
                     session: currentSession,
+
                     gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
                     plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
                     absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
                     statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {},
                     expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
+
+                    // AI-настройки сохраняем, но не используем их для перезаписи Edge Function
                     settings: typeof appSettings !== 'undefined' ? appSettings : {}
                 },
                 settings: typeof appSettings !== 'undefined' ? appSettings : {},
+                last_seen_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
-            }, { onConflict: 'inspector_id' });
+            };
+
+            const { error: profileError } = await window.supabaseClient
+                .from('rbi_engineer_profiles')
+                .upsert(profilePayload, { onConflict: 'inspector_id' });
+
+            if (profileError) {
+                console.error('[Sync] Ошибка записи профиля:', profileError);
+                throw profileError;
+            }
+
+            console.log('[Sync] Профиль инженера отправлен:', stableInspectorId);
+
+        } catch (e) {
+            console.warn('[Sync] Профиль инженера не отправлен:', e.message);
+            if (mode === 'manual') safeToast('⚠️ Профиль не отправлен: ' + e.message.substring(0, 60));
+        }
 
         // =====================================================
         // 8. PUSH: рейтинг инженера

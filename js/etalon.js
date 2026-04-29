@@ -181,7 +181,8 @@ window.saveEtalonAct = async function(printAfter = false) {
         window.activeTaskId = null;
     }
     showToast("✅ Акт-Эталон успешно сохранен!");
-    
+       localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
     // Если нажали кнопку "Печать" — открываем PDF
     if (printAfter) {
         setTimeout(() => { printEtalonAct(etalonRecord.id); }, 500);
