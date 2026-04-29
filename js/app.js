@@ -6916,7 +6916,7 @@ window.rbi_saveMeetingMemo = async function() {
 
     window.rbi_meetingsData.push(meet);
     await dbPut(STORES.MEETINGS, meet);
-    
+    localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
     if (typeof triggerSync === 'function') triggerSync('silent');
     // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ СОВЕЩАНИЯ

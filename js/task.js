@@ -72,7 +72,8 @@ window.rbi_saveManualTask = async function() {
 
     window.rbi_tasksData.unshift(newTask);
     await dbPut(STORES.TASKS, newTask);
-    
+    localStorage.setItem('rbi_cloud_dirty', '1');
+if (typeof triggerSync === 'function') triggerSync('silent');
     showToast("✅ Задача добавлена в план!");
     rbi_closeTaskModal();
     rbi_renderTasksList();

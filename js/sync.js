@@ -1263,6 +1263,69 @@ act.updatedAt = row.updated_at;
             console.warn('[Sync] Профиль инженера не отправлен:', e.message);
             if (mode === 'manual') safeToast('⚠️ Профиль не отправлен: ' + e.message.substring(0, 60));
         }
+          
+                // =====================================================
+        // 7.1. PUSH: задачи в rbi_tasks
+        // =====================================================
+        try {
+            const tasks = typeof dbGetAll === 'function'
+                ? (await dbGetAll('rbi_tasks') || [])
+                : (typeof window.rbi_tasksData !== 'undefined' ? window.rbi_tasksData : []);
+
+            for (const task of tasks) {
+                if (!task || !task.id) continue;
+
+                const { error: taskError } = await window.supabaseClient
+                    .from('rbi_tasks')
+                    .upsert({
+                        id: String(task.id),
+                        project_code: pCode,
+                        engineer_name: task.engineerName || task.inspectorName || iName,
+                        contractor_name: task.contractor || task.contractorName || '',
+                        title: task.title || '',
+                        task_data: task,
+                        status: task.status || 'pending',
+                        task_date: task.date || task.taskDate || null,
+                        is_deleted: task._deleted || false,
+                        updated_at: task.updatedAt || task.updated_at || new Date().toISOString()
+                    }, { onConflict: 'id' });
+
+                if (taskError) throw taskError;
+            }
+        } catch (e) {
+            console.warn("[Sync] Задачи не отправлены:", e.message);
+            if (mode === 'manual') safeToast('⚠️ Задачи не отправлены: ' + e.message.substring(0, 60));
+        }
+         
+                // =====================================================
+        // 7.2. PUSH: совещания в rbi_cloud_objects
+        // =====================================================
+        try {
+            const meetings = typeof dbGetAll === 'function'
+                ? (await dbGetAll('rbi_meetings') || [])
+                : (typeof window.rbi_meetingsData !== 'undefined' ? window.rbi_meetingsData : []);
+
+            for (const meeting of meetings) {
+                if (!meeting || !meeting.id) continue;
+
+                const { error: meetingError } = await window.supabaseClient
+                    .from('rbi_cloud_objects')
+                    .upsert({
+                        id: `${pCode}_meeting_${meeting.id}`.replace(/\s+/g, '_'),
+                        project_code: pCode,
+                        object_type: 'meeting',
+                        engineer_name: meeting.author || iName,
+                        object_data: meeting,
+                        is_deleted: meeting._deleted || false,
+                        updated_at: meeting.updatedAt || meeting.updated_at || meeting.date || new Date().toISOString()
+                    }, { onConflict: 'id' });
+
+                if (meetingError) throw meetingError;
+            }
+        } catch (e) {
+            console.warn("[Sync] Совещания не отправлены:", e.message);
+            if (mode === 'manual') safeToast('⚠️ Совещания не отправлены: ' + e.message.substring(0, 60));
+        }
 
         // =====================================================
         // 8. PUSH: рейтинг инженера
