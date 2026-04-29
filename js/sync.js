@@ -285,18 +285,95 @@ window.extractAndUploadPhotos = async function() {
     console.log("[Sync] Запуск выгрузки фото...");
     let dbUpdated = false;
 
-    // 1. Проверяем текущий активный черновик
+    // 1. Проверяем текущий активный черновик (теперь умеет выгружать local://)
     if (typeof photos !== 'undefined' && photos !== null) {
         const keys = Object.keys(photos);
         for (let id of keys) {
-            if (photos[id] && photos[id].startsWith('data:image')) {
-                photos[id] = await window.uploadBase64ToStorage(photos[id], `sessions/${window.syncConfig.deviceId}_${id}.jpg`);
+            let localUrl = photos[id];
+            if (localUrl && localUrl.startsWith('data:image')) {
+                photos[id] = await window.uploadBase64ToStorage(localUrl, `sessions/${window.syncConfig.deviceId}_${id}.jpg`);
                 dbUpdated = true;
+            } else if (localUrl && localUrl.startsWith('local://')) {
+                const record = await dbGet(STORES.PHOTOS, localUrl);
+                if (record && record.data) {
+                    const blob = arrayBufferToBlob(record.data, record.mimeType);
+                    const { data, error } = await window.supabaseClient.storage
+                        .from('inspection-photos')
+                        .upload(`sessions/${window.syncConfig.deviceId}_${id}.webp`, blob, { upsert: true, contentType: record.mimeType });
+                    if (!error) {
+                        const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`sessions/${window.syncConfig.deviceId}_${id}.webp`);
+                        const cloudUrl = urlData.publicUrl;
+                        await PhotoManager.linkCloudToLocal(localUrl, cloudUrl);
+                        photos[id] = cloudUrl;
+                        dbUpdated = true;
+                    }
+                }
             }
         }
     }
 
-    // 2. Проверяем Архив проверок
+    // 1.5. Проверяем Акты-Эталоны
+    if (typeof etalonActsArray !== 'undefined' && Array.isArray(etalonActsArray)) {
+        for (let i = 0; i < etalonActsArray.length; i++) {
+            let check = etalonActsArray[i];
+            let changed = false;
+            
+            if (check.details && check.details.elements) {
+                for (let el of check.details.elements) {
+                    let localUrl = el.photo;
+                    if (localUrl && localUrl.startsWith('local://')) {
+                        const record = await dbGet(STORES.PHOTOS, localUrl);
+                        if (record && record.data) {
+                            const blob = arrayBufferToBlob(record.data, record.mimeType);
+                            const { data, error } = await window.supabaseClient.storage
+                                .from('inspection-photos')
+                                .upload(`etalons/${check.id}_${Math.random().toString(36).substring(7)}.webp`, blob, { upsert: true, contentType: record.mimeType });
+                            
+                            if (!error) {
+                                const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`etalons/${check.id}_${Math.random().toString(36).substring(7)}.webp`);
+                                const cloudUrl = urlData.publicUrl;
+                                await PhotoManager.linkCloudToLocal(localUrl, cloudUrl);
+                                el.photo = cloudUrl;
+                                changed = true; dbUpdated = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (changed && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
+                await dbPut(STORES.ETALON_ACTS, check);
+            }
+        }
+    }
+    // 1.6. Проверяем фото внутри Задач (Воркшопы и т.д.)
+    if (typeof rbi_tasksData !== 'undefined' && Array.isArray(rbi_tasksData)) {
+        for (let i = 0; i < rbi_tasksData.length; i++) {
+            let task = rbi_tasksData[i];
+            if (task.completionPhoto && task.completionPhoto.startsWith('local://')) {
+                const record = await dbGet(STORES.PHOTOS, task.completionPhoto);
+                if (record && record.data) {
+                    const blob = arrayBufferToBlob(record.data, record.mimeType);
+                    const { data, error } = await window.supabaseClient.storage
+                        .from('inspection-photos')
+                        .upload(`tasks/${task.id}_completion.webp`, blob, { upsert: true, contentType: record.mimeType });
+                    
+                    if (!error) {
+                        const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`tasks/${task.id}_completion.webp`);
+                        const cloudUrl = urlData.publicUrl;
+                        await PhotoManager.linkCloudToLocal(task.completionPhoto, cloudUrl);
+                        task.completionPhoto = cloudUrl;
+                        task.updatedAt = new Date().toISOString();
+                        dbUpdated = true;
+                        
+                        if (typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
+                            await dbPut(STORES.TASKS, task);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // 2. Проверяем Архив проверок (без изменений, просто оставляем как было)
     if (typeof contractorArray !== 'undefined' && Array.isArray(contractorArray)) {
         for (let i = 0; i < contractorArray.length; i++) {
             let check = contractorArray[i];
@@ -457,22 +534,56 @@ window.triggerSync = async function(mode = 'silent') {
         await pushDict('rbi_custom_twi_cards', typeof customTwiCards !== 'undefined' ? customTwiCards : [], 'card_data');
         await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
+        
+        // 3.5. ОТПРАВЛЯЕМ ЗАДАЧИ И ЭТАЛОНЫ
+        if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
+            const tasksToPush = rbi_tasksData.map(t => ({
+                id: t.id,
+                inspector_id: window.syncConfig.deviceId,
+                inspector_name: iName,
+                project_code: pCode,
+                task_data: t,
+                updated_at: t.updatedAt || new Date().toISOString(),
+                _deleted: t._deleted || false,
+                deleted_at: t._deleted ? new Date().toISOString() : null
+            }));
+            // Отправляем чанками по 100
+            for (let i = 0; i < tasksToPush.length; i += 100) {
+                await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
+            }
+        }
 
+        if (typeof etalonActsArray !== 'undefined' && etalonActsArray.length > 0) {
+            const etalonsToPush = etalonActsArray.map(c => ({
+                id: c.id,
+                inspector_id: window.syncConfig.deviceId,
+                inspector_name: c.inspectorName,
+                contractor_name: c.contractorName,
+                project_code: pCode,
+                template_key: c.templateKey,
+                act_data: c,
+                updated_at: new Date().toISOString(),
+                _deleted: c._deleted || false,
+                deleted_at: c._deleted ? new Date().toISOString() : null
+            }));
+            for (let i = 0; i < etalonsToPush.length; i += 100) {
+                await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
+            }
+        }
         // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ ИНЖЕНЕРА
         // 4. ОТПРАВЛЯЕМ HR-ПРОФИЛЬ, ЗАДАЧИ И ТЕКУЩИЙ ЧЕРНОВИК В ОБЛАКО
         // Читаем текущий черновик из БД (если он есть)
         const currentSession = await dbGet(STORES.STATE, 'current_session') || {};
         
         const hrProfileData = {
-            timestamp: Date.now(), // Метка времени для определения актуальности
-            session: currentSession, // <-- Тот самый черновик (state, photos, details)
+            timestamp: Date.now(),
+            session: currentSession, 
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
             plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
             absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
             statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {},
             expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
             settings: typeof appSettings !== 'undefined' ? appSettings : {},
-            tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],
             schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
             interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
             practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
@@ -509,8 +620,12 @@ window.triggerSync = async function(mode = 'silent') {
         const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
         if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
 
+        // Скачиваем Задачи и Эталоны
+        const { data: newTasks } = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
+        const { data: newEtalons } = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
+
         // 6. ПЕРЕДАЕМ НА СЛИЯНИЕ В БД ТЕЛЕФОНА
-        await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles);
+        await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
 
         // Фиксируем время успешной синхронизации! В следующий раз скачаем только то, что изменится после этого времени
         localStorage.setItem('last_cloud_sync_time', new Date().toISOString());
@@ -534,7 +649,7 @@ window.triggerSync = async function(mode = 'silent') {
 };
 
 // 6. УМНОЕ СЛИЯНИЕ ДАННЫХ В ПАМЯТЬ ТЕЛЕФОНА
-window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs, newProfiles) {
+window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons) {
     let dbUpdated = false;
 
     // ИСПРАВЛЕНИЕ: Жесткая защита от null, если сервер вернул ошибку
@@ -543,6 +658,8 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
     const safeNodes = newNodes || [];
     const safeDocs = newDocs || [];
     const safeProfiles = newProfiles || [];
+    const safeTasks = newTasks || [];
+    const safeEtalons = newEtalons || [];
 
     // 1. Слияние проверок
     if (safeInspections.length > 0) {
@@ -571,7 +688,37 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
         contractorArray = Array.from(historyMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
         dbUpdated = true;
     }
+    // 1.5. Слияние Эталонов
+    if (safeEtalons.length > 0) {
+        let etalonMap = new Map();
+        if (typeof etalonActsArray !== 'undefined') {
+            etalonActsArray.forEach(c => etalonMap.set(c.id, c));
+        }
+        safeEtalons.forEach(row => {
+            const item = { id: row.id, ...row.act_data, _deleted: row._deleted, _deletedAt: row._deleted_at };
+            etalonMap.set(item.id, item);
+        });
+        etalonActsArray = Array.from(etalonMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+        dbUpdated = true;
+    }
 
+    // 1.6. Слияние Задач (Умный Merge по дате)
+    if (safeTasks.length > 0 && typeof rbi_tasksData !== 'undefined') {
+        safeTasks.forEach(row => {
+            const incomingTask = { id: row.id, ...row.task_data, updatedAt: row.updated_at, _deleted: row._deleted };
+            const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
+            if (!existing) {
+                rbi_tasksData.push(incomingTask);
+            } else {
+                const inTime = new Date(incomingTask.updatedAt || 0).getTime();
+                const exTime = new Date(existing.updatedAt || 0).getTime();
+                if (inTime > exTime) {
+                    Object.assign(existing, incomingTask);
+                }
+            }
+        });
+        dbUpdated = true;
+    }
     // 2. Слияние справочников
     if (safeTwi.length > 0 && typeof customTwiCards !== 'undefined') {
         let map = new Map(customTwiCards.map(c => [c.id, c]));
@@ -635,6 +782,20 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
         
         contractorArray = contractorArray.filter(i => !i._deleted);
 
+        // Сохраняем эталоны
+        for (const item of etalonActsArray) {
+            if (item._deleted) await dbDelete(STORES.ETALON_ACTS, item.id);
+            else await dbPut(STORES.ETALON_ACTS, item);
+        }
+        etalonActsArray = etalonActsArray.filter(i => !i._deleted);
+
+        // Сохраняем задачи
+        for (const item of rbi_tasksData) {
+            if (item._deleted) await dbDelete(STORES.TASKS, item.id);
+            else await dbPut(STORES.TASKS, item);
+        }
+        rbi_tasksData = rbi_tasksData.filter(i => !i._deleted);
+        
         await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => !String(c.id).startsWith('sys_')) : [] });
         await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: typeof customNodes !== 'undefined' ? customNodes : [] });
         await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: typeof customDocs !== 'undefined' ? customDocs.filter(d => !String(d.id).startsWith('sys_')) : [] });
@@ -736,22 +897,6 @@ window.mergeCloudData = async function(teamData) {
             if (typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
             if (typeof applySettingsToUI === 'function') applySettingsToUI();
             if (typeof applySmartLocks === 'function') applySmartLocks();
-        }
-        
-        // 2. Восстанавливаем Задачи
-        if (personalDataToRestore.tasks && Array.isArray(personalDataToRestore.tasks)) {
-            // Мягкое слияние задач: если пришедшая задача новее или наша не существует, берем из облака
-            for (const t of personalDataToRestore.tasks) {
-                const existing = window.rbi_tasksData.find(x => x.id === t.id);
-                if (!existing) {
-                    window.rbi_tasksData.push(t);
-                    await dbPut(STORES.TASKS, t);
-                } else if (existing.status === 'pending' && t.status !== 'pending') {
-                    // Облако знает, что задача закрыта на ПК, а телефон думает, что она открыта
-                    Object.assign(existing, t);
-                    await dbPut(STORES.TASKS, existing);
-                }
-            }
         }
 
         if (personalDataToRestore.plan && typeof weeklyPlanData !== 'undefined') {

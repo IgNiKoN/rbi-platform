@@ -1,8 +1,8 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// УВЕЛИЧИВАЕМ ВЕРСИЮ ДЛЯ СОЗДАНИЯ НОВЫХ ТАБЛИЦ (TASKS, MEETINGS и т.д.)
-const DB_VERSION = 5; 
+// Повышаем версию до 6 для создания таблиц эталонов
+const DB_VERSION = 6; 
 
 const STORES = {
     STATE: 'app_state',       
@@ -10,42 +10,50 @@ const STORES = {
     SETTINGS: 'app_settings', 
     TEMPLATES: 'user_templates', 
     PHOTOS: 'app_photos',
-    // Новые хранилища
     TASKS: 'rbi_tasks',
     SCHEDULE: 'rbi_schedule_stages',
     MEETINGS: 'rbi_meetings',
     INTERVENTIONS: 'rbi_interventions',
-    PRACTICES: 'rbi_practices'
+    PRACTICES: 'rbi_practices',
+    ETALON_ACTS: 'rbi_etalon_acts',  // НОВОЕ: Хранилище актов эталонов
+    ETALON_DRAFT: 'rbi_etalon_draft' // НОВОЕ: Хранилище черновика эталона
 };
 
 /**
- * Инициализация и открытие базы данных IndexedDB
+/**
+ * Инициализация и открытие базы данных IndexedDB (Singleton)
  */
+let _dbPromise = null;
+
 function openAppDb() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+    if (!_dbPromise) {
+        _dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-        request.onupgradeneeded = function(event) {
-            const db = event.target.result;
-            
-            // Старые хранилища
-            if (!db.objectStoreNames.contains(STORES.STATE)) db.createObjectStore(STORES.STATE, { keyPath: 'key' });
-            if (!db.objectStoreNames.contains(STORES.HISTORY)) db.createObjectStore(STORES.HISTORY, { keyPath: 'id' });
-            if (!db.objectStoreNames.contains(STORES.SETTINGS)) db.createObjectStore(STORES.SETTINGS, { keyPath: 'key' });
-            if (!db.objectStoreNames.contains(STORES.TEMPLATES)) db.createObjectStore(STORES.TEMPLATES, { keyPath: 'slug' });
-            if (!db.objectStoreNames.contains(STORES.PHOTOS)) db.createObjectStore(STORES.PHOTOS, { keyPath: 'id' });
-            
-            // Новые хранилища Инженера
-            if (!db.objectStoreNames.contains(STORES.TASKS)) db.createObjectStore(STORES.TASKS, { keyPath: 'id' });
-            if (!db.objectStoreNames.contains(STORES.SCHEDULE)) db.createObjectStore(STORES.SCHEDULE, { keyPath: 'id' });
-            if (!db.objectStoreNames.contains(STORES.MEETINGS)) db.createObjectStore(STORES.MEETINGS, { keyPath: 'id' });
-            if (!db.objectStoreNames.contains(STORES.INTERVENTIONS)) db.createObjectStore(STORES.INTERVENTIONS, { keyPath: 'id' });
-            if (!db.objectStoreNames.contains(STORES.PRACTICES)) db.createObjectStore(STORES.PRACTICES, { keyPath: 'id' });
-        };
+            request.onupgradeneeded = function(event) {
+                const db = event.target.result;
+                
+                // Создаем таблицы, если их нет
+                Object.values(STORES).forEach(storeName => {
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        // Для истории и эталонов ключ 'id', для остального тоже, кроме настроек/стейта
+                        let keyOptions = { keyPath: 'id' };
+                        if (storeName === STORES.STATE || storeName === STORES.SETTINGS) keyOptions = { keyPath: 'key' };
+                        if (storeName === STORES.TEMPLATES) keyOptions = { keyPath: 'slug' };
+                        
+                        db.createObjectStore(storeName, keyOptions);
+                    }
+                });
+            };
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                _dbPromise = null; // Сбрасываем промис при ошибке
+                reject(request.error);
+            };
+        });
+    }
+    return _dbPromise;
 }
 
 /**
@@ -371,38 +379,6 @@ async function runPhotoMigration(historyArray) {
     }
 }
 
-/**
- * Одноразовая авто-миграция старых Base64 фото в новое бинарное хранилище
- */
-async function runPhotoMigration(historyArray) {
-    let migrationNeeded = false;
-    
-    for (let item of historyArray) {
-        let itemChanged = false;
-        if (item.photos) {
-            for (let key in item.photos) {
-                const photoData = item.photos[key];
-                // Если находим старую тяжелую картинку
-                if (photoData && photoData.startsWith('data:image')) {
-                    const localUrl = await PhotoManager.saveAndGetLocalUrl(photoData, 'migr');
-                    if (localUrl && localUrl.startsWith('local://')) {
-                        item.photos[key] = localUrl;
-                        itemChanged = true;
-                        migrationNeeded = true;
-                    }
-                }
-            }
-        }
-        if (itemChanged) {
-            // Тихо обновляем запись в БД
-            await dbPut(STORES.HISTORY, item);
-        }
-    }
-    
-    if (migrationNeeded) {
-        console.log("✅ Авто-миграция старых фото успешно завершена!");
-    }
-}
 
 // === ФОНОВЫЙ ЗАГРУЗЧИК ФАЙЛОВ ДЛЯ ОФЛАЙНА ===
 window.downloadMissingCloudFiles = async function() {
@@ -454,38 +430,65 @@ window.downloadMissingCloudFiles = async function() {
 
 // Окончательное удаление файлов из корзины (Hard Delete)
 window.emptyTrashBin = async function() {
-    if(!confirm("Безвозвратно удалить все скрытые проверки из базы? Они больше не будут восстанавливаться при синхронизации.")) return;
-    
-    const hist = await dbGetAll(STORES.HISTORY);
-    if (!hist) return;
+    if(!confirm("Безвозвратно удалить все скрытые записи из базы? Они больше не будут восстанавливаться при синхронизации.")) return;
     
     let deletedCount = 0;
-    for (let item of hist) {
-        if (item._deleted) {
-            // 1. Удаляем связанные фото из бинарной базы PHOTOS
-            if (item.photos) {
-                for (let k in item.photos) {
-                    const photoUrl = item.photos[k];
-                    if (photoUrl) {
-                        // Удаляем из базы IndexedDB по ключу (неважно, local:// это или https://)
-                        await dbDelete(STORES.PHOTOS, photoUrl);
-                        // Очищаем из оперативной памяти
-                        if (PhotoManager.cache[photoUrl]) {
-                            // Если это Blob URL, убиваем ссылку, чтобы освободить RAM
-                            if (PhotoManager.cache[photoUrl].startsWith('blob:')) {
-                                URL.revokeObjectURL(PhotoManager.cache[photoUrl]);
-                            }
-                            delete PhotoManager.cache[photoUrl];
-                        }
-                    }
+
+    // Вспомогательная функция для удаления фото
+    const deletePhotos = async (photosObj) => {
+        if (!photosObj) return;
+        for (let k in photosObj) {
+            const url = photosObj[k];
+            if (url) {
+                await dbDelete(STORES.PHOTOS, url);
+                if (PhotoManager.cache[url]) {
+                    if (PhotoManager.cache[url].startsWith('blob:')) URL.revokeObjectURL(PhotoManager.cache[url]);
+                    delete PhotoManager.cache[url];
                 }
             }
-            // 2. Удаляем саму проверку из базы HISTORY
-            await dbDelete(STORES.HISTORY, item.id);
-            deletedCount++;
+        }
+    };
+
+    // 1. Чистим Историю
+    const hist = await dbGetAll(STORES.HISTORY);
+    if (hist) {
+        for (let item of hist) {
+            if (item._deleted) {
+                await deletePhotos(item.photos);
+                await dbDelete(STORES.HISTORY, item.id);
+                deletedCount++;
+            }
+        }
+    }
+
+    // 2. Чистим Эталоны
+    const etalons = await dbGetAll(STORES.ETALON_ACTS);
+    if (etalons) {
+        for (let item of etalons) {
+            if (item._deleted) {
+                if (item.details && item.details.elements) {
+                    for (let el of item.details.elements) {
+                        if (el.photo) await deletePhotos({ p: el.photo });
+                    }
+                }
+                await dbDelete(STORES.ETALON_ACTS, item.id);
+                deletedCount++;
+            }
+        }
+    }
+
+    // 3. Чистим Задачи
+    const tasks = await dbGetAll(STORES.TASKS);
+    if (tasks) {
+        for (let task of tasks) {
+            if (task._deleted) {
+                if (task.completionPhoto) await deletePhotos({ p: task.completionPhoto });
+                await dbDelete(STORES.TASKS, task.id);
+                deletedCount++;
+            }
         }
     }
     
-    showToast(`🗑️ Корзина очищена. Уничтожено: ${deletedCount} шт.`);
+    showToast(`🗑️ Корзина очищена. Уничтожено записей: ${deletedCount} шт.`);
     if (typeof updateStorageInfo === 'function') updateStorageInfo();
 }

@@ -1670,13 +1670,10 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         `;
         
         // Дожидаемся загрузки всех картинок перед вызовом диалога печати
-        const images = printContainer.querySelectorAll('img');
-        const imgPromises = Array.from(images).map(img => {
-            if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-            return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 3000); });
-        });
-
-        await Promise.all(imgPromises);
+       // 1. Превращаем local:// в blob:
+        await resolveLocalPhotosForPdf(printContainer);
+        // 2. Ждем физической отрисовки
+        await waitForPdfImages(printContainer, 5000);
         
         setTimeout(() => {
             window.print();
@@ -1755,12 +1752,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 hiddenDiv.appendChild(pageDiv);
 
                 // Ждем загрузки картинок ИМЕННО ЭТОЙ страницы
-                const images = pageDiv.querySelectorAll('img');
-                const imagePromises = Array.from(images).map(img => {
-                    if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-                    return new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 5000); });
-                });
-                await Promise.all(imagePromises);
+                await resolveLocalPhotosForPdf(pageDiv);
+                await waitForPdfImages(pageDiv, 5000);
 
                 // Рендерим страницу и добавляем в PDF (API html2pdf.js)
                 if (i === 0) {
@@ -1784,12 +1777,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             rootDiv.innerHTML = header + content;
             hiddenDiv.appendChild(rootDiv);
             
-            const images = rootDiv.querySelectorAll('img');
-            const imagePromises = Array.from(images).map(img => {
-                if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
-                return new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; setTimeout(resolve, 5000); });
-            });
-            await Promise.all(imagePromises);
+            await resolveLocalPhotosForPdf(rootDiv);
+            await waitForPdfImages(rootDiv, 5000);
             
             await html2pdf().set(opt).from(rootDiv).save();
         }
@@ -2042,11 +2031,10 @@ function generateBackupObject(mode) {
     };
 
     // ДОБАВЛЕНЫ HR ДАННЫЕ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
-     const hrData = {
+    const hrData = {
         weeklyPlanData: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
         engineerAbsence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
         contractorStatuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : null,
-        tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],
         schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
         interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
         practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
@@ -2054,11 +2042,13 @@ function generateBackupObject(mode) {
 
     const obj = {
         type: "RBI_FULL_BACKUP",
-        version: "17.0",
+        version: "17.4",
         timestamp: new Date().toISOString(),
         mode: mode,
         data: {
             history: historyToExport, 
+            etalonActs: typeof etalonActsArray !== 'undefined' ? etalonActsArray : [], // НОВОЕ
+            tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],          // НОВОЕ
             templates: userTemplates, 
             twi: customTwiCards,      
             docs: userDocsToExport,   
@@ -2097,34 +2087,6 @@ async function clearBackupRegistry() {
     await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: [] });
     if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
     showToast("Реестр очищен");
-}
-// Окончательное удаление файлов из корзины (Hard Delete)
-window.emptyTrashBin = async function() {
-    if(!confirm("Безвозвратно удалить все проверки из корзины? Они больше не синхронизируются с облаком.")) return;
-    
-    const hist = await dbGetAll(STORES.HISTORY);
-    if (!hist) return;
-    
-    let deletedCount = 0;
-    for (let item of hist) {
-        if (item._deleted) {
-            // Удаляем связанные фото из базы
-            if (item.photos) {
-                for (let k in item.photos) {
-                    if (item.photos[k] && item.photos[k].startsWith('local://')) {
-                        const photoId = item.photos[k].replace('local://', '');
-                        await dbDelete(STORES.PHOTOS, photoId);
-                    }
-                }
-            }
-            // Удаляем саму проверку
-            await dbDelete(STORES.HISTORY, item.id);
-            deletedCount++;
-        }
-    }
-    
-    showToast(`🗑️ Корзина очищена. Удалено: ${deletedCount} шт.`);
-    if (typeof updateStorageInfo === 'function') updateStorageInfo();
 }
 
 // Универсальная функция загрузки файла
@@ -2361,8 +2323,7 @@ function processDataImport(event) {
                     if (typeof saveSessionData === 'function') saveSessionData(); 
                 }
                 
-                // ИМПОРТ HR ДАННЫХ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
-                // ИМПОРТ HR ДАННЫХ (Задачи, Планы, Статусы)
+                // ИМПОРТ HR ДАННЫХ (Планы, Статусы)
                 if (parsed.data.hr) {
                     if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
                     if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
@@ -2373,18 +2334,32 @@ function processDataImport(event) {
                             if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
                         }
                     }
+                }
 
-                    // Сливаем задачи (Умный Merge)
-                    if (parsed.data.hr.tasks && Array.isArray(parsed.data.hr.tasks)) {
-                        for (const incomingTask of parsed.data.hr.tasks) {
-                            const existing = window.rbi_tasksData.find(t => t.id === incomingTask.id);
-                            if (!existing) {
-                                window.rbi_tasksData.push(incomingTask);
-                                await dbPut(STORES.TASKS, incomingTask);
-                            } else if (existing.status === 'pending' && incomingTask.status !== 'pending') {
-                                // Если в бэкапе задача закрыта, а у нас висит открытой - обновляем
+                // ИМПОРТ АКТОВ-ЭТАЛОНОВ
+                if (parsed.data.etalonActs && typeof etalonActsArray !== 'undefined') {
+                    for(const item of parsed.data.etalonActs) {
+                        if(!etalonActsArray.find(x => x.id === item.id)) {
+                            etalonActsArray.push(item);
+                            await getDb().then(async () => { await dbPut(STORES.ETALON_ACTS, item); });
+                        }
+                    }
+                }
+
+                // ИМПОРТ ЗАДАЧ (Умный Merge по дате обновления)
+                if (parsed.data.tasks && typeof rbi_tasksData !== 'undefined') {
+                    for (const incomingTask of parsed.data.tasks) {
+                        const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
+                        if (!existing) {
+                            rbi_tasksData.push(incomingTask);
+                            await getDb().then(async () => { await dbPut(STORES.TASKS, incomingTask); });
+                        } else {
+                            // Если пришедшая задача свежее (по updatedAt), перезаписываем
+                            const inTime = new Date(incomingTask.updatedAt || 0).getTime();
+                            const exTime = new Date(existing.updatedAt || 0).getTime();
+                            if (inTime > exTime) {
                                 Object.assign(existing, incomingTask);
-                                await dbPut(STORES.TASKS, existing);
+                                await getDb().then(async () => { await dbPut(STORES.TASKS, existing); });
                             }
                         }
                     }
@@ -2748,3 +2723,43 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         showToast("❌ Ошибка сборки отчета: " + e.message);
     }
 };
+
+// --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
+
+// Преобразует все local:// ссылки в контейнере в реальные blob:
+async function resolveLocalPhotosForPdf(container) {
+    const images = container.querySelectorAll('img');
+    const promises = [];
+
+    for (let img of images) {
+        const src = img.getAttribute('src');
+        if (src && src.startsWith('local://')) {
+            promises.push(
+                PhotoManager.getAsyncUrl(src).then(realUrl => {
+                    if (realUrl) img.src = realUrl;
+                }).catch(e => console.warn("Ошибка подгрузки фото для PDF:", e))
+            );
+        }
+    }
+    await Promise.all(promises);
+}
+
+// Ждет, пока браузер физически отрисует все картинки
+async function waitForPdfImages(container, maxMs = 5000) {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (images.length === 0) return;
+
+    const promises = images.map(img => {
+        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+        return new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve; // Если ошибка - всё равно идем дальше
+        });
+    });
+
+    // Ждем либо загрузки всех фото, либо отсечки по таймауту (чтобы не зависнуть навсегда)
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(resolve => setTimeout(resolve, maxMs))
+    ]);
+}

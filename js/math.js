@@ -172,8 +172,14 @@ function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWin
         s = Math.sqrt(variance);
         
         // ИСПРАВЛЕНИЕ: Коэффициент Стьюдента в зависимости от выборки N
+        // ИСПРАВЛЕНИЕ: Коэффициент Стьюдента в зависимости от выборки N (включая малые)
         let t_crit = 1.96;
-        if (N >= 7 && N <= 10) t_crit = 2.3;
+        if (N === 2) t_crit = 12.7;
+        else if (N === 3) t_crit = 4.3;
+        else if (N === 4) t_crit = 3.18;
+        else if (N === 5) t_crit = 2.78;
+        else if (N === 6) t_crit = 2.57;
+        else if (N >= 7 && N <= 10) t_crit = 2.3;
         else if (N >= 11 && N <= 15) t_crit = 2.1;
         else if (N >= 16 && N <= 23) t_crit = 2.0;
         else if (N >= 24 && N <= 31) t_crit = 1.98;
@@ -220,7 +226,7 @@ function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWin
         statusTxt = "ОБРАЗЦОВОЕ КАЧЕСТВО"; statusCls = "tag-green"; 
     } else { 
         statusTxt = "ЖЕЛТАЯ ЗОНА"; statusCls = "tag-yellow"; 
-        if (Urk_contr <= 84 || R_B3 >= 10.0 || stabilityIndex <= 84) { riskStatus = "Средний риск"; riskCls = "risk-med"; }
+        if (Urk_contr <= 84 || R_B3 >= 10.0 || stabilityIndex <= 60) { riskStatus = "Средний риск"; riskCls = "risk-med"; }
     }
 
     let reason = "Стабильное качество, без существенных штрафов";

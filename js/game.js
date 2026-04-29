@@ -481,7 +481,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
     for (let key in pairMap) {
         const pair = pairMap[key];
         
-        const hasEtalon = contractorArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act' && c.templateTitle === pair.templateTitle);
+        const hasEtalon = etalonActsArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act' && c.templateTitle === pair.templateTitle);
         if (!hasEtalon) {
             addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, true);
         }
@@ -581,8 +581,8 @@ window.gameUpdatePlanProgress = function () {
         const st = contractorStatuses[task.statusKey];
 
         // АВТОМАТИЧЕСКОЕ СНЯТИЕ ЭТАЛОНА
-        if (task.needsEtalon) {
-            const hasEtalonCheck = contractorArray.some(c =>
+           if (task.needsEtalon) {
+            const hasEtalonCheck = etalonActsArray.some(c =>
                 c.contractorName === task.contractor &&
                 c.projectName === task.project &&
                 c.templateKey === 'sys_etalon_act'

@@ -5,6 +5,7 @@ let state = {};
 let details = {}; 
 let photos = {}; 
 let contractorArray = []; 
+let etalonActsArray = []; // НОВОЕ: Отдельный массив для эталонов
 let userTemplates = {};
 let currentTemplateKey = ''; 
 let currentChecklist = [];
@@ -206,6 +207,10 @@ async function restoreSession() {
         
         let fullHistory = hist || [];
         contractorArray = fullHistory.filter(i => !i._deleted);
+
+        // Загружаем эталоны в отдельный массив
+        const etalons = await dbGetAll(STORES.ETALON_ACTS);
+        etalonActsArray = (etalons || []).filter(i => !i._deleted);
 
         // НОВОЕ: Инициализируем кэш и запускаем миграцию
         await PhotoManager.init();
@@ -1503,8 +1508,15 @@ function exportSelectedCsv() {
 
 // 100% СОВМЕСТИМАЯ МОДАЛКА ИСТОРИИ ИЗ v15
 function showHistoryDetail(id) {
-    const sortedArray = [...contractorArray].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const currIdx = sortedArray.findIndex(x => x.id === id);
+    let sortedArray = [...contractorArray].sort((a, b) => new Date(b.date) - new Date(a.date));
+    let currIdx = sortedArray.findIndex(x => x.id === id);
+    
+    if (currIdx === -1) {
+        // Если не нашли в истории, ищем в эталонах
+        sortedArray = [...etalonActsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
+        currIdx = sortedArray.findIndex(x => x.id === id);
+    }
+    
     if (currIdx === -1) return;
     
     const item = sortedArray[currIdx];
@@ -2403,6 +2415,7 @@ async function saveProductToArray() {
         if (task) {
             task.status = 'done';
             task.resultComment = 'Аудит проведен';
+            task.updatedAt = new Date().toISOString(); // <-- НОВОЕ
             dbPut(STORES.TASKS, task);
         }
         window.activeTaskId = null; // Сбрасываем
@@ -2432,9 +2445,11 @@ function resetChecklist() {
 async function clearHistory() {
     if(!confirm('Удалить ВСЮ историю проверок? Сами чек-листы и настройки останутся.')) return;
     
-    // Очищаем массив в памяти и в IndexedDB
+    // Очищаем массивы в памяти и в IndexedDB
     contractorArray = []; 
+    etalonActsArray = [];
     await dbClear(STORES.HISTORY); 
+    await dbClear(STORES.ETALON_ACTS);
     
     // Очищаем память умного автозаполнения (чтобы старые подрядчики не вылезали при вводе)
     localStorage.removeItem('smart_input_cache');
@@ -2470,7 +2485,9 @@ async function fullFactoryReset() {
 
     try {
         // Очищаем все хранилища базы данных
+        // Очищаем все хранилища базы данных
         await dbClear(STORES.HISTORY);
+        await dbClear(STORES.ETALON_ACTS);
         await dbClear(STORES.STATE);
         await dbClear(STORES.SETTINGS);
         await dbClear(STORES.TEMPLATES);
@@ -6917,6 +6934,7 @@ window.rbi_saveMeetingMemo = async function() {
         if (task) {
             task.status = 'done';
             task.resultComment = 'Протокол сформирован';
+            task.updatedAt = new Date().toISOString();
             dbPut(STORES.TASKS, task);
         }
         window.activeTaskId = null;
@@ -7104,7 +7122,7 @@ window.rbi_renderImpactTab = function() {
             const avgImpact = impactCount > 0 ? (totalScore / impactCount) : 0;
             let impactColor = avgImpact > 0.2 ? 'text-green-500' : (avgImpact < -0.2 ? 'text-red-500' : 'text-slate-400');
 
-            const myEtalons = contractorArray.filter(c => c.inspectorName === myProfile.name && c.templateKey === 'sys_etalon_act');
+            const myEtalons = etalonActsArray.filter(c => c.inspectorName === myProfile.name && c.templateKey === 'sys_etalon_act');
             let etalonsHtml = '';
             
             if (myEtalons.length > 0) {

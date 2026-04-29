@@ -150,11 +150,14 @@ window.saveEtalonAct = async function(printAfter = false) {
         state: { '9901': 'ok' }, 
         photos: {},
         details: { participants: participants, deviations: deviations, elements: elements },
-        metrics: { final: 100, baseUrkPerc: 100, checkedCount: 1, totalCount: 1, n_B1_fail: 0, n_B2_fail: 0, n_B3_fail: 0, kc: 1, kcrit: 1, statusTxt: "ЭТАЛОН", statusCls: "tag-blue" }
+        metrics: { final: 100, baseUrkPerc: 100, checkedCount: 1, totalCount: 1, n_B1_fail: 0, n_B2_fail: 0, n_B3_fail: 0, kc: 1, kcrit: 1, statusTxt: "ЭТАЛОН", statusCls: "tag-blue" },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        _deleted: false
     };
 
-    contractorArray.push(etalonRecord); 
-    await dbPut(STORES.HISTORY, etalonRecord);
+    etalonActsArray.push(etalonRecord); 
+    await dbPut(STORES.ETALON_ACTS, etalonRecord);
 
     if (currentEtalonContext.statusKey && weeklyPlanData.tasks) {
         const task = weeklyPlanData.tasks.find(t => t.statusKey === currentEtalonContext.statusKey);
@@ -172,6 +175,7 @@ window.saveEtalonAct = async function(printAfter = false) {
         if (task) {
             task.status = 'done';
             task.resultComment = 'Эталон зафиксирован';
+            task.updatedAt = new Date().toISOString(); // <-- НОВОЕ
             dbPut(STORES.TASKS, task);
         }
         window.activeTaskId = null;
@@ -196,7 +200,7 @@ window.saveEtalonAct = async function(printAfter = false) {
 };
 
 window.printEtalonAct = async function(historyId) {
-    const record = contractorArray.find(c => c.id === historyId);
+    const record = etalonActsArray.find(c => c.id === historyId);
     if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
 
     const mode = 'script'; 
@@ -213,15 +217,17 @@ window.printEtalonAct = async function(historyId) {
         }
 
         elementsHtml += `
-            <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #4f46e5; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
+            <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #4f46e5; border-radius: 10px; background: white; margin-bottom: 20px; border-collapse: collapse; table-layout: fixed;">
                 <tr>
-                    <td style="padding: 15px; vertical-align: top;">
-                        <h3 style="color: #312e81; margin: 0 0 5px 0; font-size: 14px; text-transform: uppercase;">${i + 1}. ${el.name}</h3>
-                        <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0;">${el.desc || 'Описание отсутствует'}</p>
+                    <!-- Колонка для текста: 40% ширины -->
+                    <td style="padding: 15px; vertical-align: top; width: 40%;">
+                        <h3 style="color: #312e81; margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase;">${i + 1}. ${el.name}</h3>
+                        <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0; line-height: 1.5;">${el.desc || 'Описание отсутствует'}</p>
                     </td>
-                    ${realPhotoSrc ? `<td style="width: 200px; padding: 15px; vertical-align: top; text-align: right;">
-                        <div style="width: 100%; height: 150px; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
-                            <img src="${realPhotoSrc}" style="width: 100%; height: 100%; object-fit: contain;">
+                    <!-- Колонка для фото: 60% ширины, высота 300px -->
+                    ${realPhotoSrc ? `<td style="padding: 15px; vertical-align: top; width: 60%; text-align: center;">
+                        <div style="width: 100%; height: 300px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden;">
+                            <img src="${realPhotoSrc}" style="width: 100%; height: 100%; object-fit: contain; display: block; margin: 0 auto;">
                         </div>
                     </td>` : ''}
                 </tr>

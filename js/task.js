@@ -64,7 +64,10 @@ window.rbi_saveManualTask = async function() {
         prompt: 'Создано инженером вручную.',
         status: 'pending', // pending, done, rescheduled, blocked
         priorityLvl: 2, 
-        date: tDate.toISOString()
+        date: tDate.toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        _deleted: false
     };
 
     window.rbi_tasksData.unshift(newTask);
@@ -123,12 +126,20 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
     // Берем все проверки инспектора за месяц для анализа
      const allMyChecks = contractorArray.filter(c => c.inspectorName === currentInspector);
 
-    // Очищаем старые АВТО задачи, которые так и не были выполнены (чтобы не копился мусор)
-    // Ручные задачи и задачи со статусом отличным от pending оставляем.
-    let tasksToKeep = window.rbi_tasksData.filter(t => t.type === 'manual' || t.status !== 'pending');
-    await dbClear(STORES.TASKS);
-    window.rbi_tasksData = [...tasksToKeep];
-    for (let t of tasksToKeep) { await dbPut(STORES.TASKS, t); }
+    // БЕЗОПАСНАЯ ОЧИСТКА ЗАДАЧ: Удаляем только просроченные АВТО задачи со статусом pending. Не делаем dbClear!
+    const tasksToDelete = window.rbi_tasksData.filter(t => 
+        t.type === 'auto' && 
+        t.status === 'pending' && 
+        new Date(t.date).toDateString() !== now.toDateString()
+    );
+    
+    // Удаляем их из базы по одной
+    for (let t of tasksToDelete) {
+        await dbDelete(STORES.TASKS, t.id);
+    }
+    
+    // Оставляем в памяти только те, что не удалили
+    window.rbi_tasksData = window.rbi_tasksData.filter(t => !tasksToDelete.includes(t));
 
     let newTasksCount = 0;
 
@@ -144,9 +155,13 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             contractor: contractor, project: document.getElementById('inp-project')?.value || "Все",
             templateKey: tmplKey, workTitle: workTitle,
             title: title, prompt: prompt,
-            status: 'pending', priorityLvl: lvl, date: tDate.toISOString()
+            status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            _deleted: false
         };
         window.rbi_tasksData.push(task);
+        task.updatedAt = new Date().toISOString();
         dbPut(STORES.TASKS, task);
         newTasksCount++;
     };
@@ -170,7 +185,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
         const pair = pairMap[key];
         
         // 1. Потребность в Эталоне (Если нет ни одной проверки 'sys_etalon_act' по этому подрядчику)
-        const hasEtalon = contractorArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act');
+        const hasEtalon = etalonActsArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act');
         if (!hasEtalon && pair.allTimeCount > 0) {
             addTask('etalon', 'control', 'Эталон', `Запросить Акт-Эталон`, pair.templateTitle, pair.contractor, `Новый подрядчик. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey);
         }
@@ -409,6 +424,7 @@ window.rbi_markTaskDone = function(taskId, silent = false) {
     if(task) {
         task.status = 'done';
         task.resultComment = 'Выполнено из быстрого действия';
+        task.updatedAt = new Date().toISOString();
         dbPut(STORES.TASKS, task);
         if (!silent) {
             showToast("✅ Задача выполнена!");
@@ -675,7 +691,7 @@ window.rbi_completeTaskWithPhoto = async function(taskId) {
     task.status = 'done';
     task.completionPhoto = photo || null;
     task.aiScenario = scenario || null;
-
+    task.updatedAt = new Date().toISOString();
     await dbPut(STORES.TASKS, task);
     
     // Записываем в логи, чтобы потом вывести в Эффективности
@@ -863,7 +879,7 @@ window.rbi_resumeTask = async function(taskId) {
     
     if(!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Задача возобновлена инженером.`);
-    
+    task.updatedAt = new Date().toISOString();
     await dbPut(STORES.TASKS, task);
     showToast("🔄 Задача снова активна");
     
@@ -881,7 +897,7 @@ window.rbi_pauseTask = async function(taskId) {
     
     if(!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Поставлена на паузу.`);
-    
+    task.updatedAt = new Date().toISOString();
     await dbPut(STORES.TASKS, task);
     showToast("⏸ Задача скрыта в архив (Пауза)");
     
@@ -903,7 +919,7 @@ window.rbi_cancelTask = async function(taskId) {
     
     if(!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Отменена: ${reason}`);
-    
+    task.updatedAt = new Date().toISOString();
     await dbPut(STORES.TASKS, task);
     showToast("🚫 Задача отменена");
     
@@ -940,7 +956,7 @@ window.rbi_postponeTask = async function(taskId) {
     } else {
         showToast(`➡️ Задача перенесена на ${newDate.toLocaleDateString('ru-RU')}`);
     }
-
+    task.updatedAt = new Date().toISOString();
     await dbPut(STORES.TASKS, task);
     
     document.getElementById('task-details-modal').style.display = 'none';
