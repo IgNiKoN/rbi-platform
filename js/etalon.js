@@ -283,3 +283,76 @@ window.printEtalonAct = async function(historyId) {
 
     printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode);
 };
+
+// === ОТКРЫТИЕ ГОТОВОГО АКТА-ЭТАЛОНА ===
+// === ОТКРЫТИЕ ГОТОВОГО АКТА-ЭТАЛОНА ===
+window.openEtalonViewer = async function(id) {
+    let record = etalonActsArray.find(c => String(c.id) === String(id));
+    
+    // FALLBACK: Если эталон прилетел из облака и его нет в оперативной памяти, достаем из БД
+    if (!record) {
+        showToast("⏳ Загрузка Акта-Эталона из базы...");
+        record = await dbGet(STORES.ETALON_ACTS, id);
+        if (record) etalonActsArray.push(record); // Кешируем
+    }
+
+    if (!record) {
+        return showToast("❌ Ошибка: Эталон не найден в базе данных");
+    }
+
+    const d = record.details || {};
+    const elements = d.elements || [];
+
+    let elementsHtml = '';
+    for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        let photoHtml = el.photo ? `<img src="${window.getPhotoSrc(el.photo)}" class="w-full h-48 object-contain rounded-lg border border-slate-200 cursor-pointer mt-2 bg-slate-50" onclick="openPhotoViewer('${el.photo}')">` : '<div class="text-xs text-slate-400 mt-2">Нет фото</div>';
+        
+        elementsHtml += `
+            <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-3">
+                <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase mb-1">${i + 1}. ${el.name}</div>
+                <div class="text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-medium">${el.desc || 'Нет описания'}</div>
+                ${photoHtml}
+            </div>
+        `;
+    }
+
+    const bodyHtml = `
+        <div class="text-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase">${record.contractorName}</div>
+            <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">${record.templateTitle}</div>
+            <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">${new Date(record.date).toLocaleString('ru-RU')}</div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 mb-4">
+            <div class="bg-white dark:bg-slate-800 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Локация</div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">${record.location || '-'}</div>
+            </div>
+            <div class="bg-white dark:bg-slate-800 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Участники</div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">${d.participants || '-'}</div>
+            </div>
+        </div>
+
+        <div class="bg-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-50 p-3 rounded-xl border border-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-200 mb-4">
+            <div class="text-[10px] font-black uppercase text-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-700 mb-1 tracking-widest">Отклонения и допущения:</div>
+            <div class="text-[11px] font-medium text-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-900 whitespace-pre-wrap">${d.deviations}</div>
+        </div>
+
+        <h3 class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Зафиксированные элементы</h3>
+        ${elementsHtml}
+    `;
+
+    document.getElementById('etalon-view-body').innerHTML = bodyHtml;
+    
+    document.getElementById('etalon-view-print-btn').onclick = () => {
+        document.getElementById('etalon-view-modal').style.display = 'none';
+        document.body.classList.remove('modal-open');
+        printEtalonAct(id);
+    };
+
+    const modal = document.getElementById('etalon-view-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+};

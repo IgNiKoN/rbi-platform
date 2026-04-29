@@ -236,28 +236,27 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
     }
 
     // --- ЛОГИКА 3: РУТИНА И ОТЧЕТНОСТЬ ---
-    // --- ЛОГИКА 3: РУТИНА И ОТЧЕТНОСТЬ ---
-    const dayOfWeek = now.getDay(); // 0 = Sun, 5 = Fri
-    const isFirstDayOfMonth = now.getDate() <= 3; // Первые числа месяца
+    const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // Делаем воскресенье 7-м днем, а не 0
+    const currentDayOfMonth = now.getDate();
     
     // Вычисляем за 3 дня до конца месяца для "Дня Качества"
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const isEndOfMonth = now.getDate() >= (daysInMonth - 3) && now.getDate() <= daysInMonth;
 
-    if (dayOfWeek === 5) { // Пятница
-        addTask('fmea_weekly', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Зайдите в Инженер -> FMEA и позвольте ИИ проанализировать коренные причины брака за неделю.', 3, now);
+    if (dayOfWeek === parseInt(appSettings.taskFmeaDay || '5')) { 
+        addTask('fmea_weekly', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Зайдите в Инженер -> FMEA и позвольте ИИ проанализировать коренные причины брака.', 3, now);
         addTask('poster_weekly', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте в Аналитике плакат А3 и повесьте в штабе подрядчиков.', 2, now);
     }
-    if (dayOfWeek === 1 || dayOfWeek === 2) { // Понедельник-Вторник
-        addTask('meeting_weekly', 'meeting', 'Совещание', 'Еженедельный разбор качества', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку по худшим подрядчикам.', 4, now);
+    if (dayOfWeek === parseInt(appSettings.taskMeetingDay || '1')) { 
+        addTask('meeting_weekly', 'meeting', 'Совещание', 'Еженедельный разбор качества', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку.', 4, now);
     }
-    if (isFirstDayOfMonth) {
-        addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса объекта за 30 дней.', 3, now);
+    if (currentDayOfMonth === parseInt(appSettings.taskMonthReportDay || '1')) {
+        addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса объекта.', 3, now);
     }
     
-    // НОВАЯ ЛОГИКА: Подготовка к Дню Качества
+    // Подготовка к Дню Качества
     if (isEndOfMonth) {
-        addTask('q_day_report', 'report', 'Отчет', 'Консолидированный отчет: День Качества', 'Аналитика Руководителя', 'Системная', 'Приближается дата Дня Качества. Система автоматически сгенерирует мега-отчет за месяц (Влияние инженеров, Метрики, Практики, FMEA).', 4, now);
+        addTask('q_day_report', 'report', 'Отчет', 'Консолидированный отчет: День Качества', 'Аналитика Руководителя', 'Системная', 'Приближается дата Дня Качества. Система сгенерирует мега-отчет за месяц.', 4, now);
     }
 
     if (force) showToast(`✅ План актуализирован. Добавлено ${newTasksCount} задач.`);

@@ -250,7 +250,7 @@
 
     <!-- === МОДАЛКА ПРОСМОТРА ФОТО === -->
     <div id="photo-viewer-overlay"
-        class="fixed inset-0 bg-black/90 z-[6000] flex-col items-center justify-center transition-opacity duration-300 opacity-0"
+        class="fixed inset-0 bg-black/90 z-[9999] flex-col items-center justify-center transition-opacity duration-300 opacity-0"
         style="display:none;" onclick="closePhotoViewer()">
         <div class="absolute top-5 right-5 w-10 h-10 bg-white/20 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform cursor-pointer"
             onclick="closePhotoViewer()">
@@ -944,25 +944,7 @@
 
             <!-- Подвкладка: FMEA АНАЛИЗ -->
             <div id="eng-sub-fmea" class="eng-sub-section hidden mx-1 mt-2">
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4">
-                    <div class="flex justify-between items-center mb-2">
-                        <div>
-                            <h2 class="font-black text-[14px] uppercase text-slate-800 dark:text-white">FMEA-Анализ</h2>
-                            <p class="text-[10px] text-[var(--text-muted)] mt-0.5">Еженедельный разбор коренных причин дефектов (B2/B3)</p>
-                        </div>
-                        <div class="w-10 h-10 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-xl flex items-center justify-center border border-purple-100 dark:border-purple-800">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                        </div>
-                    </div>
-                    <div class="flex gap-2 mt-3">
-                        <button onclick="rbi_generateFmeaTable()" class="flex-1 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Собрать дефекты за неделю
-                        </button>
-                    </div>
-                </div>
-                <div id="rbi-fmea-container" class="pb-8">
-                    <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">Таблица не сформирована</div>
-                </div>
+                <div id="rbi-fmea-container" class="pb-8"></div>
             </div>
 
             <!-- Подвкладка: ДОСТИЖЕНИЯ (СЮДА ВСТАЛ СТАРЫЙ БЛОК) -->
@@ -2036,13 +2018,14 @@
         <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
             <div id="practices-auto-detector" class="mb-4"></div>
             <div class="flex justify-between items-center mb-3">
-                <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека
-                    Практик</h2>
+                <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека Практик</h2>
             </div>
             <div id="practices-list-container" class="space-y-4 pb-8">
                 <!-- Список карточек -->
             </div>
         </div>
+
+        </div> <!-- Вот сюда переехал закрывающий тег вкладки Справочника -->
 
         <!-- ВКЛАДКА 5: НАСТРОЙКИ -->
         <div id="tab-settings" class="view-section">
@@ -2363,7 +2346,47 @@
                         </div>
                     </div>
                 </details>
-
+                 <!-- РАСПИСАНИЕ ЗАДАЧ -->
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">🗓  Расписание рутинных задач</span>
+                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
+                    </summary>
+                    <div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
+                            <div>
+                                <div class="font-bold text-sm">Совещание (Мемо)</div>
+                            </div>
+                            <select id="set-task-meeting" class="input-base w-32" onchange="toggleSetting('taskMeetingDay', this)">
+                                <option value="1">Понедельник</option>
+                                <option value="2">Вторник</option>
+                                <option value="3">Среда</option>
+                                <option value="4">Четверг</option>
+                                <option value="5">Пятница</option>
+                            </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
+                            <div>
+                                <div class="font-bold text-sm">FMEA и Плакаты</div>
+                            </div>
+                            <select id="set-task-fmea" class="input-base w-32" onchange="toggleSetting('taskFmeaDay', this)">
+                                <option value="1">Понедельник</option>
+                                <option value="4">Четверг</option>
+                                <option value="5">Пятница</option>
+                            </select>
+                        </div>
+                        <div class="p-4 flex justify-between items-center bg-[var(--hover-bg)]">
+                            <div>
+                                <div class="font-bold text-sm">Ежемесячный отчет</div>
+                            </div>
+                            <select id="set-task-month" class="input-base w-32" onchange="toggleSetting('taskMonthReportDay', this)">
+                                <option value="1">1-е число</option>
+                                <option value="5">5-е число</option>
+                                <option value="10">10-е число</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
                 <!-- УПРАВЛЕНИЕ ДАННЫМИ И БЭКАПЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
@@ -3113,7 +3136,7 @@
         </div>
     </div>
     <input type="file" id="task-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleTaskCompletionPhoto(event)">
-
+    <input type="file" id="meeting-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleMeetingPhotoUpload(event)">
     <!-- === МОДАЛКА AI-ЧАТА ПО НОРМАТИВАМ === -->
     <div id="ai-chat-modal"
         class="fixed inset-0 bg-slate-900/80 z-[7000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300"
@@ -3371,6 +3394,28 @@
                 <input type="text" id="faq-search-input" class="input-base text-[12px] !py-2.5 pl-10" placeholder="Поиск по вопросам..." oninput="filterFaq()">
             </div>
             <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50" id="faq-list-container"></div>
+        </div>
+    </div>
+
+    <!-- === МОДАЛКА ПРОСМОТРА ЭТАЛОНА === -->
+    <div id="etalon-view-modal" class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm" onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
+        <div class="bg-[var(--card-bg)] w-full max-w-2xl max-h-[95vh] rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Акт-Эталон
+                </div>
+                <button onclick="document.getElementById('etalon-view-modal').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+            </div>
+            <div id="etalon-view-body" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+                <!-- Контент генерируется JS -->
+            </div>
+            <div class="p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 shrink-0">
+                <button id="etalon-view-print-btn" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    Скачать / Распечатать (PDF)
+                </button>
+            </div>
         </div>
     </div>
 </body>

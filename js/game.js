@@ -1334,7 +1334,7 @@ window.gameGenerateAuditPlan = function () {
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail(${c.id});" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
+                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail('${c.id}');" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
                         👁️ Открыть Акт
                     </button>
                     <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open'); startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
@@ -1951,128 +1951,254 @@ window.gameUpdateEngineerName = function (newName) {
 };
 
 /* ============================================================================ */
-/* RBI NEW: МОДУЛЬ FMEA-АНАЛИЗА (АВТОМАТИЗАЦИЯ ПОИСКА КОРЕННЫХ ПРИЧИН)          */
+/* RBI NEW: МОДУЛЬ FMEA-АНАЛИЗА (МЕГА-ТАБЛИЦА И РЕЕСТР)                         */
 /* ============================================================================ */
 
-window.rbi_fmeaRecords = []; // Массив для будущих сохранений (пока работаем с черновиком)
-
+// 1. РЕЕСТР FMEA И ПАНЕЛЬ УПРАВЛЕНИЯ
 window.rbi_renderFmeaHistory = function () {
-    // В будущем тут можно выводить сохраненные FMEA.
-    // Сейчас мы просто оставляем кнопку "Собрать дефекты"
+    const container = document.getElementById('rbi-fmea-container');
+    if (!container) return;
+
+    // Кнопки управления и фильтры
+    let headerHtml = `
+        <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <div>
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white">Новый FMEA-Анализ</h2>
+                    <p class="text-[10px] text-slate-500 font-bold mt-0.5">В таблицу попадут только дефекты B2/B3, повторившиеся более 3 раз за выбранный период.</p>
+                </div>
+            </div>
+            <div class="flex gap-2 items-end">
+                <div class="flex-1">
+                    <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Период анализа</label>
+                    <select id="fmea-period-select" class="input-base !py-2.5 text-[11px] font-bold">
+                        <option value="WEEK">За последние 7 дней (Неделя)</option>
+                        <option value="MONTH">За последние 30 дней (Месяц)</option>
+                        <option value="QUARTER">За последние 90 дней (Квартал)</option>
+                    </select>
+                </div>
+                <button onclick="rbi_generateFmeaTable()" class="flex-1 bg-purple-600 text-white py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 
+                    Сформировать таблицу
+                </button>
+            </div>
+        </div>
+        
+        <div id="fmea-workspace" class="mb-4"></div>
+
+        <div class="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2 pl-1">Архив проведенных FMEA</div>
+        <div id="fmea-registry-list" class="space-y-3 pb-8"></div>
+    `;
+
+    container.innerHTML = headerHtml;
+    rbi_renderFmeaRegistry();
 };
 
-// ГЕНЕРАЦИЯ FMEA-ТАБЛИЦЫ НА ЛЕТУ
+window.rbi_renderFmeaRegistry = function() {
+    const listContainer = document.getElementById('fmea-registry-list');
+    if (!listContainer) return;
+
+    if (!window.rbi_fmeaRecords || window.rbi_fmeaRecords.length === 0) {
+        listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Архив пуст</div>`;
+        return;
+    }
+
+    const sorted = [...window.rbi_fmeaRecords].sort((a,b) => new Date(b.date) - new Date(a.date));
+    listContainer.innerHTML = sorted.map(f => `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col gap-2">
+            <div class="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg flex items-center justify-center font-black text-sm">📊</div>
+                    <div>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${f.title}</div>
+                        <div class="text-[9px] font-bold text-slate-500">Период: ${f.periodName} | Разобрано дефектов: ${f.defects.length}</div>
+                    </div>
+                </div>
+                <div class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">
+                    ${new Date(f.date).toLocaleDateString('ru-RU')}
+                </div>
+            </div>
+            <div class="flex gap-2 pt-1">
+                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1.5">🖨️ PDF Печать</button>
+                <button onclick="rbi_deleteFmea('${f.id}')" class="bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+};
+
+window.rbi_deleteFmea = async function(id) {
+    if(!confirm("Удалить этот FMEA отчет?")) return;
+    window.rbi_fmeaRecords = window.rbi_fmeaRecords.filter(m => m.id !== id);
+    await dbDelete(STORES.FMEA, id);
+    rbi_renderFmeaRegistry();
+    showToast("🗑️ Отчет удален");
+};
+
+// 2. ГЕНЕРАЦИЯ МЕГА-ТАБЛИЦЫ
 window.rbi_generateFmeaTable = function () {
-    const container = document.getElementById('rbi-fmea-container');
+    const workspace = document.getElementById('fmea-workspace');
+    const periodVal = document.getElementById('fmea-period-select').value;
+    
+    let days = 7; let periodName = "Неделя";
+    if (periodVal === 'MONTH') { days = 30; periodName = "Месяц"; }
+    if (periodVal === 'QUARTER') { days = 90; periodName = "Квартал"; }
 
     const d = new Date();
-    const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
-    const weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
+    const startDate = new Date(d); startDate.setDate(startDate.getDate() - days);
+    
+    // Фильтруем проверки за период
+    const periodChecks = contractorArray.filter(c => new Date(c.date) >= startDate);
 
-    let defectsList = [];
+    let defectsCountMap = {}; // Считаем повторения
+    let defectsDataMap = {};  // Храним данные для рендера
 
-    weekChecks.forEach(c => {
+    periodChecks.forEach(c => {
         if (c.state && c.templateKey) {
             Object.keys(c.state).forEach(id => {
                 if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
                     const flat = getFlatList(userTemplates[c.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_', '')]?.groups);
                     const item = flat.find(x => x.id == id);
-                    if (item && (item.w === 3 || c.state[id] === 'fail_escalated' || item.w === 2)) {
-                        // Ищем причину и коммент
-                        let cause = 'Не указана';
-                        if (c.details && c.details[id] && c.details[id].comment) {
-                            cause = c.details[id].comment;
+                    
+                    if (item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
+                        const uniqueKey = `${c.contractorName}_${item.n}`;
+                        
+                        if (!defectsCountMap[uniqueKey]) {
+                            defectsCountMap[uniqueKey] = 0;
+                            defectsDataMap[uniqueKey] = {
+                                contractor: c.contractorName,
+                                workTitle: c.templateTitle,
+                                defectName: item.n,
+                                isB3: c.state[id] === 'fail_escalated' || item.w === 3,
+                                photo: c.photos && c.photos[id] ? c.photos[id] : null
+                            };
                         }
-
-                        defectsList.push({
-                            contractor: c.contractorName,
-                            defectName: item.n,
-                            isB3: c.state[id] === 'fail_escalated' || item.w === 3,
-                            cause: cause
-                        });
+                        defectsCountMap[uniqueKey]++;
+                        // Обновляем фото, если появилось новое
+                        if (c.photos && c.photos[id]) defectsDataMap[uniqueKey].photo = c.photos[id];
                     }
                 }
             });
         }
     });
 
-    if (defectsList.length === 0) {
-        container.innerHTML = `<div class="text-center py-10 text-green-600 font-bold text-[11px] uppercase bg-green-50 rounded-xl border border-green-200">Дефектов B2/B3 за 7 дней не найдено!</div>`;
+    const FMEA_THRESHOLD = 3; // Порог повторений для попадания в FMEA
+    
+    const finalDefects = [];
+    for (let key in defectsCountMap) {
+        if (defectsCountMap[key] >= FMEA_THRESHOLD) {
+            const def = defectsDataMap[key];
+            def.count = defectsCountMap[key];
+            
+            // Проверка на "Повторный" (Был ли он уже в архивных FMEA?)
+            def.isRepeated = false;
+            window.rbi_fmeaRecords.forEach(f => {
+                if (f.defects.some(d => d.contractor === def.contractor && d.defectName === def.defectName)) {
+                    def.isRepeated = true;
+                }
+            });
+
+            finalDefects.push(def);
+        }
+    }
+
+    if (finalDefects.length === 0) {
+        workspace.innerHTML = `<div class="text-center py-6 text-green-600 font-bold text-[11px] uppercase bg-green-50 rounded-xl border border-green-200 shadow-sm mb-4">Системных дефектов (>${FMEA_THRESHOLD} повторений) за период не найдено. Идеально!</div>`;
         return;
     }
 
-    // Убираем дубликаты
-    const uniqueDefects = [];
-    defectsList.forEach(d => {
-        if (!uniqueDefects.find(x => x.contractor === d.contractor && x.defectName === d.defectName)) {
-            uniqueDefects.push(d);
-        }
-    });
+    finalDefects.sort((a, b) => b.count - a.count); // Самые частые сверху
 
-    let rowsHtml = uniqueDefects.map((def, idx) => `
-        <tr class="fmea-row hover:bg-purple-50/50 transition-colors">
-            <!-- Скрытые данные для ИИ -->
-            <input type="hidden" class="fmea-meta-contr" value="${def.contractor}">
-            <input type="hidden" class="fmea-meta-defect" value="${def.defectName}">
-            <input type="hidden" class="fmea-meta-cause" value="${def.cause}">
+    // Рендер строк мега-таблицы
+    let rowsHtml = finalDefects.map((def, idx) => {
+        const photoHtml = def.photo ? `<img src="${window.getPhotoSrc(def.photo)}" class="w-12 h-12 object-cover rounded border border-slate-300 mt-1 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">` : '';
+        const repeatedTag = def.isRepeated ? `<div class="text-[8px] bg-red-600 text-white px-1 py-0.5 rounded uppercase font-black w-fit mt-1 animate-pulse">Повторный</div>` : '';
+        
+        return `
+        <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
+            <input type="hidden" class="f-contr" value="${def.contractor}">
+            <input type="hidden" class="f-work" value="${def.workTitle}">
+            <input type="hidden" class="f-defect" value="${def.defectName}">
+            <input type="hidden" class="f-photo" value="${def.photo || ''}">
+            <input type="hidden" class="f-count" value="${def.count}">
             
-            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[150px]">
+                <div class="text-[9px] font-bold text-slate-400 uppercase leading-tight mb-0.5">${def.workTitle}</div>
                 <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight mb-1">${def.contractor}</div>
-                <div class="text-[10px] text-slate-600 dark:text-slate-400 font-medium leading-snug">
-                    ${def.isB3 ? '<span class="bg-red-600 text-white px-1 rounded mr-1">B3</span>' : ''}${def.defectName}
+                <div class="text-[10px] text-slate-600 dark:text-slate-300 font-medium leading-snug">
+                    ${def.isB3 ? '<span class="bg-red-600 text-white px-1 rounded mr-1 font-bold">B3</span>' : ''}
+                    <b>${def.defectName}</b> (${def.count} раз)
                 </div>
+                ${repeatedTag}
+                ${photoHtml}
             </td>
-            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
-                <textarea class="fmea-ai-cause input-base w-full h-16 resize-none text-[10px] p-1.5" placeholder="Коренная причина...">${def.cause}</textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[120px]">
+                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50">
+                    <option value="Ошибки СМР">Ошибки СМР</option>
+                    <option value="Проект">Проектная ошибка</option>
+                    <option value="Материалы">Материалы / Завод</option>
+                    <option value="Условия">Внешние условия</option>
+                </select>
             </td>
-            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
-                <textarea class="fmea-ai-effect input-base w-full h-16 resize-none text-[10px] p-1.5" placeholder="Последствия (Риски)..."></textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Коренная причина..."></textarea>
             </td>
-            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top">
-                <textarea class="fmea-ai-action input-base w-full h-16 resize-none text-[10px] p-1.5 bg-purple-50 dark:bg-purple-900/20" placeholder="Корректирующее действие..."></textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Последствия (Риски)..."></textarea>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-blue-50" placeholder="Как устранить сейчас..."></textarea>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-green-50" placeholder="Системное предотвращение..."></textarea>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[80px]">
+                <div class="text-center">
+                    <div class="text-[8px] font-bold text-slate-400 mb-1">RPN (1-1000)</div>
+                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 !py-2" placeholder="0" min="1" max="1000">
+                </div>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 
-    const html = `
-        <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-2xl shadow-sm p-4 animate-fadeIn overflow-x-auto custom-scrollbar">
-            <div class="flex justify-between items-center mb-4">
-                <div class="text-[11px] font-black text-purple-700 uppercase tracking-widest flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg> 
-                    Рабочая таблица FMEA
+    workspace.innerHTML = `
+        <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-2xl shadow-sm p-4 animate-fadeIn mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-[11px] font-black text-purple-700 uppercase tracking-widest">
+                    Черновик FMEA (${periodName})
                 </div>
-                <button onclick="rbi_fillFmeaWithAi()" id="btn-fmea-ai" class="bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1">
-                    🤖 AI-Автозаполнение
+                <button onclick="rbi_fillFmeaWithAi()" id="btn-fmea-ai" class="bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1.5">
+                    🤖 Автозаполнение (ИИ)
                 </button>
             </div>
             
-            <table class="w-full text-left border-collapse min-w-[700px]">
-                <thead>
-                    <tr class="bg-slate-100 dark:bg-slate-900 text-slate-500 uppercase text-[9px] font-bold tracking-wider">
-                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Проблема (Подрядчик / Дефект)</th>
-                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Коренная причина (Почему?)</th>
-                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4">Последствия (Риск)</th>
-                        <th class="p-2 border border-slate-200 dark:border-slate-700 w-1/4 text-purple-600">Действие (Что делаем)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rowsHtml}
-                </tbody>
-            </table>
-            
-            <div class="mt-4 flex gap-2">
-                <!-- Кнопка выгрузки пока делает простой алерт, так как Excel-экспорт FMEA - это отдельный плагин -->
-                <button onclick="showToast('Выгрузка FMEA в Excel будет доступна в следующем обновлении.')" class="bg-green-50 text-green-700 border border-green-200 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95 transition-transform flex items-center gap-1.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В Excel
-                </button>
+            <div class="overflow-x-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 dark:bg-slate-900 text-slate-500 uppercase text-[9px] font-bold tracking-wider">
+                            <th class="p-2 border border-slate-200 dark:border-slate-700">1. Подрядчик / Проблема</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700">2. Этап возникновения</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700">3. Коренная причина</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700">4. Последствия (Риски)</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700 text-blue-600">5. Устранение (Fix)</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700 text-green-600">6. Предотвращение</th>
+                            <th class="p-2 border border-slate-200 dark:border-slate-700 text-purple-600 text-center">7. RPN</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
             </div>
+            
+            <button onclick="rbi_saveFmea('${periodName}')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                💾 Сохранить отчет в Систему
+            </button>
         </div>
     `;
-
-    container.innerHTML = html;
 };
 
-// АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
+// 3. АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
 window.rbi_fillFmeaWithAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
 
@@ -2080,55 +2206,166 @@ window.rbi_fillFmeaWithAi = async function () {
     if (rows.length === 0) return;
 
     const btn = document.getElementById('btn-fmea-ai');
-    btn.innerHTML = `<span class="animate-pulse">⏳ Идет анализ...</span>`;
+    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть думает...</span>`;
     btn.disabled = true;
 
-    // Собираем дефекты в один промпт (чтобы сэкономить токены, шлем пачкой)
     let defectsContext = [];
     rows.forEach((row, idx) => {
-        const defect = row.querySelector('.fmea-meta-defect').value;
-        const cause = row.querySelector('.fmea-meta-cause').value;
-        defectsContext.push(`Дефект ${idx}: [${defect}]. Комментарий инженера: [${cause}].`);
+        const contr = row.querySelector('.f-contr').value;
+        const work = row.querySelector('.f-work').value;
+        const defect = row.querySelector('.f-defect').value;
+        defectsContext.push(`ID ${idx}: Подрядчик [${contr}], Работа [${work}], Дефект [${defect}].`);
     });
 
-    const promptSystem = `Ты — эксперт качества (Quality Manager). Проведи FMEA-анализ списка дефектов.
-    Твоя задача — для каждого дефекта предложить: 1. Коренную причину (если не указана). 2. Риски (Последствия). 3. Конкретное корректирующее действие.
-    Отвечай СТРОГО в формате JSON-массива, где каждый объект имеет ключи: "cause", "effect", "action".
-    Порядок объектов в массиве должен СТРОГО совпадать с порядком дефектов в запросе. Пиши ОЧЕНЬ коротко (1-2 предложения).`;
+    const promptSystem = `Ты — Главный Инженер Качества. Проведи FMEA-анализ (Анализ видов и последствий отказов) списка частых дефектов.
+    Твоя задача — вернуть строго JSON-массив. Для каждого дефекта (по его ID) сформируй объект с ключами:
+    "stage" - этап возникновения (выбери одно: "Ошибки СМР", "Проект", "Материалы", "Условия").
+    "cause" - коренная причина дефекта (почему рабочие так делают? 1 предложение).
+    "effect" - последствия дефекта для здания (1 предложение).
+    "fix" - предложение по устранению уже допущенного брака (1 предложение).
+    "prevent" - системная мера по предотвращению в будущем (1 предложение).
+    "rpn" - число Risk Priority Number от 1 до 1000 (Severity * Occurrence * Detection). Чем опаснее дефект, тем выше RPN.`;
 
     try {
         const responseText = await window.callAI([
             { role: 'system', content: promptSystem },
-            { role: 'user', content: `Вот список дефектов:\n${defectsContext.join('\n')}` }
-        ], { temperature: 0.2, max_tokens: 1500 });
+            { role: 'user', content: `Анализируй эти дефекты и верни массив JSON (порядок как в списке):\n${defectsContext.join('\n')}` }
+        ], { temperature: 0.3, max_tokens: 2000 });
 
-        // Извлекаем JSON из ответа нейросети
         const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) throw new Error("Нейросеть не вернула JSON");
 
         const aiData = JSON.parse(jsonMatch[0]);
 
-        // Раскидываем ответы по ячейкам
         rows.forEach((row, idx) => {
             if (aiData[idx]) {
-                const causeInput = row.querySelector('.fmea-ai-cause');
-                const effectInput = row.querySelector('.fmea-ai-effect');
-                const actionInput = row.querySelector('.fmea-ai-action');
-
-                // Если инженер не писал свою причину - ставим причину от ИИ
-                if (causeInput.value === 'Не указана' || causeInput.value.trim() === '') causeInput.value = aiData[idx].cause;
-
-                effectInput.value = aiData[idx].effect;
-                actionInput.value = aiData[idx].action;
+                const data = aiData[idx];
+                const stageSel = row.querySelector('.f-stage');
+                if (Array.from(stageSel.options).some(opt => opt.value === data.stage)) {
+                    stageSel.value = data.stage;
+                }
+                row.querySelector('.f-cause').value = data.cause || '';
+                row.querySelector('.f-effect').value = data.effect || '';
+                row.querySelector('.f-fix').value = data.fix || '';
+                row.querySelector('.f-prevent').value = data.prevent || '';
+                row.querySelector('.f-rpn').value = data.rpn || 0;
             }
         });
 
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'fmea_table');
-        showToast("✨ FMEA таблица заполнена нейросетью!");
+        if (typeof gameLogAction === 'function') gameLogAction('fmea_master', 'ai_table');
+        showToast("✨ Мега-таблица FMEA заполнена нейросетью!");
     } catch (e) {
         showToast("❌ Ошибка ИИ (попробуйте еще раз): " + e.message);
     } finally {
-        btn.innerHTML = `🤖 AI-Автозаполнение`;
+        btn.innerHTML = `🤖 Автозаполнение (ИИ)`;
         btn.disabled = false;
     }
+};
+
+// 4. СОХРАНЕНИЕ FMEA В БАЗУ
+window.rbi_saveFmea = async function(periodName) {
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
+    
+    const rows = document.querySelectorAll('.fmea-row');
+    const defects = [];
+    
+    rows.forEach(row => {
+        defects.push({
+            contractor: row.querySelector('.f-contr').value,
+            workTitle: row.querySelector('.f-work').value,
+            defectName: row.querySelector('.f-defect').value,
+            photo: row.querySelector('.f-photo').value,
+            count: row.querySelector('.f-count').value,
+            stage: row.querySelector('.f-stage').value,
+            cause: row.querySelector('.f-cause').value.trim(),
+            effect: row.querySelector('.f-effect').value.trim(),
+            fix: row.querySelector('.f-fix').value.trim(),
+            prevent: row.querySelector('.f-prevent').value.trim(),
+            rpn: row.querySelector('.f-rpn').value
+        });
+    });
+
+    const fmeaRecord = {
+        id: 'fmea_' + Date.now().toString(36),
+        date: new Date().toISOString(),
+        author: document.getElementById('inp-inspector')?.value || 'Инженер',
+        title: `FMEA Анализ от ${new Date().toLocaleDateString('ru-RU')}`,
+        periodName: periodName,
+        defects: defects
+    };
+
+    window.rbi_fmeaRecords.push(fmeaRecord);
+    await dbPut(STORES.FMEA, fmeaRecord);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    document.getElementById('fmea-workspace').innerHTML = '';
+    showToast("💾 FMEA Отчет сохранен в Архив!");
+    rbi_renderFmeaRegistry();
+};
+
+// 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)
+window.rbi_printFmeaPdf = function(fmeaId) {
+    const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
+    if (!record) return showToast("Запись не найдена");
+
+    // Сортируем по RPN (Самые опасные сверху)
+    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
+
+    let rowsHtml = sortedDefects.map(d => {
+        let photoHtml = d.photo ? `<div style="margin-top:5px; height:60px; overflow:hidden; border-radius:4px;"><img src="${window.getPhotoSrc(d.photo)}" style="width:100%; height:100%; object-fit:cover;"></div>` : '';
+        
+        let rpnColor = '#16a34a'; // Зеленый
+        if (d.rpn >= 300) rpnColor = '#d97706'; // Оранжевый
+        if (d.rpn >= 600) rpnColor = '#dc2626'; // Красный
+
+        return `
+        <tr style="border-bottom: 1px solid #cbd5e1; background: white;">
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top;">
+                <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${d.workTitle}</div>
+                <div style="font-size: 12px; font-weight: 900; color: #0f172a; margin-top: 2px;">${d.contractor}</div>
+                <div style="font-size: 11px; color: #b91c1c; font-weight: bold; margin-top: 4px;">${d.defectName} (Повторов: ${d.count})</div>
+                ${photoHtml}
+            </td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">
+                <div style="font-size: 9px; background: #e2e8f0; display: inline-block; padding: 2px 4px; border-radius: 4px; margin-bottom: 4px; font-weight:bold;">${d.stage}</div>
+                <div>${d.cause || '-'}</div>
+            </td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">${d.effect || '-'}</td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1d4ed8; background: #eff6ff;">${d.fix || '-'}</td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #166534; background: #f0fdf4;">${d.prevent || '-'}</td>
+            <td style="padding: 10px; vertical-align: top; text-align: center;">
+                <div style="font-size: 20px; font-weight: 900; color: ${rpnColor};">${d.rpn || 0}</div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">Анализ видов и последствий отказов (FMEA)</h1>
+            <div style="font-size: 14px; color: #64748b; font-weight: bold; margin-top: 5px;">Отчет: ${record.title} | Период: ${record.periodName} | Инженер: ${record.author}</div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1;">
+            <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 10px; color: #475569;">
+                <tr>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">1. Проблема / Подрядчик</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">2. Коренная причина</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">3. Риски и последствия</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left; color: #1d4ed8;">4. Устранение</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 20%; text-align: left; color: #166534;">5. Системное Предотвращение</th>
+                    <th style="padding: 12px 10px; border-bottom: 2px solid #cbd5e1; width: 8%; text-align: center; color: #7e22ce;">RPN</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 15px; font-size: 10px; color: #94a3b8; text-align: right;">
+            *RPN (Risk Priority Number) — приоритетное число риска. Чем выше RPN, тем опаснее дефект.
+        </div>
+    `;
+
+    printPdfShell(`FMEA Анализ`, content, "A3", "landscape", "browser");
 };

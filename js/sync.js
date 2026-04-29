@@ -6,7 +6,7 @@ window.syncConfig = { enabled: false, engineerName: '', projectCode: '', pinHash
 window.isSyncing = false;
 let syncTimeout = null;
 
-const SYNC_FULL_ACCESS_HASH = "16e1fc3fccf0e21ea5c3a37fc6bdfe2db9ee3646ca153ff29ccfbbe868e7ec8b";
+const SYNC_FULL_ACCESS_HASH = "cd6ca24c2ed2b7c6c4c549de010cc106316279f972b2d075cd6a454d45be70d8";
 
 try {
     let saved = localStorage.getItem('rbi_sync_config');
@@ -270,7 +270,7 @@ window.changeSyncMode = function(mode) {
 };
 
 window.verifyFullAccessPin = async function() {
-    const input = document.getElementById('sync-full-access-pin').value;
+    const input = document.getElementById('sync-full-access-pin').value.trim();
     const inputHash = await window.hashPin(input);
     if (inputHash === SYNC_FULL_ACCESS_HASH) {
         document.getElementById('sync-full-access-modal').remove();
@@ -557,6 +557,11 @@ window.pullCloudObjects = async function(objectType) {
 // ГЛАВНЫЙ БЛОК СИНХРОНИЗАЦИИ (ИСПРАВЛЕНО СОХРАНЕНИЕ ОБЪЕКТОВ)
 // ==========================================
 window.triggerSync = async function(mode = 'silent') {
+    // ЖЕСТКАЯ ЗАЩИТА: Запрещаем синхронизацию в демо-режиме
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) {
+        if (mode === 'manual') safeToast("В демо-режиме синхронизация отключена!");
+        return;
+    }
     if (!window.isSyncEnabled() || !window.supabaseClient) return;
 
     if (window.isSyncing) {

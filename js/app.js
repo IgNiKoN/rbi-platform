@@ -64,7 +64,10 @@ let appSettings = {
     autoBackupDay: '5', // 5 - Пятница
     autoBackupShare: true,
     autoManagerEnabled: true,
-    autoManagerDay: '5' // 5 - Пятница
+    autoManagerDay: '5', // 5 - Пятница
+    taskMeetingDay: '1',      // Понедельник
+    taskFmeaDay: '5',         // Пятница
+    taskMonthReportDay: '1'   // 1-е число месяца
 };
 
 // Звуковые эффекты (base64 для офлайна)
@@ -155,7 +158,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (hasNewNodes) {
                 clearTimeout(imgDebounceTimer);
                 imgDebounceTimer = setTimeout(() => {
-                    const imgs = document.querySelectorAll('img[src^="local://"]:not([data-local-src])');
+                    const imgs = document.querySelectorAll('img[src^="local://"]:not([data-local-src]), img[src^="cloud://"]:not([data-local-src])');
                     for (let i = 0; i < imgs.length; i++) {
                         const img = imgs[i];
                         img.setAttribute('data-local-src', img.src);
@@ -200,8 +203,6 @@ async function saveSessionData() {
         console.error('Ошибка сохранения в IndexedDB:', e);
         showToast('⚠️ Ошибка автосохранения!');
     }
-    
-    if (typeof triggerSync === 'function') triggerSync('silent');
 }
 
 async function restoreSession() {
@@ -826,6 +827,9 @@ function renderSettingsTab() {
     if(document.getElementById('set-ana-ai')) document.getElementById('set-ana-ai').checked = appSettings.anaEngAi;
     if(document.getElementById('set-ana-photos')) document.getElementById('set-ana-photos').checked = appSettings.anaEngPhotos;
     if(document.getElementById('set-ana-top')) document.getElementById('set-ana-top').checked = appSettings.anaOpTopDefects;
+    if(document.getElementById('set-task-meeting')) document.getElementById('set-task-meeting').value = appSettings.taskMeetingDay || '1';
+    if(document.getElementById('set-task-fmea')) document.getElementById('set-task-fmea').value = appSettings.taskFmeaDay || '5';
+    if(document.getElementById('set-task-month')) document.getElementById('set-task-month').value = appSettings.taskMonthReportDay || '1';
     // 3.5. AI-настройки
     if(document.getElementById('set-ai-enabled')) {
         document.getElementById('set-ai-enabled').checked = appSettings.aiEnabled;
@@ -1513,7 +1517,7 @@ function exportSelectedCsv() {
 // 100% СОВМЕСТИМАЯ МОДАЛКА ИСТОРИИ ИЗ v15
 function showHistoryDetail(id) {
     let sortedArray = [...contractorArray].sort((a, b) => new Date(b.date) - new Date(a.date));
-    let currIdx = sortedArray.findIndex(x => x.id === id);
+    let currIdx = sortedArray.findIndex(x => String(x.id) === String(id));
     
     if (currIdx === -1) {
         // Если не нашли в истории, ищем в эталонах
@@ -1526,6 +1530,13 @@ function showHistoryDetail(id) {
     const item = sortedArray[currIdx];
     const newerId = currIdx > 0 ? sortedArray[currIdx - 1].id : null;
     const olderId = currIdx < sortedArray.length - 1 ? sortedArray[currIdx + 1].id : null;
+    // ПЕРЕХВАТЧИК: Если это Акт-Эталон, открываем новую красивую модалку!
+    if (item.templateKey === 'sys_etalon_act') {
+        if (typeof openEtalonViewer === 'function') {
+            openEtalonViewer(item.id);
+            return; // Прерываем старую отрисовку
+        }
+    }
 
     const type = item.templateKey.split('_')[0]; 
     const key = item.templateKey.replace(type + '_', '');
@@ -1554,11 +1565,11 @@ function showHistoryDetail(id) {
 
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-title').innerHTML = `
-        <div class="flex justify-between items-center w-full">
-            <button class="p-2 -ml-2 text-slate-400 hover:text-indigo-600 disabled:opacity-20 active:scale-90" ${newerId ? `onclick="showHistoryDetail(${newerId})"` : 'disabled'}><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7"></path></svg></button>
-            <div class="text-center truncate flex-1 px-2 text-lg dark:text-white">${item.location}</div>
-            <button class="p-2 -mr-2 text-slate-400 hover:text-indigo-600 disabled:opacity-20 active:scale-90" ${olderId ? `onclick="showHistoryDetail(${olderId})"` : 'disabled'}><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg></button>
-        </div>`;
+    <div class="flex justify-between items-center w-full">
+        <button class="p-2 -ml-2 text-slate-400 hover:text-indigo-600 disabled:opacity-20 active:scale-90" ${newerId ? `onclick="showHistoryDetail('${newerId}')"` : 'disabled'}><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7"></path></svg></button>
+        <div class="text-center truncate flex-1 px-2 text-lg dark:text-white">${item.location}</div>
+        <button class="p-2 -mr-2 text-slate-400 hover:text-indigo-600 disabled:opacity-20 active:scale-90" ${olderId ? `onclick="showHistoryDetail('${olderId}')"` : 'disabled'}><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path></svg></button>
+    </div>`;
     
     document.getElementById('modal-body').innerHTML = `
         <div class="text-xs font-bold text-slate-500 mb-1">${item.contractorName}</div>
@@ -1578,11 +1589,11 @@ function showHistoryDetail(id) {
         ${item.templateKey === 'sys_etalon_act' 
             ? `<div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 mb-4 text-center shadow-sm">
                    <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Это Акт-Эталон</div>
-                   <button onclick="closeModal(); setTimeout(() => printEtalonAct(${item.id}), 300)" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                   <button onclick="closeModal(); setTimeout(() => printEtalonAct('${item.id}'), 300)" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
                        🖨️ РАСПЕЧАТАТЬ (PDF)
                    </button>
                </div>`
-            : `<button onclick="closeModal(); setTimeout(() => generatePrescriptionAi(${item.id}), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+            : `<button onclick="closeModal(); setTimeout(() => generatePrescriptionAi('${item.id}'), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
                    📄 Создать предписание (ИИ)
                </button>`
         }
@@ -2741,7 +2752,7 @@ function renderHistoryTab() {
                 return `
                 <div class="flex items-center gap-1.5 mb-1.5">
                     <input type="checkbox" class="hist-checkbox w-4 h-4 accent-indigo-600 rounded shrink-0 cursor-pointer" value="${item.id}">
-                    <div class="flex-1 bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${item.id})">
+                    <div class="flex-1 bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${item.id}')">
                         <div class="flex justify-between items-center">
                             <div class="min-w-0 pr-2">
                                 <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location} <span class="text-[9px] ml-1">${photoIcon}</span></div>
@@ -3043,22 +3054,27 @@ function saveEditedPhoto() {
 async function openPhotoViewer(src) {
     const viewer = document.getElementById('photo-viewer-overlay');
     const img = document.getElementById('photo-viewer-img');
+    
     if(viewer && img) {
-        // Умная загрузка: берем фото прямо из оперативной памяти офлайн-менеджера
+        // Показываем окно сразу, но картинку делаем прозрачной
+        viewer.style.display = 'flex';
+        img.style.opacity = '0.5';
+        
+        // Сброс зума
+        currentZoom = 1; translateX = 0; translateY = 0;
+        img.style.transform = `translate(0px, 0px) scale(1)`;
+        setTimeout(() => viewer.classList.remove('opacity-0'), 10);
+
+        // УМНАЯ АСИНХРОННАЯ ЗАГРУЗКА ИЗ БАЗЫ/ОБЛАКА
         let finalSrc = src;
-        if (src && src.startsWith('local://')) {
-            const cachedSrc = PhotoManager.getSrc(src);
+        if (src && (src.startsWith('local://') || src.startsWith('cloud://'))) {
+            // Ждем, пока фото физически достанется из базы данных
+            const cachedSrc = await PhotoManager.getAsyncUrl(src);
             if (cachedSrc) finalSrc = cachedSrc;
         }
 
         img.src = finalSrc; 
-        viewer.style.display = 'flex';
-        
-        // Сброс зума при открытии нового фото
-        currentZoom = 1; translateX = 0; translateY = 0;
-        img.style.transform = `translate(0px, 0px) scale(1)`;
-        
-        setTimeout(() => viewer.classList.remove('opacity-0'), 10);
+        img.style.opacity = '1'; // Возвращаем яркость, когда фото загрузилось
     }
 }
 
@@ -5546,7 +5562,14 @@ window.startDemoMode = function(silent = false) {
         contractorArray.push({ id: 300+i, date: randomDay(1, 110), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ИП Петров (Бетон)', templateKey: 'sys_monolit', templateTitle: 'Монолитные работы', location: `Корпус 3, Этаж 1`, stageName: "Стены", isCompleted: true, state: {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, details: hasB3 ? {'1014': {causeCode: 'C01', comment: 'Арматура торчит'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, photos: hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, metrics: metric(hasB3?45:80, 0, 1, hasB3?1:0) });
     }
     contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
-
+    // БЛОКИРУЕМ ЗАПИСЬ ДЕМО-ДАННЫХ В РЕАЛЬНУЮ БАЗУ УСТРОЙСТВА!
+    // Все данные будут жить только в оперативной памяти (RAM)
+    const originalDbPut = window.dbPut;
+    const originalDbDelete = window.dbDelete;
+    const originalDbClear = window.dbClear;
+    window.dbPut = async () => true; 
+    window.dbDelete = async () => true;
+    window.dbClear = async () => true;
     // 3. ГЕНЕРАЦИЯ ЗАДАЧ (Всех типов)
     let dOverdue = new Date(now); dOverdue.setDate(now.getDate() - 2);
     let dToday = new Date(now);
@@ -5677,7 +5700,9 @@ window.exitDemoMode = function() {
     if (typeof renderNodesList === 'function') renderNodesList();
     if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
     if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
-    
+     if (typeof originalDbPut !== 'undefined') window.dbPut = originalDbPut;
+    if (typeof originalDbDelete !== 'undefined') window.dbDelete = originalDbDelete;
+    if (typeof originalDbClear !== 'undefined') window.dbClear = originalDbClear;
     showToast('Возврат к реальным данным');
 };
 
@@ -6358,16 +6383,6 @@ window.rbi_renderEngineerTab = async function() {
     }
 };
 
-// --- ЗАГРУЗКА БАЗЫ ---
-window.rbi_loadData = async function() {
-    try {
-        const scheduleObj = await dbGetAll(STORES.SCHEDULE);
-        if (scheduleObj) window.rbi_scheduleData = scheduleObj;
-        
-        const tasksObj = await dbGetAll(STORES.TASKS);
-        if (tasksObj) window.rbi_tasksData = tasksObj.filter(t => !t._deleted);
-    } catch(e) { console.error("Ошибка загрузки", e); }
-};
 
 // --- ПАРСЕР EXCEL (ГРАФИК РАБОТ) ---
 window.rbi_importScheduleExcel = function() {
@@ -6479,42 +6494,127 @@ window.rbi_generateAutoTasks = async function() {
 
 
 
-// --- РЕНДЕР: Вкладка "Аналитика -> График" ---
+// --- РЕНДЕР И РЕДАКТОР: Вкладка "Аналитика -> График" ---
 window.rbi_renderScheduleTab = async function() {
     const container = document.getElementById('schedule-container');
     if (!container) return;
 
     await rbi_loadData();
+    if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
+
+    // 1. Собираем все чек-листы
+    let clOptions = '<option value="">-- Не привязан --</option>';
+    const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort((a,b) => SYSTEM_TEMPLATES[a].title.localeCompare(SYSTEM_TEMPLATES[b].title));
+    sysKeys.forEach(key => { clOptions += `<option value="sys_${key}">[Сист] ${SYSTEM_TEMPLATES[key].title}</option>`; });
+    
+    const userKeys = Object.keys(userTemplates).sort((a,b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
+    userKeys.forEach(key => { clOptions += `<option value="user_${key}">[Мой] ${userTemplates[key].title}</option>`; });
+
+    // 2. Генерируем строки
+    let rowsHtml = window.rbi_scheduleData.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).map(s => {
+        const d1 = s.startDate ? new Date(s.startDate).toISOString().split('T')[0] : '';
+        const d2 = s.endDate ? new Date(s.endDate).toISOString().split('T')[0] : '';
+        let currentSelect = clOptions.replace(`value="${s.templateKey}"`, `value="${s.templateKey}" selected`);
+
+        return `
+            <tr class="sched-row hover:bg-[var(--hover-bg)] transition-colors" data-id="${s.id}">
+                <td class="p-1"><input type="text" class="input-base !py-1.5 text-[10px] w-full sched-work font-bold" value="${s.workTitle || ''}" placeholder="Вид работ"></td>
+                <td class="p-1"><input type="text" class="input-base !py-1.5 text-[10px] w-full sched-contr" value="${s.contractor || ''}" placeholder="Подрядчик"></td>
+                <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-start" value="${d1}"></td>
+                <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-end" value="${d2}"></td>
+                <td class="p-1"><select class="input-base !py-1.5 text-[10px] w-full sched-tmpl">${currentSelect}</select></td>
+                <td class="p-1 text-center"><button onclick="rbi_deleteScheduleRow('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90">🗑️</button></td>
+            </tr>`;
+    }).join('');
 
     if (window.rbi_scheduleData.length === 0) {
-        container.innerHTML = "График работ пока не загружен. Нажмите кнопку выше для импорта Excel.";
-        return;
+        rowsHtml = `<tr><td colspan="6" class="text-center py-6 text-slate-500 text-[11px] font-bold uppercase tracking-widest border-b border-dashed border-slate-300">График пуст. Нажмите "Добавить этап" ниже.</td></tr>`;
     }
 
-    let html = `<div class="overflow-x-auto custom-scrollbar bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] shadow-sm">
-        <table class="w-full text-left text-[10px] whitespace-nowrap">
-            <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider">
-                <tr><th class="p-2 pl-3">Вид работ</th><th class="p-2">Подрядчик</th><th class="p-2">Начало</th><th class="p-2">Окончание</th><th class="p-2">Статус привязки</th></tr>
-            </thead>
-            <tbody class="divide-y divide-[var(--card-border)]">`;
+    let html = `
+        <div class="flex justify-between items-center mb-3 px-1">
+            <div class="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-widest">Редактор Графика СМР</div>
+            <div class="flex gap-2">
+                <button onclick="rbi_clearSchedule()" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">🗑️ Очистить всё</button>
+                <button onclick="rbi_saveSchedule()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-transform">💾 Сохранить</button>
+            </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] shadow-sm mb-3">
+            <table class="w-full text-left text-[10px] whitespace-nowrap min-w-[800px]">
+                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider font-black">
+                    <tr><th class="p-2 pl-3 w-1/4">Вид работ</th><th class="p-2 w-1/5">Подрядчик</th><th class="p-2 w-32">Начало</th><th class="p-2 w-32">Окончание</th><th class="p-2 w-1/4">Чек-лист (Привязка)</th><th class="p-2 w-10 text-center">Удал.</th></tr>
+                </thead>
+                <tbody id="sched-tbody" class="divide-y divide-[var(--card-border)]">${rowsHtml}</tbody>
+            </table>
+        </div>
+        <button onclick="rbi_addScheduleRow()" class="w-full bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-600 text-[10px] font-black uppercase active:scale-95 transition-colors mb-4">
+            ➕ Добавить этап (строку)
+        </button>
+    `;
+    container.innerHTML = html;
+};
 
-    window.rbi_scheduleData.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).forEach(s => {
-        const d1 = new Date(s.startDate).toLocaleDateString('ru-RU');
-        const d2 = new Date(s.endDate).toLocaleDateString('ru-RU');
-        const isLinked = s.templateKey ? `<span class="text-green-600 font-bold">✅ Привязан</span>` : `<span class="text-red-500 font-bold">❌ Нет чек-листа</span>`;
-        
-        html += `
-            <tr class="hover:bg-[var(--hover-bg)] transition-colors">
-                <td class="p-2 pl-3 font-bold text-slate-800 dark:text-white">${s.workTitle}</td>
-                <td class="p-2 text-slate-600 dark:text-slate-400">${s.contractor}</td>
-                <td class="p-2 font-bold">${d1}</td>
-                <td class="p-2 font-bold">${d2}</td>
-                <td class="p-2">${isLinked}</td>
-            </tr>`;
+window.rbi_addScheduleRow = async function() {
+    if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
+    
+    // Создаем пустую строку
+    const newRow = { 
+        id: 'sch_' + Date.now().toString(36), 
+        workTitle: '', 
+        contractor: '', 
+        startDate: new Date().toISOString(), 
+        endDate: new Date().toISOString(), 
+        templateKey: '' 
+    };
+    
+    window.rbi_scheduleData.push(newRow);
+    
+    // СРАЗУ сохраняем ее в базу данных, чтобы она не пропала при рендере!
+    if (typeof isDemoMode === 'undefined' || !isDemoMode) {
+        await dbPut(STORES.SCHEDULE, newRow);
+    }
+    
+    rbi_renderScheduleTab();
+};
+window.rbi_deleteScheduleRow = function(id) {
+    if(!confirm("Удалить эту строку?")) return;
+    window.rbi_scheduleData = window.rbi_scheduleData.filter(s => s.id !== id);
+    rbi_renderScheduleTab();
+};
+
+window.rbi_clearSchedule = async function() {
+    if(!confirm("Удалить ВЕСЬ график? Это действие необратимо.")) return;
+    window.rbi_scheduleData = [];
+    await dbClear(STORES.SCHEDULE);
+    rbi_renderScheduleTab();
+    showToast("🗑️ График полностью очищен");
+};
+
+window.rbi_saveSchedule = async function() {
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
+
+    const rows = document.querySelectorAll('.sched-row');
+    const newData = [];
+    
+    rows.forEach(row => {
+        const id = row.dataset.id;
+        const wTitle = row.querySelector('.sched-work').value.trim();
+        const contr = row.querySelector('.sched-contr').value.trim();
+        const dStart = row.querySelector('.sched-start').value;
+        const dEnd = row.querySelector('.sched-end').value;
+        const tKey = row.querySelector('.sched-tmpl').value;
+
+        if (wTitle || contr) {
+            newData.push({ id: id, workTitle: wTitle, contractor: contr, startDate: dStart ? new Date(dStart).toISOString() : new Date().toISOString(), endDate: dEnd ? new Date(dEnd).toISOString() : new Date().toISOString(), templateKey: tKey });
+        }
     });
 
-    html += `</tbody></table></div>`;
-    container.innerHTML = html;
+    window.rbi_scheduleData = newData;
+    await dbClear(STORES.SCHEDULE);
+    for(let s of window.rbi_scheduleData) { await dbPut(STORES.SCHEDULE, s); }
+    
+    showToast("✅ График СМР успешно сохранен!");
+    rbi_renderScheduleTab();
 };
 
 
@@ -6752,7 +6852,12 @@ window.rbi_createMeeting = function() {
                         <textarea id="rbi-meeting-notes" class="input-base h-20 resize-none text-[11px] bg-[var(--hover-bg)]" placeholder="Что еще обсудили на планерке..."></textarea>
                     </div>
                 </div>
-                
+                <div class="mb-4">
+                    <button onclick="document.getElementById('meeting-photo-upload').click()" class="w-full bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
+                        📸 Прикрепить фото для "Дня Качества"
+                    </button>
+                    <div id="meeting-photo-preview" class="hidden mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>
+                </div>
                 <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     Сформировать протокол (ИИ)
@@ -6773,6 +6878,21 @@ window.rbi_createMeeting = function() {
     </div>`;
     
     container.innerHTML = html;
+};
+
+window.rbi_handleMeetingPhotoUpload = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    showToast("⚙️ Обработка фото...");
+    compressImageToBase64(file, 1000, 0.8, async (base64) => {
+        const localUrl = await PhotoManager.saveLocal(base64, 'meet');
+        const box = document.getElementById('meeting-photo-preview');
+        box.dataset.photo = localUrl;
+        box.classList.remove('hidden');
+        box.innerHTML = `<img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
+        event.target.value = '';
+    });
 };
 
 // ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
@@ -6911,7 +7031,8 @@ window.rbi_saveMeetingMemo = async function() {
         date: new Date().toISOString(),
         author: author,
         title: `Совещание от ${new Date().toLocaleDateString('ru-RU')}`,
-        memoText: text
+        memoText: text,
+        qDayPhoto: document.getElementById('meeting-photo-preview')?.dataset?.photo || null // <--- ВОТ ЭТО
     };
 
     window.rbi_meetingsData.push(meet);
@@ -6944,7 +7065,9 @@ window.rbi_interventionsData = [];
 
 // Дополняем загрузчик баз (переопределяем его с добавлением нового стора)
 // --- ЗАГРУЗКА БАЗЫ ---
-window.rbi_meetingsData = []; // Локальный массив для протоколов
+// --- ЗАГРУЗКА БАЗЫ ---
+window.rbi_meetingsData = []; 
+window.rbi_fmeaRecords = []; // Локальный массив для FMEA
 
 window.rbi_loadData = async function() {
     try {
@@ -6957,9 +7080,11 @@ window.rbi_loadData = async function() {
         const intObj = await dbGetAll(STORES.INTERVENTIONS);
         if (intObj) window.rbi_interventionsData = intObj;
 
-        // Загружаем сохраненные совещания
         const meetObj = await dbGetAll(STORES.MEETINGS);
         if (meetObj) window.rbi_meetingsData = meetObj;
+
+        const fmeaObj = await dbGetAll(STORES.FMEA);
+        if (fmeaObj) window.rbi_fmeaRecords = fmeaObj;
     } catch(e) { console.error("Ошибка загрузки баз Инженера", e); }
 };
 
@@ -7118,13 +7243,13 @@ window.rbi_renderImpactTab = function() {
             
             if (myEtalons.length > 0) {
                 etalonsHtml = myEtalons.sort((a,b) => new Date(b.date) - new Date(a.date)).map(e => `
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-[var(--card-border)] flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-400 transition-colors active:scale-[0.98]" onclick="showHistoryDetail(${e.id})">
+                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-[var(--card-border)] flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-400 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${e.id}')">
                         <div class="min-w-0 pr-3">
                             <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${e.contractorName}</div>
                             <div class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold truncate">${e.templateTitle}</div>
                             <div class="text-[9px] text-slate-400 mt-1">${new Date(e.date).toLocaleDateString('ru-RU')} | ${e.location}</div>
                         </div>
-                        <button onclick="event.stopPropagation(); printEtalonAct(${e.id})" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 p-2.5 rounded-lg active:scale-90 shadow-sm flex items-center justify-center shrink-0">
+                        <button onclick="event.stopPropagation(); printEtalonAct('${e.id}')" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 p-2.5 rounded-lg active:scale-90 shadow-sm flex items-center justify-center shrink-0">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                         </button>
                     </div>

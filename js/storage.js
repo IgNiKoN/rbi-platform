@@ -15,8 +15,9 @@ const STORES = {
     MEETINGS: 'rbi_meetings',
     INTERVENTIONS: 'rbi_interventions',
     PRACTICES: 'rbi_practices',
-    ETALON_ACTS: 'rbi_etalon_acts',  // НОВОЕ: Хранилище актов эталонов
-    ETALON_DRAFT: 'rbi_etalon_draft' // НОВОЕ: Хранилище черновика эталона
+    ETALON_ACTS: 'rbi_etalon_acts',
+    ETALON_DRAFT: 'rbi_etalon_draft',
+    FMEA: 'rbi_fmea' // <--- НОВОЕ ХРАНИЛИЩЕ ДЛЯ FMEA
 };
 
 /**
@@ -307,10 +308,12 @@ const PhotoManager = {
     },
 
     // 3. Синхронная выдача ссылки для HTML (Оставляем local://, чтобы отловил Observer)
+    // 3. Синхронная выдача ссылки для HTML
     getSrc(url) {
         if (!url) return '';
-        if (url.startsWith('local://')) return url; // Оставляем как есть для MutationObserver
-        if (this.cache[url]) return this.cache[url]; // Для внешних ссылок
+        // Оставляем как есть для MutationObserver, чтобы он сам подменил URL
+        if (url.startsWith('local://') || url.startsWith('cloud://')) return url; 
+        if (this.cache[url]) return this.cache[url]; 
         return url; 
     },
 

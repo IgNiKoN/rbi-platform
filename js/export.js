@@ -2031,13 +2031,16 @@ function generateBackupObject(mode) {
     };
 
     // ДОБАВЛЕНЫ HR ДАННЫЕ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ
+    // ДОБАВЛЕНЫ HR ДАННЫЕ ДЛЯ ПАНЕЛИ РУКОВОДИТЕЛЯ (С Совещаниями и FMEA)
     const hrData = {
         weeklyPlanData: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null,
         engineerAbsence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
         contractorStatuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : null,
-        schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
-        interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [],
-        practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
+        schedule: typeof window.rbi_scheduleData !== 'undefined' ? window.rbi_scheduleData : [],
+        interventions: typeof window.rbi_interventionsData !== 'undefined' ? window.rbi_interventionsData : [],
+        practices: typeof window.rbi_practicesData !== 'undefined' ? window.rbi_practicesData : [],
+        meetings: typeof window.rbi_meetingsData !== 'undefined' ? window.rbi_meetingsData : [],
+        fmea: typeof window.rbi_fmeaRecords !== 'undefined' ? window.rbi_fmeaRecords : []
     };
 
     const obj = {
@@ -2324,6 +2327,7 @@ function processDataImport(event) {
                 }
                 
                 // ИМПОРТ HR ДАННЫХ (Планы, Статусы)
+              // ИМПОРТ HR ДАННЫХ (Планы, Статусы, Совещания, FMEA)
                 if (parsed.data.hr) {
                     if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
                     if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
@@ -2334,32 +2338,23 @@ function processDataImport(event) {
                             if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
                         }
                     }
-                }
 
-                // ИМПОРТ АКТОВ-ЭТАЛОНОВ
-                if (parsed.data.etalonActs && typeof etalonActsArray !== 'undefined') {
-                    for(const item of parsed.data.etalonActs) {
-                        if(!etalonActsArray.find(x => x.id === item.id)) {
-                            etalonActsArray.push(item);
-                            await dbPut(STORES.ETALON_ACTS, item);
+                    // Импорт Совещаний
+                    if (parsed.data.hr.meetings && typeof window.rbi_meetingsData !== 'undefined') {
+                        for (const item of parsed.data.hr.meetings) {
+                            if (!window.rbi_meetingsData.find(x => x.id === item.id)) {
+                                window.rbi_meetingsData.push(item);
+                                await dbPut(STORES.MEETINGS, item);
+                            }
                         }
                     }
-                }
 
-                // ИМПОРТ ЗАДАЧ (Умный Merge по дате обновления)
-                if (parsed.data.tasks && typeof rbi_tasksData !== 'undefined') {
-                    for (const incomingTask of parsed.data.tasks) {
-                        const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
-                        if (!existing) {
-                            rbi_tasksData.push(incomingTask);
-                            await dbPut(STORES.TASKS, incomingTask);
-                        } else {
-                            // Если пришедшая задача свежее (по updatedAt), перезаписываем
-                            const inTime = new Date(incomingTask.updatedAt || 0).getTime();
-                            const exTime = new Date(existing.updatedAt || 0).getTime();
-                            if (inTime > exTime) {
-                                Object.assign(existing, incomingTask);
-                                await dbPut(STORES.TASKS, existing);
+                    // Импорт FMEA
+                    if (parsed.data.hr.fmea && typeof window.rbi_fmeaRecords !== 'undefined') {
+                        for (const item of parsed.data.hr.fmea) {
+                            if (!window.rbi_fmeaRecords.find(x => x.id === item.id)) {
+                                window.rbi_fmeaRecords.push(item);
+                                await dbPut(STORES.FMEA, item);
                             }
                         }
                     }
@@ -2583,7 +2578,25 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         hrStats.forEach(h => { totalImpact += h.avgImpact; totalInterventions += (h.improved + h.degraded); });
         const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
         const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных" };
-
+        // СБОР ФОТОГРАФИЙ С СОВЕЩАНИЙ ЗА МЕСЯЦ
+        const monthMeetings = window.rbi_meetingsData.filter(m => new Date(m.date) >= startOfMonth && m.qDayPhoto);
+        let meetingPhotosHtml = '';
+        if (monthMeetings.length > 0) {
+            meetingPhotosHtml = `
+            <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; margin-top: 20px;">📸 Жизнь объекта (Совещания и обходы)</h2>
+            <table style="width: 100%; border-spacing: 10px 0; border-collapse: separate; margin-left:-10px;">
+                <tr>
+                    ${monthMeetings.slice(0, 3).map(m => `
+                        <td style="width:33.3%; vertical-align:top;">
+                            <div style="height: 150px; border-radius:8px; overflow:hidden; border:1px solid #cbd5e1;">
+                                <img src="${window.getPhotoSrc(m.qDayPhoto)}" style="width:100%; height:100%; object-fit:cover;">
+                            </div>
+                            <div style="font-size:9px; color:#64748b; font-weight:bold; margin-top:4px; text-align:center;">${m.title}</div>
+                        </td>
+                    `).join('')}
+                </tr>
+            </table>`;
+        }
         // 3. ТОП ПРАКТИК (Отбираем 2 лучшие)
         let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом месяце не публиковалось.</div>`;
         if (typeof rbi_practicesData !== 'undefined' && rbi_practicesData.length > 0) {
@@ -2690,6 +2703,11 @@ window.rbi_generateQualityDayReport = async function(taskId) {
                     <td style="width: 50%; vertical-align: top;">
                         <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🏆 Лучшие практики месяца</h2>
                         ${topPracticesHtml}
+                    </td>
+                    <td style="width: 50%; vertical-align: top;">
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🏆 Лучшие практики месяца</h2>
+                        ${topPracticesHtml}
+                        ${meetingPhotosHtml} <!-- ВСТАВИЛИ ФОТО С СОВЕЩАНИЙ -->
                     </td>
                     <td style="width: 50%; vertical-align: top;">
                         <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🔍 Топ причин брака (Парето)</h2>
