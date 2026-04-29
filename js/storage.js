@@ -21,6 +21,7 @@ const STORES = {
 
 /**
 /**
+ /**
  * Инициализация и открытие базы данных IndexedDB (Singleton)
  */
 let _dbPromise = null;
@@ -36,7 +37,6 @@ function openAppDb() {
                 // Создаем таблицы, если их нет
                 Object.values(STORES).forEach(storeName => {
                     if (!db.objectStoreNames.contains(storeName)) {
-                        // Для истории и эталонов ключ 'id', для остального тоже, кроме настроек/стейта
                         let keyOptions = { keyPath: 'id' };
                         if (storeName === STORES.STATE || storeName === STORES.SETTINGS) keyOptions = { keyPath: 'key' };
                         if (storeName === STORES.TEMPLATES) keyOptions = { keyPath: 'slug' };
@@ -44,6 +44,13 @@ function openAppDb() {
                         db.createObjectStore(storeName, keyOptions);
                     }
                 });
+            };
+
+            // ЕСЛИ БАЗА ЗАБЛОКИРОВАНА СТАРОЙ ВКЛАДКОЙ
+            request.onblocked = function() {
+                console.error("IndexedDB заблокирована! Закройте другие вкладки.");
+                if (typeof showToast === 'function') showToast("⚠️ Закройте все вкладки приложения и откройте заново!");
+                reject(new Error("БД заблокирована"));
             };
 
             request.onsuccess = () => resolve(request.result);
