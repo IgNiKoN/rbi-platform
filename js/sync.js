@@ -1,16 +1,17 @@
-/* Файл: js/sync.js */
+/* Файл: js/sync.js (Архитектура Pull-First, Non-Blocking) */
 console.log("✅ SYNC.JS загружен браузером!");
 
 window.supabaseClient = null;
 window.syncConfig = { enabled: false, engineerName: '', projectCode: '', pinHash: '', deviceId: '', syncMode: 'personal', fullAccessGranted: false };
 window.isSyncing = false;
+let syncTimeout = null;
 
 const SYNC_FULL_ACCESS_HASH = "16e1fc3fccf0e21ea5c3a37fc6bdfe2db9ee3646ca153ff29ccfbbe868e7ec8b";
 
 try {
     let saved = localStorage.getItem('rbi_sync_config');
     if (saved) window.syncConfig = JSON.parse(saved);
-} catch(e) { console.error("Ошибка чтения конфига:", e); }
+} catch(e) {}
 
 if (!window.syncConfig.deviceId) {
     window.syncConfig.deviceId = 'dev_' + Date.now().toString(36);
@@ -33,22 +34,22 @@ window.hashPin = async function(pin) {
 window.initSync = async function() {
     window.renderSyncUI();
     try {
-        if (window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL && window.APP_CONFIG.SUPABASE_URL.startsWith('http')) {
+        if (window.supabase && window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) {
             window.supabaseClient = window.supabase.createClient(window.APP_CONFIG.SUPABASE_URL, window.APP_CONFIG.SUPABASE_KEY);
         }
-    } catch (e) { console.error("Ошибка инициализации Supabase:", e); }
+    } catch (e) { console.error("Ошибка Supabase:", e); }
 
     if (!window.supabaseClient) {
         const block = document.getElementById('sync-settings-block');
         if (block && !block.innerHTML.includes('Облако отключено')) {
-            block.insertAdjacentHTML('afterbegin', '<div class="p-3 bg-red-50 text-red-600 text-[10px] font-bold text-center border-b border-red-200">⚠️ Облако отключено: Добавьте рабочие ключи в js/config.js</div>');
+            block.insertAdjacentHTML('afterbegin', '<div class="p-3 bg-red-50 text-red-600 text-[10px] font-bold text-center border-b border-red-200">⚠️ Облако отключено</div>');
         }
         return;
     }
     
     if (window.syncConfig.enabled && window.syncConfig.engineerName && window.syncConfig.projectCode) {
-        window.triggerSync('full');
-        setInterval(() => window.triggerSync('silent'), 120000);
+        window.triggerSync('silent'); // При запуске приложения тихо качаем обновы
+        setInterval(() => window.triggerSync('silent'), 60000); // Раз в минуту
     }
 };
 
@@ -60,50 +61,58 @@ window.renderSyncUI = function() {
     
     if (headerIndicator) {
         if (window.syncConfig.enabled) {
-            if (window.isSyncing) {
-                headerIndicator.innerHTML = `<div title="Синхронизация..." class="text-green-500 animate-pulse flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
-            } else {
-                headerIndicator.innerHTML = `<div title="Облако подключено" class="text-green-500 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
-            }
+            if (window.isSyncing) headerIndicator.innerHTML = `<div class="text-green-500 animate-pulse flex items-center justify-center">🔄</div>`;
+            else headerIndicator.innerHTML = `<div class="text-green-500 flex items-center justify-center">☁️</div>`;
         } else {
-            headerIndicator.innerHTML = `<div title="Локальный режим" class="text-slate-400 opacity-70 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
+            headerIndicator.innerHTML = `<div class="text-slate-400 opacity-70 flex items-center justify-center">☁️</div>`;
         }
     }
 
     if (!container) return;
 
-    let engName = window.syncConfig.engineerName || '';
-    if (!engName && typeof appSettings !== 'undefined' && appSettings.engineerName) engName = appSettings.engineerName;
+    let engName = window.syncConfig.engineerName || (typeof appSettings !== 'undefined' ? appSettings.engineerName : '');
 
     if (window.syncConfig.enabled) {
         container.innerHTML = `
-            <div class="p-4 bg-green-50 dark:bg-green-900/20 border-b border-[var(--card-border)] text-center">
-                <div class="text-[12px] font-black text-green-700 dark:text-green-400 uppercase mb-1">Синхронизация активна</div>
-                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
-                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Код проекта: ${window.syncConfig.projectCode}</div>
+            <div class="p-4 bg-green-50 border-b border-green-100 text-center">
+                <div class="text-[12px] font-black text-green-700 uppercase mb-1">Синхронизация активна</div>
+                <div class="text-[10px] text-green-600 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
+                <div class="text-[10px] text-green-600 font-bold">Код проекта: ${window.syncConfig.projectCode}</div>
             </div>
-            <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.triggerSync('manual')" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
-                <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform">Отключить облако</button>
+            <div class="p-3 bg-white border-b border-slate-200 flex justify-between items-center">
+                <div>
+                    <div class="font-bold text-[11px] uppercase text-slate-700 cursor-pointer" ondblclick="window.resetFullAccess()">Режим: ${window.syncConfig.syncMode === 'full' ? 'Вся команда' : 'Только мои'}</div>
+                </div>
+                <select id="sync-mode-select" class="input-base !w-auto !py-1.5 !text-[10px] font-bold" onchange="window.changeSyncMode(this.value)">
+                    <option value="personal" ${window.syncConfig.syncMode === 'personal' ? 'selected' : ''}>Только мои</option>
+                    <option value="full" ${window.syncConfig.syncMode === 'full' ? 'selected' : ''}>Вся команда</option>
+                </select>
+            </div>
+            <div class="p-4 bg-slate-50">
+                <button onclick="window.triggerSync('manual')" class="w-full bg-white text-indigo-600 border border-slate-200 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95">Отключить облако</button>
             </div>
         `;
     } else {
         container.innerHTML = `
-            <div class="p-4 border-b border-[var(--card-border)]">
-                <div class="text-[10px] text-[var(--text-muted)] mb-3 leading-relaxed font-medium">Для работы в команде введите свои данные. Без подключения приложение работает локально.</div>
+            <div class="p-4 border-b border-slate-200">
                 <div class="space-y-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ваше Имя (Фамилия И.О.) *</label>
-                        <input type="text" id="sync-name" class="input-base ${engName ? 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-900' : ''}" placeholder="Иванов И.И." value="${engName}" ${engName ? 'readonly' : ''}>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Имя (Фамилия И.О.) *</label>
+                        <input type="text" id="sync-name" class="input-base" value="${engName}" ${engName ? 'readonly' : ''}>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код проекта команды *</label>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Код проекта *</label>
                         <input type="text" id="sync-code" class="input-base" placeholder="Например: RBI-TOWER-1">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">ПИН-код (Опционально)</label>
+                        <input type="password" id="sync-pin" class="input-base" placeholder="4 цифры" maxlength="4" inputmode="numeric">
                     </div>
                 </div>
             </div>
-            <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.saveSyncSettings()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">Сохранить и подключиться</button>
+            <div class="p-4 bg-slate-50">
+                <button onclick="window.saveSyncSettings()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Подключиться</button>
             </div>
         `;
     }
@@ -112,14 +121,47 @@ window.renderSyncUI = function() {
 window.saveSyncSettings = async function() {
     const name = document.getElementById('sync-name').value.trim();
     const code = document.getElementById('sync-code').value.trim();
+    const pin = document.getElementById('sync-pin').value.trim();
 
     if (!name || !code) return safeToast("⚠️ Имя и Код проекта обязательны!");
-    if (!window.supabaseClient) return alert("❌ Ошибка: Ключи базы данных не настроены в js/config.js");
+    if (!window.supabaseClient) return alert("❌ Ошибка: Ключи базы данных не настроены");
 
     const { data: projData } = await window.supabaseClient.from('allowed_projects').select('code').eq('code', code).limit(1);
     if (!projData || projData.length === 0) return safeToast("❌ Ошибка: Такого кода проекта не существует!");
 
-    window.applySyncConnect(name, code, '');
+    const hashedPin = await window.hashPin(pin);
+    const { data } = await window.supabaseClient.from('rbi_engineer_profiles').select('pin_hash').eq('project_code', code).eq('inspector_name', name).limit(1);
+        
+    if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
+        window.showPinPromptModal(name, code, data[0].pin_hash);
+        return;
+    }
+
+    window.applySyncConnect(name, code, hashedPin);
+};
+
+window.showPinPromptModal = function(name, code, correctHash) {
+    const html = `
+    <div id="sync-pin-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-xs p-6 rounded-2xl shadow-2xl text-center">
+            <h3 class="font-black text-[13px] uppercase text-slate-800 mb-4">Введите PIN-код</h3>
+            <input type="password" id="sync-pin-verify" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-center text-xl font-black mb-4" placeholder="••••" maxlength="4" inputmode="numeric">
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('sync-pin-modal').remove()" class="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-[10px] uppercase">Отмена</button>
+                <button onclick="window.verifySyncPin('${name}', '${code}', '${correctHash}')" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-[10px] uppercase">Войти</button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.verifySyncPin = async function(name, code, correctHash) {
+    const input = document.getElementById('sync-pin-verify').value;
+    const inputHash = await window.hashPin(input);
+    if (inputHash === correctHash) {
+        document.getElementById('sync-pin-modal').remove();
+        window.applySyncConnect(name, code, inputHash);
+    } else safeToast("❌ Неверный PIN-код!");
 };
 
 window.applySyncConnect = function(name, code, hashedPin) {
@@ -131,50 +173,151 @@ window.applySyncConnect = function(name, code, hashedPin) {
     
     if (typeof appSettings !== 'undefined') {
         appSettings.engineerName = name;
-        if (typeof dbPut === 'function') dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
-        if (typeof applySmartLocks === 'function') applySmartLocks();
+        if (typeof dbPut === 'function') dbPut('app_settings', { key: 'user_prefs', ...appSettings });
     }
     window.renderSyncUI();
-    safeToast("✅ Подключено к Облаку!");
     window.triggerSync('manual');
 };
 
 window.disconnectSync = function() {
-    if (!confirm("Отключить облако? Ваши данные останутся на устройстве.")) return;
+    if (!confirm("Отключить облако? Данные останутся на устройстве.")) return;
     window.syncConfig.enabled = false;
-    window.syncConfig.projectCode = '';
-    window.syncConfig.pinHash = '';
     localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
     window.renderSyncUI();
-    safeToast("Отключено. Локальный режим.");
 };
 
-window.triggerSync = async function(mode = 'silent') {
-    if (!window.isSyncEnabled() || !window.supabaseClient) {
-        if (mode === 'manual' && !window.supabaseClient) safeToast('❌ Ошибка: Облако не подключено');
+window.changeSyncMode = function(mode) {
+    if (mode === 'full' && !window.syncConfig.fullAccessGranted) {
+        document.getElementById('sync-mode-select').value = 'personal';
+        const html = `
+        <div id="sync-full-access-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-xs p-6 rounded-2xl text-center">
+                <h3 class="font-black text-[13px] uppercase mb-4">Пароль руководителя</h3>
+                <input type="password" id="sync-full-access-pin" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-center text-xl font-black mb-4" placeholder="••••••" maxlength="6" inputmode="numeric">
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('sync-full-access-modal').remove()" class="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-[10px] uppercase">Отмена</button>
+                    <button onclick="window.verifyFullAccessPin()" class="flex-1 bg-red-600 text-white py-3 rounded-xl font-black text-[10px] uppercase">Далее</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
         return;
     }
+    window.syncConfig.syncMode = mode;
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    window.triggerSync('manual'); 
+};
+
+window.verifyFullAccessPin = async function() {
+    const input = document.getElementById('sync-full-access-pin').value;
+    const inputHash = await window.hashPin(input);
+    if (inputHash === SYNC_FULL_ACCESS_HASH) {
+        document.getElementById('sync-full-access-modal').remove();
+        window.syncConfig.fullAccessGranted = true;
+        window.changeSyncMode('full');
+    } else safeToast("❌ Неверный пароль!");
+};
+
+window.resetFullAccess = function() {
+    window.syncConfig.fullAccessGranted = false;
+    window.syncConfig.syncMode = 'personal';
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    window.renderSyncUI();
+};
+
+function b64toBlob(b64Data, contentType = 'image/jpeg', sliceSize = 512) {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+        const slice = byteCharacters.slice(offset, offset + sliceSize);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+        byteArrays.push(new Uint8Array(byteNumbers));
+    }
+    return new Blob(byteArrays, { type: contentType });
+}
+
+window.uploadBase64ToStorage = async function(base64str, path) {
+    if (!base64str || !base64str.includes('base64,')) return base64str; 
+    try {
+        const parts = base64str.split(';');
+        const mime = parts[0].split(':')[1];
+        const b64Data = parts[1].split(',')[1];
+        const blob = b64toBlob(b64Data, mime);
+
+        const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(path, blob, { upsert: true, contentType: mime });
+        if (error) return base64str;
+
+        const { data } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(path);
+        return data.publicUrl;
+    } catch(e) { return base64str; }
+};
+
+// ============================================================================
+// ГЛАВНЫЙ БЛОК СИНХРОНИЗАЦИИ (БЕЗОПАСНЫЙ И БЫСТРЫЙ)
+// ============================================================================
+window.triggerSync = async function(mode = 'silent') {
+    if (!window.isSyncEnabled() || !window.supabaseClient) return;
     
     if (window.isSyncing) {
-        if (mode === 'manual') safeToast("⏳ Синхронизация уже идет... Подождите");
+        if (mode === 'manual') safeToast("⏳ Синхронизация уже идет...");
         return;
     }
     
     window.isSyncing = true;
     window.renderSyncUI(); 
+
+    // ПРЕДОХРАНИТЕЛЬ: Если функция зависнет, через 30 секунд снимаем блок
+    if (syncTimeout) clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => {
+        window.isSyncing = false;
+        window.renderSyncUI();
+        console.log("[Sync] Предохранитель сработал: статус сброшен.");
+    }, 30000);
     
     try {
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
 
+        // ==============================================
+        // ЭТАП 1: СКАЧИВАЕМ ДАННЫЕ (PULL) - БЕЗ ОГРАНИЧЕНИЙ ПО ВРЕМЕНИ
+        // ==============================================
+        if (mode === 'manual') safeToast('📥 Шаг 1: Скачивание базы с сервера...');
+        
+        let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode);
+        if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
+        
+        const { data: newInspections, error: errInsp } = await query;
+        if (errInsp) throw new Error("Сбой загрузки проверок: " + errInsp.message);
+
+        const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
+        
+        // Скачиваем задачи и эталоны (если таблицы есть)
+        let newTasks = [], newEtalons = [];
+        try {
+            const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode);
+            if (resT.data) newTasks = resT.data;
+            const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode);
+            if (resE.data) newEtalons = resE.data;
+        } catch (dbErr) {}
+
+        // ==============================================
+        // ЭТАП 2: СЛИЯНИЕ ДАННЫХ (MERGE) В ПАМЯТЬ ТЕЛЕФОНА
+        // ==============================================
+        if (mode === 'manual') safeToast('🔄 Шаг 2: Обновление локальной базы...');
+        await window.mergeCloudData(newInspections, newProfiles, newTasks, newEtalons);
+
+
+        // ==============================================
+        // ЭТАП 3: ОТПРАВКА ДАННЫХ НА СЕРВЕР (PUSH)
+        // ==============================================
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
-        // 1. Отправка Истории (PUSH)
         if (currentHistory.length > 0) {
-            if (mode === 'manual') safeToast(`🔄 Шаг 1: Отправка проверок...`);
+            if (mode === 'manual') safeToast(`📤 Шаг 3: Отправка текстов (${currentHistory.length} шт)...`);
             const insps = currentHistory.map(c => ({
                 id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
                 template_key: c.templateKey, location: c.location, date: c.date,
@@ -192,199 +335,79 @@ window.triggerSync = async function(mode = 'silent') {
             }
         }
 
-        // 2. Отправка Справочников (PUSH)
-        if (mode === 'manual') safeToast('🔄 Шаг 2: Отправка справочников...');
-        const pushDict = async (table, dataArr, dataField) => {
-            if (!dataArr || dataArr.length === 0) return;
-            const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
-                id: String(item.id), project_code: pCode, [dataField]: item, updated_at: new Date().toISOString()
-            }));
-            if (rows.length > 0) {
-                await window.supabaseClient.from(table).upsert(rows, { onConflict: 'id' });
-            }
-        };
-        await pushDict('rbi_custom_twi_cards', typeof customTwiCards !== 'undefined' ? customTwiCards : [], 'card_data');
-        await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
-        await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
-
-        // 3. Отправка Задач и Эталонов
-        if (mode === 'manual') safeToast('🔄 Шаг 3: Задачи и Эталоны...');
-        if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
-            try {
-                const tasks = rbi_tasksData.map(t => ({
-                    id: t.id, inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, task_data: t,
-                    updated_at: t.updatedAt || new Date().toISOString(), _deleted: t._deleted || false, deleted_at: t._deleted ? new Date().toISOString() : null
-                }));
-                for (let i = 0; i < tasks.length; i += 100) {
-                    await window.supabaseClient.from('rbi_tasks').upsert(tasks.slice(i, i + 100), { onConflict: 'id' });
-                }
-            } catch(e) {}
-        }
-
-        if (typeof etalonActsArray !== 'undefined' && etalonActsArray.length > 0) {
-            try {
-                const etalons = etalonActsArray.map(c => ({
-                    id: c.id, inspector_id: window.syncConfig.deviceId, inspector_name: c.inspectorName, contractor_name: c.contractorName,
-                    project_code: pCode, template_key: c.templateKey, act_data: c, updated_at: c.updatedAt || new Date().toISOString(),
-                    _deleted: c._deleted || false, deleted_at: c._deleted ? new Date().toISOString() : null
-                }));
-                for (let i = 0; i < etalons.length; i += 100) {
-                    await window.supabaseClient.from('rbi_etalon_acts').upsert(etalons.slice(i, i + 100), { onConflict: 'id' });
-                }
-            } catch(e) {}
-        }
-
-        // 4. Отправка Профиля и Черновика (PUSH)
-        if (mode === 'manual') safeToast('🔄 Шаг 4: Профиль и Черновик...');
+        // Отправка профиля и черновика на сервер
         const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
-        const hrProfileData = {
-            timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
-            plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null, absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
-            statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}, expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
-            settings: typeof appSettings !== 'undefined' ? appSettings : {}, schedule: typeof rbi_scheduleData !== 'undefined' ? rbi_scheduleData : [],
-            interventions: typeof rbi_interventionsData !== 'undefined' ? rbi_interventionsData : [], practices: typeof rbi_practicesData !== 'undefined' ? rbi_practicesData : []
-        };
-
         await window.supabaseClient.from('rbi_engineer_profiles').upsert({
             inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
-            profile_data: hrProfileData, updated_at: new Date().toISOString()
+            profile_data: {
+                timestamp: Date.now(), session: currentSession, 
+                gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
+                plan: typeof weeklyPlanData !== 'undefined' ? weeklyPlanData : null, 
+                absence: typeof engineerAbsence !== 'undefined' ? engineerAbsence : null,
+                statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {}, 
+                expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
+                settings: typeof appSettings !== 'undefined' ? appSettings : {}
+            }, 
+            updated_at: new Date().toISOString()
         }, { onConflict: 'inspector_id' });
 
-        // 5. Загрузка обновлений (PULL)
-        if (mode === 'manual') safeToast('🔄 Шаг 5: Загрузка с сервера...');
-        let lastSync = localStorage.getItem('last_cloud_sync_time') || '2000-01-01T00:00:00Z';
 
-        let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
-        const { data: newInspections } = await query;
+        // ==============================================
+        // ЭТАП 4: ФОНОВАЯ ВЫГРУЗКА ФОТО (САМЫЙ ДОЛГИЙ ПРОЦЕСС)
+        // ==============================================
+        if (mode === 'manual') safeToast('📸 Шаг 4: Выгрузка фотографий...');
+        await window.extractAndUploadPhotos(); // Эта функция обновит ссылки в БД
 
-        const { data: newTwi } = await window.supabaseClient.from('rbi_custom_twi_cards').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newNodes } = await window.supabaseClient.from('rbi_custom_nodes').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newDocs } = await window.supabaseClient.from('rbi_custom_docs').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-        const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
-
-        let newTasks = [], newEtalons = [];
-        try {
-            const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-            if (resT.data) newTasks = resT.data;
-            const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
-            if (resE.data) newEtalons = resE.data;
-        } catch (dbErr) {}
-
-        const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
-        if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
-
-        // 6. Слияние
-        if (mode === 'manual') safeToast('🔄 Шаг 6: Слияние баз...');
-        await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
-
-        localStorage.setItem('last_cloud_sync_time', new Date().toISOString());
-
-        if (mode === 'manual') safeToast('✅ Успешно! Базы синхронизированы.');
+        if (mode === 'manual') safeToast('✅ Готово! Синхронизация завершена!');
         
+        // Обновляем интерфейс
         if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
         if (typeof renderSelector === 'function') renderSelector();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
 
     } catch (e) {
         console.error("[Sync] Ошибка:", e);
-        if (mode === 'manual') safeToast('❌ Ошибка: ' + e.message.substring(0, 50));
+        if (mode === 'manual') safeToast('❌ Ошибка: ' + (e.message ? e.message.substring(0, 50) : 'Сбой сети'));
     } finally {
+        if (syncTimeout) clearTimeout(syncTimeout);
         window.isSyncing = false;
         window.renderSyncUI(); 
     }
 };
 
-window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons) {
+window.mergeCloudData = async function(newInspections, newProfiles, newTasks, newEtalons) {
     let dbUpdated = false;
 
-    const safeInspections = newInspections || [];
-    const safeTwi = newTwi || [];
-    const safeNodes = newNodes || [];
-    const safeDocs = newDocs || [];
-    const safeProfiles = newProfiles || [];
-    const safeTasks = newTasks || [];
-    const safeEtalons = newEtalons || [];
-
-    if (safeInspections.length > 0) {
+    // 1. Слияние проверок
+    if (newInspections && newInspections.length > 0) {
         let historyMap = new Map();
         if (typeof contractorArray !== 'undefined') contractorArray.forEach(c => historyMap.set(c.id, c));
-        safeInspections.forEach(row => {
+        
+        newInspections.forEach(row => {
             const item = { id: row.id, date: row.date, projectName: row.project_code, inspectorName: row.inspector_name, contractorName: row.contractor_name, templateKey: row.template_key, location: row.location, ...row.inspection_data, photos: row.photos, _deleted: row._deleted, _deletedAt: row._deleted_at };
-            historyMap.set(item.id, item);
+            
+            const existing = historyMap.get(item.id);
+            // Если такой проверки у нас нет, ИЛИ с сервера пришла "удаленная", обновляем
+            if (!existing || item._deleted) {
+                historyMap.set(item.id, item);
+            }
         });
         contractorArray = Array.from(historyMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
         dbUpdated = true;
     }
 
-    if (safeTwi.length > 0 && typeof customTwiCards !== 'undefined') {
-        let map = new Map(customTwiCards.map(c => [c.id, c]));
-        safeTwi.forEach(row => map.set(row.id, row.card_data));
-        customTwiCards = Array.from(map.values());
-        dbUpdated = true;
-    }
-    if (safeNodes.length > 0 && typeof customNodes !== 'undefined') {
-        let map = new Map(customNodes.map(c => [c.id, c]));
-        safeNodes.forEach(row => map.set(row.id, row.node_data));
-        customNodes = Array.from(map.values());
-        dbUpdated = true;
-    }
-    if (safeDocs.length > 0 && typeof customDocs !== 'undefined') {
-        let map = new Map(customDocs.map(c => [c.id, c]));
-        safeDocs.forEach(row => map.set(row.id, row.doc_data));
-        customDocs = Array.from(map.values());
-        dbUpdated = true;
-    }
-
-    if (safeEtalons.length > 0 && typeof etalonActsArray !== 'undefined') {
-        let etalonMap = new Map(etalonActsArray.map(c => [c.id, c]));
-        safeEtalons.forEach(row => {
-            const item = { id: row.id, ...row.act_data, _deleted: row._deleted, _deletedAt: row._deleted_at };
-            etalonMap.set(item.id, item);
-        });
-        etalonActsArray = Array.from(etalonMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-        dbUpdated = true;
-    }
-
-    if (safeTasks.length > 0 && typeof rbi_tasksData !== 'undefined') {
-        safeTasks.forEach(row => {
-            const incomingTask = { id: row.id, ...row.task_data, updatedAt: row.updated_at, _deleted: row._deleted };
-            const existing = rbi_tasksData.find(t => t.id === incomingTask.id);
-            if (!existing) rbi_tasksData.push(incomingTask);
-            else {
-                const inTime = new Date(incomingTask.updatedAt || 0).getTime();
-                const exTime = new Date(existing.updatedAt || 0).getTime();
-                if (inTime > exTime) Object.assign(existing, incomingTask);
-            }
-        });
-        dbUpdated = true;
-    }
-
-    if (safeProfiles.length > 0) {
-        // БЕСШОВНАЯ РАБОТА: ИЩЕМ ПРОФИЛЬ ТОЛЬКО ПО ИМЕНИ ИНЖЕНЕРА (Связываем устройства)
-        const myProfile = safeProfiles.find(p => p.inspector_name === window.syncConfig.engineerName);
+    // 2. Слияние профиля (Черновик)
+    if (newProfiles && newProfiles.length > 0) {
+        const myProfile = newProfiles.find(p => p.inspector_name === window.syncConfig.engineerName);
         if (myProfile) {
             const data = myProfile.profile_data;
-            if (data.gameLogs && typeof gameActionLogs !== 'undefined') {
-                let logMap = new Map(gameActionLogs.map(l => [l.id, l]));
-                data.gameLogs.forEach(l => logMap.set(l.id, l));
-                gameActionLogs = Array.from(logMap.values());
-            }
-            if (data.plan && typeof weeklyPlanData !== 'undefined') weeklyPlanData = data.plan;
-            if (data.absence && typeof engineerAbsence !== 'undefined') engineerAbsence = data.absence;
-            if (data.statuses && typeof contractorStatuses !== 'undefined') contractorStatuses = { ...contractorStatuses, ...data.statuses };
-            if (data.expertConclusions && typeof customExpertConclusions !== 'undefined') customExpertConclusions = { ...customExpertConclusions, ...data.expertConclusions };
-            if (data.settings && typeof appSettings !== 'undefined') {
-                appSettings = { ...appSettings, ...data.settings };
-                if (typeof applySettingsToUI === 'function') applySettingsToUI();
-            }
             
-            // ВОССТАНОВЛЕНИЕ ЧЕРНОВИКА
             if (data.session && typeof dbPut !== 'undefined' && typeof dbGet !== 'undefined') {
                 const localSession = await dbGet('app_state', 'current_session');
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
                 const cloudTime = data.session.timestamp || 0;
                 
+                // Если черновик в облаке СВЕЖЕЕ локального (сохранен с другого устройства позже)
                 if (cloudTime > localTime) {
                     await dbPut('app_state', data.session);
                     if (typeof restoreSession === 'function') {
@@ -396,38 +419,39 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
         }
     }
 
+    // Сохранение в базу телефона
     if (dbUpdated && typeof dbPut !== 'undefined') {
         if (typeof contractorArray !== 'undefined') {
             for (const item of contractorArray) {
-                if (item._deleted) {
-                    await dbDelete('app_history', item.id);
-                } else await dbPut('app_history', item);
+                if (item._deleted) await dbDelete('app_history', item.id);
+                else await dbPut('app_history', item);
             }
             contractorArray = contractorArray.filter(i => !i._deleted);
         }
+    }
+};
 
-        if (typeof etalonActsArray !== 'undefined') {
-            for (const item of etalonActsArray) {
-                if (item._deleted) await dbDelete('rbi_etalon_acts', item.id);
-                else await dbPut('rbi_etalon_acts', item);
+window.extractAndUploadPhotos = async function() {
+    let dbUpdated = false;
+    
+    // Проходим по истории и ищем Base64 или локальные ссылки
+    if (typeof contractorArray !== 'undefined' && Array.isArray(contractorArray)) {
+        for (let i = 0; i < contractorArray.length; i++) {
+            let check = contractorArray[i];
+            let changed = false;
+            
+            if (check.photos) {
+                const pKeys = Object.keys(check.photos);
+                for (let id of pKeys) {
+                    let url = check.photos[id];
+                    if (url && url.startsWith('data:image')) {
+                        const cloudUrl = await window.uploadBase64ToStorage(url, `history/${check.id}_${id}.jpg`);
+                        if (cloudUrl !== url) { check.photos[id] = cloudUrl; changed = true; dbUpdated = true; }
+                    }
+                }
             }
-            etalonActsArray = etalonActsArray.filter(i => !i._deleted);
+            // Пересохраняем проверку в БД телефона (чтобы в след раз не грузить фото)
+            if (changed && typeof dbPut !== 'undefined') await dbPut('app_history', check);
         }
-
-        if (typeof rbi_tasksData !== 'undefined') {
-            for (const item of rbi_tasksData) {
-                if (item._deleted) await dbDelete('rbi_tasks', item.id);
-                else await dbPut('rbi_tasks', item);
-            }
-            rbi_tasksData = rbi_tasksData.filter(i => !i._deleted);
-        }
-
-        await dbPut('app_settings', { key: 'custom_twi_cards', data: typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => !String(c.id).startsWith('sys_')) : [] });
-        await dbPut('app_settings', { key: 'custom_docs', data: typeof customDocs !== 'undefined' ? customDocs.filter(d => !String(d.id).startsWith('sys_')) : [] });
-        await dbPut('app_settings', { key: 'custom_nodes', data: typeof customNodes !== 'undefined' ? customNodes : [] }); 
-        await dbPut('app_settings', { key: 'game_action_logs', data: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [] });
-        await dbPut('app_settings', { key: 'contractor_statuses', data: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {} });
-        
-        if (typeof saveSessionData === 'function') saveSessionData();
     }
 };
