@@ -1,4 +1,4 @@
-/* Файл: js/sync.js (Финальная боевая версия) */
+/* Файл: js/sync.js (Финальная боевая версия - Очищенная) */
 console.log("✅ SYNC.JS загружен браузером!");
 
 window.supabaseClient = null;
@@ -19,13 +19,11 @@ if (!window.syncConfig.deviceId) {
     localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
 }
 
-// Вспомогательная функция для уведомлений
 function safeToast(msg) {
     if (typeof showToast === 'function') showToast(msg);
     else console.log(msg);
 }
 
-// Хэширование PIN-кода (SHA-256)
 window.hashPin = async function(pin) {
     if (!pin) return null;
     const msgBuffer = new TextEncoder().encode(pin);
@@ -34,7 +32,6 @@ window.hashPin = async function(pin) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
-// 1. ИНИЦИАЛИЗАЦИЯ
 window.initSync = async function() {
     window.renderSyncUI();
 
@@ -54,7 +51,7 @@ window.initSync = async function() {
     
     if (window.syncConfig.enabled && window.syncConfig.engineerName && window.syncConfig.projectCode) {
         window.triggerSync('full');
-        setInterval(() => window.triggerSync('silent'), 120000); // Автосинхронизация каждые 2 мин
+        setInterval(() => window.triggerSync('silent'), 120000);
     }
 };
 
@@ -62,7 +59,6 @@ window.isSyncEnabled = function() {
     return window.syncConfig.enabled;
 };
 
-// 2. ОТРИСОВКА ИНТЕРФЕЙСА И ИНДИКАТОР-ОБЛАЧКО
 window.renderSyncUI = function() {
     const container = document.getElementById('sync-settings-block');
     const headerIndicator = document.getElementById('header-sync-status');
@@ -70,14 +66,11 @@ window.renderSyncUI = function() {
     if (headerIndicator) {
         if (window.syncConfig.enabled) {
             if (window.isSyncing) {
-                // Зеленое мигающее (идет загрузка)
                 headerIndicator.innerHTML = `<div title="Синхронизация..." class="text-green-500 animate-pulse flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
             } else {
-                // Зеленое статичное (онлайн, ждет)
                 headerIndicator.innerHTML = `<div title="Облако подключено" class="text-green-500 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
             }
         } else {
-            // Серое статичное (офлайн)
             headerIndicator.innerHTML = `<div title="Локальный режим" class="text-slate-400 opacity-70 flex items-center justify-center"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path></svg></div>`;
         }
     }
@@ -97,7 +90,7 @@ window.renderSyncUI = function() {
             <div class="p-3 bg-white dark:bg-slate-800 border-b border-[var(--card-border)] flex justify-between items-center">
                 <div>
                     <div class="font-bold text-[11px] uppercase text-slate-700 dark:text-slate-300 cursor-pointer" ondblclick="window.resetFullAccess()">Режим: ${window.syncConfig.syncMode === 'full' ? 'Вся команда' : 'Только мои'}</div>
-                    <div class="text-[9px] text-slate-500">Какие проверки скачивать (Двойной клик для сброса)</div>
+                    <div class="text-[9px] text-slate-500">Какие проверки скачивать</div>
                 </div>
                 <select id="sync-mode-select" class="input-base !w-auto !py-1.5 !text-[10px] font-bold" onchange="window.changeSyncMode(this.value)">
                     <option value="personal" ${window.syncConfig.syncMode === 'personal' ? 'selected' : ''}>Только мои</option>
@@ -117,7 +110,6 @@ window.renderSyncUI = function() {
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ваше Имя (Фамилия И.О.) *</label>
                         <input type="text" id="sync-name" class="input-base ${engName ? 'bg-slate-100 text-slate-500 cursor-not-allowed dark:bg-slate-900' : ''}" placeholder="Иванов И.И." value="${engName}" ${engName ? 'readonly' : ''}>
-                        ${engName ? '<div class="text-[8px] text-indigo-500 mt-1 font-bold">Имя подтянуто из вашего Профиля.</div>' : '<div class="text-[8px] text-orange-500 mt-1 font-bold">Заполните имя во вкладке Инженер -> Профиль.</div>'}
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код проекта команды *</label>
@@ -137,8 +129,6 @@ window.renderSyncUI = function() {
     }
 };
 
-// 3. СОХРАНЕНИЕ И АВТОРИЗАЦИЯ
-// 3. СОХРАНЕНИЕ И АВТОРИЗАЦИЯ
 window.saveSyncSettings = async function() {
     const name = document.getElementById('sync-name').value.trim();
     const code = document.getElementById('sync-code').value.trim();
@@ -146,24 +136,13 @@ window.saveSyncSettings = async function() {
 
     if (!name || !code) return safeToast("⚠️ Имя и Код проекта обязательны!");
     if (pin && (pin.length !== 4 || isNaN(pin))) return safeToast("⚠️ ПИН-код должен содержать ровно 4 цифры!");
-
-    if (!window.supabaseClient) {
-        alert("❌ Ошибка: Ключи базы данных не настроены! Внесите настройки Supabase в файл js/config.js");
-        return;
-    }
+    if (!window.supabaseClient) return alert("❌ Ошибка: Ключи базы данных не настроены в js/config.js");
 
     const { data: projData } = await window.supabaseClient.from('allowed_projects').select('code').eq('code', code).limit(1);
-
-    if (!projData || projData.length === 0) {
-        safeToast("❌ Ошибка: Такого кода проекта не существует!");
-        return;
-    }
+    if (!projData || projData.length === 0) return safeToast("❌ Ошибка: Такого кода проекта не существует!");
 
     const hashedPin = await window.hashPin(pin);
-
-    // ИСПРАВЛЕНИЕ: Ищем ПИН-код в новой таблице профилей
-    const { data } = await window.supabaseClient.from('rbi_engineer_profiles')
-        .select('pin_hash').eq('project_code', code).eq('inspector_name', name).limit(1);
+    const { data } = await window.supabaseClient.from('rbi_engineer_profiles').select('pin_hash').eq('project_code', code).eq('inspector_name', name).limit(1);
         
     if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
         window.showPinPromptModal(name, code, data[0].pin_hash);
@@ -180,7 +159,7 @@ window.showPinPromptModal = function(name, code, correctHash) {
             <div class="text-center mb-4">
                 <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-3">🔒</div>
                 <h3 class="font-black text-[13px] uppercase text-slate-800 dark:text-white">Введите PIN-код</h3>
-                <p class="text-[10px] text-slate-500 mt-1">Профиль ${name} защищен. Введите ПИН для доступа.</p>
+                <p class="text-[10px] text-slate-500 mt-1">Профиль ${name} защищен.</p>
             </div>
             <input type="password" id="sync-pin-verify" class="w-full bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center text-xl font-black tracking-widest outline-none mb-4" placeholder="••••" maxlength="4" inputmode="numeric">
             <div class="flex gap-2">
@@ -190,7 +169,6 @@ window.showPinPromptModal = function(name, code, correctHash) {
         </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
-    document.getElementById('sync-pin-verify').focus();
 };
 
 window.verifySyncPin = async function(name, code, correctHash) {
@@ -199,9 +177,7 @@ window.verifySyncPin = async function(name, code, correctHash) {
     if (inputHash === correctHash) {
         document.getElementById('sync-pin-modal').remove();
         window.applySyncConnect(name, code, inputHash);
-    } else {
-        safeToast("❌ Неверный PIN-код!");
-    }
+    } else safeToast("❌ Неверный PIN-код!");
 };
 
 window.applySyncConnect = function(name, code, hashedPin) {
@@ -213,21 +189,16 @@ window.applySyncConnect = function(name, code, hashedPin) {
     
     if (typeof appSettings !== 'undefined') {
         appSettings.engineerName = name;
-        if (typeof dbPut === 'function' && typeof STORES !== 'undefined') {
-            dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
-        }
-        if (typeof applySmartLocks === 'function') {
-            applySmartLocks(); // Обновляем блокировку
-        }
+        if (typeof dbPut === 'function') dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+        if (typeof applySmartLocks === 'function') applySmartLocks();
     }
-
     window.renderSyncUI();
     safeToast("✅ Подключено к Облаку!");
-    window.triggerSync('manual'); // Первый запуск - ручной (с уведомлениями)
+    window.triggerSync('manual');
 };
 
 window.disconnectSync = function() {
-    if (!confirm("Отключить облако? Ваши данные останутся на устройстве, но не будут отправляться коллегам.")) return;
+    if (!confirm("Отключить облако? Ваши данные останутся на устройстве.")) return;
     window.syncConfig.enabled = false;
     window.syncConfig.projectCode = '';
     window.syncConfig.pinHash = '';
@@ -236,56 +207,40 @@ window.disconnectSync = function() {
     safeToast("Отключено. Локальный режим.");
 };
 
-// 4. НАДЕЖНАЯ ВЫГРУЗКА ФОТО В SUPABASE BUCKET
 function b64toBlob(b64Data, contentType = 'image/jpeg', sliceSize = 512) {
     const byteCharacters = atob(b64Data);
     const byteArrays = [];
     for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
         const slice = byteCharacters.slice(offset, offset + sliceSize);
         const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        byteArrays.push(byteArray);
+        for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
+        byteArrays.push(new Uint8Array(byteNumbers));
     }
     return new Blob(byteArrays, { type: contentType });
 }
 
 window.uploadBase64ToStorage = async function(base64str, path) {
     if (!base64str || !base64str.startsWith('data:image')) return base64str; 
-    // ИСПРАВЛЕНИЕ: Если это текстовый SVG из демо-режима (в нем нет 'base64,'), мы его просто пропускаем
     if (!base64str.includes('base64,')) return base64str;
     
     try {
-        console.log(`[Sync] Выгрузка файла: ${path}`);
         const parts = base64str.split(';');
         const mime = parts[0].split(':')[1];
         const b64Data = parts[1].split(',')[1];
-        
         const blob = b64toBlob(b64Data, mime);
 
-        const { data, error } = await window.supabaseClient.storage
-            .from('inspection-photos')
-            .upload(path, blob, { upsert: true, contentType: mime });
-
+        const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(path, blob, { upsert: true, contentType: mime });
         if (error) throw error;
 
         const { data: publicUrlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(path);
         return publicUrlData.publicUrl;
-
-    } catch(e) {
-        console.error("[Sync] Ошибка загрузки фото (fallback to base64):", e);
-        return base64str; 
-    }
+    } catch(e) { return base64str; }
 };
 
-// ЖЕСТКО СИНХРОННАЯ ФУНКЦИЯ ОБРАБОТКИ ФОТО
+// Выгрузка фото в облако
 window.extractAndUploadPhotos = async function() {
-    console.log("[Sync] Запуск выгрузки фото...");
     let dbUpdated = false;
-
-    // 1. Проверяем текущий активный черновик (теперь умеет выгружать local://)
+    
     if (typeof photos !== 'undefined' && photos !== null) {
         const keys = Object.keys(photos);
         for (let id of keys) {
@@ -297,14 +252,11 @@ window.extractAndUploadPhotos = async function() {
                 const record = await dbGet(STORES.PHOTOS, localUrl);
                 if (record && record.data) {
                     const blob = arrayBufferToBlob(record.data, record.mimeType);
-                    const { data, error } = await window.supabaseClient.storage
-                        .from('inspection-photos')
-                        .upload(`sessions/${window.syncConfig.deviceId}_${id}.webp`, blob, { upsert: true, contentType: record.mimeType });
+                    const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(`sessions/${window.syncConfig.deviceId}_${id}.webp`, blob, { upsert: true, contentType: record.mimeType });
                     if (!error) {
                         const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`sessions/${window.syncConfig.deviceId}_${id}.webp`);
-                        const cloudUrl = urlData.publicUrl;
-                        await PhotoManager.linkCloudToLocal(localUrl, cloudUrl);
-                        photos[id] = cloudUrl;
+                        await PhotoManager.linkCloudToLocal(localUrl, urlData.publicUrl);
+                        photos[id] = urlData.publicUrl;
                         dbUpdated = true;
                     }
                 }
@@ -312,12 +264,10 @@ window.extractAndUploadPhotos = async function() {
         }
     }
 
-    // 1.5. Проверяем Акты-Эталоны
     if (typeof etalonActsArray !== 'undefined' && Array.isArray(etalonActsArray)) {
         for (let i = 0; i < etalonActsArray.length; i++) {
             let check = etalonActsArray[i];
             let changed = false;
-            
             if (check.details && check.details.elements) {
                 for (let el of check.details.elements) {
                     let localUrl = el.photo;
@@ -325,27 +275,21 @@ window.extractAndUploadPhotos = async function() {
                         const record = await dbGet(STORES.PHOTOS, localUrl);
                         if (record && record.data) {
                             const blob = arrayBufferToBlob(record.data, record.mimeType);
-                            const { data, error } = await window.supabaseClient.storage
-                                .from('inspection-photos')
-                                .upload(`etalons/${check.id}_${Math.random().toString(36).substring(7)}.webp`, blob, { upsert: true, contentType: record.mimeType });
-                            
+                            const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(`etalons/${check.id}_${Math.random().toString(36).substring(7)}.webp`, blob, { upsert: true, contentType: record.mimeType });
                             if (!error) {
                                 const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`etalons/${check.id}_${Math.random().toString(36).substring(7)}.webp`);
-                                const cloudUrl = urlData.publicUrl;
-                                await PhotoManager.linkCloudToLocal(localUrl, cloudUrl);
-                                el.photo = cloudUrl;
+                                await PhotoManager.linkCloudToLocal(localUrl, urlData.publicUrl);
+                                el.photo = urlData.publicUrl;
                                 changed = true; dbUpdated = true;
                             }
                         }
                     }
                 }
             }
-            if (changed && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-                await dbPut(STORES.ETALON_ACTS, check);
-            }
+            if (changed && typeof dbPut !== 'undefined') await dbPut(STORES.ETALON_ACTS, check);
         }
     }
-    // 1.6. Проверяем фото внутри Задач (Воркшопы и т.д.)
+
     if (typeof rbi_tasksData !== 'undefined' && Array.isArray(rbi_tasksData)) {
         for (let i = 0; i < rbi_tasksData.length; i++) {
             let task = rbi_tasksData[i];
@@ -353,67 +297,47 @@ window.extractAndUploadPhotos = async function() {
                 const record = await dbGet(STORES.PHOTOS, task.completionPhoto);
                 if (record && record.data) {
                     const blob = arrayBufferToBlob(record.data, record.mimeType);
-                    const { data, error } = await window.supabaseClient.storage
-                        .from('inspection-photos')
-                        .upload(`tasks/${task.id}_completion.webp`, blob, { upsert: true, contentType: record.mimeType });
-                    
+                    const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(`tasks/${task.id}_completion.webp`, blob, { upsert: true, contentType: record.mimeType });
                     if (!error) {
                         const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`tasks/${task.id}_completion.webp`);
-                        const cloudUrl = urlData.publicUrl;
-                        await PhotoManager.linkCloudToLocal(task.completionPhoto, cloudUrl);
-                        task.completionPhoto = cloudUrl;
+                        await PhotoManager.linkCloudToLocal(task.completionPhoto, urlData.publicUrl);
+                        task.completionPhoto = urlData.publicUrl;
                         task.updatedAt = new Date().toISOString();
                         dbUpdated = true;
-                        
-                        if (typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-                            await dbPut(STORES.TASKS, task);
-                        }
+                        if (typeof dbPut !== 'undefined') await dbPut(STORES.TASKS, task);
                     }
                 }
             }
         }
     }
-    // 2. Проверяем Архив проверок (без изменений, просто оставляем как было)
+
     if (typeof contractorArray !== 'undefined' && Array.isArray(contractorArray)) {
         for (let i = 0; i < contractorArray.length; i++) {
             let check = contractorArray[i];
             let changed = false;
-            
             if (check.photos) {
                 const pKeys = Object.keys(check.photos);
                 for (let id of pKeys) {
                     let localUrl = check.photos[id];
-                    // Если находим локальную ссылку - значит фото еще не в облаке
                     if (localUrl && localUrl.startsWith('local://')) {
-                        // Достаем бинарник из БД
                         const record = await dbGet(STORES.PHOTOS, localUrl);
                         if (record && record.data) {
                             const blob = arrayBufferToBlob(record.data, record.mimeType);
-                            const { data, error } = await window.supabaseClient.storage
-                                .from('inspection-photos')
-                                .upload(`history/${check.id}_${id}.webp`, blob, { upsert: true, contentType: record.mimeType });
-                            
+                            const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(`history/${check.id}_${id}.webp`, blob, { upsert: true, contentType: record.mimeType });
                             if (!error) {
                                 const { data: urlData } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(`history/${check.id}_${id}.webp`);
-                                const cloudUrl = urlData.publicUrl;
-                                
-                                // САМОЕ ВАЖНОЕ: Привязываем облачную ссылку к локальному бинарнику
-                                await PhotoManager.linkCloudToLocal(localUrl, cloudUrl);
-                                
-                                check.photos[id] = cloudUrl;
+                                await PhotoManager.linkCloudToLocal(localUrl, urlData.publicUrl);
+                                check.photos[id] = urlData.publicUrl;
                                 changed = true; dbUpdated = true;
                             }
                         }
                     }
                 }
             }
-            if (changed && typeof dbPut !== 'undefined' && typeof STORES !== 'undefined') {
-                await dbPut(STORES.HISTORY, check);
-            }
+            if (changed && typeof dbPut !== 'undefined') await dbPut(STORES.HISTORY, check);
         }
     }
 
-    // 3. Проверяем TWI Карты (Они тоже могут пухнуть от Base64!)
     if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
         for (let i = 0; i < customTwiCards.length; i++) {
             let twi = customTwiCards[i];
@@ -428,9 +352,8 @@ window.extractAndUploadPhotos = async function() {
                 changed = true; dbUpdated = true;
             }
             if (twi.pdfData && twi.pdfData.startsWith('data:application/pdf')) {
-                // НОВОЕ: Загрузка PDF в бакет
                 const pdfBlob = b64toBlob(twi.pdfData.split(',')[1], 'application/pdf');
-                const { data, error } = await window.supabaseClient.storage.from('twi-pdfs').upload(`${window.syncConfig.projectCode}/${window.syncConfig.deviceId}/${twi.id}.pdf`, pdfBlob, { upsert: true, contentType: 'application/pdf' });
+                const { error } = await window.supabaseClient.storage.from('twi-pdfs').upload(`${window.syncConfig.projectCode}/${window.syncConfig.deviceId}/${twi.id}.pdf`, pdfBlob, { upsert: true, contentType: 'application/pdf' });
                 if (!error) {
                     const { data: urlData } = window.supabaseClient.storage.from('twi-pdfs').getPublicUrl(`${window.syncConfig.projectCode}/${window.syncConfig.deviceId}/${twi.id}.pdf`);
                     twi.pdfData = urlData.publicUrl;
@@ -446,14 +369,10 @@ window.extractAndUploadPhotos = async function() {
                     }
                 }
             }
-            
-            if (changed && typeof dbPut !== 'undefined') {
-                await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
-            }
+            if (changed && typeof dbPut !== 'undefined') await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
         }
     }
 
-    // 4. НОВОЕ: Проверяем Пользовательские Технические узлы (customNodes)
     if (typeof customNodes !== 'undefined' && Array.isArray(customNodes)) {
         for (let i = 0; i < customNodes.length; i++) {
             let node = customNodes[i];
@@ -465,22 +384,19 @@ window.extractAndUploadPhotos = async function() {
         }
     }
 
-    if (dbUpdated && typeof saveSessionData === 'function') {
-        await saveSessionData();
-    }
-    console.log("[Sync] Выгрузка фото и ресурсов завершена.");
+    if (dbUpdated && typeof saveSessionData === 'function') await saveSessionData();
 };
 
-// 5. ГЛАВНЫЙ МЕХАНИЗМ СИНХРОНИЗАЦИИ
+// =========================================================================================
+// ЕДИНАЯ И ЧИСТАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ
+// =========================================================================================
 window.triggerSync = async function(mode = 'silent') {
-    if (!window.isSyncEnabled()) return;
-    
-    if (!window.supabaseClient) {
-        if (mode === 'manual') safeToast('❌ Ошибка: Облако не подключено');
+    if (!window.isSyncEnabled() || !window.supabaseClient) {
+        if (mode === 'manual' && !window.supabaseClient) safeToast('❌ Ошибка: Облако не подключено');
         return;
     }
     
-    // Если кнопка зависла - мы ее отпускаем вручную
+    // Блокировка от двойного запуска
     if (window.isSyncing) {
         if (mode === 'manual') safeToast("⏳ Синхронизация уже идет... Подождите");
         return;
@@ -490,32 +406,21 @@ window.triggerSync = async function(mode = 'silent') {
     window.renderSyncUI(); 
     
     try {
-        if (mode === 'manual') safeToast('🔄 Шаг 1: Подготовка...');
-        console.log(`[Sync] Старт синхронизации (${mode})...`);
-        
-        // 1. Фотографии
-        if (mode === 'manual') safeToast('🔄 Шаг 2: Выгрузка фотографий...');
-        try {
-            await window.extractAndUploadPhotos();
-        } catch (photoErr) {
-            console.warn("[Sync] Ошибка при выгрузке фото, идем дальше:", photoErr);
-        }
+        if (mode === 'manual') safeToast('🔄 Шаг 1: Выгрузка фото...');
+        try { await window.extractAndUploadPhotos(); } catch (pe) { console.warn("Пропуск фото:", pe); }
 
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
 
-        // 2. Сбор истории
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
-        console.log(`[Sync] К отправке подготовлено: Проверок (${currentHistory.length})`);
-
-        // 3. Отправка проверок (PUSH)
+        // 1. Отправка Истории (PUSH)
         if (currentHistory.length > 0) {
-            if (mode === 'manual') safeToast(`🔄 Шаг 3: Отправка проверок (${currentHistory.length} шт)...`);
-            const inspectionsToPush = currentHistory.map(c => ({
+            if (mode === 'manual') safeToast(`🔄 Шаг 2: Отправка проверок (${currentHistory.length} шт)...`);
+            const insps = currentHistory.map(c => ({
                 id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
                 template_key: c.templateKey, location: c.location, date: c.date,
                 inspection_data: {
@@ -526,14 +431,15 @@ window.triggerSync = async function(mode = 'silent') {
                 },
                 photos: c.photos, _deleted: c._deleted || false, _deleted_at: c._deletedAt || null, updated_at: new Date().toISOString()
             }));
-            for (let i = 0; i < inspectionsToPush.length; i += 100) {
-                const { error } = await window.supabaseClient.from('rbi_inspections').upsert(inspectionsToPush.slice(i, i + 100), { onConflict: 'id' });
+            
+            for (let i = 0; i < insps.length; i += 100) {
+                const { error } = await window.supabaseClient.from('rbi_inspections').upsert(insps.slice(i, i + 100), { onConflict: 'id' });
                 if (error) throw new Error("Сбой в rbi_inspections: " + error.message);
             }
         }
 
-        // 4. Справочники
-        if (mode === 'manual') safeToast('🔄 Шаг 4: Отправка справочников...');
+        // 2. Отправка Справочников (PUSH)
+        if (mode === 'manual') safeToast('🔄 Шаг 3: Отправка справочников...');
         const pushDict = async (table, dataArr, dataField) => {
             if (!dataArr || dataArr.length === 0) return;
             const rows = dataArr.filter(item => !String(item.id).startsWith('sys_')).map(item => ({
@@ -548,37 +454,37 @@ window.triggerSync = async function(mode = 'silent') {
         await pushDict('rbi_custom_nodes', typeof customNodes !== 'undefined' ? customNodes : [], 'node_data');
         await pushDict('rbi_custom_docs', typeof customDocs !== 'undefined' ? customDocs : [], 'doc_data');
 
-        // 5. Задачи и Эталоны (с мягким перехватом ошибок, если таблиц нет)
-        if (mode === 'manual') safeToast('🔄 Шаг 5: Отправка Задач и Эталонов...');
+        // 3. Отправка Задач и Эталонов (Мягкая)
+        if (mode === 'manual') safeToast('🔄 Шаг 4: Отправка Задач и Эталонов...');
         if (typeof rbi_tasksData !== 'undefined' && rbi_tasksData.length > 0) {
             try {
-                const tasksToPush = rbi_tasksData.map(t => ({
+                const tasks = rbi_tasksData.map(t => ({
                     id: t.id, inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, task_data: t,
                     updated_at: t.updatedAt || new Date().toISOString(), _deleted: t._deleted || false, deleted_at: t._deleted ? new Date().toISOString() : null
                 }));
-                for (let i = 0; i < tasksToPush.length; i += 100) {
-                    const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasksToPush.slice(i, i + 100), { onConflict: 'id' });
-                    if (error) console.warn("Таблица rbi_tasks не настроена", error);
+                for (let i = 0; i < tasks.length; i += 100) {
+                    const { error } = await window.supabaseClient.from('rbi_tasks').upsert(tasks.slice(i, i + 100), { onConflict: 'id' });
+                    if (error) console.warn("Таблица rbi_tasks недоступна:", error);
                 }
             } catch(e) { console.warn("Пропуск Задач:", e); }
         }
 
         if (typeof etalonActsArray !== 'undefined' && etalonActsArray.length > 0) {
             try {
-                const etalonsToPush = etalonActsArray.map(c => ({
+                const etalons = etalonActsArray.map(c => ({
                     id: c.id, inspector_id: window.syncConfig.deviceId, inspector_name: c.inspectorName, contractor_name: c.contractorName,
                     project_code: pCode, template_key: c.templateKey, act_data: c, updated_at: c.updatedAt || new Date().toISOString(),
                     _deleted: c._deleted || false, deleted_at: c._deleted ? new Date().toISOString() : null
                 }));
-                for (let i = 0; i < etalonsToPush.length; i += 100) {
-                    const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalonsToPush.slice(i, i + 100), { onConflict: 'id' });
-                    if (error) console.warn("Таблица rbi_etalon_acts не настроена", error);
+                for (let i = 0; i < etalons.length; i += 100) {
+                    const { error } = await window.supabaseClient.from('rbi_etalon_acts').upsert(etalons.slice(i, i + 100), { onConflict: 'id' });
+                    if (error) console.warn("Таблица rbi_etalon_acts недоступна:", error);
                 }
             } catch(e) { console.warn("Пропуск Эталонов:", e); }
         }
 
-        // 6. Профиль HR и Черновики
-        if (mode === 'manual') safeToast('🔄 Шаг 6: Сохранение профиля...');
+        // 4. Отправка Профиля и Черновика (PUSH)
+        if (mode === 'manual') safeToast('🔄 Шаг 5: Сохранение черновика...');
         const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
         const hrProfileData = {
             timestamp: Date.now(), session: currentSession, gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
@@ -594,8 +500,8 @@ window.triggerSync = async function(mode = 'silent') {
         }, { onConflict: 'inspector_id' });
         if (profileError) throw new Error("Сбой профиля: " + profileError.message);
 
-        // 7. Скачивание (Pull)
-        if (mode === 'manual') safeToast('🔄 Шаг 7: Загрузка обновлений...');
+        // 5. Загрузка обновлений (PULL)
+        if (mode === 'manual') safeToast('🔄 Шаг 6: Загрузка обновлений из облака...');
         let lastSync = localStorage.getItem('last_cloud_sync_time') || '2000-01-01T00:00:00Z';
 
         let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
@@ -614,15 +520,13 @@ window.triggerSync = async function(mode = 'silent') {
             if (resT.data) newTasks = resT.data;
             const resE = await window.supabaseClient.from('rbi_etalon_acts').select('*').eq('project_code', pCode).gt('updated_at', lastSync);
             if (resE.data) newEtalons = resE.data;
-        } catch (dbErr) {
-            console.warn("[Sync] Пропуск скачивания таблиц задач/эталонов.");
-        }
+        } catch (dbErr) {}
 
         const { data: ratingData } = await window.supabaseClient.from('rbi_project_ratings').select('rating_data').eq('project_code', pCode).limit(1);
         if (ratingData && ratingData.length > 0) window.serverGlobalRating = ratingData[0].rating_data;
 
-        // 8. Слияние
-        if (mode === 'manual') safeToast('🔄 Шаг 8: Слияние баз...');
+        // 6. Слияние (MERGE)
+        if (mode === 'manual') safeToast('🔄 Шаг 7: Слияние баз...');
         await window.mergeCloudData(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons);
 
         localStorage.setItem('last_cloud_sync_time', new Date().toISOString());
@@ -635,8 +539,7 @@ window.triggerSync = async function(mode = 'silent') {
         if (typeof downloadMissingCloudFiles === 'function') window.downloadMissingCloudFiles();
 
     } catch (e) {
-        console.error("[Sync] Ошибка синхронизации:", e);
-        // Выводим ошибку крупно на экран
+        console.error("[Sync] Ошибка:", e);
         if (mode === 'manual') safeToast('❌ Ошибка: ' + e.message.substring(0, 70));
     } finally {
         window.isSyncing = false;
@@ -644,7 +547,6 @@ window.triggerSync = async function(mode = 'silent') {
     }
 };
 
-// 6. УМНОЕ СЛИЯНИЕ ДАННЫХ В ПАМЯТЬ ТЕЛЕФОНА
 window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs, newProfiles, newTasks, newEtalons) {
     let dbUpdated = false;
 
@@ -659,7 +561,6 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
     if (safeInspections.length > 0) {
         let historyMap = new Map();
         if (typeof contractorArray !== 'undefined') contractorArray.forEach(c => historyMap.set(c.id, c));
-
         safeInspections.forEach(row => {
             const item = { id: row.id, date: row.date, projectName: row.project_code, inspectorName: row.inspector_name, contractorName: row.contractor_name, templateKey: row.template_key, location: row.location, ...row.inspection_data, photos: row.photos, _deleted: row._deleted, _deletedAt: row._deleted_at };
             historyMap.set(item.id, item);
@@ -735,19 +636,13 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
                 const cloudTime = data.session.timestamp || 0;
                 
-                // Если облачный черновик свежее локального
                 if (cloudTime > localTime) {
                     await dbPut('app_state', data.session);
-                    // Говорим приложению перезагрузить черновик в интерфейс
                     if (typeof restoreSession === 'function') {
-                        setTimeout(() => {
-                            restoreSession();
-                            console.log("[Sync] Черновик обновлен из облака!");
-                        }, 500);
+                        setTimeout(() => { restoreSession(); console.log("[Sync] Черновик обновлен из облака!"); }, 500);
                     }
                 }
             }
-
             dbUpdated = true;
         }
     }
@@ -793,12 +688,8 @@ window.mergeCloudData = async function(newInspections, newTwi, newNodes, newDocs
     }
 };
 
-
-
-// === ЛОГИКА РЕЖИМОВ СИНХРОНИЗАЦИИ ===
 window.changeSyncMode = function(mode) {
     if (mode === 'full' && !window.syncConfig.fullAccessGranted) {
-        // Возвращаем селект обратно, пока не введут пароль
         document.getElementById('sync-mode-select').value = 'personal';
         window.showFullAccessModal();
         return;
@@ -808,10 +699,9 @@ window.changeSyncMode = function(mode) {
     localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
     window.renderSyncUI();
     safeToast(`✅ Режим изменен на: ${mode === 'full' ? 'Вся команда' : 'Только мои'}`);
-    window.triggerSync('manual'); // Запускаем синхронизацию для загрузки нужных данных
+    window.triggerSync('manual'); 
 };
 
-// Функция сброса прав (вызывается двойным кликом по тексту)
 window.resetFullAccess = function() {
     if (window.syncConfig.fullAccessGranted) {
         window.syncConfig.fullAccessGranted = false;
@@ -830,9 +720,8 @@ window.showFullAccessModal = function() {
             <div class="text-center mb-4">
                 <div class="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mx-auto mb-3 text-2xl">🛡️</div>
                 <h3 class="font-black text-[13px] uppercase text-slate-800 dark:text-white">Доступ ограничен</h3>
-                <p class="text-[10px] text-slate-500 mt-1">Введите пароль руководителя для скачивания чужих проверок.</p>
+                <p class="text-[10px] text-slate-500 mt-1">Введите пароль руководителя.</p>
             </div>
-            <!-- ИСПРАВЛЕНИЕ: maxlength="6" и placeholder 6 точек -->
             <input type="password" id="sync-full-access-pin" class="w-full bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center text-xl font-black tracking-widest outline-none mb-4" placeholder="••••••" maxlength="6" inputmode="numeric">
             <div class="flex gap-2">
                 <button onclick="document.getElementById('sync-full-access-modal').remove()" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-[10px] uppercase">Отмена</button>
@@ -847,14 +736,9 @@ window.showFullAccessModal = function() {
 window.verifyFullAccessPin = async function() {
     const input = document.getElementById('sync-full-access-pin').value;
     const inputHash = await window.hashPin(input);
-    
-    // СТРОГАЯ БЕЗОПАСНОСТЬ: Сравниваем только зашифрованные хэши. 
-    // Пароль в открытом виде в коде нигде не фигурирует.
     if (inputHash === SYNC_FULL_ACCESS_HASH) {
         document.getElementById('sync-full-access-modal').remove();
         window.syncConfig.fullAccessGranted = true;
         window.changeSyncMode('full');
-    } else {
-        safeToast("❌ Неверный пароль!");
-    }
+    } else safeToast("❌ Неверный пароль!");
 };
