@@ -1,4 +1,4 @@
-/* Файл: js/sync.js (Архитектура Pull-First, Non-Blocking) */
+/* Файл: js/sync.js (Исправленная версия сборки объектов) */
 console.log("✅ SYNC.JS загружен браузером!");
 
 window.supabaseClient = null;
@@ -48,8 +48,8 @@ window.initSync = async function() {
     }
     
     if (window.syncConfig.enabled && window.syncConfig.engineerName && window.syncConfig.projectCode) {
-        window.triggerSync('silent'); // При запуске приложения тихо качаем обновы
-        setInterval(() => window.triggerSync('silent'), 60000); // Раз в минуту
+        window.triggerSync('silent'); 
+        setInterval(() => window.triggerSync('silent'), 60000); 
     }
 };
 
@@ -77,7 +77,7 @@ window.renderSyncUI = function() {
             <div class="p-4 bg-green-50 border-b border-green-100 text-center">
                 <div class="text-[12px] font-black text-green-700 uppercase mb-1">Синхронизация активна</div>
                 <div class="text-[10px] text-green-600 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
-                <div class="text-[10px] text-green-600 font-bold">Код проекта: ${window.syncConfig.projectCode}</div>
+                <div class="text-[10px] text-green-600 font-bold">Код: ${window.syncConfig.projectCode}</div>
             </div>
             <div class="p-3 bg-white border-b border-slate-200 flex justify-between items-center">
                 <div>
@@ -225,37 +225,9 @@ window.resetFullAccess = function() {
     window.renderSyncUI();
 };
 
-function b64toBlob(b64Data, contentType = 'image/jpeg', sliceSize = 512) {
-    const byteCharacters = atob(b64Data);
-    const byteArrays = [];
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-        const slice = byteCharacters.slice(offset, offset + sliceSize);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i);
-        byteArrays.push(new Uint8Array(byteNumbers));
-    }
-    return new Blob(byteArrays, { type: contentType });
-}
-
-window.uploadBase64ToStorage = async function(base64str, path) {
-    if (!base64str || !base64str.includes('base64,')) return base64str; 
-    try {
-        const parts = base64str.split(';');
-        const mime = parts[0].split(':')[1];
-        const b64Data = parts[1].split(',')[1];
-        const blob = b64toBlob(b64Data, mime);
-
-        const { error } = await window.supabaseClient.storage.from('inspection-photos').upload(path, blob, { upsert: true, contentType: mime });
-        if (error) return base64str;
-
-        const { data } = window.supabaseClient.storage.from('inspection-photos').getPublicUrl(path);
-        return data.publicUrl;
-    } catch(e) { return base64str; }
-};
-
 // ============================================================================
-// ГЛАВНЫЙ БЛОК СИНХРОНИЗАЦИИ (БЕЗОПАСНЫЙ И БЫСТРЫЙ)
-// ============================================================================
+// ГЛАВНЫЙ БЛОК СИНХРОНИЗАЦИИ (ИСПРАВЛЕНО СОХРАНЕНИЕ ОБЪЕКТОВ)
+// ==========================================
 window.triggerSync = async function(mode = 'silent') {
     if (!window.isSyncEnabled() || !window.supabaseClient) return;
     
@@ -267,32 +239,28 @@ window.triggerSync = async function(mode = 'silent') {
     window.isSyncing = true;
     window.renderSyncUI(); 
 
-    // ПРЕДОХРАНИТЕЛЬ: Если функция зависнет, через 30 секунд снимаем блок
+    // Предохранитель 30 секунд
     if (syncTimeout) clearTimeout(syncTimeout);
     syncTimeout = setTimeout(() => {
         window.isSyncing = false;
         window.renderSyncUI();
-        console.log("[Sync] Предохранитель сработал: статус сброшен.");
+        console.log("[Sync] Timeout. Снята блокировка.");
     }, 30000);
     
     try {
         const pCode = window.syncConfig.projectCode;
         const iName = window.syncConfig.engineerName;
 
-        // ==============================================
-        // ЭТАП 1: СКАЧИВАЕМ ДАННЫЕ (PULL) - БЕЗ ОГРАНИЧЕНИЙ ПО ВРЕМЕНИ
-        // ==============================================
+        // ЭТАП 1: СКАЧИВАЕМ ДАННЫЕ (PULL)
         if (mode === 'manual') safeToast('📥 Шаг 1: Скачивание базы с сервера...');
         
+        // Убрали ограничение по дате, чтобы гарантированно стянуть всё
         let query = window.supabaseClient.from('rbi_inspections').select('*').eq('project_code', pCode);
         if (window.syncConfig.syncMode === 'personal') query = query.eq('inspector_name', iName);
         
-        const { data: newInspections, error: errInsp } = await query;
-        if (errInsp) throw new Error("Сбой загрузки проверок: " + errInsp.message);
-
+        const { data: newInspections } = await query;
         const { data: newProfiles } = await window.supabaseClient.from('rbi_engineer_profiles').select('*').eq('project_code', pCode);
         
-        // Скачиваем задачи и эталоны (если таблицы есть)
         let newTasks = [], newEtalons = [];
         try {
             const resT = await window.supabaseClient.from('rbi_tasks').select('*').eq('project_code', pCode);
@@ -301,16 +269,11 @@ window.triggerSync = async function(mode = 'silent') {
             if (resE.data) newEtalons = resE.data;
         } catch (dbErr) {}
 
-        // ==============================================
-        // ЭТАП 2: СЛИЯНИЕ ДАННЫХ (MERGE) В ПАМЯТЬ ТЕЛЕФОНА
-        // ==============================================
-        if (mode === 'manual') safeToast('🔄 Шаг 2: Обновление локальной базы...');
+        // ЭТАП 2: СЛИЯНИЕ ДАННЫХ В ПАМЯТЬ
+        if (mode === 'manual') safeToast('🔄 Шаг 2: Обновление интерфейса...');
         await window.mergeCloudData(newInspections, newProfiles, newTasks, newEtalons);
 
-
-        // ==============================================
         // ЭТАП 3: ОТПРАВКА ДАННЫХ НА СЕРВЕР (PUSH)
-        // ==============================================
         let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
@@ -318,16 +281,35 @@ window.triggerSync = async function(mode = 'silent') {
 
         if (currentHistory.length > 0) {
             if (mode === 'manual') safeToast(`📤 Шаг 3: Отправка текстов (${currentHistory.length} шт)...`);
+            
             const insps = currentHistory.map(c => ({
-                id: c.id, project_code: pCode, inspector_name: c.inspectorName, contractor_name: c.contractorName,
-                template_key: c.templateKey, location: c.location, date: c.date,
+                id: c.id, 
+                project_code: pCode, 
+                inspector_name: c.inspectorName, 
+                contractor_name: c.contractorName,
+                template_key: c.templateKey, 
+                location: c.location, 
+                date: c.date,
                 inspection_data: {
-                    templateTitle: c.templateTitle, section: c.section, floor: c.floor, room: c.room,
-                    instanceId: c.instanceId, stageId: c.stageId, stageName: c.stageName,
-                    checkedStagesInfo: c.checkedStagesInfo, isCompleted: c.isCompleted,
-                    state: c.state, details: c.details, metrics: c.metrics
+                    // ИСПРАВЛЕНИЕ: ЖЕСТКО СОХРАНЯЕМ ИМЯ ОБЪЕКТА (ЖК ...) И МЕТРИКИ
+                    projectName: c.projectName,
+                    templateTitle: c.templateTitle, 
+                    section: c.section, 
+                    floor: c.floor, 
+                    room: c.room,
+                    instanceId: c.instanceId, 
+                    stageId: c.stageId, 
+                    stageName: c.stageName,
+                    checkedStagesInfo: c.checkedStagesInfo, 
+                    isCompleted: c.isCompleted,
+                    state: c.state, 
+                    details: c.details, 
+                    metrics: c.metrics
                 },
-                photos: c.photos, _deleted: c._deleted || false, _deleted_at: c._deletedAt || null, updated_at: new Date().toISOString()
+                photos: c.photos, 
+                _deleted: c._deleted || false, 
+                _deleted_at: c._deletedAt || null, 
+                updated_at: new Date().toISOString()
             }));
             
             for (let i = 0; i < insps.length; i += 100) {
@@ -335,7 +317,7 @@ window.triggerSync = async function(mode = 'silent') {
             }
         }
 
-        // Отправка профиля и черновика на сервер
+        // Отправка профиля и черновика (Для передачи между телефоном и ПК)
         const currentSession = (typeof dbGet !== 'undefined') ? (await dbGet('app_state', 'current_session') || {}) : {};
         await window.supabaseClient.from('rbi_engineer_profiles').upsert({
             inspector_id: window.syncConfig.deviceId, inspector_name: iName, project_code: pCode, pin_hash: window.syncConfig.pinHash,
@@ -351,12 +333,6 @@ window.triggerSync = async function(mode = 'silent') {
             updated_at: new Date().toISOString()
         }, { onConflict: 'inspector_id' });
 
-
-        // ==============================================
-        // ЭТАП 4: ФОНОВАЯ ВЫГРУЗКА ФОТО (САМЫЙ ДОЛГИЙ ПРОЦЕСС)
-        // ==============================================
-        if (mode === 'manual') safeToast('📸 Шаг 4: Выгрузка фотографий...');
-        await window.extractAndUploadPhotos(); // Эта функция обновит ссылки в БД
 
         if (mode === 'manual') safeToast('✅ Готово! Синхронизация завершена!');
         
@@ -378,16 +354,32 @@ window.triggerSync = async function(mode = 'silent') {
 window.mergeCloudData = async function(newInspections, newProfiles, newTasks, newEtalons) {
     let dbUpdated = false;
 
-    // 1. Слияние проверок
+    // 1. ИСПРАВЛЕНИЕ РАСПАКОВКИ ПРОВЕРОК
     if (newInspections && newInspections.length > 0) {
         let historyMap = new Map();
         if (typeof contractorArray !== 'undefined') contractorArray.forEach(c => historyMap.set(c.id, c));
         
         newInspections.forEach(row => {
-            const item = { id: row.id, date: row.date, projectName: row.project_code, inspectorName: row.inspector_name, contractorName: row.contractor_name, templateKey: row.template_key, location: row.location, ...row.inspection_data, photos: row.photos, _deleted: row._deleted, _deletedAt: row._deleted_at };
+            // ИСПРАВЛЕНИЕ: Вытягиваем projectName и metrics из inspection_data
+            const item = { 
+                id: row.id, 
+                date: row.date, 
+                // Если в data есть projectName - берем его, иначе fallback на код проекта
+                projectName: (row.inspection_data && row.inspection_data.projectName) ? row.inspection_data.projectName : row.project_code, 
+                inspectorName: row.inspector_name, 
+                contractorName: row.contractor_name, 
+                templateKey: row.template_key, 
+                location: row.location, 
+                
+                // Распаковываем все вложенные данные (включая metrics)
+                ...(row.inspection_data || {}), 
+                
+                photos: row.photos, 
+                _deleted: row._deleted, 
+                _deletedAt: row._deleted_at 
+            };
             
             const existing = historyMap.get(item.id);
-            // Если такой проверки у нас нет, ИЛИ с сервера пришла "удаленная", обновляем
             if (!existing || item._deleted) {
                 historyMap.set(item.id, item);
             }
@@ -407,7 +399,6 @@ window.mergeCloudData = async function(newInspections, newProfiles, newTasks, ne
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
                 const cloudTime = data.session.timestamp || 0;
                 
-                // Если черновик в облаке СВЕЖЕЕ локального (сохранен с другого устройства позже)
                 if (cloudTime > localTime) {
                     await dbPut('app_state', data.session);
                     if (typeof restoreSession === 'function') {
@@ -427,31 +418,6 @@ window.mergeCloudData = async function(newInspections, newProfiles, newTasks, ne
                 else await dbPut('app_history', item);
             }
             contractorArray = contractorArray.filter(i => !i._deleted);
-        }
-    }
-};
-
-window.extractAndUploadPhotos = async function() {
-    let dbUpdated = false;
-    
-    // Проходим по истории и ищем Base64 или локальные ссылки
-    if (typeof contractorArray !== 'undefined' && Array.isArray(contractorArray)) {
-        for (let i = 0; i < contractorArray.length; i++) {
-            let check = contractorArray[i];
-            let changed = false;
-            
-            if (check.photos) {
-                const pKeys = Object.keys(check.photos);
-                for (let id of pKeys) {
-                    let url = check.photos[id];
-                    if (url && url.startsWith('data:image')) {
-                        const cloudUrl = await window.uploadBase64ToStorage(url, `history/${check.id}_${id}.jpg`);
-                        if (cloudUrl !== url) { check.photos[id] = cloudUrl; changed = true; dbUpdated = true; }
-                    }
-                }
-            }
-            // Пересохраняем проверку в БД телефона (чтобы в след раз не грузить фото)
-            if (changed && typeof dbPut !== 'undefined') await dbPut('app_history', check);
         }
     }
 };
