@@ -395,179 +395,6 @@ function calculateImpactScore(inspector, contractor, template) {
     return { score: impactScore, trend, color, baseUrk: baseMetrics.finalC, currUrk: currMetrics.finalC };
 }
 
-// ==========================================
-// 3. УМНЫЙ ГЕНЕРАТОР ЗАДАЧ (ENTERPRISE LOGIC)
-// ==========================================
-
-// ==========================================
-// 3. УМНЫЙ ГЕНЕРАТОР ЗАДАЧ (ENTERPRISE LOGIC)
-// ==========================================
-window.gameForceUpdatePlan = async function() {
-    showToast("🧠 ИИ анализирует базу и перестраивает план...");
-    await gameGenerateWeeklyPlan(true);
-    rbi_renderTasksList();
-}
-
-window.gameGenerateWeeklyPlan = async function(force = false) {
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
-    if (!currentInspector) return;
-
-    if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) return;
-
-    const now = new Date();
-    const currentWeekId = getWeekId(now);
-
-    if (weeklyPlanData.weekId === currentWeekId && !force && window.rbi_tasksData.length > 0) {
-        gameUpdatePlanProgress();
-        return;
-    }
-
-    const startOfThisWeek = getStartOfWeek(now);
-    const endOfThisWeek = new Date(startOfThisWeek); 
-    endOfThisWeek.setDate(startOfThisWeek.getDate() + 6);
-    endOfThisWeek.setHours(23, 59, 59, 999);
-
-    const allMyChecks = contractorArray.filter(c => c.inspectorName === currentInspector);
-
-    // ИСПРАВЛЕНИЕ 1: Мягкая очистка задач. Не удаляем активные (pending) задачи, созданные сегодня!
-    let tasksToKeep = window.rbi_tasksData.filter(t => 
-        t.type === 'manual' || 
-        t.status !== 'pending' || 
-        (t.type === 'auto' && t.status === 'pending' && new Date(t.date).toDateString() === now.toDateString())
-    );
-    await dbClear(STORES.TASKS);
-    window.rbi_tasksData = [...tasksToKeep];
-    for (let t of tasksToKeep) { await dbPut(STORES.TASKS, t); }
-
-    let newTasksCount = 0;
-
-    const addTask = (idSuffix, cat, icon, title, workTitle, contractor, prompt, lvl, tDate, tmplKey = '', needsEtalon = false) => {
-        // ИСПРАВЛЕНИЕ 2: Жесткая проверка на дубликаты. Если такая задача УЖЕ висит в ожидании — не создаем новую.
-        const exists = window.rbi_tasksData.find(t => t.title === title && t.contractor === contractor && t.status === 'pending');
-        if (exists) return;
-
-        const task = {
-            id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random()*1000),
-            source: 'ai', type: 'auto', category: cat, icon: icon,
-            contractor: contractor, project: document.getElementById('inp-project')?.value || "Все",
-            templateKey: tmplKey, workTitle: workTitle,
-            title: title, prompt: prompt,
-            status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
-            target: 1, done: 0, carryOverCount: 0, needsEtalon: needsEtalon
-        };
-        window.rbi_tasksData.push(task);
-        dbPut(STORES.TASKS, task);
-        newTasksCount++;
-    };
-
-    const pairMap = {};
-    allMyChecks.forEach(c => {
-        if (c.templateKey === 'sys_etalon_act') return;
-        let key = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
-        if (!pairMap[key]) {
-            pairMap[key] = {
-                project: c.projectName, contractor: c.contractorName,
-                templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [],
-                allTimeCount: 0, checksThisWeek: 0, lastCheckDate: new Date(0)
-            };
-        }
-        pairMap[key].checks.push(c);
-        pairMap[key].allTimeCount++;
-        const cDate = new Date(c.date);
-        if (cDate > pairMap[key].lastCheckDate) pairMap[key].lastCheckDate = cDate;
-        if (cDate >= startOfThisWeek) pairMap[key].checksThisWeek++;
-    });
-
-    for (let key in pairMap) {
-        const pair = pairMap[key];
-        
-        const hasEtalon = etalonActsArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act' && c.templateTitle === pair.templateTitle);
-        if (!hasEtalon) {
-            addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, true);
-        }
-
-        const m = pair.allTimeCount > 0 ? getContractorMetrics(pair.checks, userTemplates) : null;
-        let requiredChecksPerWeek = 1;
-        let promptText = "Плановый поддерживающий контроль (Зеленая зона).";
-        let lvl = 1;
-
-        if (pair.allTimeCount === 0) {
-            requiredChecksPerWeek = 4; promptText = "Новый этап работ. Проведите первые инспекции."; lvl = 3;
-        } else if (pair.allTimeCount < 7) {
-            requiredChecksPerWeek = 4; promptText = "Новый подрядчик. Собираем базу для рейтинга надежности. Цель: 7 проверок."; lvl = 3;
-        } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
-            requiredChecksPerWeek = 5; promptText = "Красная зона! Обязательный аудит. При наличии B3 - останавливайте работы."; lvl = 4;
-        } else if (m && m.finalC >= 70 && m.finalC <= 84) {
-            requiredChecksPerWeek = 2; promptText = "Желтая зона. Подрядчик допускает системный брак. Проверьте выполнение предписаний."; lvl = 3;
-        }
-
-        const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
-        if (pair.allTimeCount > 0 && daysSinceLastCheck > 14) {
-            promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите аудит.`;
-            lvl = 4;
-            requiredChecksPerWeek = Math.max(requiredChecksPerWeek, 2);
-        }
-
-        const deficit = requiredChecksPerWeek - pair.checksThisWeek;
-        if (deficit > 0) {
-            for (let i = 0; i < deficit; i++) {
-                let taskDate = new Date(now);
-                if (daysSinceLastCheck > 14) { taskDate.setDate(now.getDate() - 1); } 
-                else { taskDate.setDate(now.getDate() + i); if (taskDate > endOfThisWeek) taskDate = new Date(now); }
-                addTask(`aud_${i}`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, !hasEtalon);
-            }
-        }
-
-        if (m) {
-            if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now);
-            
-            // ИСПРАВЛЕНИЕ 3: Воркшоп только если есть минимум 5 проверок И дефект повторился минимум 3 раза!
-            if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
-                let defectCounts = {};
-                pair.checks.forEach(c => {
-                    if(c.state) {
-                        Object.keys(c.state).forEach(id => {
-                            if(c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
-                                defectCounts[id] = (defectCounts[id] || 0) + 1;
-                            }
-                        });
-                    }
-                });
-                
-                const sortedIds = Object.keys(defectCounts).sort((a,b) => defectCounts[b] - defectCounts[a]);
-                if (sortedIds.length > 0 && defectCounts[sortedIds[0]] >= 3) {
-                    const topId = sortedIds[0];
-                    const tType = pair.templateKey.split('_')[0];
-                    const tKey = pair.templateKey.replace(tType + '_', '');
-                    const flat = getFlatList(tType === 'sys' ? SYSTEM_TEMPLATES[tKey]?.groups : userTemplates[tKey]?.groups);
-                    const found = flat.find(x => String(x.id) === String(topId));
-                    const topDefectName = found ? found.n : "Системные нарушения";
-
-                    addTask('workshop', 'dev', 'Развитие', `Воркшоп: ${topDefectName.substring(0,25)}...`, pair.templateTitle, pair.contractor, `Дефект "${topDefectName}" повторился ${defectCounts[topId]} раз. Проведите точечное обучение с бригадой.`, 3, now);
-                }
-            }
-        }
-    }
-
-    const dayOfWeek = now.getDay();
-    const isFirstDayOfMonth = now.getDate() <= 3;
-    if (dayOfWeek === 5) {
-        addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Зайдите в Инженер -> FMEA и позвольте ИИ проанализировать коренные причины брака за неделю.', 3, now);
-        addTask('poster_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте в Аналитике плакат А3 и повесьте в штабе.', 2, now);
-    }
-    if (dayOfWeek === 1 || dayOfWeek === 2) {
-        addTask('meet_w', 'meeting', 'Совещание', 'Еженедельный разбор', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку по худшим подрядчикам.', 4, now);
-    }
-    if (isFirstDayOfMonth) {
-        addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса объекта.', 3, now);
-    }
-
-    weeklyPlanData = { weekId: currentWeekId, tasks: window.rbi_tasksData, completed: false };
-    saveWeeklyPlan();
-
-    if (force) showToast(`✅ План актуализирован. Добавлено ${newTasksCount} задач.`);
-};
-
 
 window.gameUpdatePlanProgress = function () {
     const currentInspector = document.getElementById('inp-inspector')?.value.trim();
@@ -858,24 +685,24 @@ window.gameRenderDashboard = function () {
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
                 <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <div class="flex justify-between items-start mb-2 sm:mb-4 relative z-10">
-                    <div class="flex items-center gap-1.5 sm:gap-4 min-w-0 pr-1">
-                        <div class="w-9 h-9 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-base sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
+                <!-- БЛОК СТРИКА УЛЕТАЕТ В ПРАВЫЙ ВЕРХНИЙ УГОЛ (ABSOLUTE) -->
+                <div class="absolute top-3 sm:top-5 right-3 sm:right-5 text-right z-20">
+                    <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Стрик</div>
+                    <div class="text-[12px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
+                </div>
+
+                <div class="flex justify-start items-start mb-4 sm:mb-5 relative z-10 pr-14 sm:pr-16">
+                    <div class="flex items-center gap-2.5 sm:gap-4 min-w-0 w-full">
+                        <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-lg sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
                             ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0, 1).toUpperCase()}
                         </div>
-                        <div class="overflow-hidden">
-                            <div class="flex items-center gap-1 sm:gap-2">
-                                <div class="text-[12px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal cursor-pointer" 
-                                     onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
-                                    ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
-                                </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="text-[13px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal cursor-pointer" 
+                                 onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
+                                ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
                             </div>
-                            <div class="text-[8px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-0.5 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
+                            <div class="text-[9px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-1 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
                         </div>
-                    </div>
-                    <div class="text-right shrink-0 ml-1 sm:ml-0">
-                        <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 sm:mb-1">Стрик</div>
-                        <div class="text-[13px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
                     </div>
                 </div>
 
@@ -1447,13 +1274,18 @@ function gameCalculateManagerMetrics() {
 
         const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
 
+        // НОВОЕ: Подсчет задач инженера из глобального массива
+        let engTasks = window.rbi_tasksData ? window.rbi_tasksData.filter(t => t.engineerName === p.name || t.inspectorName === p.name || t.contractor === p.name /* legacy fallback */) : [];
+        let tasksDone = engTasks.filter(t => t.status === 'done').length;
+        let tasksPending = engTasks.filter(t => t.status === 'pending').length;
+
         managerStats.push({
             name: p.name, pi: p.pi, level: p.levelObj.level,
             checks: p.checksCount, avgUrk: avgUrk, strictness: strictness,
             volatility: volatility, photoRate: photoRate, completeness: completeness,
             b3Found: b3Found, avgImpact: avgImpact, improved: improvedContrs, degraded: degradedContrs,
             totalDebt: totalDebt, oldDebtWarning: oldDebtWarning,
-            // Добавляем статус, если этот профиль совпадает с профилем, выгрузившим бэкап
+            tasksDone: tasksDone, tasksPending: tasksPending, // <-- Добавили в объект
             isVacation: (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive && p.name === (document.getElementById('inp-inspector')?.value.trim() || ''))
         });
     });
@@ -1495,6 +1327,7 @@ function gameRenderManagerAnalytics() {
                             <th class="p-3 text-center border-l border-slate-200" title="Влияние на качество подрядчиков">Impact Score</th>
                             <th class="p-3 text-center border-l border-slate-200" title="Подрядчиков: Улучшил / Ухудшил">Динамика</th>
                             <th class="p-3 text-center border-l border-slate-200" title="Оценочные долги по задачам">Заброшенные П-ки</th>
+                            <th class="p-3 text-center border-l border-slate-200 text-indigo-600" title="Задачи: Выполнено / В ожидании">Задачи (✅/🕒)</th>
                             <th class="p-3 text-center border-l border-slate-200" title="Профессиональный Индекс (XP)">PI (Опыт)</th>
                             <th class="p-3 text-center border-l border-slate-200" title="Количество инспекций">Объем</th>
                             <th class="p-3 text-center border-l border-slate-200" title="Фото+Причина при дефекте">Доказательность</th>
@@ -1543,6 +1376,9 @@ function gameRenderManagerAnalytics() {
                 </td>
                 <td class="p-3 text-center border-l border-slate-100 font-bold ${debtClass}">
                     ${s.totalDebt}
+                </td>
+                <td class="p-3 text-center border-l border-slate-100 font-bold">
+                    <span class="text-green-600">${s.tasksDone}</span> / <span class="text-slate-500">${s.tasksPending}</span>
                 </td>
                 <td class="p-3 text-center border-l border-slate-100 font-black text-indigo-600">${s.pi}</td>
                 <td class="p-3 text-center border-l border-slate-100 font-bold text-slate-600">${s.checks}</td>
@@ -1762,25 +1598,12 @@ window.gameChangeTaskStatus = function (statusKey, newStatus) {
 };
 
 // Интеграция Требования Эталона при нажатии на задачу
-// Интеграция Требования Эталона при нажатии на задачу
+// Интеграция старта задачи
 window.gameStartTask = function (contractor, templateKey) {
-    const task = weeklyPlanData.tasks.find(t => t.contractor === contractor && t.templateKey === templateKey);
-    
-    if (task && task.needsEtalon) {
-        document.getElementById('etalon-prompt-modal').style.display = 'flex';
-        document.getElementById('btn-start-etalon').onclick = () => {
-            document.getElementById('etalon-prompt-modal').style.display = 'none';
-            // ВМЕСТО СТАРОЙ ФУНКЦИИ ВЫЗЫВАЕМ НОВЫЙ КОНСТРУКТОР
-            openEtalonConstructor(contractor, templateKey, task.templateTitle, task.statusKey);
-        };
-        return; // Блокируем обычный старт чек-листа
-    }
-    
-    // Если эталон не нужен — просто открываем обычную проверку
+    // Обычный старт задачи (без блокировки эталоном)
     startInspectionWithValues(contractor, templateKey);
 };
 
-// === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
 // === ТАБЛИЦА ЛИДЕРОВ (РЕЙТИНГ ИНЖЕНЕРОВ) ===
 window.gameOpenTopModal = function () {
     let sortedProfiles = [];
@@ -1948,6 +1771,257 @@ window.gameUpdateEngineerName = function (newName) {
 
     // Перерисовываем дашборд, чтобы обновилась аватарка (буква имени)
     setTimeout(() => { gameRenderDashboard(); }, 200);
+};
+
+// ============================================================================
+// НОВЫЙ МОДУЛЬ: КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА (С ВЫБОРОМ ПЕРИОДА)
+// ============================================================================
+
+window.rbi_openQualityDaySettings = function(taskId) {
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">📅</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Настройки Отчета</div>`;
+    
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+            Выберите период для формирования Мега-Отчета. Система агрегирует метрики всех подрядчиков, выберет лучшие практики и запросит ИИ-резюме.
+        </div>
+        
+        <div class="mb-6">
+            <label class="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Отчетный период</label>
+            <select id="qday-period-select" class="w-full bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] font-bold text-slate-800 dark:text-white outline-none">
+                <option value="current_month">За текущий месяц</option>
+                <option value="last_month">За прошлый месяц</option>
+                <option value="quarter">За последние 3 месяца (Квартал)</option>
+                <option value="all_time">За всё время</option>
+            </select>
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 shadow-sm">
+                Отмена
+            </button>
+            <button onclick="closeModal(); rbi_executeQualityDayReport('${taskId}')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex items-center justify-center gap-2">
+                🚀 Сгенерировать
+            </button>
+        </div>
+    `;
+    
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.rbi_executeQualityDayReport = async function(taskId) {
+    if (!appSettings.aiEnabled) {
+        return showToast("⚠️ Для формирования отчета требуется включить DeepSeek AI в настройках!");
+    }
+
+    const periodValue = document.getElementById('qday-period-select').value;
+
+    // Показываем лоадер
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200 animate-pulse">🤖</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Сборка Дня Качества</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="flex flex-col items-center justify-center py-4">
+            <div class="text-[11px] font-bold text-slate-500 text-center space-y-2">
+                <div>📥 Агрегируем метрики подрядчиков...</div>
+                <div>📊 Рассчитываем Impact Score команды...</div>
+                <div>🏆 Выбираем лучшие практики...</div>
+                <div class="text-indigo-600 font-black mt-2">DeepSeek пишет управленческое резюме...</div>
+            </div>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+
+    try {
+        const now = new Date();
+        let startDate, endDate;
+        let periodTitle = "";
+
+        if (periodValue === 'current_month') {
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+            periodTitle = `ИТОГИ: ${now.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+        } else if (periodValue === 'last_month') {
+            startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+            periodTitle = `ИТОГИ: ${startDate.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+        } else if (periodValue === 'quarter') {
+            startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+            endDate = new Date();
+            periodTitle = `КВАРТАЛЬНЫЙ ОТЧЕТ`;
+        } else {
+            startDate = new Date(2000, 1, 1);
+            endDate = new Date();
+            periodTitle = `ОТЧЕТ ЗА ВСЁ ВРЕМЯ`;
+        }
+
+        // 1. БАЗА ПРОВЕРОК
+        const currentData = contractorArray.filter(c => new Date(c.date) >= startDate && new Date(c.date) <= endDate);
+        
+        if (currentData.length === 0) {
+            closeModal();
+            return showToast("⚠️ За выбранный период нет данных для отчета!");
+        }
+
+        let sumUrk = 0; currentData.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
+        const currAvgUrk = Math.round(sumUrk / currentData.length);
+        
+        const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, userTemplates) : null;
+        const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+        const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+
+        // 2. HR МЕТРИКИ (КОМАНДА)
+        let hrStats = [];
+        if (typeof gameCalculateManagerMetrics === 'function') hrStats = gameCalculateManagerMetrics();
+        let totalImpact = 0; 
+        hrStats.forEach(h => { totalImpact += h.avgImpact; });
+        const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
+        const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных", checks: 0 };
+
+        // 3. ТОП ПРАКТИК
+        let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом периоде не публиковалось.</div>`;
+        if (typeof window.rbi_practicesData !== 'undefined' && window.rbi_practicesData.length > 0) {
+            const topPrac = [...window.rbi_practicesData].filter(p => new Date(p.date) >= startDate && new Date(p.date) <= endDate).sort((a,b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
+            if (topPrac.length > 0) {
+                topPracticesHtml = topPrac.map(p => `
+                    <div style="border:1px solid #cbd5e1; border-left:4px solid #16a34a; padding:10px; border-radius:6px; margin-bottom:10px; background:white; page-break-inside: avoid;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                            <strong style="font-size:12px; color:#0f172a;">${p.title}</strong>
+                            <span style="color:#16a34a; font-weight:900;">+${p.deltaUrk}% УрК</span>
+                        </div>
+                        <div style="font-size:10px; color:#64748b; margin-bottom:5px;">Автор: ${p.author} | ${p.templateTitle}</div>
+                        <table style="width:100%; border-collapse:collapse; font-size:10px;">
+                            <tr>
+                                <td style="width:50%; vertical-align:top; padding-right:5px;">
+                                    <div style="color:#dc2626; font-weight:bold; margin-bottom:2px;">❌ Проблема:</div>
+                                    <div style="color:#1e293b;">${p.problem}</div>
+                                </td>
+                                <td style="width:50%; vertical-align:top; padding-left:5px;">
+                                    <div style="color:#16a34a; font-weight:bold; margin-bottom:2px;">✅ Решение:</div>
+                                    <div style="color:#1e293b;">${p.solution}</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // 4. КОРЕННЫЕ ПРИЧИНЫ (Парето)
+        const causes = {};
+        currentData.forEach(c => {
+            if (c.state && c.details) {
+                Object.keys(c.state).forEach(id => {
+                    if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                        const code = c.details[id]?.causeCode || 'C00';
+                        causes[code] = (causes[code] || 0) + 1;
+                    }
+                });
+            }
+        });
+        
+        let causesHtml = '';
+        const sortedCauses = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 5);
+        if (sortedCauses.length > 0) {
+            causesHtml = sortedCauses.map(code => {
+                const cName = (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : 'Причина') || 'Иное';
+                return `<div style="display:flex; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding:6px 0; font-size:11px;">
+                    <span style="color:#334155;">${cName}</span>
+                    <span style="font-weight:bold; color:#0f172a;">${causes[code]} шт.</span>
+                </div>`;
+            }).join('');
+        } else {
+            causesHtml = `<div style="color:#64748b; font-size:10px;">Дефектов не выявлено.</div>`;
+        }
+
+        // 5. DEEPSEEK - АНАЛИЗ ДЛЯ РЕЗЮМЕ
+        const promptSystem = `Ты — Директор по качеству (CQC). Сформируй официальное управленческое резюме для отчета "День Качества" за выбранный период.
+        Тон: деловой, объективный, строгий. Формат: текст, разбитый на абзацы. Без воды.
+        Отрази 3 вещи: 1. Оценку ИКО и тренда. 2. Оценку работы инженеров (Impact Score). 3. Главный риск следующего периода.`;
+        
+        const promptUser = `ИКО: ${IKO}. Красная зона: ${redZone}%. Средний Impact команды: ${avgTeamImpact.toFixed(2)}. Проверок за период: ${currentData.length}. ТОП проблема: ${sortedCauses.length > 0 ? sortedCauses[0] : 'Нет данных'}.`;
+
+        const aiSummary = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 800 });
+
+        closeModal();
+
+        // 6. СБОРКА HTML ДЛЯ ПЕЧАТИ
+        const pdfContent = `
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 24pt; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА</h1>
+                <div style="font-size: 14pt; color: #4f46e5; font-weight: 900; margin-top: 5px; text-transform:uppercase;">${periodTitle}</div>
+            </div>
+
+            <!-- БЛОК 1: AI-РЕЗЮМЕ -->
+            <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                <h2 style="color: #4f46e5; margin: 0 0 10px 0; font-size: 14pt; text-transform: uppercase;">🧠 УПРАВЛЕНЧЕСКОЕ РЕЗЮМЕ (DEEPSEEK AI)</h2>
+                <div style="font-size: 11pt; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${aiSummary}</div>
+            </div>
+
+            <!-- БЛОК 2: МАКРОПОКАЗАТЕЛИ -->
+            <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+                <tr>
+                    <td style="background:#f8fafc; border:2px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#64748b; text-transform:uppercase; font-weight:bold;">Индекс Риска (ИКО)</div>
+                        <div style="font-size:28pt; font-weight:900; color:${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'};">${IKO}</div>
+                    </td>
+                    <td style="background:#fef2f2; border:2px solid #fca5a5; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#991b1b; text-transform:uppercase; font-weight:bold;">Объем Красной Зоны</div>
+                        <div style="font-size:28pt; font-weight:900; color:#dc2626;">${redZone}%</div>
+                    </td>
+                    <td style="background:#f0fdf4; border:2px solid #bbf7d0; border-radius:12px; padding:15px; text-align:center;">
+                        <div style="font-size:9pt; color:#166534; text-transform:uppercase; font-weight:bold;">Impact Score Команды</div>
+                        <div style="font-size:28pt; font-weight:900; color:#16a34a;">${avgTeamImpact > 0 ? '+' : ''}${avgTeamImpact.toFixed(2)}</div>
+                    </td>
+                </tr>
+            </table>
+
+            <div style="page-break-before: always;"></div>
+
+            <!-- БЛОК 3: ПРАКТИКИ И ПРИЧИНЫ -->
+            <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
+                <tr>
+                    <td style="width: 50%; vertical-align: top;">
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🏆 Лучшие практики периода</h2>
+                        ${topPracticesHtml}
+                    </td>
+                    <td style="width: 50%; vertical-align: top;">
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🔍 Топ причин брака (Парето)</h2>
+                        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+                            ${causesHtml}
+                        </div>
+                        
+                        <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px; margin-bottom: 15px;">👤 Рейтинг Инженеров</h2>
+                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+                            <div style="font-size: 11pt; font-weight: bold; color: #1e293b; margin-bottom: 5px;">Лучший по Опыту (XP): <span style="color:#4f46e5;">${bestEng.name}</span></div>
+                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+'+bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        `;
+
+        // Закрываем задачу в планировщике, так как отчет сформирован
+        if (taskId) {
+            const task = window.rbi_tasksData.find(t => t.id === taskId);
+            if(task) { 
+                task.status = 'done'; 
+                task.resultComment = 'Отчет сгенерирован'; 
+                await dbPut(STORES.TASKS, task); 
+                rbi_renderTasksList(); // Обновляем списки задач на экране
+            }
+        }
+
+        // Запускаем печать. Передаем "browser", чтобы открылось системное окно печати/сохранения PDF
+        printPdfShell(`День Качества`, pdfContent, "A4", "landscape", "browser");
+
+    } catch (e) {
+        closeModal();
+        showToast("❌ Ошибка сборки отчета: " + e.message);
+    }
 };
 
 /* ============================================================================ */

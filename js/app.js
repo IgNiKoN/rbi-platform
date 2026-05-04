@@ -2425,12 +2425,21 @@ async function saveProductToArray() {
         gameUpdatePlanProgress(); 
     }
     // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ АУДИТА
+    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ АУДИТА (С УЧЕТОМ ЦЕЛИ)
     if (window.activeTaskId) {
         const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
         if (task) {
-            task.status = 'done';
-            task.resultComment = 'Аудит проведен';
-            task.updatedAt = new Date().toISOString(); // <-- НОВОЕ
+            // Увеличиваем счетчик выполненных проверок
+            task.done = (task.done || 0) + 1;
+            task.updatedAt = new Date().toISOString();
+            
+            // Закрываем задачу ТОЛЬКО если достигли цели
+            if (task.done >= task.target) {
+                task.status = 'done';
+                task.resultComment = `Выполнено (${task.done}/${task.target})`;
+            } else {
+                task.resultComment = `В процессе (${task.done}/${task.target})`;
+            }
             dbPut(STORES.TASKS, task);
         }
         window.activeTaskId = null; // Сбрасываем
@@ -6368,7 +6377,9 @@ window.rbi_renderEngineerTab = async function() {
     await rbi_loadData(); 
     
     // ПРИНУДИТЕЛЬНО генерируем план, чтобы задачи появились!
-    if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(false);
+       if (typeof gameGenerateWeeklyPlan === 'function') {
+        await gameGenerateWeeklyPlan(false);
+    }
 
     if (currentActiveEngineerTab === 'eng-sub-tasks') {
         rbi_renderTasksList();
@@ -6689,13 +6700,103 @@ window.rbi_deleteMeeting = async function(id) {
     showToast("🗑️ Протокол удален");
 };
 
+
+/* === ОКНО НАСТРОЙКИ ПОВЕСТКИ СОВЕЩАНИЯ === */
+window.rbi_openMeetingSetupModal = function(taskId = null) {
+    // Получаем текущие данные по активным фильтрам (они уже настроены, если юзер качал отчет)
+    let baseData = getFilteredAnalyticsData();
+    
+    // Страховка: если фильтр "Всё время", берем за месяц, чтобы не перегружать список
+    const periodVal = document.getElementById('global-filter-period')?.value;
+    if (!periodVal || periodVal === 'ALL') {
+        const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+        baseData = contractorArray.filter(c => new Date(c.date) >= monthAgo);
+    }
+
+    // Ищем уникальных подрядчиков в этой выборке
+    const uniqueContrs = [...new Set(baseData.map(c => c.contractorName).filter(Boolean))].sort();
+
+    if (uniqueContrs.length === 0) {
+        return showToast("⚠️ За выбранный период нет проверок. Некого обсуждать.");
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-orange-200">👥</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Повестка Совещания</div>`;
+
+    let checkboxesHtml = uniqueContrs.map(c => `
+        <label class="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98] transition-all hover:border-orange-300">
+            <input type="checkbox" value="${c.replace(/"/g, '&quot;')}" class="meet-setup-cb w-5 h-5 accent-orange-600 rounded cursor-pointer" checked>
+            <span class="text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate flex-1">${c}</span>
+        </label>
+    `).join('');
+
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+            Система собрала данные по объекту за выбранный период. Оставьте галочки только на тех подрядчиках, которых планируете разбирать на встрече.
+        </div>
+        
+        <div class="flex justify-between items-center mb-2 px-1">
+            <span class="text-[10px] font-black uppercase text-slate-400">Список подрядчиков</span>
+            <button onclick="document.querySelectorAll('.meet-setup-cb').forEach(cb=>cb.checked=true)" class="text-orange-600 text-[10px] font-bold hover:underline">Выбрать всех</button>
+        </div>
+        
+        <div class="space-y-2 mb-6 max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
+            ${checkboxesHtml}
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">Отмена</button>
+            <button onclick="closeModal(); rbi_executeMeetingSetup('${taskId}')" class="flex-1 bg-orange-500 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex items-center justify-center gap-2">▶ Начать разбор</button>
+        </div>
+    `;
+    
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.rbi_executeMeetingSetup = function(taskId) {
+    const checkedBoxes = document.querySelectorAll('.meet-setup-cb:checked');
+    const selectedContrs = Array.from(checkedBoxes).map(cb => cb.value);
+
+    if (selectedContrs.length === 0) return showToast("⚠️ Выберите хотя бы одного подрядчика!");
+
+    let baseData = getFilteredAnalyticsData();
+    const periodVal = document.getElementById('global-filter-period')?.value;
+    if (!periodVal || periodVal === 'ALL') {
+        const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
+        baseData = contractorArray.filter(c => new Date(c.date) >= monthAgo);
+    }
+
+    // Оставляем проверки ТОЛЬКО выбранных подрядчиков
+    const finalData = baseData.filter(c => selectedContrs.includes(c.contractorName));
+
+    // Переключаем вкладки и вызываем отрисовку
+    switchTab('tab-engineer');
+    setTimeout(() => {
+        const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+        if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
+        rbi_createMeeting(finalData, taskId);
+    }, 300);
+};
 // СОЗДАНИЕ НОВОГО СОВЕЩАНИЯ (Интерактивная повестка)
 // === СОВЕЩАНИЯ: ДВУХПАНЕЛЬНЫЙ ИНТЕРФЕЙС ===
 window.rbi_createMeeting = function() {
     const container = document.getElementById('rbi-meeting-container');
     const d = new Date();
-    const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
-    const weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
+    
+    // ИСПРАВЛЕНИЕ: Берем массив проверок не за жесткие 7 дней, а на основе 
+    // глобальных фильтров Аналитики (которые установились при скачивании PDF отчета!)
+    // Переменную оставляем с именем weekChecks, чтобы не сломать код ниже.
+    let weekChecks = getFilteredAnalyticsData();
+    
+    // Если пользователь зашел в Совещание НАПРЯМУЮ, минуя настройки отчета,
+    // и фильтр стоит "Всё время" (что для планерки слишком много), страхуемся: берем последние 7 дней.
+    const periodVal = document.getElementById('global-filter-period')?.value;
+    if (!periodVal || periodVal === 'ALL') {
+        const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
+        weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
+    }
     
     // Считаем общие метрики
     const weekMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekChecks, userTemplates) : null;

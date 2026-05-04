@@ -937,6 +937,9 @@ act.updatedAt = row.updated_at;
               // =====================================================
         // 4.1. PULL: прочие модули через rbi_cloud_objects
         // =====================================================
+        // =====================================================
+        // 4.1. PULL: прочие модули через rbi_cloud_objects
+        // =====================================================
         try {
             const cloudTypes = [
                 'meeting',
@@ -945,7 +948,8 @@ act.updatedAt = row.updated_at;
                 'schedule',
                 'custom_doc',
                 'custom_node',
-                'custom_twi_card'
+                'custom_twi_card',
+                'fmea' // <-- ДОБАВЛЕНО FMEA
             ];
 
             for (const type of cloudTypes) {
@@ -988,6 +992,17 @@ act.updatedAt = row.updated_at;
                         const idx = window.rbi_scheduleData.findIndex(x => String(x.id) === String(obj.id));
                         if (idx >= 0) window.rbi_scheduleData[idx] = obj;
                         else window.rbi_scheduleData.push(obj);
+                    }
+                }
+
+                // <-- НОВОЕ: Обработка скачанных FMEA
+                if (type === 'fmea' && typeof dbPut === 'function') {
+                    window.rbi_fmeaRecords = window.rbi_fmeaRecords || [];
+                    for (const obj of objects) {
+                        await dbPut('rbi_fmea', obj);
+                        const idx = window.rbi_fmeaRecords.findIndex(x => String(x.id) === String(obj.id));
+                        if (idx >= 0) window.rbi_fmeaRecords[idx] = obj;
+                        else window.rbi_fmeaRecords.push(obj);
                     }
                 }
 
@@ -1372,27 +1387,26 @@ act.updatedAt = row.updated_at;
                 // =====================================================
         // 8.1. PUSH: прочие модули через rbi_cloud_objects
         // =====================================================
+        // =====================================================
+        // 8.1. PUSH: прочие модули через rbi_cloud_objects
+        // =====================================================
         try {
             if (typeof dbGetAll === 'function') {
                 const meetings = await dbGetAll('rbi_meetings') || [];
-                for (const obj of meetings) {
-                    await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets');
-                }
+                for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets'); }
 
                 const interventions = await dbGetAll('rbi_interventions') || [];
-                for (const obj of interventions) {
-                    await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets');
-                }
+                for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets'); }
 
                 const practices = await dbGetAll('rbi_practices') || [];
-                for (const obj of practices) {
-                    await window.pushCloudObject('practice', obj.id, obj, 'custom-assets');
-                }
+                for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'custom-assets'); }
 
                 const scheduleStages = await dbGetAll('rbi_schedule_stages') || [];
-                for (const obj of scheduleStages) {
-                    await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets');
-                }
+                for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets'); }
+
+                // <-- НОВОЕ: Отправка FMEA
+                const fmeas = await dbGetAll('rbi_fmea') || [];
+                for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
             }
 
             if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
@@ -1427,6 +1441,9 @@ act.updatedAt = row.updated_at;
         if (typeof renderSelector === 'function') renderSelector();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
         if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+          if (typeof gameGenerateWeeklyPlan === 'function') {
+            await gameGenerateWeeklyPlan(false);
+        }
         if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
 
     } catch (e) {

@@ -2326,13 +2326,11 @@ function processDataImport(event) {
                     if (typeof saveSessionData === 'function') saveSessionData(); 
                 }
                 
-                // ИМПОРТ HR ДАННЫХ (Планы, Статусы)
-              // ИМПОРТ HR ДАННЫХ (Планы, Статусы, Совещания, FMEA)
+                // ИМПОРТ HR ДАННЫХ И НОВЫХ МОДУЛЕЙ
                 if (parsed.data.hr) {
                     if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
                     if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
                     
-                    // Сливаем статусы подрядчиков
                     if (parsed.data.hr.contractorStatuses && typeof contractorStatuses !== 'undefined') {
                         for (let k in parsed.data.hr.contractorStatuses) {
                             if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
@@ -2356,6 +2354,56 @@ function processDataImport(event) {
                                 window.rbi_fmeaRecords.push(item);
                                 await dbPut(STORES.FMEA, item);
                             }
+                        }
+                    }
+
+                    // <-- НОВОЕ: Импорт Воздействий (Интервенций)
+                    if (parsed.data.hr.interventions && typeof window.rbi_interventionsData !== 'undefined') {
+                        for (const item of parsed.data.hr.interventions) {
+                            if (!window.rbi_interventionsData.find(x => x.id === item.id)) {
+                                window.rbi_interventionsData.push(item);
+                                await dbPut(STORES.INTERVENTIONS, item);
+                            }
+                        }
+                    }
+
+                    // <-- НОВОЕ: Импорт Практик
+                    if (parsed.data.hr.practices && typeof window.rbi_practicesData !== 'undefined') {
+                        for (const item of parsed.data.hr.practices) {
+                            if (!window.rbi_practicesData.find(x => x.id === item.id)) {
+                                window.rbi_practicesData.push(item);
+                                await dbPut(STORES.PRACTICES, item);
+                            }
+                        }
+                    }
+
+                    // <-- НОВОЕ: Импорт Графика СМР
+                    if (parsed.data.hr.schedule && typeof window.rbi_scheduleData !== 'undefined') {
+                        for (const item of parsed.data.hr.schedule) {
+                            if (!window.rbi_scheduleData.find(x => x.id === item.id)) {
+                                window.rbi_scheduleData.push(item);
+                                await dbPut(STORES.SCHEDULE, item);
+                            }
+                        }
+                    }
+                }
+
+                // <-- НОВОЕ: ИМПОРТ ЗАДАЧ ПЛАНИРОВЩИКА
+                if (parsed.data.tasks && typeof window.rbi_tasksData !== 'undefined') {
+                    for (const item of parsed.data.tasks) {
+                        if (!window.rbi_tasksData.find(x => x.id === item.id)) {
+                            window.rbi_tasksData.push(item);
+                            await dbPut(STORES.TASKS, item);
+                        }
+                    }
+                }
+
+                // <-- НОВОЕ: ИМПОРТ ЭТАЛОНОВ
+                if (parsed.data.etalonActs && typeof etalonActsArray !== 'undefined') {
+                    for (const item of parsed.data.etalonActs) {
+                        if (!etalonActsArray.find(x => x.id === item.id)) {
+                            etalonActsArray.push(item);
+                            await dbPut(STORES.ETALON_ACTS, item);
                         }
                     }
                 }
