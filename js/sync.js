@@ -886,16 +886,25 @@ window.triggerSync = async function(mode = 'silent') {
                 window.rbi_tasksData = window.rbi_tasksData || [];
 
                 for (const row of taskRows) {
-                    const t = row.task_data || {};
-                    t.id = row.id;
-                    t.status = row.status || t.status;
-                    t.updatedAt = row.updated_at;
+                    // ИСПРАВЛЕНИЕ: Ищем задачу прямо в базе IndexedDB, а не в оперативной памяти!
+                    // Потому что в RAM мы уже скрыли удаленные задачи, и система думает, что их нет.
+                    const existingLocal = await dbGet('rbi_tasks', row.id);
+                    const localTime = existingLocal ? new Date(existingLocal.updatedAt || existingLocal.updated_at || 0).getTime() : 0;
+                    const cloudTime = new Date(row.updated_at || 0).getTime();
 
-                    await dbPut('rbi_tasks', t);
+                    // Если локально мы удалили задачу, а облако пытается ее вернуть - игнорируем!
+                    if (!existingLocal || cloudTime > localTime) {
+                        const t = row.task_data || {};
+                        t.id = row.id;
+                        t.status = row.status || t.status;
+                        t.updatedAt = row.updated_at;
 
-                    const idx = window.rbi_tasksData.findIndex(x => String(x.id) === String(t.id));
-                    if (idx >= 0) window.rbi_tasksData[idx] = t;
-                    else window.rbi_tasksData.push(t);
+                        await dbPut('rbi_tasks', t);
+
+                        const idx = window.rbi_tasksData.findIndex(x => String(x.id) === String(t.id));
+                        if (idx >= 0) window.rbi_tasksData[idx] = t;
+                        else window.rbi_tasksData.push(t);
+                    }
                 }
             }
         } catch (e) {
@@ -1232,7 +1241,7 @@ act.updatedAt = row.updated_at;
                         custom_expert_conclusions: currentSession.customExpertConclusions || {},
                         device_id: window.syncConfig.deviceId,
                         updated_at: new Date(currentSession.timestamp || Date.now()).toISOString()
-                    }, { onConflict: 'project_code,engineer_name' });
+                    }, { onConflict: 'id' });
             }
         }
 
@@ -1292,12 +1301,12 @@ act.updatedAt = row.updated_at;
                 ? (await dbGetAll('rbi_tasks') || [])
                 : (typeof window.rbi_tasksData !== 'undefined' ? window.rbi_tasksData : []);
 
-            for (const task of tasks) {
-                if (!task || !task.id) continue;
-
-                const { error: taskError } = await window.supabaseClient
-                    .from('rbi_tasks')
-                    .upsert({
+            if (tasks.length > 0) {
+                // ИСПРАВЛЕНИЕ: Пакетная отправка (Batch Upsert). 
+                // Решает проблему зависания, когда задач накопилось больше сотни.
+                for (let i = 0; i < tasks.length; i += 50) {
+                    const batch = tasks.slice(i, i + 50);
+                    const upsertData = batch.map(task => ({
                         id: String(task.id),
                         project_code: pCode,
                         engineer_name: task.engineerName || task.inspectorName || iName,
@@ -1308,9 +1317,14 @@ act.updatedAt = row.updated_at;
                         task_date: task.date || task.taskDate || null,
                         is_deleted: task._deleted || false,
                         updated_at: task.updatedAt || task.updated_at || new Date().toISOString()
-                    }, { onConflict: 'id' });
+                    }));
+                    
+                    const { error: taskError } = await window.supabaseClient
+                        .from('rbi_tasks')
+                        .upsert(upsertData, { onConflict: 'id' });
 
-                if (taskError) throw taskError;
+                    if (taskError) throw taskError;
+                }
             }
         } catch (e) {
             console.warn("[Sync] Задачи не отправлены:", e.message);

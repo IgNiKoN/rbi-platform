@@ -5573,9 +5573,9 @@ window.startDemoMode = function(silent = false) {
     contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
     // БЛОКИРУЕМ ЗАПИСЬ ДЕМО-ДАННЫХ В РЕАЛЬНУЮ БАЗУ УСТРОЙСТВА!
     // Все данные будут жить только в оперативной памяти (RAM)
-    const originalDbPut = window.dbPut;
-    const originalDbDelete = window.dbDelete;
-    const originalDbClear = window.dbClear;
+    window.originalDbPut = window.dbPut;
+    window.originalDbDelete = window.dbDelete;
+    window.originalDbClear = window.dbClear;
     window.dbPut = async () => true; 
     window.dbDelete = async () => true;
     window.dbClear = async () => true;
@@ -5709,9 +5709,9 @@ window.exitDemoMode = function() {
     if (typeof renderNodesList === 'function') renderNodesList();
     if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
     if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
-     if (typeof originalDbPut !== 'undefined') window.dbPut = originalDbPut;
-    if (typeof originalDbDelete !== 'undefined') window.dbDelete = originalDbDelete;
-    if (typeof originalDbClear !== 'undefined') window.dbClear = originalDbClear;
+     if (typeof window.originalDbPut !== 'undefined') window.dbPut = window.originalDbPut;
+    if (typeof window.originalDbDelete !== 'undefined') window.dbDelete = window.originalDbDelete;
+    if (typeof window.originalDbClear !== 'undefined') window.dbClear = window.originalDbClear;
     showToast('Возврат к реальным данным');
 };
 
@@ -6702,101 +6702,142 @@ window.rbi_deleteMeeting = async function(id) {
 
 
 /* === ОКНО НАСТРОЙКИ ПОВЕСТКИ СОВЕЩАНИЯ === */
+/* === ОКНО НАСТРОЙКИ ПОВЕСТКИ СОВЕЩАНИЯ (С ФИЛЬТРАМИ) === */
 window.rbi_openMeetingSetupModal = function(taskId = null) {
-    // Получаем текущие данные по активным фильтрам (они уже настроены, если юзер качал отчет)
-    let baseData = getFilteredAnalyticsData();
-    
-    // Страховка: если фильтр "Всё время", берем за месяц, чтобы не перегружать список
-    const periodVal = document.getElementById('global-filter-period')?.value;
-    if (!periodVal || periodVal === 'ALL') {
-        const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-        baseData = contractorArray.filter(c => new Date(c.date) >= monthAgo);
-    }
-
-    // Ищем уникальных подрядчиков в этой выборке
-    const uniqueContrs = [...new Set(baseData.map(c => c.contractorName).filter(Boolean))].sort();
-
-    if (uniqueContrs.length === 0) {
-        return showToast("⚠️ За выбранный период нет проверок. Некого обсуждать.");
-    }
+    const uniqueProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
+    let projOptions = `<option value="ALL">Все объекты</option>`;
+    uniqueProjects.forEach(p => { projOptions += `<option value="${p.replace(/"/g, '&quot;')}">${p}</option>`; });
 
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-orange-200">👥</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Повестка Совещания</div>`;
 
-    let checkboxesHtml = uniqueContrs.map(c => `
-        <label class="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98] transition-all hover:border-orange-300">
-            <input type="checkbox" value="${c.replace(/"/g, '&quot;')}" class="meet-setup-cb w-5 h-5 accent-orange-600 rounded cursor-pointer" checked>
-            <span class="text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate flex-1">${c}</span>
-        </label>
-    `).join('');
-
     document.getElementById('modal-body').innerHTML = `
-        <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-            Система собрала данные по объекту за выбранный период. Оставьте галочки только на тех подрядчиках, которых планируете разбирать на встрече.
+        <div class="grid grid-cols-2 gap-2 mb-4">
+            <div>
+                <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Объект</label>
+                <select id="meet-setup-project" class="input-base !py-2 text-[11px] font-bold" onchange="rbi_updateMeetingSetupList()">
+                    ${projOptions}
+                </select>
+            </div>
+            <div>
+                <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Период</label>
+                <select id="meet-setup-period" class="input-base !py-2 text-[11px] font-bold" onchange="rbi_updateMeetingSetupList()">
+                    <option value="WEEK" selected>Неделя</option>
+                    <option value="MONTH">Месяц</option>
+                    <option value="ALL">Всё время</option>
+                </select>
+            </div>
         </div>
         
-        <div class="flex justify-between items-center mb-2 px-1">
+        <div class="flex justify-between items-center mb-2 px-1 border-t border-slate-100 pt-2">
             <span class="text-[10px] font-black uppercase text-slate-400">Список подрядчиков</span>
             <button onclick="document.querySelectorAll('.meet-setup-cb').forEach(cb=>cb.checked=true)" class="text-orange-600 text-[10px] font-bold hover:underline">Выбрать всех</button>
         </div>
         
-        <div class="space-y-2 mb-6 max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
-            ${checkboxesHtml}
+        <div id="meet-setup-checkboxes" class="space-y-2 mb-6 max-h-[30vh] overflow-y-auto custom-scrollbar pr-1">
+            <!-- Чекбоксы загрузятся сюда -->
         </div>
 
         <div class="flex gap-2">
             <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">Отмена</button>
-            <button onclick="closeModal(); rbi_executeMeetingSetup('${taskId}')" class="flex-1 bg-orange-500 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex items-center justify-center gap-2">▶ Начать разбор</button>
+            <button onclick="closeModal(); rbi_executeMeetingSetup('${taskId || ''}')" class="flex-1 bg-orange-500 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex items-center justify-center gap-2">▶ Начать разбор</button>
         </div>
     `;
     
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+    
+    // Сразу генерируем список при открытии
+    rbi_updateMeetingSetupList();
 };
 
-window.rbi_executeMeetingSetup = function(taskId) {
+window.rbi_updateMeetingSetupList = function() {
+    const proj = document.getElementById('meet-setup-project').value;
+    const period = document.getElementById('meet-setup-period').value;
+    const container = document.getElementById('meet-setup-checkboxes');
+    
+    let baseData = contractorArray;
+    
+    if (proj !== 'ALL') baseData = baseData.filter(c => c.projectName === proj);
+    
+    const now = new Date();
+    if (period === 'WEEK') {
+        const d = new Date(now); d.setDate(d.getDate() - 7);
+        baseData = baseData.filter(c => new Date(c.date) >= d);
+    } else if (period === 'MONTH') {
+        const d = new Date(now); d.setDate(d.getDate() - 30);
+        baseData = baseData.filter(c => new Date(c.date) >= d);
+    }
+
+    const uniqueContrs = [...new Set(baseData.map(c => c.contractorName).filter(Boolean))].sort();
+
+    if (uniqueContrs.length === 0) {
+        container.innerHTML = `<div class="text-center text-[10px] font-bold text-slate-400 py-4 bg-[var(--hover-bg)] rounded-lg">Нет проверок за этот период</div>`;
+        return;
+    }
+
+    container.innerHTML = uniqueContrs.map(c => `
+        <label class="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98] transition-all hover:border-orange-300">
+            <input type="checkbox" value="${c.replace(/"/g, '&quot;')}" class="meet-setup-cb w-5 h-5 accent-orange-600 rounded cursor-pointer" checked>
+            <span class="text-[12px] font-bold text-slate-700 dark:text-slate-200 truncate flex-1">${c}</span>
+        </label>
+    `).join('');
+};
+
+window.rbi_executeMeetingSetup = async function(taskId) {
     const checkedBoxes = document.querySelectorAll('.meet-setup-cb:checked');
     const selectedContrs = Array.from(checkedBoxes).map(cb => cb.value);
 
     if (selectedContrs.length === 0) return showToast("⚠️ Выберите хотя бы одного подрядчика!");
 
-    let baseData = getFilteredAnalyticsData();
-    const periodVal = document.getElementById('global-filter-period')?.value;
-    if (!periodVal || periodVal === 'ALL') {
-        const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30);
-        baseData = contractorArray.filter(c => new Date(c.date) >= monthAgo);
+    const proj = document.getElementById('meet-setup-project').value;
+    const period = document.getElementById('meet-setup-period').value;
+
+    let finalData = contractorArray.filter(c => selectedContrs.includes(c.contractorName));
+    if (proj !== 'ALL') finalData = finalData.filter(c => c.projectName === proj);
+    
+    const now = new Date();
+    if (period === 'WEEK') {
+        const d = new Date(now); d.setDate(d.getDate() - 7);
+        finalData = finalData.filter(c => new Date(c.date) >= d);
+    } else if (period === 'MONTH') {
+        const d = new Date(now); d.setDate(d.getDate() - 30);
+        finalData = finalData.filter(c => new Date(c.date) >= d);
     }
 
-    // Оставляем проверки ТОЛЬКО выбранных подрядчиков
-    const finalData = baseData.filter(c => selectedContrs.includes(c.contractorName));
+    // ВАЖНО: Привязываем ID задачи к глобальной переменной, чтобы протокол мог её закрыть!
+    if (taskId && taskId !== 'null') window.activeTaskId = taskId;
 
-    // Переключаем вкладки и вызываем отрисовку
+    // Переключаем вкладки и дожидаемся их отрисовки, чтобы не было конфликтов
     switchTab('tab-engineer');
-    setTimeout(() => {
-        const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
-        if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
-        rbi_createMeeting(finalData, taskId);
-    }, 300);
+    const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+    if (btns[2]) await rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
+    
+    // Запускаем сборку рабочего пространства с нашими данными
+    rbi_createMeeting(finalData);
 };
 // СОЗДАНИЕ НОВОГО СОВЕЩАНИЯ (Интерактивная повестка)
 // === СОВЕЩАНИЯ: ДВУХПАНЕЛЬНЫЙ ИНТЕРФЕЙС ===
-window.rbi_createMeeting = function() {
+window.rbi_createMeeting = function(customData = null) {
+    // ЕСЛИ НАЖАЛИ КНОПКУ "НОВОЕ СОВЕЩАНИЕ" ВО ВКЛАДКЕ (без переданных данных) -> ОТКРЫВАЕМ МОДАЛКУ!
+    if (!customData) {
+        rbi_openMeetingSetupModal(null);
+        return;
+    }
+
     const container = document.getElementById('rbi-meeting-container');
     const d = new Date();
     
-    // ИСПРАВЛЕНИЕ: Берем массив проверок не за жесткие 7 дней, а на основе 
-    // глобальных фильтров Аналитики (которые установились при скачивании PDF отчета!)
-    // Переменную оставляем с именем weekChecks, чтобы не сломать код ниже.
-    let weekChecks = getFilteredAnalyticsData();
-    
-    // Если пользователь зашел в Совещание НАПРЯМУЮ, минуя настройки отчета,
-    // и фильтр стоит "Всё время" (что для планерки слишком много), страхуемся: берем последние 7 дней.
-    const periodVal = document.getElementById('global-filter-period')?.value;
-    if (!periodVal || periodVal === 'ALL') {
-        const weekAgo = new Date(d); weekAgo.setDate(d.getDate() - 7);
-        weekChecks = contractorArray.filter(c => new Date(c.date) >= weekAgo);
-    }
+    // Раз данные переданы, используем их для построения Совещания
+    let weekChecks = customData;
+
+    // --- ОПРЕДЕЛЯЕМ ТЕКСТ ПЕРИОДА ДЛЯ ЗАГОЛОВКОВ ---
+    let periodText = "7 дней";
+    const selectedPeriod = document.getElementById('meet-setup-period')?.value;
+    if (selectedPeriod === 'MONTH') periodText = "30 дней";
+    if (selectedPeriod === 'ALL') periodText = "Всё время";
+    // ----------------------------------------------
     
     // Считаем общие метрики
     const weekMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekChecks, userTemplates) : null;
@@ -6903,7 +6944,7 @@ window.rbi_createMeeting = function() {
         agendaHtml += `</div></div>`;
     }
 
-    if (!agendaHtml) agendaHtml = '<div class="text-[11px] text-green-600 font-bold text-center py-4 bg-white rounded-xl border border-dashed">Дефектов за неделю не выявлено. Идеально!</div>';
+    if (!agendaHtml) agendaHtml = `<div class="text-[11px] text-green-600 font-bold text-center py-4 bg-white rounded-xl border border-dashed">Дефектов за ${periodText} не выявлено. Идеально!</div>`;
 
     // --- РЕНДЕР 2-Х ПАНЕЛЕЙ ---
     const html = `

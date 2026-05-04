@@ -1,8 +1,8 @@
 /* Файл: sw.js */
-// ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде! (v16.9.9)
-const CACHE_NAME = 'rbi-quality-v17.8.35'; 
+// ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
+const CACHE_NAME = 'rbi-quality-v17.8.41'; 
 
-// 1. ПРЕ-КЭШ: ТОЛЬКО 100% локальные файлы (чтобы установка PWA никогда не падала)
+// 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
 const urlsToCache = [
   './',
   './index.html',
@@ -16,28 +16,39 @@ const urlsToCache = [
   './js/templates.js',
   './js/math.js',
   './js/ai.js',
-  './js/faq.js',      // НОВЫЙ ФАЙЛ: База знаний
-  './js/task.js',     // НОВЫЙ ФАЙЛ: Менеджер задач
-  './js/etalon.js',   // НОВЫЙ ФАЙЛ: Конструктор эталона
+  './js/faq.js',
+  './js/task.js',
+  './js/etalon.js',
   './js/app.js',
   './js/analytics.js', 
   './js/export.js',    
   './js/game.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  // --- ДОБАВЛЕНО: Внешние библиотеки для работы без интернета ---
+  'https://cdn.tailwindcss.com',
+  'https://cdn.jsdelivr.net/npm/chart.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
-// 1. УСТАНОВКА: Скачиваем локальные файлы в память
+// 2. УСТАНОВКА: Безопасное скачивание файлов в память
 self.addEventListener('install', event => {
   self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      console.log('[SW] Кэшируем локальное ядро приложения...');
-      return cache.addAll(urlsToCache);
+      console.log('[SW] Кэшируем ядро и библиотеки...');
+      // Безопасное кэширование: если одна ссылка недоступна, остальные всё равно скачаются
+      return Promise.all(urlsToCache.map(url => {
+        return fetch(url, { mode: 'no-cors' }).then(response => {
+          return cache.put(url, response);
+        }).catch(err => console.log('[SW] Ошибка кэширования: ', url, err));
+      }));
     })
   );
 });
 
-// 2. АКТИВАЦИЯ: Удаляем старые версии кэша
+// 3. АКТИВАЦИЯ: Удаляем старые версии кэша
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -54,13 +65,13 @@ self.addEventListener('activate', event => {
   self.clients.claim(); 
 });
 
-// 3. ПЕРЕХВАТ ЗАПРОСОВ (Stale-While-Revalidate + Runtime Caching для CDN)
+// 4. ПЕРЕХВАТ ЗАПРОСОВ (Stale-While-Revalidate)
 self.addEventListener('fetch', event => {
-  // Игнорируем запросы не по HTTP (например, chrome-extension://)
+  // Игнорируем запросы не по HTTP
   if (!event.request.url.startsWith('http')) return;
   if (event.request.method !== 'GET') return;
   
-  // Запросы к Supabase (API) мы НЕ кэшируем, они должны ходить в базу данных!
+  // Запросы к Supabase (API БД) мы НЕ кэшируем, чтобы данные были актуальными
   if (event.request.url.includes('supabase.co')) return;
 
   event.respondWith(
@@ -68,11 +79,10 @@ self.addEventListener('fetch', event => {
       
       // Фоновый запрос в сеть за свежей версией файла
       const fetchPromise = fetch(event.request).then(networkResponse => {
-        // Проверяем: если ответ успешный (200) ИЛИ это "opaque" ответ от внешнего CDN (Tailwind/Chart.js)
         if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache); // Сохраняем CDN на лету!
+            cache.put(event.request, responseToCache); // Обновляем кэш на лету
           });
         }
         return networkResponse;
@@ -80,8 +90,7 @@ self.addEventListener('fetch', event => {
         console.log('[SW] Офлайн: Сеть недоступна, пытаемся отдать из кэша.', event.request.url);
       });
 
-      // Отдаем кэш сразу (если он есть), а в фоне скачиваем обновления.
-      // Если кэша еще нет (первый запуск), ждем ответа от fetchPromise.
+      // Отдаем кэш сразу (если он есть), а в фоне скачиваем обновления
       return cachedResponse || fetchPromise;
     })
   );

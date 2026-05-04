@@ -78,13 +78,14 @@ window.rbi_saveManualTask = async function() {
     rbi_renderTasksList();
 };
 
-// ==========================================
-// 2. УМНЫЙ ГЕНЕРАТОР ЗАДАЧ (AI ПЛАНИРОВЩИК)
-// ==========================================
 window.gameForceUpdatePlan = async function() {
     showToast("🧠 ИИ анализирует базу и перестраивает план...");
     await gameGenerateWeeklyPlan(true);
     rbi_renderTasksList();
+    
+    // Даем команду облаку забрать удаленные задачи
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
 };
 
 window.gameGenerateWeeklyPlan = async function(force = false) {
@@ -97,12 +98,17 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
     const currentWeekId = getWeekId(now);
     const startOfThisWeek = getStartOfWeek(now);
 
-    // Удаляем старые системные невыполненные задачи, чтобы перестроить план начисто
-    const tasksToDelete = window.rbi_tasksData.filter(t => t.type === 'auto' && t.status === 'pending');
-    for (let t of tasksToDelete) {
-        if (typeof dbDelete === 'function') await dbDelete(STORES.TASKS, t.id);
+    // ОБНОВЛЕНИЕ ПЛАНА (Чистим старые авто-задачи ТОЛЬКО при ручном нажатии кнопки)
+    // Используем мягкое удаление (_deleted = true), чтобы облако стерло их у себя!
+    if (force) {
+        const tasksToDelete = window.rbi_tasksData.filter(t => t.type === 'auto' && t.status === 'pending');
+        for (let t of tasksToDelete) {
+            t._deleted = true;
+            t.updatedAt = new Date().toISOString();
+            if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
+        }
+        window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
     }
-    window.rbi_tasksData = window.rbi_tasksData.filter(t => !tasksToDelete.includes(t));
 
     let newTasksCount = 0;
 
@@ -110,10 +116,10 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
         const exists = window.rbi_tasksData.find(t => 
             t.title === title && 
             t.contractor === contractor && 
-            t.status === 'pending' &&
-            new Date(t.date).toDateString() === tDate.toDateString()
+            t.templateKey === tmplKey &&
+            (t.status === 'pending' || t.status === 'paused')
         );
-        if (exists) return;
+        if (exists) return; // Если уже есть активная или на паузе — не плодим клонов!
 
         const task = {
             id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random()*1000),
@@ -123,7 +129,8 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             title: title, prompt: prompt,
             status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
             target: 1, done: 0, carryOverCount: 0,
-            history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана системой.`]
+            history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана системой.`],
+            updatedAt: new Date().toISOString()
         };
         window.rbi_tasksData.push(task);
         if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
@@ -177,7 +184,16 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             requiredChecksPerWeek = Math.max(requiredChecksPerWeek, 2);
         }
 
-        const deficit = requiredChecksPerWeek - pair.checksThisWeek;
+        // Считаем, сколько задач мы уже поставили на паузу по этому подрядчику
+        const pausedTasksCount = window.rbi_tasksData.filter(t => 
+            t.contractor === pair.contractor && 
+            t.templateKey === pair.templateKey && 
+            t.status === 'paused'
+        ).length;
+
+        // Вычитаем задачи на паузе из плана, чтобы ИИ успокоился и не требовал их снова
+        const deficit = requiredChecksPerWeek - pair.checksThisWeek - pausedTasksCount;
+        
         if (deficit > 0) {
             for (let i = 0; i < deficit; i++) {
                 let taskDate = new Date(now);
@@ -278,10 +294,17 @@ window.rbi_renderTasksList = async function() {
     activeTasks.forEach(t => {
         if (t._deleted) return;
 
-        if (t.status !== 'pending') {
+        if (t.status === 'done' || t.status === 'blocked') {
             archiveTasks.push(t);
             if (t.status === 'done') { weekTotal++; weekDone++; }
             return; 
+        }
+        
+        // Если задача на паузе, отправляем её в нижний блок (Будущие задачи)
+        if (t.status === 'paused') {
+            monthTasks.push(t);
+            weekTotal++;
+            return;
         }
         
         const tDate = t.date ? new Date(t.date) : new Date();
@@ -356,8 +379,8 @@ window.rbi_renderTasksList = async function() {
     const activeToday = [...overdue.map(t => renderCard(t, true)), ...todayTasks.map(t => renderCard(t, false))];
 
     if (activeToday.length > 0) accordionsHtml += `<details class="mb-3 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-2 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-indigo-600 uppercase tracking-widest">📌 СЕГОДНЯ И ПРОСРОЧЕНО (${activeToday.length})</span><span class="text-slate-400 group-open:rotate-180">▼</span></summary><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-2">${activeToday.join('')}</div></details>`;
-    if (weekTasks.length > 0) accordionsHtml += `<details class="mb-3 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-2 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 uppercase tracking-widest">🔜 ДО КОНЦА НЕДЕЛИ (${weekTasks.length})</span><span class="text-slate-400 group-open:rotate-180">▼</span></summary><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-2">${weekTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
-    if (monthTasks.length > 0) accordionsHtml += `<details class="mb-3 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-2 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-500 uppercase tracking-widest">🗓 БУДУЩИЕ ЗАДАЧИ (${monthTasks.length})</span><span class="text-slate-400 group-open:rotate-180">▼</span></summary><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-2">${monthTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
+    if (weekTasks.length > 0) accordionsHtml += `<details class="mb-3 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-2 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 uppercase tracking-widest">🔜 ДО КОНЦА НЕДЕЛИ (${weekTasks.length})</span><span class="text-slate-400 group-open:rotate-180">▼</span></summary><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-2">${weekTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
+    if (monthTasks.length > 0) accordionsHtml += `<details class="mb-3 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-2 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-500 uppercase tracking-widest">🗓 БУДУЩИЕ ЗАДАЧИ (${monthTasks.length})</span><span class="text-slate-400 group-open:rotate-180">▼</span></summary><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pb-2">${monthTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
     
     if (archiveTasks.length > 0) {
         const recentArchive = archiveTasks.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
@@ -463,18 +486,7 @@ window.rbi_openTaskAction = async function(taskId) {
     }
 
     let aiWorkshopHtml = '';
-    if (task.category === 'dev' || task.title.includes('Воркшоп')) {
-        currentTaskContext = task; // Для ИИ-генератора
-        aiWorkshopHtml = `
-            <div class="bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 p-3 rounded-xl mb-2">
-                <div class="flex justify-between items-center mb-2">
-                    <div class="text-[10px] font-black text-purple-700 uppercase">🧠 AI-Сценарий Воркшопа</div>
-                    <button onclick="rbi_generateTaskScenario()" class="bg-purple-600 text-white px-3 py-1 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Сгенерировать</button>
-                </div>
-                <textarea id="task-ai-scenario" class="hidden w-full h-32 text-[11px] p-2 rounded-lg border border-purple-200 resize-none outline-none leading-relaxed text-slate-800 dark:text-white bg-white dark:bg-slate-800 shadow-inner" placeholder="..."></textarea>
-            </div>
-        `;
-    }
+    // Мы убрали дублирующий верхний блок воркшопа
 
     let logicTitle = ""; let logicColor = ""; let logicDesc = "";
     if (task.priorityLvl === 4) {
@@ -522,7 +534,23 @@ window.rbi_openTaskAction = async function(taskId) {
         `;
     } else {
         // === РОУТИНГ КНОПОК ПО ТИПАМ ЗАДАЧ ===
-        
+        if (task.type === 'manual') {
+            // РУЧНЫЕ ЗАДАЧИ С ФОТОФИКСАЦИЕЙ
+            let photoPreviewHtml = task.completionPhoto 
+                ? `<div class="mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm"><img src="${window.getPhotoSrc(task.completionPhoto)}" class="w-full h-full object-cover"></div>` 
+                : `<div id="task-photo-preview" class="hidden mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>`;
+                
+            actionButtonsHtml += `
+                <div class="mb-3">
+                    <button onclick="document.getElementById('task-photo-upload').click(); window.currentTaskPhotoId='${task.id}';" class="w-full bg-indigo-50 dark:bg-slate-800 border border-dashed border-indigo-300 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
+                        📸 Прикрепить фото (День Качества)
+                    </button>
+                    ${photoPreviewHtml}
+                </div>
+                <button onclick="rbi_markTaskDone('${task.id}');" class="w-full bg-green-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
+                    ✅ Отметить выполненной
+                </button>`;
+        }
         if (task.title.includes('Вводный инструктаж')) {
             // 1. ВВОДНЫЙ ИНСТРУКТАЖ (Сборка регламентов и TWI)
             actionButtonsHtml += `
@@ -575,7 +603,8 @@ window.rbi_openTaskAction = async function(taskId) {
                             <div id="task-photo-preview" class="hidden mt-2 relative w-full h-24 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="rbi_printWorkshop('${task.id}')" class="w-1/2 bg-white text-purple-700 border border-purple-200 py-3.5 rounded-xl text-[11px] font-black uppercase active:scale-95 shadow-sm">🖨️ Печать PDF</button>
+                            <button onclick="rbi_printWorkshop('${task.id}', 'script')" class="w-1/2 bg-white text-purple-700 border border-purple-200 py-3.5 rounded-xl text-[11px] font-black uppercase active:scale-95 shadow-sm">📥 PDF</button>
+                            <button onclick="rbi_printWorkshop('${task.id}', 'browser')" class="w-1/2 bg-white text-purple-700 border border-purple-200 py-3.5 rounded-xl text-[11px] font-black uppercase active:scale-95 shadow-sm">🖨️ Печать</button>
                             <button onclick="rbi_finishWorkshop('${task.id}')" class="w-1/2 bg-purple-600 text-white py-3.5 rounded-xl text-[11px] font-black uppercase active:scale-95 shadow-md flex items-center justify-center">✅ Завершить</button>
                         </div>
                     </div>
@@ -634,14 +663,7 @@ window.rbi_openTaskAction = async function(taskId) {
                     ▶ Провести инспекцию
                 </button>`;
         } 
-        else {
-            // РУЧНЫЕ ЗАДАЧИ
-            actionButtonsHtml += `
-                <button onclick="rbi_markTaskDone('${task.id}');" class="w-full bg-green-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
-                    ✅ Отметить выполненной
-                </button>`;
-        }
-
+        
         // Блок нижних кнопок управления задачей (Сдвинуть, Пауза, Отменить)
         let postponeCountHtml = task.postponeCount > 0 ? `<span class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full font-black">${task.postponeCount}</span>` : '';
         actionButtonsHtml += `
@@ -708,14 +730,20 @@ window.rbi_resumeTask = async function(taskId) {
 window.rbi_pauseTask = async function(taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
-    task.status = 'paused'; task.resultComment = 'На паузе';
+    const reason = prompt("Укажите причину паузы:");
+    if (reason === null) return; 
+    if (reason.trim() === "") return showToast("⚠️ Причина обязательна!");
+
+    task.status = 'paused'; task.resultComment = `На паузе: ${reason}`;
     if(!task.history) task.history = [];
-    task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Поставлена на паузу.`);
+    task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Пауза: ${reason}`);
     task.updatedAt = new Date().toISOString();
-    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
-    showToast("⏸ Задача скрыта в архив (Пауза)");
     
-    // ИСПРАВЛЕНИЕ: Жестко закрываем окно
+    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    showToast("⏸ Задача скрыта в архив (Пауза)");
     document.getElementById('task-details-modal').style.display = 'none'; 
     document.body.classList.remove('modal-open');
     rbi_renderTasksList();
@@ -732,10 +760,12 @@ window.rbi_cancelTask = async function(taskId) {
     if(!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Отменена: ${reason}`);
     task.updatedAt = new Date().toISOString();
-    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
-    showToast("🚫 Задача отменена");
     
-    // ИСПРАВЛЕНИЕ: Жестко закрываем окно
+    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    showToast("🚫 Задача отменена");
     document.getElementById('task-details-modal').style.display = 'none'; 
     document.body.classList.remove('modal-open');
     rbi_renderTasksList();
@@ -757,7 +787,7 @@ window.rbi_postponeTask = async function(taskId) {
 
     task.postponeCount = (task.postponeCount || 0) + 1;
     if(!task.history) task.history = [];
-    task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Перенос с ${oldDateStr} на ${daysNum} дн. (Перенос №${task.postponeCount})`);
+    task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Перенос с ${oldDateStr} на ${daysNum} дн.`);
 
     if (task.postponeCount > 2) {
         task.priorityLvl = 4;
@@ -767,9 +797,11 @@ window.rbi_postponeTask = async function(taskId) {
         showToast(`➡️ Задача перенесена на ${newDate.toLocaleDateString('ru-RU')}`);
     }
     task.updatedAt = new Date().toISOString();
-    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
     
-    // ИСПРАВЛЕНИЕ: Жестко закрываем окно
+    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
     document.getElementById('task-details-modal').style.display = 'none'; 
     document.body.classList.remove('modal-open');
     rbi_renderTasksList(); 
@@ -1091,7 +1123,7 @@ window.rbi_handleTaskCompletionPhoto = function(event) {
     });
 };
 
-window.rbi_printWorkshop = function(taskId) {
+window.rbi_printWorkshop = function(taskId, mode = 'browser') {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const scenario = document.getElementById('workshop-ai-scenario')?.value;
     if (!scenario || scenario.includes('⏳')) return showToast("Сгенерируйте сценарий!");
@@ -1125,7 +1157,7 @@ window.rbi_printWorkshop = function(taskId) {
             </div>
         `;
     }
-    if (typeof printPdfShell === 'function') printPdfShell(`Воркшоп: ${task.contractor}`, content, "A4", "portrait", "browser");
+    if (typeof printPdfShell === 'function') printPdfShell(`Воркшоп: ${task.contractor}`, content, "A4", "portrait", mode);
 };
 
 window.rbi_finishWorkshop = async function(taskId) {
