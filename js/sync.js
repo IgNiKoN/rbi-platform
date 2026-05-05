@@ -911,7 +911,7 @@ window.triggerSync = async function(mode = 'silent') {
             console.warn("[Sync] Задачи не подтянуты:", e.message);
         }
 
-        // =====================================================
+// =====================================================
 // 4.2. PULL: акты-эталоны напрямую из rbi_etalon_acts
 // =====================================================
 try {
@@ -933,13 +933,15 @@ try {
 
     if (etalonRows && etalonRows.length > 0) {
         for (const row of etalonRows) {
-            // Распаковываем данные и кэшируем все фото (public URL → cloud://)
             let actData = row.act_data || {};
-            actData = await window.cacheObjectCloudFilesToIndexedDB(actData, 'etalon');
+
+            // 1. Скачиваем все фото в офлайн-кеш, НО НЕ МЕНЯЕМ публичные URL
+            await downloadAllActPhotosForOffline(actData);
+
             actData.id = row.id;
             actData.updatedAt = row.updated_at;
 
-            // Сравниваем время: обновляем локально только если облачная версия новее
+            // 2. Сравниваем время, чтобы не перезаписать локальные правки
             const localExisting = await dbGet('rbi_etalon_acts', row.id);
             const localTime = localExisting ? new Date(localExisting.updatedAt || 0).getTime() : 0;
             const cloudTime = new Date(row.updated_at || 0).getTime();
@@ -955,6 +957,19 @@ try {
     }
 } catch (e) {
     console.warn("[Sync] Эталоны не подтянуты:", e.message);
+}
+
+// Вспомогательная функция для фоновой загрузки всех фото эталона в кеш
+async function downloadAllActPhotosForOffline(act) {
+    if (!act?.details?.elements) return;
+
+    for (const el of act.details.elements) {
+        if (el.photo && el.photo.startsWith('http')) {
+            // PhotoManager.downloadForOffline сохранит фото в IndexedDB,
+            // но сам el.photo останется публичным URL
+            await PhotoManager.downloadForOffline(el.photo);
+        }
+    }
 }
               // =====================================================
         // 4.1. PULL: прочие модули через rbi_cloud_objects
