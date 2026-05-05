@@ -1,6 +1,6 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const CACHE_NAME = 'rbi-quality-v17.8.55'; 
+const CACHE_NAME = 'rbi-quality-v17.8.56'; 
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
 const urlsToCache = [
@@ -23,6 +23,7 @@ const urlsToCache = [
   './js/analytics.js', 
   './js/export.js',    
   './js/game.js',
+  './js/sk.js',
   './manifest.webmanifest',
   // --- ДОБАВЛЕНО: Внешние библиотеки для работы без интернета ---
   'https://cdn.tailwindcss.com',
