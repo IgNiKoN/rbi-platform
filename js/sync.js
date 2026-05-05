@@ -929,9 +929,9 @@ window.triggerSync = async function(mode = 'silent') {
 
                 for (const row of etalonRows) {
                     let act = row.act_data || {};
-act = await window.cacheObjectCloudFilesToIndexedDB(act, 'etalon');
-act.id = row.id;
-act.updatedAt = row.updated_at;
+                  act = await window.cacheObjectCloudFilesToIndexedDB(act, 'etalon');
+                  act.id = row.id;
+                  act.updatedAt = row.updated_at;
 
                     await dbPut('rbi_etalon_acts', act);
 
@@ -1015,14 +1015,40 @@ act.updatedAt = row.updated_at;
                         else window.rbi_fmeaRecords.push(obj);
                     }
                 }
-                // <-- НОВОЕ: Обработка скачанного пакета ПК СК
-                if (type === 'sk_data_bundle' && typeof dbPut === 'function' && typeof dbClear === 'function') {
+                                // <-- НОВОЕ: Обработка скачанного пакета ПК СК (с защитой от затирания)
+                                // Синхронизация данных ПК Стройконтроль (двусторонняя, с soft delete)
+                                // Синхронизация данных ПК Стройконтроль (сравнение по времени)
+                if (type === 'sk_data_bundle' && typeof dbPut === 'function' && typeof dbGetAll === 'function') {
+                    let localRecords = await dbGetAll('sk_records') || [];
+                    const localMap = new Map();
+                    localRecords.forEach(r => localMap.set(r.id, r));
+
+                    const saveSkRecord = async (record) => {
+                        record._updatedAt = record._updatedAt || new Date().toISOString();
+                        await dbPut('sk_records', record);
+                    };
+
                     for (const obj of objects) {
-                        if (obj.records) {
-                            window.skRecords = obj.records;
-                            await dbClear('sk_records'); // Стираем старую локальную базу СК
-                            for (const r of window.skRecords) await dbPut('sk_records', r);
+                        if (!obj.records || !Array.isArray(obj.records)) continue;
+                        
+                        for (const cloudRecord of obj.records) {
+                            const localRecord = localMap.get(cloudRecord.id);
+                            const cloudTime = cloudRecord._updatedAt ? new Date(cloudRecord._updatedAt).getTime() : 0;
+                            const localTime = localRecord?._updatedAt ? new Date(localRecord._updatedAt).getTime() : 0;
+
+                            if (!localRecord || cloudTime > localTime) {
+                                if (cloudRecord._deleted === true) {
+                                    if (localRecord) {
+                                        await dbDelete('sk_records', cloudRecord.id);
+                                        localMap.delete(cloudRecord.id);
+                                    }
+                                } else {
+                                    await saveSkRecord(cloudRecord);
+                                    localMap.set(cloudRecord.id, cloudRecord);
+                                }
+                            }
                         }
+
                         if (obj.volumes) {
                             window.skVolumes = obj.volumes;
                             await dbPut('app_settings', { key: 'sk_volumes', data: window.skVolumes });
@@ -1032,6 +1058,8 @@ act.updatedAt = row.updated_at;
                             await dbPut('app_settings', { key: 'sk_contractor_map', data: window.skContractorMap });
                         }
                     }
+                    
+                    window.skRecords = Array.from(localMap.values()).filter(r => !r._deleted);
                 }
 
                 if (type === 'custom_doc') {
@@ -1182,47 +1210,85 @@ act.updatedAt = row.updated_at;
                 }
             }
         }
-                  // =====================================================
-        // 5.1. PUSH: акты-эталоны в rbi_etalon_acts
-        // =====================================================
-        try {
-            const etalons = typeof dbGetAll === 'function'
-                ? (await dbGetAll('rbi_etalon_acts') || [])
-                : (typeof etalonActsArray !== 'undefined' ? etalonActsArray : []);
+                        // 5.1. PUSH: акты-эталоны в rbi_etalon_acts (с принудительной загрузкой фото)
+                try {
+                    const etalons = typeof dbGetAll === 'function'
+                        ? (await dbGetAll('rbi_etalon_acts') || [])
+                        : (typeof etalonActsArray !== 'undefined' ? etalonActsArray : []);
 
-            for (const act of etalons) {
-                if (!act || !act.id) continue;
+                    for (const act of etalons) {
+                        if (!act || !act.id) continue;
 
-                let uploadedAct = act;
+                        // Создаём копию, чтобы не менять оригинал до успешной загрузки фото
+                        let uploadedAct = JSON.parse(JSON.stringify(act));
+                        
+                        // Принудительно обрабатываем фото в элементах эталона
+                        if (uploadedAct.details && uploadedAct.details.elements && Array.isArray(uploadedAct.details.elements)) {
+                            for (let i = 0; i < uploadedAct.details.elements.length; i++) {
+                                const element = uploadedAct.details.elements[i];
+                                if (element.photo && typeof element.photo === 'string' && element.photo.startsWith('local://')) {
+                                    try {
+                                        // Достаём фото из IndexedDB
+                                        const photoRecord = await dbGet('app_photos', element.photo);
+                                        if (photoRecord && photoRecord.data) {
+                                            const blob = new Blob([photoRecord.data], { type: photoRecord.mimeType || 'image/jpeg' });
+                                            const ext = photoRecord.mimeType?.includes('png') ? 'png' : 'jpg';
+                                            const fileName = `etalon_${act.id}_elem${i}_${Date.now()}.${ext}`;
+                                            const filePath = `${pCode}/etalons/${act.id}/${fileName}`;
+                                            
+                                            // Загружаем в Storage Supabase
+                                            const { error: uploadError } = await window.supabaseClient.storage
+                                                .from('inspection-photos')
+                                                .upload(filePath, blob, { upsert: true, contentType: photoRecord.mimeType });
+                                            
+                                            if (uploadError) throw uploadError;
+                                            
+                                            // Получаем публичный URL
+                                            const { data: urlData } = window.supabaseClient.storage
+                                                .from('inspection-photos')
+                                                .getPublicUrl(filePath);
+                                            
+                                            // Заменяем local:// на публичный URL
+                                            element.photo = urlData.publicUrl;
+                                            
+                                            // Обновляем запись в IndexedDB, чтобы локально тоже был публичный URL
+                                            if (typeof dbPut === 'function') {
+                                                const updatedAct = JSON.parse(JSON.stringify(act));
+updatedAct.details.elements[i].photo = urlData.publicUrl;
+updatedAct.updatedAt = new Date().toISOString();
+await dbPut('rbi_etalon_acts', updatedAct);
+const idx = etalonActsArray.findIndex(x => String(x.id) === String(act.id));
+if (idx !== -1) etalonActsArray[idx] = updatedAct;
+                                            }
+                                        }
+                                    } catch (photoError) {
+                                        console.error(`[Sync] Ошибка загрузки фото для эталона ${act.id}, элемент ${i}:`, photoError);
+                                        // Не прерываем отправку, фото останется local:// (будет загружено при следующей синхронизации)
+                                    }
+                                }
+                            }
+                        }
 
-                if (typeof window.uploadObjectFilesToCloud === 'function') {
-                    uploadedAct = await window.uploadObjectFilesToCloud(
-                        act,
-                        'inspection-photos',
-                        `${pCode}/etalons/${act.id}`,
-                        'etalon'
-                    );
+                        // Отправляем запись в таблицу Supabase
+                        const { error: etalonError } = await window.supabaseClient
+                            .from('rbi_etalon_acts')
+                            .upsert({
+                                id: String(uploadedAct.id),
+                                project_code: pCode,
+                                engineer_name: uploadedAct.inspectorName || uploadedAct.engineerName || iName,
+                                contractor_name: uploadedAct.contractorName || uploadedAct.contractor || '',
+                                template_key: uploadedAct.templateKey || 'sys_etalon_act',
+                                template_title: uploadedAct.templateTitle || '',
+                                act_data: uploadedAct,
+                                is_deleted: uploadedAct._deleted || false,
+                                updated_at: uploadedAct.updatedAt || uploadedAct.updated_at || new Date().toISOString()
+                            }, { onConflict: 'id' });
+
+                        if (etalonError) throw etalonError;
+                    }
+                } catch (e) {
+                    console.warn("[Sync] Эталоны не отправлены:", e.message);
                 }
-
-                const { error: etalonError } = await window.supabaseClient
-                    .from('rbi_etalon_acts')
-                    .upsert({
-                        id: String(uploadedAct.id),
-                        project_code: pCode,
-                        engineer_name: uploadedAct.inspectorName || uploadedAct.engineerName || iName,
-                        contractor_name: uploadedAct.contractorName || uploadedAct.contractor || '',
-                        template_key: uploadedAct.templateKey || 'sys_etalon_act',
-                        template_title: uploadedAct.templateTitle || '',
-                        act_data: uploadedAct,
-                        is_deleted: uploadedAct._deleted || false,
-                        updated_at: uploadedAct.updatedAt || uploadedAct.updated_at || new Date().toISOString()
-                    }, { onConflict: 'id' });
-
-                if (etalonError) throw etalonError;
-            }
-        } catch (e) {
-            console.warn("[Sync] Эталоны не отправлены:", e.message);
-        }
         // =====================================================
         // 6. PUSH: черновик
         // =====================================================
@@ -1417,64 +1483,61 @@ act.updatedAt = row.updated_at;
         } catch (e) {
             console.warn("[Sync] Рейтинг не отправлен:", e.message);
         }
+                               // =====================================================
+                // 8.1. PUSH: прочие модули через rbi_cloud_objects
                 // =====================================================
-        // 8.1. PUSH: прочие модули через rbi_cloud_objects
-        // =====================================================
-        // =====================================================
-        // 8.1. PUSH: прочие модули через rbi_cloud_objects
-        // =====================================================
-        try {
-            if (typeof dbGetAll === 'function') {
-                const meetings = await dbGetAll('rbi_meetings') || [];
-                for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets'); }
+                try {
+                    if (typeof dbGetAll === 'function') {
+                        const meetings = await dbGetAll('rbi_meetings') || [];
+                        for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets'); }
 
-                const interventions = await dbGetAll('rbi_interventions') || [];
-                for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets'); }
+                        const interventions = await dbGetAll('rbi_interventions') || [];
+                        for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets'); }
 
-                const practices = await dbGetAll('rbi_practices') || [];
-                for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'custom-assets'); }
+                        const practices = await dbGetAll('rbi_practices') || [];
+                        for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'custom-assets'); }
 
-                const scheduleStages = await dbGetAll('rbi_schedule_stages') || [];
-                for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets'); }
+                        const scheduleStages = await dbGetAll('rbi_schedule_stages') || [];
+                        for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets'); }
 
-                // <-- НОВОЕ: Отправка FMEA
-                const fmeas = await dbGetAll('rbi_fmea') || [];
-                for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
-            }
-             // <-- НОВОЕ: Отправка данных ПК СК (Единым пакетом для скорости)
-                const skRecs = await dbGetAll('sk_records') || [];
-                const skVols = await dbGet('app_settings', 'sk_volumes');
-                const skCmap = await dbGet('app_settings', 'sk_contractor_map');
+                        const fmeas = await dbGetAll('rbi_fmea') || [];
+                        for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
 
-                if (skRecs.length > 0 || (skVols && skVols.data)) {
-                    const skBundle = {
-                        id: 'main_bundle',
-                        records: skRecs,
-                        volumes: skVols ? skVols.data : {},
-                        contractorMap: skCmap ? skCmap.data : {}
-                    };
-                    await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                        // Отправка ПК СК (единым пакетом)
+                        const skRecs = await dbGetAll('sk_records') || [];
+                        const skVols = await dbGet('app_settings', 'sk_volumes');
+                        const skCmap = await dbGet('app_settings', 'sk_contractor_map');
+                        if (skRecs.length > 0 || (skVols && skVols.data)) {
+                            const skBundle = {
+                                id: 'main_bundle',
+                                records: skRecs,
+                                volumes: skVols ? skVols.data : {},
+                                contractorMap: skCmap ? skCmap.data : {}
+                            };
+                            await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                        }
+                    }
+
+                    if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
+                        for (const obj of customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_'))) {
+                            await window.pushCloudObject('custom_doc', obj.id, obj, 'custom-assets');
+                        }
+                    }
+
+                    if (typeof customNodes !== 'undefined' && Array.isArray(customNodes)) {
+                        for (const obj of customNodes.filter(x => x && x.id)) {
+                            await window.pushCloudObject('custom_node', obj.id, obj, 'custom-assets');
+                        }
+                    }
+
+                    if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
+                        for (const obj of customTwiCards.filter(x => x && x.id)) {
+                            await window.pushCloudObject('custom_twi_card', obj.id, obj, 'twi-pdfs');
+                        }
+                    }
+                } catch (e) {
+                    console.warn("[Sync] Прочие модули не отправлены:", e.message);
                 }
-            if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
-                for (const obj of customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_'))) {
-                    await window.pushCloudObject('custom_doc', obj.id, obj, 'custom-assets');
-                }
-            }
-
-            if (typeof customNodes !== 'undefined' && Array.isArray(customNodes)) {
-                for (const obj of customNodes.filter(x => x && x.id)) {
-                    await window.pushCloudObject('custom_node', obj.id, obj, 'custom-assets');
-                }
-            }
-
-            if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
-                for (const obj of customTwiCards.filter(x => x && x.id)) {
-                    await window.pushCloudObject('custom_twi_card', obj.id, obj, 'twi-pdfs');
-                }
-            }
-        } catch (e) {
-            console.warn("[Sync] Прочие модули не отправлены:", e.message);
-        }
         const doneAt = new Date().toISOString();
 
         localStorage.setItem('rbi_sync_last_pull_at', doneAt);

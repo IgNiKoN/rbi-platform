@@ -6,7 +6,7 @@ window.skVolumes = {};      // Справочник объемов
 window.skMapping = null;    // Сохраненный шаблон маппинга
 window.skContractorMap = {};// Словарь алиасов подрядчиков
 window.skCategoryMap = {};  // ИИ-Словарь "грязная категория -> чистый вид работ"
-
+let skAiRunning = false; // Защита от параллельного запуска ИИ
 const SK_FIELDS = [
     { id: 'number', name: '№ замечания' },
     { id: 'text', name: 'Текст замечания' },
@@ -20,11 +20,16 @@ const SK_FIELDS = [
     { id: 'inspector', name: 'Инженер (Выдал)' } // <--- НОВОЕ ПОЛЕ
 ];
 
+function updateSkRecordTimestamps(record) {
+    if (!record._updatedAt) record._updatedAt = new Date().toISOString();
+    if (record._deleted === undefined) record._deleted = false;
+    return record;
+}
 // === 1. ЗАГРУЗКА БАЗЫ ДАННЫХ ===
 window.sk_loadData = async function() {
     try {
         const records = await dbGetAll(STORES.SK_RECORDS);
-        if (records) window.skRecords = records;
+         if (records) window.skRecords = records.filter(r => !r._deleted);
 
         const volumes = await dbGet(STORES.SETTINGS, 'sk_volumes');
         if (volumes && volumes.data) window.skVolumes = volumes.data;
@@ -107,11 +112,16 @@ window.sk_renderMainTab = async function() {
 window.sk_clearData = async function() {
     if (!confirm("Удалить ВСЕ загруженные замечания Стройконтроля? (Справочник объемов и настройки колонок сохранятся)")) return;
     
+    for (let rec of window.skRecords) {
+        rec._deleted = true;
+        rec._updatedAt = new Date().toISOString();
+        await dbPut(STORES.SK_RECORDS, rec);
+    }
     window.skRecords = [];
-    await dbClear(STORES.SK_RECORDS); // Удаляем из базы телефона
-    
-    showToast("🗑️ База Стройконтроля очищена!");
-    sk_renderMainTab(); // Перерисовываем интерфейс
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    showToast("🗑️ База Стройконтроля помечена на удаление. Синхронизируйтесь, чтобы очистить у команды.");
+    sk_renderMainTab();
 };
 
 window.sk_switchView = function(view) {
@@ -573,18 +583,29 @@ window.sk_finalizeImport = async function() {
             date_issued: sk_parseExcelDate(getVal('date_issued')),
             contractor: cleanContractor,
             raw_contractor: rawContractor,
-             inspector: getVal('inspector') ? String(getVal('inspector')).trim() : 'Неизвестно', // <--- НОВОЕ ПОЛЕ
+            inspector: getVal('inspector') ? String(getVal('inspector')).trim() : 'Неизвестно',
             deadline: sk_parseExcelDate(getVal('deadline')),
             status: getVal('status') ? String(getVal('status')).trim() : '',
             date_resolved: sk_parseExcelDate(getVal('date_resolved')),
             structure: getVal('structure') ? String(getVal('structure')).trim() : '',
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            // НОВЫЕ ПОЛЯ ДЛЯ ВЕРСИОНИРОВАНИЯ
+            _updatedAt: new Date().toISOString(),
+            _deleted: false
         };
 
         const existingIdx = window.skRecords.findIndex(r => r.id === record.id);
         if (existingIdx !== -1) {
-            window.skRecords[existingIdx] = record;
-            updatedRecordsCount++;
+            const existing = window.skRecords[existingIdx];
+            const existingTime = existing._updatedAt ? new Date(existing._updatedAt).getTime() : 0;
+            const newTime = new Date(record._updatedAt).getTime();
+            if (newTime > existingTime) {
+                window.skRecords[existingIdx] = record;
+                updatedRecordsCount++;
+            } else {
+                // локальная версия новее – пропускаем
+                continue;
+            }
         } else {
             window.skRecords.push(record);
             newRecordsCount++;
@@ -599,77 +620,115 @@ window.sk_finalizeImport = async function() {
     // Геймификация: Начисляем очки за своевременную сверку!
     if (typeof gameLogAction === 'function') gameLogAction('sk_import_done', importLog.id);
 
-    showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
+         showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
     
-    window.skTempRawHeaders = null; window.skTempRawRows = null;
-    window.skTempContractorMatches = null; window.skTempPairsToConfirm = null;
+    // Запускаем синхронизацию сразу, не дожидаясь ИИ
+    if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        setTimeout(() => triggerSync('manual'), 500);
+    }
+    
+    // Запускаем ИИ в фоне (без await) – только если ещё не запущен
+    if (typeof sk_autoMapCategories === 'function' && !skAiRunning) {
+        skAiRunning = true;
+        sk_autoMapCategories(false).finally(() => {
+            skAiRunning = false;
+            // После обработки ИИ – снова помечаем dirty и тихо синхронизируем, чтобы подтянуть категории в облако
+            if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                setTimeout(() => triggerSync('silent'), 1000);
+            }
+        });
+    }
 
     closeModal();
     sk_renderDashboard();
+    // Убедитесь, что внизу нет повторного вызова sk_autoMapCategories()
 
-    // Запускаем ИИ для обработки пустых строк
-    sk_autoMapCategories();
 };
 
 // === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
-window.sk_autoMapCategories = async function() {
+window.sk_autoMapCategories = async function(silent = false) {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
-        showToast("⚠️ Включите AI для авто-распределения категорий!");
-        sk_renderDashboard();
-        return;
+        if (!silent) showToast("⚠️ Включите AI для авто-распределения категорий!");
+        return 0;
     }
 
-    showToast("🤖 ИИ анализирует тексты замечаний...");
+    if (!silent && !skAiRunning) showToast("🤖 ИИ в фоне обрабатывает категории...");
 
     const allowedCleanCats = [];
-    if (typeof SYSTEM_TEMPLATES !== 'undefined') Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
-    if (typeof userTemplates !== 'undefined') Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
+    if (typeof SYSTEM_TEMPLATES !== 'undefined') {
+        Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
+    }
+    if (typeof userTemplates !== 'undefined') {
+        Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
+    }
+    if (allowedCleanCats.length === 0) allowedCleanCats.push("Общестроительные работы");
 
-    // Ищем записи без чистой категории (где пустая, "Без категории" или просто цифры)
-    const recordsToFix = window.skRecords.filter(r => !r.category || r.category === 'Без категории' || r.category.trim() === '' || /^\d+$/.test(r.category));
+    const recordsToFix = window.skRecords.filter(r => 
+        !r.category || 
+        r.category === 'Без категории' || 
+        r.category.trim() === '' || 
+        /^\d+$/.test(r.category)
+    );
     
-    // Группируем по уникальным текстам, чтобы сэкономить токены и время ИИ (берем 20 за раз)
-    const uniqueTexts = [...new Set(recordsToFix.map(r => r.text).filter(Boolean))].slice(0, 20);
+    const uniqueTexts = [...new Set(recordsToFix.map(r => r.text).filter(t => t && t.length > 5))];
+    
+    if (uniqueTexts.length === 0) {
+        if (!silent) showToast("✅ Все замечания уже распределены по категориям.");
+        return 0;
+    }
 
-    if (uniqueTexts.length > 0) {
-        const batchStr = uniqueTexts.map((t, i) => `${i}: "${t.substring(0, 150)}"`).join('\n');
-        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты строительных дефектов. 
-        Твоя задача — понять суть дефекта и сопоставить его с ОДНИМ наиболее подходящим видом работ из официального списка.
-        ОФИЦИАЛЬНЫЕ ВИДЫ РАБОТ: [${allowedCleanCats.join(', ')}].
-        Если ничего не подходит, верни "Без категории".
-        Верни ответ СТРОГО в виде JSON-объекта: ключ - это индекс из моего списка (0, 1...), значение - чистое название вида работ. Без форматирования.`;
+    const BATCH_SIZE = 50;
+    let totalUpdated = 0;
+    let currentIndex = 0;
+    const totalBatches = Math.ceil(uniqueTexts.length / BATCH_SIZE);
+
+    for (let batchNum = 1; batchNum <= totalBatches; batchNum++) {
+        const batch = uniqueTexts.slice(currentIndex, currentIndex + BATCH_SIZE);
+        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 200)}"`).join('\n');
+        
+        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты дефектов.
+Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length-1}), значение - один из видов работ: [${allowedCleanCats.join(', ')}].
+Если не уверен, верни "Без категории". Без пояснений.`;
 
         try {
-            const res = await window.callAI([{role: 'system', content: promptSystem}, {role: 'user', content: batchStr}], {temperature: 0.1, max_tokens: 800});
-            const jsonMatch = res.match(/\{[\s\S]*\}/);
+            const res = await window.callAI([
+                { role: 'system', content: promptSystem },
+                { role: 'user', content: batchStr }
+            ], { temperature: 0.1, max_tokens: 2000 });
             
+            const jsonMatch = res.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const aiMap = JSON.parse(jsonMatch[0]);
-                let updatedCount = 0;
-                
-                for (let i = 0; i < uniqueTexts.length; i++) {
+                let updatedInBatch = 0;
+                for (let i = 0; i < batch.length; i++) {
                     const cleanVal = aiMap[i] || aiMap[String(i)];
-                    if (cleanVal && cleanVal !== 'Без категории') {
-                        // Ищем все записи с таким текстом и обновляем им категорию
-                        const targetRecords = window.skRecords.filter(r => r.text === uniqueTexts[i]);
+                    if (cleanVal && cleanVal !== 'Без категории' && allowedCleanCats.includes(cleanVal)) {
+                        const targetRecords = window.skRecords.filter(r => r.text === batch[i]);
                         for (let rec of targetRecords) {
                             rec.category = cleanVal;
+                            rec._updatedAt = new Date().toISOString();
                             await dbPut(STORES.SK_RECORDS, rec);
-                            updatedCount++;
+                            updatedInBatch++;
                         }
                     }
                 }
-                if (updatedCount > 0) showToast(`✨ ИИ распознал виды работ для ${updatedCount} замечаний по их тексту!`);
+                totalUpdated += updatedInBatch;
             }
         } catch (e) {
-            console.warn("Ошибка ИИ при маппинге:", e);
-            showToast("❌ Ошибка связи с ИИ при маппинге.");
+            console.warn("Ошибка ИИ в пакете", batchNum, e);
+            if (!silent) showToast(`⚠️ Ошибка в пакете ${batchNum}`);
         }
-    } else {
-        showToast("✅ Все замечания уже распределены по категориям.");
+        
+        currentIndex += BATCH_SIZE;
+        if (currentIndex < uniqueTexts.length) await new Promise(r => setTimeout(r, 500));
     }
 
-    sk_renderDashboard();
+    if (!silent && totalUpdated > 0) {
+        showToast(`✨ ИИ обработал ${totalUpdated} записей (в фоне)`);
+    }
+    return totalUpdated;
 };
 
 
@@ -1380,4 +1439,18 @@ window.sk_showInfoModal = function(type) {
     
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+};
+
+window.sk_deleteRecord = async function(recordId) {
+    if (!confirm("Удалить это замечание? Оно исчезнет у всех членов команды после синхронизации.")) return;
+    const record = window.skRecords.find(r => r.id === recordId);
+    if (!record) return;
+    record._deleted = true;
+    record._updatedAt = new Date().toISOString();
+    await dbPut(STORES.SK_RECORDS, record);
+    window.skRecords = window.skRecords.filter(r => r.id !== recordId);
+    sk_renderDashboard();
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    showToast("🗑️ Замечание удалено. Синхронизируйтесь, чтобы обновить команду.");
 };

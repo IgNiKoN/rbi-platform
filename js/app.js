@@ -1532,11 +1532,12 @@ function showHistoryDetail(id) {
     const olderId = currIdx < sortedArray.length - 1 ? sortedArray[currIdx + 1].id : null;
     // ПЕРЕХВАТЧИК: Если это Акт-Эталон, открываем новую красивую модалку!
     if (item.templateKey === 'sys_etalon_act') {
-        if (typeof openEtalonViewer === 'function') {
-            openEtalonViewer(item.id);
-            return; // Прерываем старую отрисовку
-        }
+    if (typeof openEtalonViewer === 'function') {
+        // Задержка даёт время завершить все асинхронные операции
+        setTimeout(() => openEtalonViewer(item.id), 200);
+        return;
     }
+}
 
     const type = item.templateKey.split('_')[0]; 
     const key = item.templateKey.replace(type + '_', '');

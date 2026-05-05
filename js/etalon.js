@@ -11,6 +11,15 @@ let currentEtalonContext = {
 let etalonElementCounter = 0;
 let currentEtalonUploadId = null;
 
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
 window.openEtalonConstructor = function(contractor, templateKey, templateTitle, statusKey) {
     currentEtalonContext = {
         contractor: contractor,
@@ -95,12 +104,16 @@ window.saveEtalonMarkupPhoto = async function() {
     
     const container = document.getElementById(currentEtalonUploadId).querySelector('.etalon-photo-container');
     container.dataset.photo = localUrl;
+
+const displayUrl = localUrl.startsWith('local://')
+    ? (await PhotoManager.getAsyncUrl(localUrl) || window.getPhotoSrc(localUrl))
+    : window.getPhotoSrc(localUrl);
     
-    container.innerHTML = `
-        <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
-            <img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-contain cursor-pointer active:scale-95 transition-transform" onclick="setTimeout(() => openPhotoViewer('${localUrl}'), 100)">
-            <button onclick="removeEtalonPhoto('${currentEtalonUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
-        </div>`;
+container.innerHTML = `
+    <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
+        <img src="${displayUrl}" class="w-full h-full object-contain cursor-pointer active:scale-95 transition-transform" onclick="setTimeout(() => openPhotoViewer('${localUrl}'), 100)">
+        <button onclick="removeEtalonPhoto('${currentEtalonUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
+    </div>`;
         
     showToast("📸 Фото эталона сохранено!");
     cancelPhotoEditor(); // Закрываем редактор
@@ -156,9 +169,10 @@ window.saveEtalonAct = async function(printAfter = false) {
         _deleted: false
     };
 
-    etalonActsArray.push(etalonRecord); 
-    await dbPut(STORES.ETALON_ACTS, etalonRecord);
-
+    etalonActsArray.push(etalonRecord);
+if (typeof contractorArray !== 'undefined') contractorArray.push(etalonRecord);
+await dbPut(STORES.ETALON_ACTS, etalonRecord);
+    
     if (currentEtalonContext.statusKey && weeklyPlanData.tasks) {
         const task = weeklyPlanData.tasks.find(t => t.statusKey === currentEtalonContext.statusKey);
         if (task) {
@@ -180,9 +194,12 @@ window.saveEtalonAct = async function(printAfter = false) {
         }
         window.activeTaskId = null;
     }
-    showToast("✅ Акт-Эталон успешно сохранен!");
-       localStorage.setItem('rbi_cloud_dirty', '1');
-    if (typeof triggerSync === 'function') triggerSync('silent');
+             showToast("✅ Акт-Эталон успешно сохранен!");
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') {
+        setTimeout(() => triggerSync('silent'), 800); // даём время фото сохраниться в IndexedDB
+    }
+    
     // Если нажали кнопку "Печать" — открываем PDF
     if (printAfter) {
         setTimeout(() => { printEtalonAct(etalonRecord.id); }, 500);
@@ -284,21 +301,24 @@ window.printEtalonAct = async function(historyId) {
     printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode);
 };
 
-// === ОТКРЫТИЕ ГОТОВОГО АКТА-ЭТАЛОНА ===
-// === ОТКРЫТИЕ ГОТОВОГО АКТА-ЭТАЛОНА ===
-window.openEtalonViewer = async function(id) {
-    let record = etalonActsArray.find(c => String(c.id) === String(id));
-    
-    // FALLBACK: Если эталон прилетел из облака и его нет в оперативной памяти, достаем из БД
-    if (!record) {
-        showToast("⏳ Загрузка Акта-Эталона из базы...");
-        record = await dbGet(STORES.ETALON_ACTS, id);
-        if (record) etalonActsArray.push(record); // Кешируем
+window.openEtalonViewer = async function(id, retries = 3) {
+    // Пытаемся получить из IndexedDB
+    let record = await dbGet(STORES.ETALON_ACTS, id);
+    if (!record && retries > 0) {
+        await new Promise(r => setTimeout(r, 150));
+        return openEtalonViewer(id, retries - 1);
     }
-
     if (!record) {
-        return showToast("❌ Ошибка: Эталон не найден в базе данных");
+        record = etalonActsArray.find(c => String(c.id) === String(id));
+        if (!record) {
+            showToast("❌ Ошибка: Эталон не найден в базе данных");
+            return;
+        }
     }
+    // Обновляем массив
+    const idx = etalonActsArray.findIndex(c => String(c.id) === String(id));
+    if (idx !== -1) etalonActsArray[idx] = record;
+    else etalonActsArray.push(record);
 
     const d = record.details || {};
     const elements = d.elements || [];
@@ -306,12 +326,22 @@ window.openEtalonViewer = async function(id) {
     let elementsHtml = '';
     for (let i = 0; i < elements.length; i++) {
         const el = elements[i];
-        let photoHtml = el.photo ? `<img src="${window.getPhotoSrc(el.photo)}" class="w-full h-48 object-contain rounded-lg border border-slate-200 cursor-pointer mt-2 bg-slate-50" onclick="openPhotoViewer('${el.photo}')">` : '<div class="text-xs text-slate-400 mt-2">Нет фото</div>';
+        let realPhoto = null;
+if (el.photo) {
+    if (el.photo.startsWith('cloud://') || el.photo.startsWith('local://')) {
+        realPhoto = await PhotoManager.getAsyncUrl(el.photo);
+    } else {
+        realPhoto = window.getPhotoSrc(el.photo);
+    }
+}
+        let photoHtml = realPhoto 
+            ? `<img src="${realPhoto}" class="w-full h-48 object-contain rounded-lg border border-slate-200 cursor-pointer mt-2 bg-slate-50" onclick="openPhotoViewer('${el.photo}')">` 
+            : '<div class="text-xs text-slate-400 mt-2">Нет фото</div>';
         
         elementsHtml += `
             <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-3">
-                <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase mb-1">${i + 1}. ${el.name}</div>
-                <div class="text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-medium">${el.desc || 'Нет описания'}</div>
+                <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase mb-1">${i + 1}. ${escapeHtml(el.name || 'Без названия')}</div>
+                <div class="text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap font-medium">${escapeHtml(el.desc || 'Нет описания')}</div>
                 ${photoHtml}
             </div>
         `;
@@ -319,25 +349,25 @@ window.openEtalonViewer = async function(id) {
 
     const bodyHtml = `
         <div class="text-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
-            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase">${record.contractorName}</div>
-            <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">${record.templateTitle}</div>
+            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase">${escapeHtml(record.contractorName)}</div>
+            <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">${escapeHtml(record.templateTitle)}</div>
             <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">${new Date(record.date).toLocaleString('ru-RU')}</div>
         </div>
 
         <div class="grid grid-cols-2 gap-2 mb-4">
             <div class="bg-white dark:bg-slate-800 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
                 <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Локация</div>
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">${record.location || '-'}</div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">${escapeHtml(record.location || '-')}</div>
             </div>
             <div class="bg-white dark:bg-slate-800 p-2.5 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm">
                 <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Участники</div>
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">${d.participants || '-'}</div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">${escapeHtml(d.participants || '-')}</div>
             </div>
         </div>
 
         <div class="bg-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-50 p-3 rounded-xl border border-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-200 mb-4">
             <div class="text-[10px] font-black uppercase text-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-700 mb-1 tracking-widest">Отклонения и допущения:</div>
-            <div class="text-[11px] font-medium text-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-900 whitespace-pre-wrap">${d.deviations}</div>
+            <div class="text-[11px] font-medium text-${d.deviations !== 'Отклонений не выявлено' ? 'orange' : 'green'}-900 whitespace-pre-wrap">${escapeHtml(d.deviations)}</div>
         </div>
 
         <h3 class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 dark:border-slate-700 pb-2">Зафиксированные элементы</h3>
