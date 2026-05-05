@@ -911,38 +911,51 @@ window.triggerSync = async function(mode = 'silent') {
             console.warn("[Sync] Задачи не подтянуты:", e.message);
         }
 
-        try {
-            let etalonQuery = window.supabaseClient
-                .from('rbi_etalon_acts')
-                .select('*')
-                .eq('project_code', pCode)
-                .eq('is_deleted', false);
+        // =====================================================
+// 4.2. PULL: акты-эталоны напрямую из rbi_etalon_acts
+// =====================================================
+try {
+    let etalonQuery = window.supabaseClient
+        .from('rbi_etalon_acts')
+        .select('*')
+        .eq('project_code', pCode)
+        .eq('is_deleted', false);
 
-            if (window.syncConfig.syncMode === 'personal') {
-                etalonQuery = etalonQuery.eq('engineer_name', iName);
+    if (window.syncConfig.syncMode === 'personal') {
+        etalonQuery = etalonQuery.eq('engineer_name', iName);
+    }
+
+    if (lastPullAt && mode !== 'manual') {
+        etalonQuery = etalonQuery.gt('updated_at', lastPullAt);
+    }
+
+    const { data: etalonRows } = await etalonQuery;
+
+    if (etalonRows && etalonRows.length > 0) {
+        for (const row of etalonRows) {
+            // Распаковываем данные и кэшируем все фото (public URL → cloud://)
+            let actData = row.act_data || {};
+            actData = await window.cacheObjectCloudFilesToIndexedDB(actData, 'etalon');
+            actData.id = row.id;
+            actData.updatedAt = row.updated_at;
+
+            // Сравниваем время: обновляем локально только если облачная версия новее
+            const localExisting = await dbGet('rbi_etalon_acts', row.id);
+            const localTime = localExisting ? new Date(localExisting.updatedAt || 0).getTime() : 0;
+            const cloudTime = new Date(row.updated_at || 0).getTime();
+
+            if (!localExisting || cloudTime > localTime) {
+                await dbPut('rbi_etalon_acts', actData);
+                // Обновляем в оперативной памяти
+                const idx = etalonActsArray.findIndex(x => String(x.id) === String(actData.id));
+                if (idx >= 0) etalonActsArray[idx] = actData;
+                else etalonActsArray.push(actData);
             }
-
-            const { data: etalonRows } = await etalonQuery;
-
-            if (etalonRows && typeof dbPut === 'function') {
-                etalonActsArray = etalonActsArray || [];
-
-                for (const row of etalonRows) {
-                    let act = row.act_data || {};
-                  act = await window.cacheObjectCloudFilesToIndexedDB(act, 'etalon');
-                  act.id = row.id;
-                  act.updatedAt = row.updated_at;
-
-                    await dbPut('rbi_etalon_acts', act);
-
-                    const idx = etalonActsArray.findIndex(x => String(x.id) === String(act.id));
-                    if (idx >= 0) etalonActsArray[idx] = act;
-                    else etalonActsArray.push(act);
-                }
-            }
-        } catch (e) {
-            console.warn("[Sync] Эталоны не подтянуты:", e.message);
         }
+    }
+} catch (e) {
+    console.warn("[Sync] Эталоны не подтянуты:", e.message);
+}
               // =====================================================
         // 4.1. PULL: прочие модули через rbi_cloud_objects
         // =====================================================
