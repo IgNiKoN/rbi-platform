@@ -2511,11 +2511,11 @@ async function fullFactoryReset() {
     try {
         // Очищаем все хранилища базы данных
         // Очищаем все хранилища базы данных
-        await dbClear(STORES.HISTORY);
-        await dbClear(STORES.ETALON_ACTS);
-        await dbClear(STORES.STATE);
-        await dbClear(STORES.SETTINGS);
-        await dbClear(STORES.TEMPLATES);
+       // Очищаем ВСЕ хранилища базы данных
+         const allStores = Object.values(STORES);
+         for (const storeName of allStores) {
+         await dbClear(storeName);
+                           }
         
         // Очищаем локальное хранилище (кэш инпутов, даты бэкапов)
         localStorage.clear();
