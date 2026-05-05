@@ -27,8 +27,9 @@ function switchAnalyticsSubTab(tabId, btnElement) {
     }
 
     // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ И ГРАФИКА
+   // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ, ГРАФИКА И ПК СК
     const filtersBlock = document.getElementById('analytics-filters-block');
-    if (tabId === 'sub-history' || tabId === 'sub-schedule') {
+    if (tabId === 'sub-history' || tabId === 'sub-schedule' || tabId === 'sub-sk') {
         if(filtersBlock) filtersBlock.style.display = 'none';
     } else {
         if(filtersBlock) filtersBlock.style.display = 'block';
@@ -132,6 +133,7 @@ function renderCurrentAnalyticsTab() {
         renderHistoryTab();
         initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
     }
+    else if (currentActiveAnalyticsTab === 'sub-sk') { if(typeof sk_renderMainTab === 'function') sk_renderMainTab(); }
     else if (currentActiveAnalyticsTab === 'sub-rating') renderRatingTab(); // Обратная совместимость
 }
 
@@ -1179,7 +1181,47 @@ function showContractorDetailView(contractorName) {
     const expertUiHtml = expertObj.uiHtml;
     const safeContractorNameForHtml = contractorName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
+    // --- РАСЧЕТ ДАННЫХ ПК СТРОЙКОНТРОЛЬ ДЛЯ ДАННОГО ПОДРЯДЧИКА ---
+        let skTotal = 0, skOpen = 0, skOverdue = 0;
+        let skHtmlBlock = '';
+        if (typeof window.skRecords !== 'undefined' && window.skRecords.length > 0) {
+            const cleanCName = contractorName.split(' [')[0]; 
+            const cRecords = window.skRecords.filter(r => 
+                r.contractor === cleanCName || 
+                r.raw_contractor === cleanCName || 
+                (window.skContractorMap && window.skContractorMap[r.raw_contractor] === cleanCName)
+            );
+            skTotal = cRecords.length;
+            cRecords.forEach(r => {
+                const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+                if (isOpen) skOpen++;
+                if (r.deadline && new Date() > new Date(r.deadline) && isOpen) skOverdue++;
+            });
+            if (skTotal > 0) {
+                const overdueColor = skOverdue > 3 ? 'text-red-600' : (skOverdue > 0 ? 'text-orange-500' : 'text-green-600');
+                skHtmlBlock = `
+                <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-3 shadow-sm mb-4">
+                    <div class="text-[11px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">📑 Данные ПК Стройконтроль</div>
+                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 rounded-lg p-2 border border-blue-100 dark:border-blue-800">
+                        <div class="text-center flex-1 border-r border-slate-100">
+                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-1">Всего замеч.</div>
+                            <div class="text-xl font-black text-slate-700 dark:text-slate-300">${skTotal}</div>
+                        </div>
+                        <div class="text-center flex-1 border-r border-slate-100">
+                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-1">Открыто</div>
+                            <div class="text-xl font-black ${skOpen > 0 ? 'text-red-500' : 'text-green-500'}">${skOpen}</div>
+                        </div>
+                        <div class="text-center flex-1">
+                            <div class="text-[9px] font-bold text-slate-400 uppercase mb-1">Просрочено</div>
+                            <div class="text-xl font-black ${overdueColor}">${skOverdue}</div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+        }
+
     container.innerHTML = `
+    ${skHtmlBlock}
         <!-- НОВАЯ КНОПКА: ПЕРСОНАЛЬНЫЙ ОТЧЕТ -->
         <button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отправить Отчет Подрядчику
@@ -1216,7 +1258,7 @@ function showContractorDetailView(contractorName) {
                 <span class="bg-red-50 text-red-700 px-2 rounded border border-red-100">B3: ${sumB3}</span>
             </div>
         </div>
-
+        
         <!-- НОВЫЙ БЛОК: ПРЕДИКТИВНЫЙ ИИ ПРОГНОЗ -->
         <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
             <summary class="p-3 font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
@@ -1308,6 +1350,7 @@ function showContractorDetailView(contractorName) {
                 </div>
             </div>
         </details>
+        
     `;
 
     setTimeout(() => {

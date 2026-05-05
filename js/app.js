@@ -6817,10 +6817,9 @@ window.rbi_executeMeetingSetup = async function(taskId) {
     // Запускаем сборку рабочего пространства с нашими данными
     rbi_createMeeting(finalData);
 };
-// СОЗДАНИЕ НОВОГО СОВЕЩАНИЯ (Интерактивная повестка)
-// === СОВЕЩАНИЯ: ДВУХПАНЕЛЬНЫЙ ИНТЕРФЕЙС ===
+// === СОВЕЩАНИЯ: ДВУХПАНЕЛЬНЫЙ ИНТЕРФЕЙС (С ИНЪЕКЦИЕЙ ДАННЫХ ПК СК) ===
+// === СОВЕЩАНИЯ: ЕДИНЫЙ ИНТЕРФЕЙС (1 КОЛОНКА, АДАПТИВ ДЛЯ МОБИЛЬНЫХ) ===
 window.rbi_createMeeting = function(customData = null) {
-    // ЕСЛИ НАЖАЛИ КНОПКУ "НОВОЕ СОВЕЩАНИЕ" ВО ВКЛАДКЕ (без переданных данных) -> ОТКРЫВАЕМ МОДАЛКУ!
     if (!customData) {
         rbi_openMeetingSetupModal(null);
         return;
@@ -6828,23 +6827,17 @@ window.rbi_createMeeting = function(customData = null) {
 
     const container = document.getElementById('rbi-meeting-container');
     const d = new Date();
-    
-    // Раз данные переданы, используем их для построения Совещания
     let weekChecks = customData;
 
-    // --- ОПРЕДЕЛЯЕМ ТЕКСТ ПЕРИОДА ДЛЯ ЗАГОЛОВКОВ ---
     let periodText = "7 дней";
     const selectedPeriod = document.getElementById('meet-setup-period')?.value;
     if (selectedPeriod === 'MONTH') periodText = "30 дней";
     if (selectedPeriod === 'ALL') periodText = "Всё время";
-    // ----------------------------------------------
     
-    // Считаем общие метрики
     const weekMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekChecks, userTemplates) : null;
     const iko = weekMetrics ? weekMetrics.IKO : '0.00';
     const ikoColor = weekMetrics ? weekMetrics.ikoColor : 'text-slate-500';
 
-    // 1. СБИРАЕМ ФОТОГРАФИИ ДЛЯ ЛЕВОЙ ПАНЕЛИ
     let defectPhotosHtml = '';
     let b3Photos = [];
     weekChecks.forEach(c => {
@@ -6856,15 +6849,14 @@ window.rbi_createMeeting = function(customData = null) {
             });
         }
     });
-    // Берем 3 случайных фотки брака
-    b3Photos = b3Photos.sort(() => 0.5 - Math.random()).slice(0, 3);
+    b3Photos = b3Photos.sort(() => 0.5 - Math.random()).slice(0, 4); // Берем 4 фото для красоты сетки
     if (b3Photos.length > 0) {
         defectPhotosHtml = `
-            <div class="mt-3 bg-white dark:bg-slate-800 p-2 rounded-lg border border-[var(--card-border)]">
-                <div class="text-[9px] font-black text-red-600 uppercase mb-2">📸 Фотофиксация брака (Рандом)</div>
+            <div class="mt-3 bg-white dark:bg-slate-800 p-3 rounded-xl border border-[var(--card-border)] shadow-sm">
+                <div class="text-[10px] font-black text-red-600 uppercase mb-2">📸 Фотофиксация брака (Рандом)</div>
                 <div class="flex gap-2 overflow-x-auto no-scrollbar">
                     ${b3Photos.map(p => `
-                        <div class="shrink-0 w-24 h-24 rounded-lg overflow-hidden border border-red-200 relative">
+                        <div class="shrink-0 w-24 h-24 sm:w-32 sm:h-32 rounded-lg overflow-hidden border border-red-200 relative">
                             <img src="${window.getPhotoSrc(p.src)}" class="w-full h-full object-cover">
                             <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] truncate px-1 pb-0.5">${p.contr}</div>
                         </div>
@@ -6873,18 +6865,20 @@ window.rbi_createMeeting = function(customData = null) {
             </div>`;
     }
 
-    // 2. ГРУППИРУЕМ ДЕФЕКТЫ ПО ПОДРЯДЧИКАМ (ДЛЯ ПРАВОЙ ПАНЕЛИ)
     const contrDefects = {};
     let b3Count = 0;
     let goodContrs = [];
-
+    let badContrs = [];
     const contrMap = {};
+    
     weekChecks.forEach(c => { contrMap[c.contractorName] = contrMap[c.contractorName] || []; contrMap[c.contractorName].push(c); });
 
+    // 1. Собираем дефекты из RBI (Аудиты) и распределяем подрядчиков по зонам
     for(let cName in contrMap) {
         const m = getContractorMetrics(contrMap[cName], userTemplates);
-        if (m && m.finalC >= 85 && m.n_изделий_с_B3 === 0) {
-            goodContrs.push(cName);
+        if (m) {
+            if (m.finalC >= 85 && m.n_изделий_с_B3 === 0) goodContrs.push(cName);
+            if (m.finalC < 70 || m.n_изделий_с_B3 > 0) badContrs.push(cName);
         }
         
         contrMap[cName].forEach(c => {
@@ -6898,7 +6892,7 @@ window.rbi_createMeeting = function(customData = null) {
                             if (!contrDefects[cName]) contrDefects[cName] = [];
                             let existing = contrDefects[cName].find(d => d.name === item.n);
                             if (existing) existing.count++;
-                            else contrDefects[cName].push({ name: item.n, count: 1, isB3: c.state[id] === 'fail_escalated' || item.w === 3 });
+                            else contrDefects[cName].push({ name: item.n, count: 1, isB3: c.state[id] === 'fail_escalated' || item.w === 3, isSk: false });
                         }
                     }
                 });
@@ -6906,11 +6900,45 @@ window.rbi_createMeeting = function(customData = null) {
         });
     }
 
+    // 2. ИНЪЕКЦИЯ ОТКРЫТЫХ ЗАМЕЧАНИЙ ИЗ ПК СТРОЙКОНТРОЛЬ
+    let skOpenCount = 0;
+    if (typeof window.skRecords !== 'undefined') {
+        window.skRecords.forEach(r => {
+            const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+            if (isOpen && r.contractor) {
+                let targetContr = r.contractor;
+                if (window.skContractorMap && window.skContractorMap[r.contractor]) {
+                    targetContr = window.skContractorMap[r.contractor];
+                }
+                
+                // Берем только тех подрядчиков, которых выбрали в фильтре
+                if (customData && !customData.some(c => c.contractorName === targetContr)) return;
+
+                skOpenCount++;
+
+                if (!contrDefects[targetContr]) contrDefects[targetContr] = [];
+                const defectName = r.text ? r.text.substring(0, 80) + '...' : 'Замечание без текста';
+                
+                let existing = contrDefects[targetContr].find(d => d.name === defectName);
+                if (existing) {
+                    existing.count++;
+                } else {
+                    contrDefects[targetContr].push({
+                        name: defectName, count: 1, isB3: false, isSk: true, deadline: r.deadline
+                    });
+                }
+            }
+        });
+    }
+
     let goodContrsHtml = goodContrs.length > 0 
         ? goodContrs.map(c => `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-black mr-1 mb-1 inline-block">${c}</span>`).join('') 
-        : '<span class="text-[10px] text-slate-400 font-bold">Кандидатов нет</span>';
+        : '<span class="text-[10px] text-slate-400 font-bold">Отличников нет</span>';
 
-    // 3. ГЕНЕРИРУЕМ ИНТЕРАКТИВНЫЕ ЧЕК-БОКСЫ В ПРАВУЮ ПАНЕЛЬ
+    let badContrsHtml = badContrs.length > 0 
+        ? badContrs.map(c => `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[9px] font-black mr-1 mb-1 inline-block">${c}</span>`).join('') 
+        : '<span class="text-[10px] text-slate-400 font-bold">Критических нет</span>';
+
     let agendaHtml = '';
     for (let cName in contrDefects) {
         agendaHtml += `
@@ -6919,14 +6947,24 @@ window.rbi_createMeeting = function(customData = null) {
                 <div class="space-y-3">
         `;
         
-        contrDefects[cName].sort((a, b) => b.isB3 - a.isB3 || b.count - a.count).forEach(def => {
+        contrDefects[cName].sort((a, b) => b.isB3 - a.isB3 || b.isSk - a.isSk || b.count - a.count).forEach(def => {
+            let borderCls = def.isB3 ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-orange-500 bg-orange-50 dark:bg-orange-900/10';
+            let badgeHtml = def.isB3 ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded mr-1">B3</span>' : '';
+            let defDeadline = '';
+
+            if (def.isSk) {
+                borderCls = 'border-blue-500 bg-blue-50 dark:bg-blue-900/10';
+                badgeHtml = '<span class="text-[9px] bg-blue-600 text-white px-1 rounded mr-1">ПК СК</span>';
+                if (def.deadline) defDeadline = ` value="${def.deadline.split('T')[0]}"`;
+            }
+
             agendaHtml += `
-                <div class="meeting-agenda-row border-l-2 ${def.isB3 ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-orange-500 bg-orange-50 dark:bg-orange-900/10'} pl-2 py-1 relative">
+                <div class="meeting-agenda-row border-l-2 ${borderCls} pl-2 py-1 relative">
                     <input type="hidden" class="agenda-meta-contr" value="${cName}">
                     <input type="hidden" class="agenda-meta-defect" value="${def.name}">
                     
                     <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 leading-snug">
-                        ${def.isB3 ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded mr-1">B3</span>' : ''}
+                        ${badgeHtml}
                         ${def.name} <span class="text-slate-400">(${def.count} раз)</span>
                     </div>
                     
@@ -6934,7 +6972,7 @@ window.rbi_createMeeting = function(customData = null) {
                         <label class="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 cursor-pointer">
                             <input type="checkbox" class="agenda-done-cb w-3.5 h-3.5 accent-green-600"> Решено
                         </label>
-                        <input type="date" class="agenda-date input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]">
+                        <input type="date" class="agenda-date input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]" ${defDeadline}>
                         <input type="text" class="agenda-resp input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]" placeholder="Ответственный...">
                     </div>
                     <textarea class="agenda-comment input-base mt-2 h-10 resize-none text-[10px]" placeholder="Решение / Тезис..."></textarea>
@@ -6944,78 +6982,96 @@ window.rbi_createMeeting = function(customData = null) {
         agendaHtml += `</div></div>`;
     }
 
-    if (!agendaHtml) agendaHtml = `<div class="text-[11px] text-green-600 font-bold text-center py-4 bg-white rounded-xl border border-dashed">Дефектов за ${periodText} не выявлено. Идеально!</div>`;
+    if (!agendaHtml) agendaHtml = `<div class="text-[11px] text-green-600 font-bold text-center py-4 bg-white rounded-xl border border-dashed border-[var(--card-border)]">Дефектов за ${periodText} не выявлено. Идеально!</div>`;
 
-    // --- РЕНДЕР 2-Х ПАНЕЛЕЙ ---
     const html = `
-    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm relative animate-fadeIn overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center">
+    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm relative animate-fadeIn overflow-hidden flex flex-col max-h-[85vh]">
+        <!-- ШАПКА -->
+        <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
             <div>
                 <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-0.5">Meeting Workspace</div>
                 <div class="font-black text-[14px] text-slate-800 dark:text-white uppercase">Планерка от ${d.toLocaleDateString('ru-RU')}</div>
             </div>
-            <button onclick="rbi_renderMeetingTab()" class="text-slate-400 hover:text-red-500 active:scale-95 transition-colors font-black px-2">✕</button>
+            <button onclick="rbi_renderMeetingTab()" class="text-slate-400 hover:text-red-500 active:scale-95 transition-colors font-black px-2 text-lg">✕</button>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2">
-            <!-- ЛЕВАЯ ПАНЕЛЬ: АНАЛИТИКА -->
-            <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-r border-[var(--card-border)]">
-                <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase mb-3">📈 Статус Объекта (7 дней)</div>
+        <!-- ЕДИНАЯ КОЛОНКА (СВЕРХУ ИНФО, СНИЗУ ДЕФЕКТЫ) -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4">
+            
+            <!-- БЛОК АНАЛИТИКИ -->
+            <div class="mb-5">
+                <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2">📈 Статус Объекта (${periodText})</div>
                 
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm">
-                        <div class="text-[8px] font-bold text-slate-400 uppercase">Индекс Риска</div>
-                        <div class="text-[16px] font-black ${ikoColor}">${iko}</div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-3 rounded-xl shadow-sm flex flex-col justify-center">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Индекс Риска (ИКО)</div>
+                        <div class="text-[20px] font-black leading-none ${ikoColor}">${iko}</div>
                     </div>
-                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm">
-                        <div class="text-[8px] font-bold text-slate-400 uppercase">Крит. Аварий B3</div>
-                        <div class="text-[16px] font-black ${b3Count > 0 ? 'text-red-600' : 'text-green-600'}">${b3Count}</div>
+                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-3 rounded-xl shadow-sm flex flex-col justify-center">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Аварий RBI (B3)</div>
+                        <div class="text-[20px] font-black leading-none ${b3Count > 0 ? 'text-red-600' : 'text-green-600'}">${b3Count}</div>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-3 rounded-xl shadow-sm flex flex-col justify-center col-span-2 sm:col-span-1">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Открыто в ПК СК</div>
+                        <div class="text-[20px] font-black leading-none text-blue-600">${skOpenCount}</div>
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-2 rounded-lg shadow-sm mb-3">
-                    <div class="text-[9px] font-black text-green-600 uppercase mb-1">Благодарности подрядчикам</div>
-                    <div>${goodContrsHtml}</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-1">
+                    <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 p-3 rounded-xl shadow-sm">
+                        <div class="text-[10px] font-black text-red-600 dark:text-red-400 uppercase mb-2 tracking-widest">🚨 Зона риска (B3 или УрК < 70)</div>
+                        <div>${badContrsHtml}</div>
+                    </div>
+                    <div class="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 p-3 rounded-xl shadow-sm">
+                        <div class="text-[10px] font-black text-green-600 dark:text-green-400 uppercase mb-2 tracking-widest">✅ Эталонное качество</div>
+                        <div>${goodContrsHtml}</div>
+                    </div>
                 </div>
                 
                 ${defectPhotosHtml}
             </div>
 
-            <!-- ПРАВАЯ ПАНЕЛЬ: ЧЕК-БОКСЫ И ГЕНЕРАТОР -->
-            <div class="p-4 flex flex-col h-full bg-[var(--card-bg)]">
-                <label class="text-[11px] font-black text-slate-800 dark:text-white uppercase mb-2">📋 Решения по дефектам</label>
-                <div class="text-[9px] text-slate-500 mb-3">Отмечайте решенные вопросы прямо на совещании. Нейросеть соберет их в итоговый протокол.</div>
+            <!-- БЛОК РЕШЕНИЙ -->
+            <div>
+                <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 border-b border-[var(--card-border)] pb-2 flex items-center gap-2">📋 Повестка и Решения</div>
+                <div class="text-[10px] text-slate-500 mb-3 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">Отмечайте решенные вопросы прямо на совещании. В конце нажмите кнопку внизу — нейросеть соберет их в готовый официальный протокол.</div>
                 
-                <div class="flex-1 overflow-y-auto max-h-[50vh] custom-scrollbar pr-2 mb-4">
-                    ${agendaHtml}
-                    
-                    <div class="mt-4">
-                        <label class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-1 block">Дополнительные вопросы</label>
-                        <textarea id="rbi-meeting-notes" class="input-base h-20 resize-none text-[11px] bg-[var(--hover-bg)]" placeholder="Что еще обсудили на планерке..."></textarea>
-                    </div>
-                </div>
                 <div class="mb-4">
-                    <button onclick="document.getElementById('meeting-photo-upload').click()" class="w-full bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
-                        📸 Прикрепить фото для "Дня Качества"
-                    </button>
-                    <div id="meeting-photo-preview" class="hidden mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>
+                    ${agendaHtml}
                 </div>
-                <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    Сформировать протокол (ИИ)
-                </button>
+                
+                <div class="bg-[var(--hover-bg)] p-3 rounded-xl border border-[var(--card-border)] mb-4">
+                    <label class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2 block">Дополнительные тезисы / Разное</label>
+                    <textarea id="rbi-meeting-notes" class="input-base h-24 resize-none text-[11px]" placeholder="Что еще обсудили на планерке, кроме указанных дефектов..."></textarea>
+                </div>
+
+                <div class="mb-4">
+                    <button onclick="document.getElementById('meeting-photo-upload').click()" class="w-full bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2 transition-colors hover:border-slate-400">
+                        📸 Прикрепить общее фото совещания
+                    </button>
+                    <div id="meeting-photo-preview" class="hidden mt-2 relative w-full h-40 sm:h-48 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>
+                </div>
             </div>
+
+            <!-- РЕЗУЛЬТАТ ИИ (ПОЯВИТСЯ ПРЯМО ТУТ ПОСЛЕ ГЕНЕРАЦИИ) -->
+            <div id="rbi-meeting-result" class="hidden border-t border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 p-4 rounded-xl mt-4">
+                <div class="text-[11px] font-black text-green-700 dark:text-green-500 uppercase tracking-widest mb-2">Готовый Протокол:</div>
+                <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/50 rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-64 shadow-inner mb-3 font-medium leading-relaxed custom-scrollbar"></textarea>
+                
+                <div class="flex gap-2">
+                    <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl font-bold text-[11px] uppercase border border-indigo-200 dark:border-indigo-800 active:scale-95 shadow-sm transition-colors">📋 Скопировать</button>
+                    <button onclick="rbi_saveMeetingMemo()" class="flex-1 bg-green-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">💾 Сохранить в Архив</button>
+                </div>
+            </div>
+
         </div>
 
-        <!-- РЕЗУЛЬТАТ ИИ -->
-        <div id="rbi-meeting-result" class="hidden border-t border-[var(--card-border)] bg-green-50 dark:bg-green-900/10 p-4">
-            <div class="text-[11px] font-black text-green-700 dark:text-green-500 uppercase tracking-widest mb-2">Готовый Протокол:</div>
-            <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/50 rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-64 shadow-inner mb-3 font-medium leading-relaxed"></textarea>
-            
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="rbi_saveMeetingMemo()" class="bg-green-600 text-white py-3 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">💾 Сохранить в Архив</button>
-                <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3 rounded-xl font-bold text-[11px] uppercase border border-indigo-200 dark:border-indigo-800 active:scale-95 shadow-sm">📋 Скопировать</button>
-            </div>
+        <!-- ПОДВАЛ (ФИКСИРОВАННАЯ КНОПКА ИИ) -->
+        <div id="meeting-footer-btn" class="p-3 sm:p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/80 shrink-0 backdrop-blur-md z-10">
+            <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                Сформировать протокол (ИИ)
+            </button>
         </div>
     </div>`;
     
@@ -7037,67 +7093,10 @@ window.rbi_handleMeetingPhotoUpload = function(event) {
     });
 };
 
-// ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
-window.rbi_generateMeetingMemo = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
-    let agendaContext = [];
-    const rows = document.querySelectorAll('.meeting-agenda-row');
-    
-    rows.forEach(row => {
-        const contr = row.querySelector('.agenda-meta-contr').value;
-        const defect = row.querySelector('.agenda-meta-defect').value;
-        const isDone = row.querySelector('.agenda-done-cb').checked;
-        const date = row.querySelector('.agenda-date').value;
-        const resp = row.querySelector('.agenda-resp').value.trim();
-        const comment = row.querySelector('.agenda-comment').value.trim();
-
-        if (isDone || date || resp || comment) {
-            agendaContext.push(`Подрядчик: ${contr}. Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Дедлайн: ${date || 'Не указан'}. Ответственный: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
-        }
-    });
-
-    const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
-    
-    if (agendaContext.length === 0 && !extraNotes) {
-        return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
-    }
-
-    const btn = document.getElementById('btn-gen-memo');
-    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
-    btn.disabled = true;
-
-    const promptSystem = `Ты — секретарь совещания. Собери красивый деловой протокол (Мемо).
-    Формат ответа СТРОГО:
-    **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
-    
-    **ПРИНЯТЫЕ РЕШЕНИЯ:**
-    1. Подрядчик [Имя]:
-       - [Суть проблемы]. Ответственный: [...]. Срок: [...]. Решение: [...].
-    ...`;
-
-    try {
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: `ПРИНЯТЫЕ РЕШЕНИЯ:\n${agendaContext.join('\n')}\n\nДОП. ВОПРОСЫ: ${extraNotes}` }
-        ], { temperature: 0.2, max_tokens: 800 });
-
-        document.getElementById('rbi-meeting-result').classList.remove('hidden');
-        document.getElementById('rbi-meeting-memo-text').value = response;
-        
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
-        showToast("✨ Протокол успешно сформирован!");
-    } catch (e) {
-        showToast("❌ Ошибка ИИ: " + e.message);
-    } finally {
-        btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сформировать протокол (ИИ)`;
-        btn.disabled = false;
-    }
-};
 
 // ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
 window.rbi_generateMeetingMemo = async function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
     
     // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ
     let agendaContext = [];
@@ -7127,15 +7126,16 @@ window.rbi_generateMeetingMemo = async function() {
     btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
     btn.disabled = true;
 
-    const promptSystem = `Ты — строгий секретарь. Составь красивый итоговый протокол совещания (Мемо).
-    Я передам тебе список подрядчиков, их дефектов и принятые по ним решения. Сгруппируй всё красиво.
+    const promptSystem = `Ты — строгий секретарь-инженер. Составь структурированный итоговый протокол строительного совещания (Мемо).
+    Тебе передан список подрядчиков, выявленных дефектов и принятые по ним решения.
+    Сгруппируй информацию по подрядчикам. Тон деловой, без лишней воды.
     Формат ответа СТРОГО:
     **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
-    Дата: (сегодняшняя)
     
     **ПРИНЯТЫЕ РЕШЕНИЯ:**
     1. По подрядчику [Имя]:
-       - Проблема: [Дефект]. Решение: [Что делать]. Ответственный: [...]. Срок: [...].
+       - Проблема: [Кратко дефект]. 
+         Решение: [Что делать]. Ответственный: [...]. Срок: [...].
     ...`;
 
     const promptUser = `ПРИНЯТЫЕ РЕШЕНИЯ ПО ДЕФЕКТАМ:\n${agendaContext.join('\n')}\n\nДОП. ВОПРОСЫ: ${extraNotes}`;
@@ -7146,8 +7146,19 @@ window.rbi_generateMeetingMemo = async function() {
             { role: 'user', content: promptUser }
         ], { temperature: 0.2, max_tokens: 800 });
 
-        document.getElementById('rbi-meeting-result').classList.remove('hidden');
+        // Скрываем нижнюю панель с кнопкой генерации, чтобы не мешалась, и показываем блок результата
+        const resultBlock = document.getElementById('rbi-meeting-result');
+        const footerBtn = document.getElementById('meeting-footer-btn');
+        
+        resultBlock.classList.remove('hidden');
+        if(footerBtn) footerBtn.classList.add('hidden'); // Убираем дублирующуюся кнопку снизу
+        
         document.getElementById('rbi-meeting-memo-text').value = response;
+        
+        // Скроллим вниз, чтобы юзер увидел результат
+        setTimeout(() => {
+            resultBlock.scrollIntoView({ behavior: "smooth", block: "end" });
+        }, 100);
         
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
         showToast("✨ Протокол успешно сформирован!");

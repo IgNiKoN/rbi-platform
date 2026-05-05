@@ -1,8 +1,8 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Повышаем версию до 6 для создания таблиц эталонов
-const DB_VERSION = 6; 
+// Повышаем версию до 7 для создания таблиц модуля ПК СК
+const DB_VERSION = 7; 
 
 const STORES = {
     STATE: 'app_state',       
@@ -17,7 +17,13 @@ const STORES = {
     PRACTICES: 'rbi_practices',
     ETALON_ACTS: 'rbi_etalon_acts',
     ETALON_DRAFT: 'rbi_etalon_draft',
-    FMEA: 'rbi_fmea' // <--- НОВОЕ ХРАНИЛИЩЕ ДЛЯ FMEA
+    FMEA: 'rbi_fmea',
+    // --- НОВЫЕ ХРАНИЛИЩА ДЛЯ МОДУЛЯ ПК СК ---
+    SK_IMPORTS: 'sk_imports',             // История загрузок файлов
+    SK_RECORDS: 'sk_records',             // Сами позиции из файлов
+    SK_CONTRACTOR_MAP: 'sk_contractor_map',// Словарь алиасов подрядчиков
+    SK_VOLUMES: 'sk_volumes',             // Справочник объемов объекта
+    SK_ISD_HISTORY: 'sk_isd_history'      // История значений ИСД
 };
 
 /**

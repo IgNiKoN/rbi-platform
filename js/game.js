@@ -263,6 +263,15 @@ function gameCalculateAllProfiles() {
 
         // --- БАЗОВЫЕ НАВЫКИ ---
         if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
+        if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
+        
+        // --- МЕТРИКИ ПК СТРОЙКОНТРОЛЬ ---
+        if (log.action === 'sk_import_done') { p.pi += 5; p.monthlyPI[dStr] += 5; p.badgesData['discipline']++; } // Загрузка в срок (+5 XP)
+        if (log.action === 'sk_red_isd_found') { p.pi += 15; p.monthlyPI[dStr] += 15; } // Найден красный ИСД (+15 XP)
+        if (log.action === 'sk_message_sent') { p.pi += 10; p.monthlyPI[dStr] += 10; } // Отправлено письмо команде (+10 XP)
+        if (log.action === 'sk_isd_improved') { p.pi += 40; p.monthlyPI[dStr] += 40; p.badgesData['win_win']++; } // Рост ИСД после работы (+40 XP)
+        if (log.action === 'sk_zone_yellow') { p.pi += 25; p.monthlyPI[dStr] += 25; } // Выход из красной в желтую (+25 XP)
+        if (log.action === 'sk_zone_green') { p.pi += 35; p.monthlyPI[dStr] += 35; } // Выход в зеленую (+35 XP)
         if (log.action === 'open_twi') { p.pi += 15; p.monthlyPI[dStr] += 15; p.badgesData['mentor']++; }
         if (log.action === 'create_twi') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['methodist'] = 1; }
         if (log.action === 'comment_written') { p.badgesData['communicator']++; }
@@ -403,15 +412,17 @@ window.gameUpdatePlanProgress = function () {
     const startOfThisWeek = getStartOfWeek();
     const myWeeklyChecks = contractorArray.filter(c => c.inspectorName === currentInspector && new Date(c.date) >= startOfThisWeek);
     let allTasksDone = true;
+    
+    // ТРЕКЕР: Запоминаем, какие задачи мы закроем на этом прогоне
+    let newlyClosedTasks = [];
 
     weeklyPlanData.tasks.forEach(task => {
         const st = contractorStatuses[task.statusKey];
 
         // АВТОМАТИЧЕСКОЕ СНЯТИЕ ЭТАЛОНА
-           if (task.needsEtalon) {
+        if (task.needsEtalon) {
             const hasEtalonCheck = etalonActsArray.some(c =>
                 c.contractorName === task.contractor &&
-                c.projectName === task.project &&
                 c.templateKey === 'sys_etalon_act'
             );
             if (hasEtalonCheck) {
@@ -425,7 +436,7 @@ window.gameUpdatePlanProgress = function () {
 
         const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
 
-        if (task.type === 'continuous') {
+        if ((task.category === 'control' || task.type === 'continuous') && task.taskType !== 'Эталон') {
             let validChecksCount = 0; let sumFillRate = 0; let totalFails = 0; let failsWithPhotoOrComment = 0;
 
             matchedChecks.forEach(c => {
@@ -444,9 +455,25 @@ window.gameUpdatePlanProgress = function () {
                 }
             });
 
-            task.done = validChecksCount;
+            // УМНЫЙ ПОДСЧЕТ: Для новых подрядчиков считаем ВСЕ исторические проверки
+            if (task.target >= 7) {
+                const allTimeMatched = contractorArray.filter(c => c.inspectorName === currentInspector && c.contractorName === task.contractor && c.templateKey === task.templateKey);
+                task.done = allTimeMatched.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
+            } else {
+                task.done = validChecksCount;
+            }
+            
             task.fillRate = validChecksCount > 0 ? (sumFillRate / validChecksCount) : 0;
             task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
+
+            // АВТОЗАКРЫТИЕ: Если проверка выполнена (даже ручным переходом в Осмотр), закрываем задачу!
+            if (task.done >= task.target && task.status === 'pending') {
+                task.status = 'done';
+                task.resultComment = `Выполнено (${task.done}/${task.target})`;
+                task.updatedAt = new Date().toISOString();
+                // Запоминаем название подрядчика для уведомления
+                newlyClosedTasks.push(task.contractor);
+            }
 
             if (task.done < task.target) allTasksDone = false;
 
@@ -470,12 +497,72 @@ window.gameUpdatePlanProgress = function () {
                 });
                 task.done = st.milestoneProgress.completedStages.length;
                 task.target = st.milestoneProgress.totalStages;
-                if (task.done < task.target) allTasksDone = false;
-                else st.status = 'completed';
+                
+                if (task.done >= task.target && task.status === 'pending') {
+                    st.status = 'completed';
+                    task.status = 'done';
+                    task.updatedAt = new Date().toISOString();
+                    newlyClosedTasks.push(task.contractor);
+                } else if (task.done < task.target) {
+                    allTasksDone = false;
+                }
             }
         }
     });
 
+    // ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ
+    if (newlyClosedTasks.length > 0) {
+        setTimeout(() => {
+            // Убираем дубли имен, если закрылось несколько задач по одному подрядчику
+            const uniqueNames = [...new Set(newlyClosedTasks)];
+            showToast(`✅ Автозакрытие по истории: ${uniqueNames.join(', ')}`);
+            rbi_renderTasksList(); // Перерисовываем список, чтобы задачи улетели вниз
+        }, 1000);
+    }
+    // --- УМНОЕ АВТОЗАКРЫТИЕ (СВЕРКА С БАЗОЙ ДАННЫХ) ---
+    weeklyPlanData.tasks.forEach(task => {
+        if (task.status !== 'pending') return;
+        
+        const taskCreateDate = new Date(task.createdAt || task.date);
+        // Отступаем 1 день назад, чтобы засчитывать документы, сделанные накануне
+        taskCreateDate.setDate(taskCreateDate.getDate() - 1); 
+
+        // 1. Проверяем Совещания (Мемо)
+        if (task.category === 'meeting' || task.title.includes('Совещание')) {
+            const hasMemo = (typeof window.rbi_meetingsData !== 'undefined') && window.rbi_meetingsData.some(m => new Date(m.date) >= taskCreateDate);
+            if (hasMemo) {
+                task.status = 'done'; task.resultComment = 'Автозакрытие (найден протокол)'; task.updatedAt = new Date().toISOString();
+                newlyClosedTasks.push(task.title);
+                dbPut(STORES.TASKS, task);
+            }
+        }
+        
+        // 2. Проверяем FMEA
+        if (task.title.includes('FMEA')) {
+            const hasFmea = (typeof window.rbi_fmeaRecords !== 'undefined') && window.rbi_fmeaRecords.some(f => new Date(f.date) >= taskCreateDate);
+            if (hasFmea) {
+                task.status = 'done'; task.resultComment = 'Автозакрытие (сохранен FMEA)'; task.updatedAt = new Date().toISOString();
+                newlyClosedTasks.push('FMEA Анализ');
+                dbPut(STORES.TASKS, task);
+            }
+        }
+        // 3. Проверяем Эталоны
+        if (task.taskType === 'Эталон' || task.title.includes('Эталон')) {
+            // Ищем в массиве Эталонов совпадение по подрядчику и виду работ
+            const hasEtalonRecord = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
+                e.contractorName === task.contractor && 
+                (e.templateTitle === task.templateTitle || e.templateTitle === task.workTitle)
+            );
+            
+            if (hasEtalonRecord) {
+                task.status = 'done'; 
+                task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)'; 
+                task.updatedAt = new Date().toISOString();
+                newlyClosedTasks.push('Приемка Эталона');
+                dbPut(STORES.TASKS, task);
+            }
+        }
+    });
     if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
         weeklyPlanData.completed = true;
         gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
@@ -2374,8 +2461,21 @@ window.rbi_saveFmea = async function(periodName) {
     if (typeof triggerSync === 'function') triggerSync('silent');
     
     document.getElementById('fmea-workspace').innerHTML = '';
-    showToast("💾 FMEA Отчет сохранен в Архив!");
+    
+    // АВТОЗАКРЫТИЕ ЗАДАЧИ FMEA В ПЛАНИРОВЩИКЕ
+    if (typeof window.rbi_tasksData !== 'undefined') {
+        const fmeaTask = window.rbi_tasksData.find(t => t.title.includes('FMEA') && t.status === 'pending');
+        if (fmeaTask) {
+            fmeaTask.status = 'done';
+            fmeaTask.resultComment = 'Отчет сохранен в базу';
+            fmeaTask.updatedAt = new Date().toISOString();
+            await dbPut('rbi_tasks', fmeaTask);
+        }
+    }
+
+    showToast("💾 FMEA Отчет сохранен! Задача выполнена.");
     rbi_renderFmeaRegistry();
+    if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
 };
 
 // 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)

@@ -958,7 +958,8 @@ act.updatedAt = row.updated_at;
                 'custom_doc',
                 'custom_node',
                 'custom_twi_card',
-                'fmea' // <-- ДОБАВЛЕНО FMEA
+                'fmea', // <-- ДОБАВЛЕНО FMEA
+                'sk_data_bundle' // <-- НОВОЕ: Пакет данных ПК СК
             ];
 
             for (const type of cloudTypes) {
@@ -1012,6 +1013,24 @@ act.updatedAt = row.updated_at;
                         const idx = window.rbi_fmeaRecords.findIndex(x => String(x.id) === String(obj.id));
                         if (idx >= 0) window.rbi_fmeaRecords[idx] = obj;
                         else window.rbi_fmeaRecords.push(obj);
+                    }
+                }
+                // <-- НОВОЕ: Обработка скачанного пакета ПК СК
+                if (type === 'sk_data_bundle' && typeof dbPut === 'function' && typeof dbClear === 'function') {
+                    for (const obj of objects) {
+                        if (obj.records) {
+                            window.skRecords = obj.records;
+                            await dbClear('sk_records'); // Стираем старую локальную базу СК
+                            for (const r of window.skRecords) await dbPut('sk_records', r);
+                        }
+                        if (obj.volumes) {
+                            window.skVolumes = obj.volumes;
+                            await dbPut('app_settings', { key: 'sk_volumes', data: window.skVolumes });
+                        }
+                        if (obj.contractorMap) {
+                            window.skContractorMap = obj.contractorMap;
+                            await dbPut('app_settings', { key: 'sk_contractor_map', data: window.skContractorMap });
+                        }
                     }
                 }
 
@@ -1422,7 +1441,20 @@ act.updatedAt = row.updated_at;
                 const fmeas = await dbGetAll('rbi_fmea') || [];
                 for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
             }
+             // <-- НОВОЕ: Отправка данных ПК СК (Единым пакетом для скорости)
+                const skRecs = await dbGetAll('sk_records') || [];
+                const skVols = await dbGet('app_settings', 'sk_volumes');
+                const skCmap = await dbGet('app_settings', 'sk_contractor_map');
 
+                if (skRecs.length > 0 || (skVols && skVols.data)) {
+                    const skBundle = {
+                        id: 'main_bundle',
+                        records: skRecs,
+                        volumes: skVols ? skVols.data : {},
+                        contractorMap: skCmap ? skCmap.data : {}
+                    };
+                    await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                }
             if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
                 for (const obj of customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_'))) {
                     await window.pushCloudObject('custom_doc', obj.id, obj, 'custom-assets');

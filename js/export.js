@@ -2040,7 +2040,11 @@ function generateBackupObject(mode) {
         interventions: typeof window.rbi_interventionsData !== 'undefined' ? window.rbi_interventionsData : [],
         practices: typeof window.rbi_practicesData !== 'undefined' ? window.rbi_practicesData : [],
         meetings: typeof window.rbi_meetingsData !== 'undefined' ? window.rbi_meetingsData : [],
-        fmea: typeof window.rbi_fmeaRecords !== 'undefined' ? window.rbi_fmeaRecords : []
+        fmea: typeof window.rbi_fmeaRecords !== 'undefined' ? window.rbi_fmeaRecords : [],
+        // --- ДОБАВЛЕНО ДЛЯ ПК СК ---
+        skRecords: typeof window.skRecords !== 'undefined' ? window.skRecords : [],
+        skVolumes: typeof window.skVolumes !== 'undefined' ? window.skVolumes : {},
+        skContractorMap: typeof window.skContractorMap !== 'undefined' ? window.skContractorMap : {}
     };
 
     const obj = {
@@ -2387,7 +2391,27 @@ function processDataImport(event) {
                         }
                     }
                 }
-
+                // <-- НОВОЕ: Импорт данных ПК СК
+                    if (parsed.data.hr.skRecords && typeof window.skRecords !== 'undefined') {
+                        for (const item of parsed.data.hr.skRecords) {
+                            if (!window.skRecords.find(x => x.id === item.id)) {
+                                window.skRecords.push(item);
+                                await dbPut(STORES.SK_RECORDS, item);
+                            }
+                        }
+                    }
+                    if (parsed.data.hr.skVolumes && typeof window.skVolumes !== 'undefined') {
+                        for (const key in parsed.data.hr.skVolumes) {
+                            window.skVolumes[key] = parsed.data.hr.skVolumes[key];
+                        }
+                        await dbPut(STORES.SETTINGS, { key: 'sk_volumes', data: window.skVolumes });
+                    }
+                    if (parsed.data.hr.skContractorMap && typeof window.skContractorMap !== 'undefined') {
+                        for (const key in parsed.data.hr.skContractorMap) {
+                            window.skContractorMap[key] = parsed.data.hr.skContractorMap[key];
+                        }
+                        await dbPut(STORES.SETTINGS, { key: 'sk_contractor_map', data: window.skContractorMap });
+                    }
                 // <-- НОВОЕ: ИМПОРТ ЗАДАЧ ПЛАНИРОВЩИКА
                 if (parsed.data.tasks && typeof window.rbi_tasksData !== 'undefined') {
                     for (const item of parsed.data.tasks) {

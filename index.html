@@ -56,6 +56,8 @@
         onchange="handleExcelImport(event)">
     <input type="file" id="twi-import-input" accept=".json" style="display:none;" onchange="processTwiImport(event)">
     <!-- RBI NEW: Инпут для импорта Графика производства работ -->
+     <!-- RBI NEW: Инпут для импорта выгрузки из ПК Стройконтроль -->
+    <input type="file" id="sk-excel-input" accept=".xlsx, .xls" style="display:none;" onchange="sk_handleExcelImport(event)">
     <input type="file" id="schedule-excel-input" accept=".xlsx, .xls" style="display:none;"
         onchange="rbi_handleScheduleImport(event)">
     <canvas id="photo-canvas" style="display:none;"></canvas>
@@ -1007,6 +1009,13 @@
                         </svg>
                         График
                     </button>
+                    <button onclick="switchAnalyticsSubTab('sub-sk', this)"
+                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        ПК СК
+                    </button>
                     <button onclick="switchAnalyticsSubTab('sub-history', this)"
                         class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1287,7 +1296,12 @@
                 </div>
             </div>
             <!-- КОНЕЦ БЛОКА: РЕЙТИНГ ИНЖЕНЕРА -->
-
+             <!-- НОВЫЙ БЛОК: ПК СТРОЙКОНТРОЛЬ -->
+            <div id="sub-sk" class="analytics-sub-section hidden mx-1 mt-2">
+                <div id="sk-main-container" class="pb-8">
+                    <!-- Сюда JS будет рисовать интерфейс модуля -->
+                </div>
+            </div>
         </div>
 
         <!-- ВКЛАДКА 4: СПРАВОЧНИК (НОВАЯ СТРУКТУРА) -->
@@ -2666,6 +2680,7 @@
     <script src="js/analytics.js"></script>
     <script src="js/export.js"></script>
     <script src="js/game.js"></script>
+    <script src="js/sk.js"></script>
 
     <!-- Скрипт для модалок зума фото (Pinch-to-zoom + Pan + Double Tap) -->
     <script>
