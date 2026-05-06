@@ -1305,7 +1305,7 @@ function showContractorDetailView(contractorName) {
             </div>
         </details>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div class="flex flex-col gap-4 mb-4">
             <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
                 <summary class="p-3 font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                     <span>📉 Динамика по проверкам</span><span>▼</span>
@@ -1543,7 +1543,12 @@ function resetExpertEdit() {
     if(confirm('Сбросить текст до оригинального заключения ИИ? Ваша редакция будет удалена.')) {
         delete customExpertConclusions[currentEditingExpertKey];
         cancelExpertEdit(); scheduleSessionSave();
-        if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+        // ИСПРАВЛЕНИЕ: Обновляем нужный экран
+        if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
+            showContractorDetailView(currentDetailedContractor);
+        } else if (typeof renderCurrentAnalyticsTab === 'function') {
+            renderCurrentAnalyticsTab();
+        }
         showToast('Текст сброшен к исходному');
     }
 }
@@ -1556,7 +1561,13 @@ function saveExpertEdit() {
     
     customExpertConclusions[currentEditingExpertKey] = newText;
     cancelExpertEdit(); scheduleSessionSave();
-    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+    
+    // ИСПРАВЛЕНИЕ: Мгновенная перерисовка экрана детализации
+    if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
+        showContractorDetailView(currentDetailedContractor);
+    } else if (typeof renderCurrentAnalyticsTab === 'function') {
+        renderCurrentAnalyticsTab();
+    }
     showToast('Изменения сохранены!');
 }
 

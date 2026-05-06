@@ -2180,8 +2180,9 @@ window.rbi_renderFmeaRegistry = function() {
                 </div>
             </div>
             <div class="flex gap-2 pt-1">
-                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1.5">🖨️ PDF Печать</button>
-                <button onclick="rbi_deleteFmea('${f.id}')" class="bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
+                <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
+                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">🖨️ PDF</button>
+                <button onclick="rbi_deleteFmea('${f.id}')" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
             </div>
         </div>
     `).join('');
@@ -2193,6 +2194,97 @@ window.rbi_deleteFmea = async function(id) {
     await dbDelete(STORES.FMEA, id);
     rbi_renderFmeaRegistry();
     showToast("🗑️ Отчет удален");
+};
+
+// НОВАЯ ФУНКЦИЯ: Загрузка FMEA в черновик для редактирования
+window.rbi_loadFmeaToWorkspace = function(id) {
+    const record = window.rbi_fmeaRecords.find(m => m.id === id);
+    if (!record) return;
+    
+    // Удаляем старую запись, так как мы её сейчас перезапишем
+    window.rbi_fmeaRecords = window.rbi_fmeaRecords.filter(m => m.id !== id);
+    dbDelete(STORES.FMEA, id);
+
+    let rowsHtml = record.defects.map((def, idx) => {
+        const photoHtml = def.photo ? `<img src="${window.getPhotoSrc(def.photo)}" class="w-12 h-12 object-cover rounded border border-slate-300 mt-1 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">` : '';
+        return `
+        <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
+            <input type="hidden" class="f-contr" value="${def.contractor}">
+            <input type="hidden" class="f-work" value="${def.workTitle}">
+            <input type="hidden" class="f-defect" value="${def.defectName}">
+            <input type="hidden" class="f-photo" value="${def.photo || ''}">
+            <input type="hidden" class="f-count" value="${def.count}">
+            
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[150px]">
+                <div class="text-[9px] font-bold text-slate-400 uppercase leading-tight mb-0.5">${def.workTitle}</div>
+                <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight mb-1">${def.contractor}</div>
+                <div class="text-[10px] text-slate-600 dark:text-slate-300 font-medium leading-snug">
+                    <b>${def.defectName}</b> (${def.count} раз)
+                </div>
+                ${photoHtml}
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[120px]">
+                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50">
+                    <option value="Ошибки СМР" ${def.stage === 'Ошибки СМР' ? 'selected' : ''}>Ошибки СМР</option>
+                    <option value="Проект" ${def.stage === 'Проект' ? 'selected' : ''}>Проектная ошибка</option>
+                    <option value="Материалы" ${def.stage === 'Материалы' ? 'selected' : ''}>Материалы / Завод</option>
+                    <option value="Условия" ${def.stage === 'Условия' ? 'selected' : ''}>Внешние условия</option>
+                </select>
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
+                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2" placeholder="Коренная причина...">${def.cause || ''}</textarea>
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
+                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2" placeholder="Последствия (Риски)...">${def.effect || ''}</textarea>
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
+                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 bg-blue-50" placeholder="Как устранить сейчас...">${def.fix || ''}</textarea>
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
+                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 bg-green-50" placeholder="Системное предотвращение...">${def.prevent || ''}</textarea>
+            </td>
+            <td class="p-2 border border-slate-200 align-top min-w-[80px]">
+                <div class="text-center">
+                    <div class="text-[8px] font-bold text-slate-400 mb-1">RPN</div>
+                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 !py-2" placeholder="0" value="${def.rpn || 0}">
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    const workspace = document.getElementById('fmea-workspace');
+    workspace.innerHTML = `
+        <div class="bg-white border border-purple-300 rounded-2xl shadow-sm p-4 mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-[11px] font-black text-purple-700 uppercase tracking-widest">
+                    Редактирование: ${record.title}
+                </div>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-500 uppercase text-[9px] font-bold">
+                            <th class="p-2 border border-slate-200">1. Подрядчик / Проблема</th>
+                            <th class="p-2 border border-slate-200">2. Этап возникновения</th>
+                            <th class="p-2 border border-slate-200">3. Коренная причина</th>
+                            <th class="p-2 border border-slate-200">4. Последствия</th>
+                            <th class="p-2 border border-slate-200 text-blue-600">5. Устранение (Fix)</th>
+                            <th class="p-2 border border-slate-200 text-green-600">6. Предотвращение</th>
+                            <th class="p-2 border border-slate-200 text-purple-600 text-center">7. RPN</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+            <button onclick="rbi_saveFmea('${record.periodName}')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                💾 Сохранить изменения
+            </button>
+        </div>
+    `;
+    
+    rbi_renderFmeaRegistry(); // Перерисовываем архив, чтобы убрать открытый файл
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    showToast("Отчет открыт для редактирования");
 };
 
 // 2. ГЕНЕРАЦИЯ МЕГА-ТАБЛИЦЫ

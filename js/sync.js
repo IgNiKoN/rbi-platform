@@ -1578,9 +1578,13 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         if (typeof renderSelector === 'function') renderSelector();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
         if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
-          if (typeof gameGenerateWeeklyPlan === 'function') {
+          // ИСПРАВЛЕНИЕ: Автоматически зачищаем дубликаты задач после получения данных с других устройств
+        if (typeof gameForceUpdatePlan === 'function') {
+            await gameForceUpdatePlan(true); // true = silent (без уведомлений)
+        } else if (typeof gameGenerateWeeklyPlan === 'function') {
             await gameGenerateWeeklyPlan(false);
         }
+        
         if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
 
     } catch (e) {

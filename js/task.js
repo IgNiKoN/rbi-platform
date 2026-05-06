@@ -78,8 +78,8 @@ window.rbi_saveManualTask = async function() {
     rbi_renderTasksList();
 };
 
-window.gameForceUpdatePlan = async function() {
-    showToast("🧠 ИИ зачищает дубликаты и перестраивает план...");
+window.gameForceUpdatePlan = async function(silent = false) {
+    if (!silent) showToast("🧠 ИИ зачищает дубликаты и перестраивает план...");
     
     // ЖЕСТКАЯ ДЕДУПЛИКАЦИЯ: Находим все клоны (и активные, и завершенные) и удаляем их
     const uniqueKeys = new Set();
@@ -696,7 +696,7 @@ window.rbi_openTaskAction = async function(taskId) {
                         <div class="text-[10px] font-black text-purple-700 uppercase">🧠 AI-Сценарий Воркшопа</div>
                         <button onclick="rbi_generateWorkshop('${task.id}')" id="btn-gen-workshop" class="bg-purple-600 text-white px-3 py-1.5 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Сгенерировать</button>
                     </div>
-                    <textarea id="workshop-ai-scenario" class="hidden w-full h-32 text-[11px] p-2 rounded-lg border border-purple-200 resize-none outline-none leading-relaxed text-slate-800 dark:text-white bg-white dark:bg-slate-800 shadow-inner mb-2" placeholder="..."></textarea>
+                    <textarea id="workshop-ai-scenario" class="hidden w-full min-h-[200px] max-h-[50vh] overflow-y-auto custom-scrollbar text-[11px] p-2 rounded-lg border border-purple-200 resize-none outline-none leading-relaxed text-slate-800 dark:text-white bg-white dark:bg-slate-800 shadow-inner mb-2" placeholder="..."></textarea>
                     
                     <div id="workshop-actions" class="hidden">
                         <div class="mb-3">
