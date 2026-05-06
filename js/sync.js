@@ -5,7 +5,14 @@ window.supabaseClient = null;
 window.syncConfig = { enabled: false, engineerName: '', projectCode: '', pinHash: '', deviceId: '', syncMode: 'personal', fullAccessGranted: false };
 window.isSyncing = false;
 let syncTimeout = null;
-
+// Флаги отложенного обновления интерфейса (Lazy Rendering)
+window.syncDirtyFlags = {
+    templates: false,
+    history: false,
+    analytics: false,
+    tasks: false,
+    session: false
+};
 const SYNC_FULL_ACCESS_HASH = "cd6ca24c2ed2b7c6c4c549de010cc106316279f972b2d075cd6a454d45be70d8";
 
 try {
@@ -508,13 +515,38 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
 
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
+    const isDeleted = data._deleted === true; // Извлекаем флаг удаления
 
-    const uploadedData = await window.uploadObjectFilesToCloud(
-        data,
-        bucketName,
-        `${pCode}/${objectType}/${id}`,
-        objectType
-    );
+    let uploadedData = data;
+    
+    if (isDeleted) {
+        // Если объект удален, ищем внутри него ссылки на файлы и удаляем их физически из облака
+        const pathsToRemove = [];
+        const extractPaths = (obj) => {
+            for (let k in obj) {
+                const val = obj[k];
+                if (typeof val === 'string' && val.startsWith('http') && val.includes(`/public/${bucketName}/`)) {
+                    const marker = `/public/${bucketName}/`;
+                    pathsToRemove.push(decodeURIComponent(val.slice(val.indexOf(marker) + marker.length)));
+                } else if (val && typeof val === 'object') {
+                    extractPaths(val);
+                }
+            }
+        };
+        extractPaths(data);
+        
+        if (pathsToRemove.length > 0) {
+            await window.supabaseClient.storage.from(bucketName).remove(pathsToRemove);
+        }
+    } else {
+        // Если не удалено - грузим файлы в облако как обычно
+        uploadedData = await window.uploadObjectFilesToCloud(
+            data,
+            bucketName,
+            `${pCode}/${objectType}/${id}`,
+            objectType
+        );
+    }
 
     await window.supabaseClient
         .from('rbi_cloud_objects')
@@ -524,30 +556,57 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
             object_type: objectType,
             engineer_name: iName,
             object_data: uploadedData,
-            is_deleted: uploadedData._deleted || false,
+            is_deleted: isDeleted,
             updated_at: uploadedData.updatedAt || uploadedData.updated_at || new Date().toISOString()
         }, { onConflict: 'id' });
 };
 
-window.pullCloudObjects = async function(objectType) {
+window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
 
-    const { data, error } = await window.supabaseClient
+    let query = window.supabaseClient
         .from('rbi_cloud_objects')
         .select('*')
         .eq('project_code', pCode)
-        .eq('object_type', objectType)
-        .eq('is_deleted', false);
+        .eq('object_type', objectType);
 
+    // УМНАЯ СКАЧКА: Тянем только то, что изменилось с прошлого раза
+    if (lastPullTimeStr) {
+        query = query.gt('updated_at', lastPullTimeStr);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const result = [];
+    let localStoreName = null;
+    if (objectType === 'meeting') localStoreName = 'rbi_meetings';
+    if (objectType === 'intervention') localStoreName = 'rbi_interventions';
+    if (objectType === 'practice') localStoreName = 'rbi_practices';
+    if (objectType === 'schedule') localStoreName = 'rbi_schedule_stages';
+    if (objectType === 'fmea') localStoreName = 'rbi_fmea';
 
     for (const row of data || []) {
         let obj = row.object_data || {};
+        
+        // ЗАЩИТА: Если локальный файл новее облачного (например, мы его только что изменили) - не скачиваем
+        if (localStoreName && typeof dbGet === 'function') {
+            const localExisting = await dbGet(localStoreName, row.id.replace(`${pCode}_${objectType}_`, ''));
+            const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || 0).getTime() : 0;
+            const cloudTime = new Date(row.updated_at || 0).getTime();
+            
+            if (localExisting && localTime >= cloudTime) {
+                continue; 
+            }
+        }
+
         obj = await window.cacheObjectCloudFilesToIndexedDB(obj, objectType);
-        obj.id = obj.id || row.id;
+        obj.id = obj.id || row.id.replace(`${pCode}_${objectType}_`, '');
         obj.updatedAt = row.updated_at;
+        
+        // Передаем флаг удаления, чтобы стереть файл у коллег
+        if (row.is_deleted) obj._deleted = true; 
+        
         result.push(obj);
     }
 
@@ -736,7 +795,7 @@ window.triggerSync = async function(mode = 'silent') {
             inspectionsQuery = inspectionsQuery.eq('engineer_name', iName);
         }
 
-        if (lastPullAt && mode !== 'manual') {
+        if (lastPullAt) {
             inspectionsQuery = inspectionsQuery.gt('updated_at', lastPullAt);
         }
 
@@ -774,6 +833,27 @@ window.triggerSync = async function(mode = 'silent') {
             });
 
             for (const h of cloudInspections) {
+                // --- ЗАЩИТА ОТ ПЕРЕЗАПИСИ УДАЛЕННЫХ ИЛИ ОФЛАЙН ИЗМЕНЕНИЙ ---
+                let existingLocal = typeof dbGet === 'function' ? await dbGet('app_history', String(h.id)) : null;
+                
+                // Авто-лечение дубликатов (если в базе телефона остался старый ID в виде числа)
+                if (!existingLocal && !isNaN(Number(h.id))) {
+                    const numExisting = await dbGet('app_history', Number(h.id));
+                    if (numExisting) {
+                        existingLocal = numExisting;
+                        await dbDelete('app_history', Number(h.id)); // Стираем числовой дубль
+                    }
+                }
+
+                const localTime = existingLocal ? new Date(existingLocal.updatedAt || existingLocal._deletedAt || 0).getTime() : 0;
+                const cloudTime = new Date(h.updated_at || 0).getTime();
+
+                if (existingLocal && localTime >= cloudTime) {
+                    // Наша локальная версия новее (например, мы её только что удалили). Пропускаем облачную!
+                    continue;
+                }
+                // -----------------------------------------------------------
+
                 const state = {};
                 const details = {};
 
@@ -789,7 +869,7 @@ window.triggerSync = async function(mode = 'silent') {
                 });
 
                 const localItem = {
-                    id: h.id,
+                    id: String(h.id),
                     projectName: h.project_name || '',
                     inspectorName: h.engineer_name || '',
                     contractorName: h.contractor_name || '',
@@ -925,7 +1005,7 @@ try {
         etalonQuery = etalonQuery.eq('engineer_name', iName);
     }
 
-    if (lastPullAt && mode !== 'manual') {
+    if (lastPullAt) {
         etalonQuery = etalonQuery.gt('updated_at', lastPullAt);
     }
 
@@ -991,7 +1071,7 @@ async function downloadAllActPhotosForOffline(act) {
             ];
 
             for (const type of cloudTypes) {
-                const objects = await window.pullCloudObjects(type);
+                const objects = await window.pullCloudObjects(type, lastPullAt, mode);
 
                 if (type === 'meeting' && typeof dbPut === 'function') {
                     window.rbi_meetingsData = window.rbi_meetingsData || [];
@@ -1123,13 +1203,14 @@ async function downloadAllActPhotosForOffline(act) {
         // =====================================================
         // 5. PUSH: локальная история в новую архитектуру
         // =====================================================
-        let currentHistory = typeof contractorArray !== 'undefined' ? contractorArray : [];
+        // Тянем данные напрямую из базы памяти, так как на экране удаленные файлы уже скрыты
+        let currentHistory = typeof dbGetAll === 'function' ? (await dbGetAll('app_history') || []) : [];
 
         if (window.syncConfig.syncMode === 'personal') {
             currentHistory = currentHistory.filter(i => i.inspectorName === iName);
         }
 
-        if (lastPushAt && mode !== 'manual') {
+        if (lastPushAt) {
             const lastPushTime = new Date(lastPushAt).getTime();
             currentHistory = currentHistory.filter(i => {
                 const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
@@ -1144,31 +1225,63 @@ async function downloadAllActPhotosForOffline(act) {
                 const inspectionId = String(c.id);
                 const photoRows = [];
                 const uploadedPhotos = {};
+                const storagePathsToRemove = []; // Для мягкого удаления фото
+                const isDeleted = c._deleted === true;
 
                 for (const itemId of Object.keys(c.photos || {})) {
                     const oldPhoto = c.photos[itemId];
-                    const publicUrl = await uploadAsset(
-                        oldPhoto,
-                        'inspection-photos',
-                        `${pCode}/inspections/${inspectionId}/${itemId}`,
-                        'photo'
-                    );
+                    
+                    if (isDeleted) {
+                        // Если проверка удалена, фото в облако не грузим, а наоборот - удаляем
+                        const path = getStoragePathFromPublicUrl(oldPhoto, 'inspection-photos');
+                        if (path) storagePathsToRemove.push(path);
+                        
+                        if (oldPhoto && isHttpUrl(oldPhoto)) {
+                            photoRows.push({
+                                id: `${inspectionId}_${itemId}_main`,
+                                inspection_id: inspectionId,
+                                project_code: pCode,
+                                item_id: String(itemId),
+                                photo_type: 'inspection',
+                                bucket_name: 'inspection-photos',
+                                storage_path: path,
+                                public_url: oldPhoto,
+                                updated_at: new Date().toISOString()
+                            });
+                        }
+                    } else {
+                        // Стандартная загрузка фото
+                        const publicUrl = await uploadAsset(
+                            oldPhoto,
+                            'inspection-photos',
+                            `${pCode}/inspections/${inspectionId}/${itemId}`,
+                            'photo'
+                        );
 
-                    uploadedPhotos[itemId] = publicUrl;
+                        uploadedPhotos[itemId] = publicUrl;
 
-                    if (publicUrl && isHttpUrl(publicUrl)) {
-                        photoRows.push({
-                            id: `${inspectionId}_${itemId}_main`,
-                            inspection_id: inspectionId,
-                            project_code: pCode,
-                            item_id: String(itemId),
-                            photo_type: 'inspection',
-                            bucket_name: 'inspection-photos',
-                            storage_path: getStoragePathFromPublicUrl(publicUrl, 'inspection-photos'),
-                            public_url: publicUrl,
-                            updated_at: new Date().toISOString()
-                        });
+                        if (publicUrl && isHttpUrl(publicUrl)) {
+                            photoRows.push({
+                                id: `${inspectionId}_${itemId}_main`,
+                                inspection_id: inspectionId,
+                                project_code: pCode,
+                                item_id: String(itemId),
+                                photo_type: 'inspection',
+                                bucket_name: 'inspection-photos',
+                                storage_path: getStoragePathFromPublicUrl(publicUrl, 'inspection-photos'),
+                                public_url: publicUrl,
+                                updated_at: new Date().toISOString()
+                            });
+                        }
                     }
+                }
+
+                // Если есть фото для удаления из бакета Supabase
+                if (storagePathsToRemove.length > 0) {
+                    const { error: rmErr } = await window.supabaseClient.storage
+                        .from('inspection-photos')
+                        .remove(storagePathsToRemove);
+                    if (rmErr) console.warn("[Sync] Ошибка удаления фото инспекции из Storage:", rmErr);
                 }
 
                 const { error: headerError } = await window.supabaseClient
@@ -1188,8 +1301,8 @@ async function downloadAllActPhotosForOffline(act) {
                         inspection_date: c.date || new Date().toISOString(),
                         metrics: c.metrics || {},
                         is_completed: c.isCompleted !== false,
-                        is_deleted: c._deleted || false,
-                        deleted_at: c._deleted ? (c._deletedAt || new Date().toISOString()) : null,
+                        is_deleted: isDeleted,
+                        deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'id' });
 
@@ -1232,9 +1345,11 @@ async function downloadAllActPhotosForOffline(act) {
                         .upsert(photoRows, { onConflict: 'id' });
 
                     if (photoError) throw photoError;
-
-                    c.photos = uploadedPhotos;
-                    if (typeof dbPut === 'function') await dbPut('app_history', c);
+                    
+                    if (!isDeleted) {
+                        c.photos = uploadedPhotos;
+                        if (typeof dbPut === 'function') await dbPut('app_history', c);
+                    }
                 }
             }
         }
@@ -1444,36 +1559,7 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
             if (mode === 'manual') safeToast('⚠️ Задачи не отправлены: ' + e.message.substring(0, 60));
         }
          
-                // =====================================================
-        // 7.2. PUSH: совещания в rbi_cloud_objects
-        // =====================================================
-        try {
-            const meetings = typeof dbGetAll === 'function'
-                ? (await dbGetAll('rbi_meetings') || [])
-                : (typeof window.rbi_meetingsData !== 'undefined' ? window.rbi_meetingsData : []);
-
-            for (const meeting of meetings) {
-                if (!meeting || !meeting.id) continue;
-
-                const { error: meetingError } = await window.supabaseClient
-                    .from('rbi_cloud_objects')
-                    .upsert({
-                        id: `${pCode}_meeting_${meeting.id}`.replace(/\s+/g, '_'),
-                        project_code: pCode,
-                        object_type: 'meeting',
-                        engineer_name: meeting.author || iName,
-                        object_data: meeting,
-                        is_deleted: meeting._deleted || false,
-                        updated_at: meeting.updatedAt || meeting.updated_at || meeting.date || new Date().toISOString()
-                    }, { onConflict: 'id' });
-
-                if (meetingError) throw meetingError;
-            }
-        } catch (e) {
-            console.warn("[Sync] Совещания не отправлены:", e.message);
-            if (mode === 'manual') safeToast('⚠️ Совещания не отправлены: ' + e.message.substring(0, 60));
-        }
-
+        
         // =====================================================
         // 8. PUSH: рейтинг инженера
         // =====================================================
@@ -1511,61 +1597,70 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         } catch (e) {
             console.warn("[Sync] Рейтинг не отправлен:", e.message);
         }
-                               // =====================================================
+            // =====================================================
                 // 8.1. PUSH: прочие модули через rbi_cloud_objects
                 // =====================================================
                 try {
+                    // УМНАЯ ОТПРАВКА: фильтруем только те объекты, которые изменились после прошлого PUSH
+                      const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
+                    const filterNew = (arr) => arr.filter(i => new Date(i.updatedAt || i.updated_at || i.date || 0).getTime() >= lastPushTime);
+
                     if (typeof dbGetAll === 'function') {
-                        const meetings = await dbGetAll('rbi_meetings') || [];
+                        const meetings = filterNew(await dbGetAll('rbi_meetings') || []);
                         for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets'); }
 
-                        const interventions = await dbGetAll('rbi_interventions') || [];
+                        const interventions = filterNew(await dbGetAll('rbi_interventions') || []);
                         for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets'); }
 
-                        const practices = await dbGetAll('rbi_practices') || [];
+                        const practices = filterNew(await dbGetAll('rbi_practices') || []);
                         for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'custom-assets'); }
 
-                        const scheduleStages = await dbGetAll('rbi_schedule_stages') || [];
+                        const scheduleStages = filterNew(await dbGetAll('rbi_schedule_stages') || []);
                         for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets'); }
 
-                        const fmeas = await dbGetAll('rbi_fmea') || [];
+                        const fmeas = filterNew(await dbGetAll('rbi_fmea') || []);
                         for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
 
-                        // Отправка ПК СК (единым пакетом)
+                        // Отправка ПК СК (Стройконтроль) отправляем только если есть изменения
                         const skRecs = await dbGetAll('sk_records') || [];
-                        const skVols = await dbGet('app_settings', 'sk_volumes');
-                        const skCmap = await dbGet('app_settings', 'sk_contractor_map');
-                        if (skRecs.length > 0 || (skVols && skVols.data)) {
-                            const skBundle = {
-                                id: 'main_bundle',
-                                records: skRecs,
-                                volumes: skVols ? skVols.data : {},
-                                contractorMap: skCmap ? skCmap.data : {}
-                            };
-                            await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                        const newSkRecs = filterNew(skRecs);
+                        if (mode === 'manual' || newSkRecs.length > 0) {
+                            const skVols = await dbGet('app_settings', 'sk_volumes');
+                            const skCmap = await dbGet('app_settings', 'sk_contractor_map');
+                            if (skRecs.length > 0 || (skVols && skVols.data)) {
+                                const skBundle = {
+                                    id: 'main_bundle',
+                                    records: skRecs,
+                                    volumes: skVols ? skVols.data : {},
+                                    contractorMap: skCmap ? skCmap.data : {},
+                                    updatedAt: new Date().toISOString()
+                                };
+                                await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                            }
                         }
                     }
 
                     if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
-                        for (const obj of customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_'))) {
+                        for (const obj of filterNew(customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_')))) {
                             await window.pushCloudObject('custom_doc', obj.id, obj, 'custom-assets');
                         }
                     }
 
                     if (typeof customNodes !== 'undefined' && Array.isArray(customNodes)) {
-                        for (const obj of customNodes.filter(x => x && x.id)) {
+                        for (const obj of filterNew(customNodes.filter(x => x && x.id))) {
                             await window.pushCloudObject('custom_node', obj.id, obj, 'custom-assets');
                         }
                     }
 
                     if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
-                        for (const obj of customTwiCards.filter(x => x && x.id)) {
+                        for (const obj of filterNew(customTwiCards.filter(x => x && x.id))) {
                             await window.pushCloudObject('custom_twi_card', obj.id, obj, 'twi-pdfs');
                         }
                     }
                 } catch (e) {
                     console.warn("[Sync] Прочие модули не отправлены:", e.message);
                 }
+
         const doneAt = new Date().toISOString();
 
         localStorage.setItem('rbi_sync_last_pull_at', doneAt);
@@ -1574,19 +1669,27 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
 
         if (mode === 'manual') safeToast('✅ Синхронизация завершена');
 
-        if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
-        if (typeof renderSelector === 'function') renderSelector();
-        if (typeof renderHistoryTab === 'function') renderHistoryTab();
-        if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
-          // ИСПРАВЛЕНИЕ: Автоматически зачищаем дубликаты задач после получения данных с других устройств
-        if (typeof gameForceUpdatePlan === 'function') {
-            await gameForceUpdatePlan(true); // true = silent (без уведомлений)
-        } else if (typeof gameGenerateWeeklyPlan === 'function') {
-            await gameGenerateWeeklyPlan(false);
+        // РАЗДЕЛЕНИЕ РЕЖИМОВ СИНХРОНИЗАЦИИ (Manual vs Silent)
+        if (mode === 'manual') {
+            safeToast('✅ Синхронизация завершена');
+            if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
+            if (typeof renderSelector === 'function') renderSelector();
+            if (typeof renderHistoryTab === 'function') renderHistoryTab();
+            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+            if (typeof gameForceUpdatePlan === 'function') {
+                await gameForceUpdatePlan(true);
+            } else if (typeof gameGenerateWeeklyPlan === 'function') {
+                await gameGenerateWeeklyPlan(false);
+            }
+            if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+        } else {
+            // Тихий режим. Никаких перерисовок. Только ставим грязные флаги.
+            window.syncDirtyFlags.templates = true;
+            window.syncDirtyFlags.history = true;
+            window.syncDirtyFlags.analytics = true;
+            window.syncDirtyFlags.tasks = true;
+            window.syncDirtyFlags.session = true;
         }
-        
-        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
-
     } catch (e) {
         console.error("[Sync] Ошибка:", e);
         if (mode === 'manual') {

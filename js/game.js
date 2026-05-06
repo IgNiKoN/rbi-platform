@@ -2164,7 +2164,10 @@ window.rbi_renderFmeaRegistry = function() {
         return;
     }
 
-    const sorted = [...window.rbi_fmeaRecords].sort((a,b) => new Date(b.date) - new Date(a.date));
+    // Скрываем удаленные, отсекаем призраков и чужие объекты
+    const sorted = [...window.rbi_fmeaRecords]
+        .filter(f => f && f.id && !f._deleted && f.date && f.title && f.defects) // <-- Строго проверяем, что это FMEA
+        .sort((a,b) => new Date(b.date) - new Date(a.date));
     listContainer.innerHTML = sorted.map(f => `
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col gap-2">
             <div class="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
@@ -2172,7 +2175,7 @@ window.rbi_renderFmeaRegistry = function() {
                     <div class="w-8 h-8 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg flex items-center justify-center font-black text-sm">📊</div>
                     <div>
                         <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${f.title}</div>
-                        <div class="text-[9px] font-bold text-slate-500">Период: ${f.periodName} | Разобрано дефектов: ${f.defects.length}</div>
+                        <div class="text-[9px] font-bold text-slate-500">Период: ${f.periodName} | Разобрано дефектов: ${(f.defects || []).length}</div>
                     </div>
                 </div>
                 <div class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">
@@ -2180,18 +2183,25 @@ window.rbi_renderFmeaRegistry = function() {
                 </div>
             </div>
             <div class="flex gap-2 pt-1">
+                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">👁️ Просмотр</button>
                 <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
-                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">🖨️ PDF</button>
                 <button onclick="rbi_deleteFmea('${f.id}')" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
             </div>
+        </div>
         </div>
     `).join('');
 };
 
 window.rbi_deleteFmea = async function(id) {
     if(!confirm("Удалить этот FMEA отчет?")) return;
-    window.rbi_fmeaRecords = window.rbi_fmeaRecords.filter(m => m.id !== id);
-    await dbDelete(STORES.FMEA, id);
+    const record = window.rbi_fmeaRecords.find(m => String(m.id) === String(id));
+    if (record) {
+        record._deleted = true;
+        record.updatedAt = new Date().toISOString();
+        await dbPut(STORES.FMEA, record);
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
     rbi_renderFmeaRegistry();
     showToast("🗑️ Отчет удален");
 };
@@ -2201,9 +2211,7 @@ window.rbi_loadFmeaToWorkspace = function(id) {
     const record = window.rbi_fmeaRecords.find(m => m.id === id);
     if (!record) return;
     
-    // Удаляем старую запись, так как мы её сейчас перезапишем
-    window.rbi_fmeaRecords = window.rbi_fmeaRecords.filter(m => m.id !== id);
-    dbDelete(STORES.FMEA, id);
+    window.currentEditingFmeaId = id; // Глобально запоминаем ID
 
     let rowsHtml = record.defects.map((def, idx) => {
         const photoHtml = def.photo ? `<img src="${window.getPhotoSrc(def.photo)}" class="w-12 h-12 object-cover rounded border border-slate-300 mt-1 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">` : '';
@@ -2538,14 +2546,25 @@ window.rbi_saveFmea = async function(periodName) {
         });
     });
 
+    let fmeaId = window.currentEditingFmeaId || ('fmea_' + Date.now().toString(36));
+
     const fmeaRecord = {
-        id: 'fmea_' + Date.now().toString(36),
+        id: fmeaId,
         date: new Date().toISOString(),
         author: document.getElementById('inp-inspector')?.value || 'Инженер',
         title: `FMEA Анализ от ${new Date().toLocaleDateString('ru-RU')}`,
         periodName: periodName,
-        defects: defects
+        defects: defects,
+        updatedAt: new Date().toISOString()
     };
+
+    // Обновляем массив без дубликатов
+    const idx = window.rbi_fmeaRecords.findIndex(x => String(x.id) === String(fmeaId));
+    if (idx >= 0) window.rbi_fmeaRecords[idx] = fmeaRecord;
+    else window.rbi_fmeaRecords.push(fmeaRecord);
+
+    await dbPut(STORES.FMEA, fmeaRecord);
+    window.currentEditingFmeaId = null; // Сбрасываем ID
 
     window.rbi_fmeaRecords.push(fmeaRecord);
     await dbPut(STORES.FMEA, fmeaRecord);

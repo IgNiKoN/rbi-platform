@@ -450,18 +450,33 @@ window.emptyTrashBin = async function() {
     
     let deletedCount = 0;
 
-    // Вспомогательная функция для удаления фото
-    const deletePhotos = async (photosObj) => {
+    // Вспомогательная функция для удаления фото (локально + облако)
+    const deletePhotos = async (photosObj, bucketName = 'inspection-photos') => {
         if (!photosObj) return;
+        const pathsToRemove = [];
+
         for (let k in photosObj) {
             const url = photosObj[k];
             if (url) {
+                // 1. Готовим удаление из облака (если это публичная ссылка Supabase)
+                if (url.startsWith('http') && url.includes(`/public/${bucketName}/`)) {
+                    const marker = `/public/${bucketName}/`;
+                    pathsToRemove.push(decodeURIComponent(url.slice(url.indexOf(marker) + marker.length)));
+                }
+
+                // 2. Локальное удаление
                 await dbDelete(STORES.PHOTOS, url);
                 if (PhotoManager.cache[url]) {
                     if (PhotoManager.cache[url].startsWith('blob:')) URL.revokeObjectURL(PhotoManager.cache[url]);
                     delete PhotoManager.cache[url];
                 }
             }
+        }
+
+        // 3. Выполняем удаление из облака
+        if (pathsToRemove.length > 0 && window.supabaseClient && window.isSyncEnabled()) {
+            const { error } = await window.supabaseClient.storage.from(bucketName).remove(pathsToRemove);
+            if (error) console.warn("[Trash] Ошибка очистки облака:", error);
         }
     };
 

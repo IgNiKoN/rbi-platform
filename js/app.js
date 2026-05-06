@@ -77,8 +77,55 @@ const audioFail = new Audio("data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwM
 
 // Таймер для дебаунса сохранений (оптимизация)
 let __saveSessionTimer = null;
+// === ЛЕНИВОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (Lazy Rendering) ===
+window.lastInteractionTime = Date.now();
 
-// === ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ===
+// Отслеживаем активность, чтобы не сбрасывать экран прямо под руками (добавили 'scroll')
+['touchstart', 'click', 'input', 'keydown', 'scroll'].forEach(evt => {
+    document.addEventListener(evt, () => window.lastInteractionTime = Date.now(), { passive: true });
+});
+
+setInterval(() => {
+    if (!window.syncDirtyFlags) return;
+    
+    const timeSinceInteraction = Date.now() - window.lastInteractionTime;
+    const isIdle = timeSinceInteraction > 30000; // 30 секунд полного бездействия
+    const isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
+
+    // ГЛАВНОЕ ПРАВИЛО: Если пользователь сейчас скроллит, тыкает или пишет - мы ВООБЩЕ ничего не перерисовываем!
+    if (!isIdle || isTyping) return;
+
+    // 1. Вкладка "Осмотр" (Черновик)
+    if (window.syncDirtyFlags.session) {
+        window.syncDirtyFlags.session = false;
+        if (typeof restoreSession === 'function') restoreSession();
+    }
+
+    // 2. Вкладка "Аналитика" и "История"
+    if (window.syncDirtyFlags.analytics || window.syncDirtyFlags.history) {
+        if (document.getElementById('tab-analytics')?.classList.contains('active')) {
+            window.syncDirtyFlags.analytics = false;
+            window.syncDirtyFlags.history = false;
+            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+        }
+    }
+
+    // 3. Вкладка "Инженер" (Задачи и дашборды)
+    if (window.syncDirtyFlags.tasks && document.getElementById('tab-engineer')?.classList.contains('active')) {
+        window.syncDirtyFlags.tasks = false;
+        if (typeof rbi_renderEngineerTab === 'function') rbi_renderEngineerTab();
+    }
+
+    // 4. Шаблоны и Справочник
+    if (window.syncDirtyFlags.templates) {
+        window.syncDirtyFlags.templates = false;
+        if (typeof renderSelector === 'function') renderSelector();
+        if (document.getElementById('tab-reference')?.classList.contains('active') && typeof renderReferenceTab === 'function') {
+            renderReferenceTab();
+        }
+    }
+
+}, 3000); // Проверяем флаги каждые 3 секунды
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         // Запускаем облако до загрузки остальных настроек
@@ -1466,7 +1513,8 @@ function toggleAllHistory(checkbox) {
 }
 
 function getSelectedHistoryIds() {
-    return Array.from(document.querySelectorAll('.hist-checkbox:checked')).map(cb => parseInt(cb.value));
+    // Убираем parseInt, так как ID из облака - это текстовые строки (UUID)
+    return Array.from(document.querySelectorAll('.hist-checkbox:checked')).map(cb => cb.value);
 }
 
 async function deleteSelectedHistory() {
@@ -1475,16 +1523,18 @@ async function deleteSelectedHistory() {
     if (!confirm(`Удалить выбранные проверки (${ids.length} шт)?`)) return;
 
     // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
-    for (let id of ids) {
-        // Находим проверку в памяти
-        let item = contractorArray.find(i => i.id === id);
-        if (item) {
-            item._deleted = true;
-            item._deletedAt = new Date().toISOString();
-            // Обновляем запись в БД с флагом удаления
-            await dbPut(STORES.HISTORY, item);
+    // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
+        for (let id of ids) {
+            // Сравниваем строго как строки
+            let item = contractorArray.find(i => String(i.id) === String(id));
+            if (item) {
+                item._deleted = true;
+                item._deletedAt = new Date().toISOString();
+                item.updatedAt = item._deletedAt; // <--- ДОБАВИЛИ ЭТО (обновляем время)
+                // Обновляем запись в БД с флагом удаления
+                await dbPut(STORES.HISTORY, item);
+            }
         }
-    }
     
     // Убираем удаленные из активного массива ОЗУ
     contractorArray = contractorArray.filter(i => !i._deleted);
@@ -1501,6 +1551,11 @@ async function deleteSelectedHistory() {
         renderCurrentAnalyticsTab();
     }
     updateDataSummary();
+
+    // ---> ДОБАВЛЕНО: Даем команду облаку на удаление
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    // <---
 
     showToast(`✅ Удалено успешно (${ids.length} шт)`);
 }
@@ -1522,7 +1577,7 @@ function showHistoryDetail(id) {
     if (currIdx === -1) {
         // Если не нашли в истории, ищем в эталонах
         sortedArray = [...etalonActsArray].sort((a, b) => new Date(b.date) - new Date(a.date));
-        currIdx = sortedArray.findIndex(x => x.id === id);
+        currIdx = sortedArray.findIndex(x => String(x.id) === String(id));
     }
     
     if (currIdx === -1) return;
@@ -2385,8 +2440,8 @@ async function saveProductToArray() {
     }
 
     const newItem = { 
-        id: Date.now() + Math.floor(Math.random() * 1000), 
-        date: new Date().toISOString(), 
+        id: String(Date.now() + Math.floor(Math.random() * 1000)), 
+        date: new Date().toISOString(),
         projectName: projInput.value.trim(), 
         inspectorName: inspInput.value.trim(), 
         contractorName: contrInput.value.trim(),
@@ -6507,23 +6562,73 @@ window.rbi_generateAutoTasks = async function() {
 
 
 // --- РЕНДЕР И РЕДАКТОР: Вкладка "Аналитика -> График" ---
-window.rbi_renderScheduleTab = async function() {
+
+// Бронебойная функция парсинга дат из Excel
+function rbi_safeDateISO(val) {
+    if (val === undefined || val === null || val === '') return new Date().toISOString();
+    let d = null;
+    if (typeof val === 'number') {
+        // Логика дат Excel (дней с 1900 года)
+        d = new Date((val - 25569) * 86400 * 1000);
+    } else if (typeof val === 'string') {
+        const parts = val.trim().split(/[.,/ -]/);
+        // Если дата вида DD.MM.YYYY
+        if (parts.length === 3) {
+            let day = parts[0].padStart(2, '0');
+            let month = parts[1].padStart(2, '0');
+            let year = parts[2];
+            if (year.length === 2) year = "20" + year;
+            d = new Date(`${year}-${month}-${day}T12:00:00Z`);
+        } else {
+            d = new Date(val);
+        }
+    }
+    // Если дата получилась нормальная - возвращаем, иначе отдаем текущую
+    if (d instanceof Date && !isNaN(d.getTime())) {
+        return d.toISOString();
+    }
+    return new Date().toISOString(); 
+}
+
+// Умный поиск ключа чек-листа по русскому названию
+function rbi_findTemplateKey(titleStr) {
+    if (!titleStr) return '';
+    const search = titleStr.toLowerCase();
+    for (let key in SYSTEM_TEMPLATES) {
+        if (SYSTEM_TEMPLATES[key].title.toLowerCase().includes(search)) return `sys_${key}`;
+    }
+    if (typeof userTemplates !== 'undefined') {
+        for (let key in userTemplates) {
+            if (userTemplates[key].title.toLowerCase().includes(search)) return `user_${key}`;
+        }
+    }
+    return '';
+}
+
+// Главный рендер графика (с параметром skipLoad, чтобы не затирать несохраненные строки)
+window.rbi_renderScheduleTab = async function(skipLoad = false) {
     const container = document.getElementById('schedule-container');
     if (!container) return;
 
-    await rbi_loadData();
+    if (!skipLoad) {
+        await rbi_loadData();
+    }
     if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
 
-    // 1. Собираем все чек-листы
+    // 1. Собираем все чек-листы для выпадающего списка
     let clOptions = '<option value="">-- Не привязан --</option>';
     const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort((a,b) => SYSTEM_TEMPLATES[a].title.localeCompare(SYSTEM_TEMPLATES[b].title));
     sysKeys.forEach(key => { clOptions += `<option value="sys_${key}">[Сист] ${SYSTEM_TEMPLATES[key].title}</option>`; });
     
-    const userKeys = Object.keys(userTemplates).sort((a,b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
-    userKeys.forEach(key => { clOptions += `<option value="user_${key}">[Мой] ${userTemplates[key].title}</option>`; });
+    if (typeof userTemplates !== 'undefined') {
+        const userKeys = Object.keys(userTemplates).sort((a,b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
+        userKeys.forEach(key => { clOptions += `<option value="user_${key}">[Мой] ${userTemplates[key].title}</option>`; });
+    }
 
-    // 2. Генерируем строки
-    let rowsHtml = window.rbi_scheduleData.sort((a,b) => new Date(a.startDate) - new Date(b.startDate)).map(s => {
+    // 2. Генерируем строки (исключая те, что помечены как удаленные)
+    let activeData = window.rbi_scheduleData.filter(s => !s._deleted);
+    
+    let rowsHtml = activeData.sort((a,b) => new Date(a.startDate || 0) - new Date(b.startDate || 0)).map(s => {
         const d1 = s.startDate ? new Date(s.startDate).toISOString().split('T')[0] : '';
         const d2 = s.endDate ? new Date(s.endDate).toISOString().split('T')[0] : '';
         let currentSelect = clOptions.replace(`value="${s.templateKey}"`, `value="${s.templateKey}" selected`);
@@ -6539,7 +6644,7 @@ window.rbi_renderScheduleTab = async function() {
             </tr>`;
     }).join('');
 
-    if (window.rbi_scheduleData.length === 0) {
+    if (activeData.length === 0) {
         rowsHtml = `<tr><td colspan="6" class="text-center py-6 text-slate-500 text-[11px] font-bold uppercase tracking-widest border-b border-dashed border-slate-300">График пуст. Нажмите "Добавить этап" ниже.</td></tr>`;
     }
 
@@ -6566,48 +6671,59 @@ window.rbi_renderScheduleTab = async function() {
     container.innerHTML = html;
 };
 
-window.rbi_addScheduleRow = async function() {
+// Добавление строки
+window.rbi_addScheduleRow = function() {
     if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
-    
-    // Создаем пустую строку
     const newRow = { 
         id: 'sch_' + Date.now().toString(36), 
         workTitle: '', 
         contractor: '', 
         startDate: new Date().toISOString(), 
         endDate: new Date().toISOString(), 
-        templateKey: '' 
+        templateKey: '',
+        _deleted: false
     };
-    
     window.rbi_scheduleData.push(newRow);
-    
-    // СРАЗУ сохраняем ее в базу данных, чтобы она не пропала при рендере!
-    if (typeof isDemoMode === 'undefined' || !isDemoMode) {
-        await dbPut(STORES.SCHEDULE, newRow);
-    }
-    
-    rbi_renderScheduleTab();
-};
-window.rbi_deleteScheduleRow = function(id) {
-    if(!confirm("Удалить эту строку?")) return;
-    window.rbi_scheduleData = window.rbi_scheduleData.filter(s => s.id !== id);
-    rbi_renderScheduleTab();
+    // Передаем true, чтобы перерисовать таблицу без перезагрузки данных из базы!
+    rbi_renderScheduleTab(true); 
 };
 
+// Мягкое удаление одной строки
+window.rbi_deleteScheduleRow = async function(id) {
+    if(!confirm("Удалить эту строку?")) return;
+    let item = window.rbi_scheduleData.find(s => s.id === id);
+    if (item) {
+        item._deleted = true;
+        item.updatedAt = new Date().toISOString();
+        if (typeof dbPut === 'function') await dbPut(STORES.SCHEDULE, item);
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
+    rbi_renderScheduleTab(true);
+};
+
+// Мягкое удаление всего графика
 window.rbi_clearSchedule = async function() {
     if(!confirm("Удалить ВЕСЬ график? Это действие необратимо.")) return;
-    window.rbi_scheduleData = [];
-    await dbClear(STORES.SCHEDULE);
-    rbi_renderScheduleTab();
+    for (let s of window.rbi_scheduleData) {
+        s._deleted = true;
+        s.updatedAt = new Date().toISOString();
+        if (typeof dbPut === 'function') await dbPut(STORES.SCHEDULE, s);
+    }
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    rbi_renderScheduleTab(true);
     showToast("🗑️ График полностью очищен");
 };
 
+// Сохранение графика
 window.rbi_saveSchedule = async function() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
 
     const rows = document.querySelectorAll('.sched-row');
-    const newData = [];
-    
+    const validIds = new Set();
+    let changed = false;
+
     rows.forEach(row => {
         const id = row.dataset.id;
         const wTitle = row.querySelector('.sched-work').value.trim();
@@ -6617,16 +6733,112 @@ window.rbi_saveSchedule = async function() {
         const tKey = row.querySelector('.sched-tmpl').value;
 
         if (wTitle || contr) {
-            newData.push({ id: id, workTitle: wTitle, contractor: contr, startDate: dStart ? new Date(dStart).toISOString() : new Date().toISOString(), endDate: dEnd ? new Date(dEnd).toISOString() : new Date().toISOString(), templateKey: tKey });
+            validIds.add(id);
+            let existing = window.rbi_scheduleData.find(s => s.id === id);
+            if (existing) {
+                existing.workTitle = wTitle;
+                existing.contractor = contr;
+                existing.startDate = dStart ? new Date(dStart).toISOString() : new Date().toISOString();
+                existing.endDate = dEnd ? new Date(dEnd).toISOString() : new Date().toISOString();
+                existing.templateKey = tKey;
+                existing.updatedAt = new Date().toISOString();
+                existing._deleted = false;
+            } else {
+                window.rbi_scheduleData.push({
+                    id: id, workTitle: wTitle, contractor: contr,
+                    startDate: dStart ? new Date(dStart).toISOString() : new Date().toISOString(),
+                    endDate: dEnd ? new Date(dEnd).toISOString() : new Date().toISOString(),
+                    templateKey: tKey,
+                    updatedAt: new Date().toISOString(),
+                    _deleted: false
+                });
+            }
+            changed = true;
         }
     });
 
-    window.rbi_scheduleData = newData;
-    await dbClear(STORES.SCHEDULE);
-    for(let s of window.rbi_scheduleData) { await dbPut(STORES.SCHEDULE, s); }
+    // Удаляем пустые (брошенные без сохранения) строки
+    window.rbi_scheduleData.forEach(s => {
+        if (!validIds.has(s.id) && !s._deleted) {
+            s._deleted = true;
+            s.updatedAt = new Date().toISOString();
+            changed = true;
+        }
+    });
+
+    for(let s of window.rbi_scheduleData) { 
+        if (typeof dbPut === 'function') await dbPut(STORES.SCHEDULE, s); 
+    }
     
+    if (changed) {
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
+
     showToast("✅ График СМР успешно сохранен!");
-    rbi_renderScheduleTab();
+    rbi_renderScheduleTab(true);
+};
+
+// Загрузка графика из Excel
+window.rbi_handleScheduleImport = async function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showToast("⚙️ Читаем Excel файл...");
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (rows.length < 2) throw new Error("Файл пуст или не содержит данных");
+
+            let added = 0;
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || row.length === 0) continue;
+                
+                const wTitle = row[0] ? row[0].toString().trim() : '';
+                const contr = row[1] ? row[1].toString().trim() : '';
+                
+                if (!wTitle && !contr) continue;
+
+                // Используем бронебойную функцию парсинга дат
+                const dStartISO = rbi_safeDateISO(row[2]);
+                const dEndISO = rbi_safeDateISO(row[3]);
+                
+                const newRow = { 
+                    id: 'sch_' + Date.now().toString(36) + i, 
+                    workTitle: wTitle, 
+                    contractor: contr, 
+                    startDate: dStartISO, 
+                    endDate: dEndISO, 
+                    templateKey: rbi_findTemplateKey(wTitle),
+                    updatedAt: new Date().toISOString(),
+                    _deleted: false
+                };
+                
+                window.rbi_scheduleData.push(newRow);
+                if (typeof dbPut === 'function') await dbPut(STORES.SCHEDULE, newRow);
+                added++;
+            }
+
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            if (typeof triggerSync === 'function') triggerSync('silent');
+
+            showToast(`✅ Загружено этапов: ${added}`);
+            rbi_renderScheduleTab(true);
+
+        } catch (err) {
+            console.error(err);
+            alert("Ошибка чтения Excel: " + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = ''; 
 };
 
 
@@ -6643,8 +6855,10 @@ window.rbi_renderMeetingTab = function() {
         return;
     }
 
-    // Сортировка - новые сверху
-    const sorted = [...window.rbi_meetingsData].sort((a,b) => new Date(b.date) - new Date(a.date));
+    // Сортировка - новые сверху (отсев призраков и чужих объектов)
+    const sorted = [...window.rbi_meetingsData]
+        .filter(m => m && m.id && m.date && m.title && m.memoText) // <-- Строго проверяем, что это Совещание
+        .sort((a,b) => new Date(b.date) - new Date(a.date));
     
     let html = sorted.map(m => `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col gap-2">
@@ -6661,7 +6875,7 @@ window.rbi_renderMeetingTab = function() {
                 </div>
             </div>
             <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-3 italic">
-                ${m.memoText.replace(/<br>/g, ' ')}
+                ${(m.memoText || '').replace(/<br>/g, ' ')}
             </div>
             <div class="flex gap-2 mt-1 pt-2 border-t border-[var(--card-border)]">
                 <button onclick="rbi_openSavedMeeting('${m.id}')" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm transition-colors">👁️ Открыть</button>
@@ -6673,21 +6887,78 @@ window.rbi_renderMeetingTab = function() {
     container.innerHTML = html;
 };
 
-// Открытие сохраненного мемо
+// Открытие сохраненного мемо (ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК)
 window.rbi_openSavedMeeting = function(id) {
     const meet = window.rbi_meetingsData.find(m => m.id === id);
     if (!meet) return;
+
+    // 1. Отрисовка фото совещания
+    let photoHtml = '';
+    if (meet.qDayPhoto) {
+        photoHtml = `
+            <div class="mb-4 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm h-48 sm:h-56 relative bg-slate-50 dark:bg-slate-900">
+                <img src="${window.getPhotoSrc(meet.qDayPhoto)}" class="w-full h-full object-cover cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${meet.qDayPhoto}')">
+                <div class="absolute top-2 left-2 bg-black/50 text-white text-[9px] font-black uppercase px-2 py-1 rounded backdrop-blur-sm">📸 Фото фиксация</div>
+            </div>`;
+    }
+
+    // 2. Отрисовка повестки и дефектов
+    let agendaHtml = '';
+    if (meet.agenda && meet.agenda.length > 0) {
+        agendaHtml = meet.agenda.map(a => `
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-2 shadow-sm">
+                <div class="text-[11px] font-black text-slate-800 dark:text-white mb-1">${a.contr}</div>
+                <div class="text-[11px] text-slate-700 dark:text-slate-300 font-medium mb-2 leading-snug">${a.defect}</div>
+                <div class="flex flex-wrap gap-2 text-[9px] font-bold">
+                    <span class="${a.isDone ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30' : 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30'} px-2 py-1 rounded border uppercase tracking-widest flex items-center gap-1">${a.isDone ? '✅ Решено' : '⏳ В работе'}</span>
+                    ${a.date ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
+                    ${a.resp ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">Отв: ${a.resp}</span>` : ''}
+                </div>
+                ${a.comment ? `<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-2 italic bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800">💬 ${a.comment}</div>` : ''}
+            </div>
+        `).join('');
+    } else {
+        agendaHtml = `<div class="text-[10px] text-slate-400 italic text-center py-4 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Детальная повестка не сохранена (старая версия)</div>`;
+    }
+
+    // 3. Отрисовка доп. тезисов
+    let notesHtml = meet.notes ? `
+        <div class="mt-3 text-[11px] bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-500 border border-yellow-200 dark:border-yellow-800/50 p-3 rounded-xl shadow-sm leading-relaxed">
+            <span class="font-black uppercase mb-1 block">📌 Дополнительные тезисы:</span>
+            ${meet.notes}
+        </div>` : '';
     
-    document.getElementById('modal-icon').innerHTML = `📅`;
-    document.getElementById('modal-title').innerText = meet.title;
-    document.getElementById('modal-body').innerHTML = `
-        <div class="text-[10px] text-slate-500 mb-4 border-b border-slate-200 pb-2">Составлено: ${new Date(meet.date).toLocaleString('ru-RU')} | Автор: ${meet.author}</div>
-        <div class="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner whitespace-pre-wrap font-medium" id="saved-memo-text">${meet.memoText}</div>
-        <div class="mt-4 flex gap-2">
-            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">📋 Скопировать</button>
-            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 border border-slate-200 dark:border-slate-700">Закрыть</button>
+    // Сборка финального модального окна
+    document.getElementById('modal-icon').innerHTML = ``;
+    document.getElementById('modal-title').innerHTML = `
+        <div class="flex justify-between items-center w-full">
+            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📅 ${meet.title}</span>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
         </div>
     `;
+    
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-[10px] text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex justify-between items-center">
+            <span>Автор: <b>${meet.author}</b></span>
+            <span>Составлено: <b>${new Date(meet.date).toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</b></span>
+        </div>
+
+        ${photoHtml}
+
+        <div class="mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-inner">
+            <div class="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3 pl-1">📋 Повестка и решения</div>
+            ${agendaHtml}
+            ${notesHtml}
+        </div>
+
+        <div class="text-[11px] font-black uppercase tracking-widest text-green-600 dark:text-green-500 mb-2 pl-1 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Итоговый протокол (ИИ)</div>
+        <textarea id="saved-memo-text" readonly class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-green-50 dark:bg-green-900/10 p-3 sm:p-4 rounded-xl border border-green-200 dark:border-green-800/50 shadow-inner whitespace-pre-wrap font-medium h-48 resize-none outline-none custom-scrollbar mb-4">${meet.memoText}</textarea>
+
+        <div class="flex gap-2">
+            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">📋 Скопировать</button>
+        </div>
+    `;
+    
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
@@ -7054,24 +7325,25 @@ window.rbi_createMeeting = function(customData = null) {
                 </div>
             </div>
 
-            <!-- РЕЗУЛЬТАТ ИИ (ПОЯВИТСЯ ПРЯМО ТУТ ПОСЛЕ ГЕНЕРАЦИИ) -->
-            <div id="rbi-meeting-result" class="hidden border-t border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10 p-4 rounded-xl mt-4">
-                <div class="text-[11px] font-black text-green-700 dark:text-green-500 uppercase tracking-widest mb-2">Готовый Протокол:</div>
-                <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800/50 rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-64 shadow-inner mb-3 font-medium leading-relaxed custom-scrollbar"></textarea>
-                
-                <div class="flex gap-2">
-                    <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl font-bold text-[11px] uppercase border border-indigo-200 dark:border-indigo-800 active:scale-95 shadow-sm transition-colors">📋 Скопировать</button>
-                    <button onclick="rbi_saveMeetingMemo()" class="flex-1 bg-green-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">💾 Сохранить в Архив</button>
+            <!-- РЕЗУЛЬТАТ / РУЧНОЙ ВВОД -->
+            <div id="rbi-meeting-result" class="border-t border-[var(--card-border)] bg-[var(--hover-bg)] p-3 sm:p-4 rounded-xl mt-4 mb-2">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Итоговый текст (Мемо)</div>
+                    <button onclick="copyExpertText('btn-copy-memo', 'rbi-meeting-memo-text')" id="btn-copy-memo" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800 px-2 py-1 rounded active:scale-95 transition-colors">📋 Копировать</button>
                 </div>
+                <textarea id="rbi-meeting-memo-text" class="w-full bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-3 text-[11px] outline-none resize-none text-slate-800 dark:text-slate-200 h-32 shadow-inner font-medium leading-relaxed custom-scrollbar transition-all" placeholder="Можно написать текст вручную или нажать кнопку ИИ внизу..."></textarea>
             </div>
 
         </div>
 
-        <!-- ПОДВАЛ (ФИКСИРОВАННАЯ КНОПКА ИИ) -->
-        <div id="meeting-footer-btn" class="p-3 sm:p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/80 shrink-0 backdrop-blur-md z-10">
-            <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                Сформировать протокол (ИИ)
+        <!-- ПОДВАЛ (КНОПКИ СОХРАНЕНИЯ И ИИ) -->
+        <div id="meeting-footer-btn" class="p-3 sm:p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/80 shrink-0 backdrop-blur-md z-10 flex gap-2">
+            <button onclick="rbi_saveMeetingMemo()" class="flex-1 bg-white dark:bg-slate-800 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800 py-3.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex justify-center items-center gap-1.5">
+                💾 Сохранить
+            </button>
+            <button onclick="rbi_generateMeetingMemo()" id="btn-gen-memo" class="flex-[1.5] bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <span class="truncate">Собрать (ИИ)</span>
             </button>
         </div>
     </div>`;
@@ -7147,18 +7419,15 @@ window.rbi_generateMeetingMemo = async function() {
             { role: 'user', content: promptUser }
         ], { temperature: 0.2, max_tokens: 800 });
 
-        // Скрываем нижнюю панель с кнопкой генерации, чтобы не мешалась, и показываем блок результата
-        const resultBlock = document.getElementById('rbi-meeting-result');
-        const footerBtn = document.getElementById('meeting-footer-btn');
-        
-        resultBlock.classList.remove('hidden');
-        if(footerBtn) footerBtn.classList.add('hidden'); // Убираем дублирующуюся кнопку снизу
-        
-        document.getElementById('rbi-meeting-memo-text').value = response;
+        // Вставляем результат и увеличиваем текстовое поле для удобства чтения
+        const textArea = document.getElementById('rbi-meeting-memo-text');
+        textArea.value = response;
+        textArea.classList.remove('h-32');
+        textArea.classList.add('h-64');
         
         // Скроллим вниз, чтобы юзер увидел результат
         setTimeout(() => {
-            resultBlock.scrollIntoView({ behavior: "smooth", block: "end" });
+            textArea.scrollIntoView({ behavior: "smooth", block: "end" });
         }, 100);
         
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
@@ -7172,12 +7441,29 @@ window.rbi_generateMeetingMemo = async function() {
 };
 
 
-// СОХРАНЕНИЕ ПРОТОКОЛА В ИСТОРИЮ
+// СОХРАНЕНИЕ ПРОТОКОЛА В ИСТОРИЮ (С ПОЛНОЙ ПОВЕСТКОЙ)
 window.rbi_saveMeetingMemo = async function() {
-     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
-    const text = document.getElementById('rbi-meeting-memo-text').value.trim();
-    if (!text) return showToast("Текст протокола пуст!");
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
+    let text = document.getElementById('rbi-meeting-memo-text').value.trim();
+    if (!text) {
+        text = "Протокол сохранен без генерации ИИ. Детали решений смотрите в блоке повестки.";
+    }
 
+    // Собираем повестку для сохранения
+    let agendaData = [];
+    const rows = document.querySelectorAll('.meeting-agenda-row');
+    rows.forEach(row => {
+        agendaData.push({
+            contr: row.querySelector('.agenda-meta-contr').value,
+            defect: row.querySelector('.agenda-meta-defect').value,
+            isDone: row.querySelector('.agenda-done-cb').checked,
+            date: row.querySelector('.agenda-date').value,
+            resp: row.querySelector('.agenda-resp').value.trim(),
+            comment: row.querySelector('.agenda-comment').value.trim()
+        });
+    });
+
+    const extraNotes = document.getElementById('rbi-meeting-notes')?.value.trim() || '';
     const author = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     
     const meet = {
@@ -7186,7 +7472,9 @@ window.rbi_saveMeetingMemo = async function() {
         author: author,
         title: `Совещание от ${new Date().toLocaleDateString('ru-RU')}`,
         memoText: text,
-        qDayPhoto: document.getElementById('meeting-photo-preview')?.dataset?.photo || null // <--- ВОТ ЭТО
+        agenda: agendaData,      // Сохраняем разметку повестки
+        notes: extraNotes,       // Сохраняем доп. тезисы
+        qDayPhoto: document.getElementById('meeting-photo-preview')?.dataset?.photo || null // Сохраняем фото
     };
 
     window.rbi_meetingsData.push(meet);
@@ -7194,6 +7482,7 @@ window.rbi_saveMeetingMemo = async function() {
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
     if (typeof triggerSync === 'function') triggerSync('silent');
+    
     // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ СОВЕЩАНИЯ
     if (window.activeTaskId) {
         const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
@@ -7562,8 +7851,10 @@ window.rbi_renderPracticesTab = function() {
         return;
     }
 
-    // Сортировка - новые сверху
-    const sorted = [...window.rbi_practicesData].sort((a,b) => new Date(b.date) - new Date(a.date));
+    // Сортировка - новые сверху (с отсевом пустых призраков)
+    const sorted = [...window.rbi_practicesData]
+        .filter(p => p && p.id && p.date && p.title) 
+        .sort((a,b) => new Date(b.date) - new Date(a.date));
     
     listContainer.innerHTML = sorted.map(p => `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden">

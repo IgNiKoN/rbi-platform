@@ -146,8 +146,10 @@ window.saveEtalonAct = async function(printAfter = false) {
 
     if (elements.length === 0) return showToast("⚠️ Добавьте хотя бы один элемент эталона!");
 
+    let etalonId = window.currentEditingEtalonId || String(Date.now() + Math.floor(Math.random() * 1000));
+
     const etalonRecord = {
-        id: Date.now() + Math.floor(Math.random() * 1000), 
+        id: etalonId,
         date: new Date().toISOString(), 
         projectName: document.getElementById('inp-project')?.value || "Объект", 
         inspectorName: document.getElementById('inp-inspector')?.value || "Инженер", 
@@ -169,9 +171,20 @@ window.saveEtalonAct = async function(printAfter = false) {
         _deleted: false
     };
 
-    etalonActsArray.push(etalonRecord);
-if (typeof contractorArray !== 'undefined') contractorArray.push(etalonRecord);
-await dbPut(STORES.ETALON_ACTS, etalonRecord);
+    // ЗАМЕНЯЕМ: etalonActsArray.push(etalonRecord); на умную вставку:
+    const idx = etalonActsArray.findIndex(x => String(x.id) === String(etalonId));
+    if (idx !== -1) {
+        etalonActsArray[idx] = etalonRecord;
+        if (typeof contractorArray !== 'undefined') {
+            const cIdx = contractorArray.findIndex(x => String(x.id) === String(etalonId));
+            if (cIdx !== -1) contractorArray[cIdx] = etalonRecord;
+        }
+    } else {
+        etalonActsArray.push(etalonRecord);
+        if (typeof contractorArray !== 'undefined') contractorArray.push(etalonRecord);
+    }
+    await dbPut(STORES.ETALON_ACTS, etalonRecord);
+    window.currentEditingEtalonId = null; // Сбрасываем ID
     
     if (currentEtalonContext.statusKey && weeklyPlanData.tasks) {
         const task = weeklyPlanData.tasks.find(t => t.statusKey === currentEtalonContext.statusKey);
@@ -376,13 +389,88 @@ if (el.photo) {
 
     document.getElementById('etalon-view-body').innerHTML = bodyHtml;
     
-    document.getElementById('etalon-view-print-btn').onclick = () => {
-        document.getElementById('etalon-view-modal').style.display = 'none';
-        document.body.classList.remove('modal-open');
-        printEtalonAct(id);
-    };
+    // БЕЗОПАСНАЯ ВСТАВКА 3-Х КНОПОК (БЕЗ ОШИБКИ НА ВТОРОЙ КЛИК)
+    const footerDiv = document.getElementById('etalon-view-body').nextElementSibling;
+    if (footerDiv) {
+        footerDiv.innerHTML = `
+            <div class="flex gap-2 w-full">
+                <button onclick="editEtalonAct('${id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-sm active:scale-95">✏️ Изменить</button>
+                <button onclick="document.getElementById('etalon-view-modal').style.display='none'; document.body.classList.remove('modal-open'); printEtalonAct('${id}');" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95">🖨️ PDF</button>
+                <button onclick="deleteEtalonAct('${id}')" class="bg-red-50 text-red-600 border border-red-200 px-4 py-3.5 rounded-xl font-black text-lg active:scale-95 shadow-sm">🗑️</button>
+            </div>
+        `;
+    }
 
     const modal = document.getElementById('etalon-view-modal');
     modal.style.display = 'flex';
     document.body.classList.add('modal-open');
+};
+
+window.deleteEtalonAct = async function(id) {
+    if(!confirm("Удалить этот Акт-Эталон?")) return;
+    const record = etalonActsArray.find(c => String(c.id) === String(id));
+    if (record) {
+        record._deleted = true;
+        record.updatedAt = new Date().toISOString();
+        await dbPut(STORES.ETALON_ACTS, record);
+        
+        // Помечаем удаленным в общем массиве проверок
+        if (typeof contractorArray !== 'undefined') {
+            const cIdx = contractorArray.findIndex(c => String(c.id) === String(id));
+            if (cIdx >= 0) contractorArray[cIdx]._deleted = true;
+        }
+
+        // ЖЕСТКАЯ ОЧИСТКА МАССИВОВ В ОЗУ ДЛЯ МГНОВЕННОГО ОБНОВЛЕНИЯ ЭКРАНА
+        etalonActsArray = etalonActsArray.filter(e => !e._deleted);
+        if (typeof contractorArray !== 'undefined') {
+            contractorArray = contractorArray.filter(c => !c._deleted);
+        }
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
+    document.getElementById('etalon-view-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+    showToast("🗑️ Эталон удален");
+    
+    // Обновляем экраны
+    if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
+    if (typeof renderHistoryTab === 'function') renderHistoryTab();
+};
+
+window.editEtalonAct = async function(id) {
+    document.getElementById('etalon-view-modal').style.display = 'none';
+    const record = etalonActsArray.find(c => String(c.id) === String(id));
+    if (!record) return;
+
+    window.currentEditingEtalonId = id; // Глобально запоминаем ID
+    openEtalonConstructor(record.contractorName, record.templateKey, record.templateTitle, null);
+
+    // Заполняем поля
+    document.getElementById('etalon-location').value = record.location || '';
+    document.getElementById('etalon-participants').value = record.details.participants || '';
+    document.getElementById('etalon-deviations').value = record.details.deviations || '';
+
+    // Очищаем и заполняем элементы
+    document.getElementById('etalon-elements-container').innerHTML = '';
+    etalonElementCounter = 0;
+    
+    for (let el of record.details.elements) {
+        addEtalonElement();
+        const elId = `etalon-el-${etalonElementCounter}`;
+        const node = document.getElementById(elId);
+        node.querySelector('.etalon-el-name').value = el.name || '';
+        node.querySelector('.etalon-el-desc').value = el.desc || '';
+        
+        if (el.photo) {
+            const realPhotoSrc = await PhotoManager.getAsyncUrl(el.photo) || window.getPhotoSrc(el.photo);
+            const container = node.querySelector('.etalon-photo-container');
+            container.dataset.photo = el.photo;
+            container.innerHTML = `
+                <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
+                    <img src="${realPhotoSrc}" class="w-full h-full object-contain cursor-pointer" onclick="setTimeout(() => openPhotoViewer('${el.photo}'), 100)">
+                    <button onclick="removeEtalonPhoto('${elId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
+                </div>`;
+        }
+    }
 };
