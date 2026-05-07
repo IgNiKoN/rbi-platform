@@ -121,8 +121,12 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
     window.isPlanGenerating = true;
 
     try {
-        const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
-        if (!currentInspector) return;
+        const currentInspector = document.getElementById('inp-inspector')?.value.trim();
+        
+        // ИСПРАВЛЕНИЕ: Если инспектор не указан или стоит дефолтное имя - прерываем генерацию плана!
+        if (!currentInspector || currentInspector === 'Инженер' || currentInspector === 'Неизвестный инспектор') {
+            return;
+        }
 
         if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) return;
 

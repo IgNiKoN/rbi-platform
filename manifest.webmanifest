@@ -1,6 +1,6 @@
 {
   "name": "RBI Quality Pro",
-  "short_name": "RBI Quality",
+  "short_name": "RBI Quality Pro",
   "description": "Система контроля качества и аудита",
   "start_url": "./index.html",
   "display": "standalone",

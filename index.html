@@ -2434,14 +2434,17 @@
                                 <span>Исп: <span id="storage-used">--</span> МБ</span>
                                 <span>Свободно: <span id="storage-free">--</span> МБ</span>
                             </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <button onclick="clearPdfCache()"
-                                    class="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Очистить
-                                    кэш PDF</button>
-                                <button onclick="emptyTrashBin()"
-                                    class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors">Очистить
-                                    корзину</button>
+                            <div class="grid grid-cols-2 gap-2 mb-2">
+                                <button onclick="clearPdfCache()" class="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Очистить кэш PDF</button>
+                                <button onclick="emptyTrashBin()" class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors">Очистить корзину</button>
                             </div>
+                            <button onclick="downloadMissingCloudFiles()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 mb-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg>
+                                Скачать всё для Офлайна
+                            </button>
+                            <button onclick="exportLibraryToJsCode()" class="w-full bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 shadow-md">
+                                💻 Выгрузить Библиотеку в код (JS)
+                            </button>
                         </div>
 
                         <!-- Ручной экспорт -->

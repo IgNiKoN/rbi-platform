@@ -666,9 +666,23 @@ function switchTab(tabId, navElement = null) {
         else renderAnalyticsTab();
         initCollapsiblePanel('analytics-filters-block', 'analytics-panel-body', 'analytics-panel-header', 'analytics-panel-toggle-icon');
     } else if (tabId === 'tab-reference') {
-        const activeSub = document.querySelector('.ref-sub-section:not(.hidden)');
-        if (activeSub && activeSub.id === 'ref-sub-checklists' && typeof renderReferenceTab === 'function') renderReferenceTab();
-        else if (activeSub && activeSub.id === 'ref-sub-docs' && typeof renderDocsList === 'function') renderDocsList();
+        // Умная перерисовка: если облако что-то скачало в фоне, перезагружаем память перед показом
+        if (window.syncDirtyFlags && window.syncDirtyFlags.reference) {
+            window.rbi_reloadReferenceMemory().then(() => {
+                window.syncDirtyFlags.reference = false;
+                forceRenderReferenceSubs();
+            });
+        } else {
+            forceRenderReferenceSubs();
+        }
+        
+        function forceRenderReferenceSubs() {
+            const activeSub = document.querySelector('.ref-sub-section:not(.hidden)');
+            if (activeSub && activeSub.id === 'ref-sub-checklists' && typeof renderReferenceTab === 'function') renderReferenceTab();
+            else if (activeSub && activeSub.id === 'ref-sub-docs' && typeof renderDocsList === 'function') renderDocsList();
+            else if (activeSub && activeSub.id === 'ref-sub-twi' && typeof renderTwiList === 'function') renderTwiList();
+            else if (activeSub && activeSub.id === 'ref-sub-nodes' && typeof renderNodesList === 'function') renderNodesList();
+        }
     } else if (tabId === 'tab-settings') {
         if (typeof renderSettingsTab === 'function') renderSettingsTab();
         if (typeof updateStorageInfo === 'function') updateStorageInfo();
@@ -4048,7 +4062,7 @@ function renderDocsList() {
                 <div class="text-[9px] font-bold text-slate-500 flex items-center gap-1">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ${infoText}
                 </div>
-                ${!isSystem ? `<button onclick="event.stopPropagation(); deleteCustomDoc('${doc.id}')" class="text-red-500 hover:text-red-700 active:scale-90 transition-transform"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}
+                ${(!isSystem && (!doc.owner || doc.owner === (appSettings.engineerName || 'Инженер'))) ? `<button onclick="event.stopPropagation(); deleteCustomDoc('${doc.id}')" class="text-red-500 hover:text-red-700 active:scale-90 transition-transform"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}
             </div>
         </div>`;
     });
@@ -4126,7 +4140,8 @@ async function saveCustomDoc() {
         type: type,
         code: code,
         title: title,
-        isSystem: false
+        isSystem: false,
+        owner: appSettings.engineerName || 'Инженер' // <-- ДОБАВЛЕНО
     };
 
     if (pdfData) {
@@ -4208,8 +4223,8 @@ let currentTwiType = 'INSPECTOR';
 // === 1. ВШИТЫЕ СИСТЕМНЫЕ TWI КАРТЫ (ИХ НЕЛЬЗЯ УДАЛИТЬ) ===
 // Сюда ты можешь вставлять код карт, выгруженных через кнопку "В код (Экспорт)"
 
-// Загрузка TWI карт при старте и слияние с системными
-document.addEventListener("DOMContentLoaded", async () => {
+// Глобальная функция для перезагрузки данных справочника из базы в оперативную память
+window.rbi_reloadReferenceMemory = async function() {
     try {
         let loadedCards = [];
         const storedTwi = await dbGet(STORES.SETTINGS, 'custom_twi_cards');
@@ -4220,18 +4235,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             });
         }
         
-        // СЛИЯНИЕ БАЗ: Системные + Пользовательские
-        const systemIds = SYSTEM_TWI_CARDS.map(c => c.id);
+        // Безопасное слияние с проверкой наличия системного массива
+        const sysCards = typeof SYSTEM_TWI_CARDS !== 'undefined' ? SYSTEM_TWI_CARDS : [];
+        const systemIds = sysCards.map(c => c.id);
         const filteredUserCards = loadedCards.filter(c => !systemIds.includes(c.id));
         
-        customTwiCards = [...SYSTEM_TWI_CARDS, ...filteredUserCards];
+        customTwiCards = [...sysCards, ...filteredUserCards];
+    } catch (e) { console.error("Ошибка обновления памяти TWI", e); }
+};
 
-        // ИСПРАВЛЕНИЕ: Принудительно отрисовываем карты после загрузки
-        if (typeof renderTwiList === 'function') {
-            renderTwiList();
-        }
-
-    } catch (e) { console.error("Ошибка загрузки TWI", e); }
+// Загрузка при старте приложения
+document.addEventListener("DOMContentLoaded", async () => {
+    await window.rbi_reloadReferenceMemory();
+    if (typeof renderTwiList === 'function') renderTwiList();
 });
 
 // Анимация меню управления TWI
@@ -4492,11 +4508,18 @@ function closeTwiActionSheet() {
 function handleTwiAction(action) {
     const id = currentActionTwiId;
     closeTwiActionSheet();
+    
+    // Проверяем права: если есть владелец и он не совпадает с текущим именем инженера - блокируем
+    const card = customTwiCards.find(c => c.id === id);
+    const currentEngineer = appSettings.engineerName || 'Инженер';
+    const isOwner = !card || !card.owner || card.owner === currentEngineer;
+
     setTimeout(() => {
         if (action === 'view') openTwiViewer(id);
+        else if (action === 'duplicate') duplicateTwiCard(id);
+        else if (!isOwner) showToast('⚠️ Нет прав! Удалять/изменять может только автор.');
         else if (action === 'edit') openTwiConstructor(id);
         else if (action === 'delete') deleteTwiCard(id);
-        else if (action === 'duplicate') duplicateTwiCard(id);
     }, 350);
 }
 
@@ -4748,7 +4771,8 @@ async function saveTwiCard() {
 
     let cardData = {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
-        title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType 
+        title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType,
+        owner: appSettings.engineerName || 'Инженер' // <-- Сохраняем имя автора
     };
 
     if (currentTwiType === 'INSPECTOR') {
@@ -5233,11 +5257,13 @@ function renderNodesList() {
 
         grouped[cat].forEach(node => {
             const isSystem = !customNodes.find(n => n.id === node.id);
+            const isOwner = !node.owner || node.owner === (appSettings.engineerName || 'Инженер');
+
             const actionBtn = isSystem 
                 ? `<div class="absolute top-2 right-2 bg-indigo-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">СИС</div>` 
-                : `<button onclick="event.stopPropagation(); deleteNode('${node.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shadow-md active:scale-90">
+                : (isOwner ? `<button onclick="event.stopPropagation(); deleteNode('${node.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black text-xs shadow-md active:scale-90">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
-                   </button>`;
+                   </button>` : '');
 
             html += `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl overflow-hidden shadow-sm flex flex-col cursor-pointer active:scale-[0.98] transition-transform relative" onclick="openNodeViewer('${node.id}')">
@@ -5417,7 +5443,8 @@ async function saveNodeCard() {
         img: imgData,
         materials: materials,
         linkedDoc: document.getElementById('node-linked-doc').value.trim(),
-        linkedTwiChecklistKey: document.getElementById('node-linked-twi').value || null
+        linkedTwiChecklistKey: document.getElementById('node-linked-twi').value || null,
+        owner: appSettings.engineerName || 'Инженер' // <-- ДОБАВЛЕНО
     };
 
     customNodes.push(newNode);
@@ -8277,6 +8304,48 @@ window.rbi_printPracticePdf = async function(id) {
     if (typeof printPdfShell === 'function') {
         printPdfShell(`Практика: ${p.title}`, content, "A4", "landscape", "browser");
     }
+};
+
+// ============================================================================
+// ЭКСПОРТ ВСЕЙ БИБЛИОТЕКИ СПРАВОЧНИКОВ В КОД (ДЛЯ ВШИВАНИЯ В PWA)
+// ============================================================================
+window.exportLibraryToJsCode = function() {
+    // Проверяем, есть ли несинхронизированные локальные картинки
+    const checkLocal = (obj) => {
+        let str = JSON.stringify(obj);
+        return str.includes('"local://') || str.includes('"data:image');
+    };
+
+    if (checkLocal(customTwiCards) || checkLocal(customNodes) || checkLocal(window.rbi_practicesData)) {
+        return showToast("⚠️ Сначала нажмите 'Синхронизировать сейчас'! В базе есть локальные фото, нужно получить публичные ссылки из облака.");
+    }
+
+    let jsCode = "/* =================================================== */\n";
+    jsCode += "/* Сгенерировано из RBI Quality (Вшитая Библиотека)    */\n";
+    jsCode += "/* =================================================== */\n\n";
+
+    // 1. Нормативы (Docs)
+    const exportDocs = customDocs.filter(d => !String(d.id).startsWith('sys_'));
+    jsCode += "// --- 1. НОРМАТИВНЫЕ ДОКУМЕНТЫ ---\n";
+    jsCode += `const CUSTOM_SYSTEM_DOCS = ${JSON.stringify(exportDocs, null, 4)};\n\n`;
+
+    // 2. Технические Узлы (Nodes)
+    const exportNodes = customNodes.filter(n => !String(n.id).startsWith('sys_'));
+    jsCode += "// --- 2. ТЕХНИЧЕСКИЕ УЗЛЫ ---\n";
+    jsCode += `const CUSTOM_SYSTEM_NODES = ${JSON.stringify(exportNodes, null, 4)};\n\n`;
+
+    // 3. Инструкции (TWI)
+    const exportTwi = customTwiCards.filter(t => !String(t.id).startsWith('sys_'));
+    jsCode += "// --- 3. TWI ИНСТРУКЦИИ ---\n";
+    jsCode += `const CUSTOM_TWI_CARDS = ${JSON.stringify(exportTwi, null, 4)};\n\n`;
+
+    // 4. Лучшие Практики (Practices)
+    const exportPrac = (window.rbi_practicesData || []).filter(p => !p._deleted && p.isPublished);
+    jsCode += "// --- 4. ОПУБЛИКОВАННЫЕ ПРАКТИКИ ---\n";
+    jsCode += `const CUSTOM_PRACTICES = ${JSON.stringify(exportPrac, null, 4)};\n\n`;
+
+    downloadFile(jsCode, `rbi_library_code_${new Date().toLocaleDateString('ru-RU')}.js`, 'application/javascript');
+    showToast("✅ Файл библиотеки со ссылками скачан!");
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

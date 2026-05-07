@@ -339,19 +339,44 @@ const PhotoManager = {
     },
 
     // 3.1. АСИНХРОННАЯ выдача реального Blob URL из базы
-    async getAsyncUrl(localId) {
-        if (this.cache[localId]) return this.cache[localId];
+    async getAsyncUrl(localIdOrHttp) {
+        if (!localIdOrHttp) return null;
+        if (this.cache[localIdOrHttp]) return this.cache[localIdOrHttp];
+
         try {
-            const record = await dbGet(STORES.PHOTOS, localId);
+            // Ищем в IndexedDB (и локальные, и уже скачанные HTTP)
+            const record = await dbGet(STORES.PHOTOS, localIdOrHttp);
             if (record && record.data) {
                 const blob = arrayBufferToBlob(record.data, record.mimeType);
                 const url = URL.createObjectURL(blob);
-                this.cache[localId] = url;
+                this.cache[localIdOrHttp] = url;
                 this.activeUrls.add(url);
                 return url;
             }
-        } catch(e) { console.error("Ошибка загрузки фото из БД", e); }
-        return null;
+
+            // ЛЕНИВАЯ ЗАГРУЗКА: Если это облачная HTTP ссылка и ее нет в БД телефона - скачиваем и кэшируем!
+            if (localIdOrHttp.startsWith('http')) {
+                console.log('[PhotoManager] Ленивая загрузка из облака в офлайн-кеш:', localIdOrHttp);
+                const res = await fetch(localIdOrHttp);
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const buffer = await blobToArrayBuffer(blob);
+                    
+                    // Сохраняем скачанный файл в локальную базу, чтобы работал без интернета
+                    await dbPut(STORES.PHOTOS, { id: localIdOrHttp, data: buffer, mimeType: blob.type });
+                    
+                    const localUrl = URL.createObjectURL(blob);
+                    this.cache[localIdOrHttp] = localUrl;
+                    this.activeUrls.add(localUrl);
+                    return localUrl;
+                }
+            }
+        } catch(e) { 
+            console.error("[PhotoManager] Ошибка загрузки фото", e); 
+        }
+        
+        // Фолбэк на оригинальный URL, если что-то пошло не так
+        return localIdOrHttp;
     },
 
     // 3.2. ОЧИСТКА ПАМЯТИ (Вызывается при переключении вкладок)
@@ -413,6 +438,14 @@ async function runPhotoMigration(historyArray) {
 
 // === ФОНОВЫЙ ЗАГРУЗЧИК ФАЙЛОВ ДЛЯ ОФЛАЙНА ===
 window.downloadMissingCloudFiles = async function() {
+    const loader = document.getElementById('global-loader');
+    const loaderText = document.getElementById('global-loader-text');
+    if (loader && loaderText) {
+        loaderText.innerText = "Поиск файлов в облаке...";
+        loader.style.display = 'flex';
+        setTimeout(() => loader.classList.remove('opacity-0'), 10);
+    }
+
     console.log("[Sync] Поиск новых файлов для скачивания в офлайн...");
     const urlsToDownload = new Set();
 
@@ -447,6 +480,7 @@ window.downloadMissingCloudFiles = async function() {
             if (node.img && node.img.startsWith('http')) urlsToDownload.add(node.img);
         });
     }
+    
     // 4. Ищем фото в Совещаниях и Практиках
     if (typeof window.rbi_meetingsData !== 'undefined') {
         window.rbi_meetingsData.forEach(m => {
@@ -459,22 +493,28 @@ window.downloadMissingCloudFiles = async function() {
             if (p.photoAfter && p.photoAfter.startsWith('http')) urlsToDownload.add(p.photoAfter);
         });
     }
-    // 5. Ищем фото закрытия в Задачах
-    if (typeof window.rbi_tasksData !== 'undefined') {
-        window.rbi_tasksData.forEach(t => {
-            if (t.completionPhoto && t.completionPhoto.startsWith('http')) urlsToDownload.add(t.completionPhoto);
-        });
-    }
 
-    // Запускаем скачивание по очереди, чтобы не перегрузить память телефона
+    // 5. Запускаем скачивание с индикацией
     let count = 0;
+    let total = urlsToDownload.size;
+    
     for (let url of urlsToDownload) {
-        if (!PhotoManager.cache[url]) { // Если еще нет в кэше
+        if (!PhotoManager.cache[url]) { 
+            if (loaderText) loaderText.innerText = `Кэширование: ${count + 1} из ${total}...`;
             await PhotoManager.downloadForOffline(url);
             count++;
         }
     }
-    if (count > 0) console.log(`[Sync] Скачано файлов для офлайна: ${count} шт.`);
+    
+    if (loader) {
+        loader.classList.add('opacity-0');
+        setTimeout(() => loader.style.display = 'none', 300);
+    }
+    
+    if (typeof showToast === 'function') {
+        showToast(count > 0 ? `📥 Офлайн-кэш обновлен! Скачано файлов: ${count}` : `✅ Все файлы уже сохранены на устройстве.`);
+    }
+    if (typeof updateStorageInfo === 'function') updateStorageInfo();
 };
 
 // Окончательное удаление файлов из корзины (Hard Delete)

@@ -118,45 +118,45 @@ window.renderSyncUI = function() {
 
     if (window.syncConfig.enabled) {
         container.innerHTML = `
-            <div class="p-4 bg-green-50 border-b border-green-100 text-center">
-                <div class="text-[12px] font-black text-green-700 uppercase mb-1">Синхронизация активна</div>
-                <div class="text-[10px] text-green-600 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
-                <div class="text-[10px] text-green-600 font-bold">Код: ${window.syncConfig.projectCode}</div>
+            <div class="p-4 bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800/50 text-center">
+                <div class="text-[12px] font-black text-green-700 dark:text-green-400 uppercase mb-1">Синхронизация активна</div>
+                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
+                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Код проекта: ${window.syncConfig.projectCode}</div>
             </div>
-            <div class="p-3 bg-white border-b border-slate-200 flex justify-between items-center">
+            <div class="p-3 bg-[var(--card-bg)] border-b border-[var(--card-border)] flex justify-between items-center">
                 <div>
-                    <div class="font-bold text-[11px] uppercase text-slate-700 cursor-pointer" ondblclick="window.resetFullAccess()">Режим: ${window.syncConfig.syncMode === 'full' ? 'Вся команда' : 'Только мои'}</div>
+                    <div class="font-bold text-[11px] uppercase text-slate-700 dark:text-slate-300 cursor-pointer" ondblclick="window.resetFullAccess()">Режим: ${window.syncConfig.syncMode === 'full' ? 'Вся команда' : 'Только мои'}</div>
                 </div>
                 <select id="sync-mode-select" class="input-base !w-auto !py-1.5 !text-[10px] font-bold" onchange="window.changeSyncMode(this.value)">
                     <option value="personal" ${window.syncConfig.syncMode === 'personal' ? 'selected' : ''}>Только мои</option>
                     <option value="full" ${window.syncConfig.syncMode === 'full' ? 'selected' : ''}>Вся команда</option>
                 </select>
             </div>
-            <div class="p-4 bg-slate-50">
-                <button onclick="window.triggerSync('manual')" class="w-full bg-white text-indigo-600 border border-slate-200 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2">🔄 Синхронизировать сейчас</button>
-                <button onclick="window.disconnectSync()" class="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95">Отключить облако</button>
+            <div class="p-4 bg-[var(--hover-bg)]">
+                <button onclick="window.triggerSync('manual')" class="w-full bg-[var(--card-bg)] text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2 transition-colors hover:border-indigo-400">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.disconnectSync()" class="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-colors">Отключить облако</button>
             </div>
         `;
     } else {
         container.innerHTML = `
-            <div class="p-4 border-b border-slate-200">
+            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--card-bg)]">
                 <div class="space-y-3">
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Имя (Фамилия И.О.) *</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Имя (Фамилия И.О.) *</label>
                         <input type="text" id="sync-name" class="input-base" value="${engName}" ${engName ? 'readonly' : ''}>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Код проекта *</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код проекта *</label>
                         <input type="text" id="sync-code" class="input-base" placeholder="Например: RBI-TOWER-1">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">ПИН-код (Опционально)</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">ПИН-код (Опционально)</label>
                         <input type="password" id="sync-pin" class="input-base" placeholder="4 цифры" maxlength="4" inputmode="numeric">
                     </div>
                 </div>
             </div>
-            <div class="p-4 bg-slate-50">
-                <button onclick="window.saveSyncSettings()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Подключиться</button>
+            <div class="p-4 bg-[var(--hover-bg)]">
+                <button onclick="window.saveSyncSettings()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform">Подключиться к облаку</button>
             </div>
         `;
     }
@@ -294,182 +294,6 @@ window.resetFullAccess = function() {
 };
 
 
-window.cacheCloudPhotoToIndexedDB = async function(url) {
-    if (!url || typeof url !== 'string') return url;
-    if (!url.startsWith('http')) return url;
-    if (typeof dbGet === 'undefined' || typeof dbPut === 'undefined') return url;
-
-    const cacheKey = 'cloud://' + btoa(url).replace(/=/g, '');
-
-    const existing = await dbGet('app_photos', cacheKey);
-    if (existing && existing.data) {
-        return cacheKey;
-    }
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return url;
-
-        const blob = await response.blob();
-        const buffer = await blob.arrayBuffer();
-
-        await dbPut('app_photos', {
-            id: cacheKey,
-            data: buffer,
-            mimeType: blob.type || 'image/jpeg',
-            cloudUrl: url,
-            createdAt: new Date().toISOString()
-        });
-
-        return cacheKey;
-    } catch (e) {
-        console.warn('[Sync] Фото не сохранено офлайн:', e);
-        return url;
-    }
-};
-
-window.cachePhotosMapToIndexedDB = async function(photosMap) {
-    const result = {};
-    if (!photosMap) return result;
-
-    // Скачиваем все фото проверки одновременно (параллельно), а не по очереди
-    const promises = Object.keys(photosMap).map(async (itemId) => {
-        result[itemId] = await window.cacheCloudPhotoToIndexedDB(photosMap[itemId]);
-    });
-
-    await Promise.all(promises);
-    return result;
-};
-
-window.cacheCloudFileToIndexedDB = async function(url, type = 'file') {
-    if (!url || typeof url !== 'string') return url;
-    if (!url.startsWith('http')) return url;
-    if (typeof dbGet === 'undefined' || typeof dbPut === 'undefined') return url;
-
-    const cacheKey = 'cloud://' + type + '_' + btoa(url).replace(/=/g, '');
-
-    const existing = await dbGet('app_photos', cacheKey);
-    if (existing && existing.data) {
-        return cacheKey;
-    }
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return url;
-
-        const blob = await response.blob();
-        const buffer = await blob.arrayBuffer();
-
-        await dbPut('app_photos', {
-            id: cacheKey,
-            data: buffer,
-            mimeType: blob.type || 'application/octet-stream',
-            cloudUrl: url,
-            fileType: type,
-            createdAt: new Date().toISOString()
-        });
-
-        return cacheKey;
-    } catch (e) {
-        console.warn('[Sync] Файл не сохранен офлайн:', e);
-        return url;
-    }
-};
-
-window.cacheObjectCloudFilesToIndexedDB = async function(obj, type = 'file') {
-    if (!obj || typeof obj !== 'object') return obj;
-
-    const clone = Array.isArray(obj) ? [...obj] : { ...obj };
-
-    for (const key of Object.keys(clone)) {
-        const val = clone[key];
-
-        if (typeof val === 'string' && val.startsWith('http')) {
-            const k = key.toLowerCase();
-            const looksLikeFile =
-                k.includes('photo') ||
-                k.includes('image') ||
-                k.includes('img') ||
-                k.includes('pdf') ||
-                k.includes('file') ||
-                k.includes('url') ||
-                val.includes('/storage/v1/object/public/');
-
-            if (looksLikeFile) {
-                clone[key] = await window.cacheCloudFileToIndexedDB(val, type);
-            }
-        } else if (val && typeof val === 'object') {
-            clone[key] = await window.cacheObjectCloudFilesToIndexedDB(val, type);
-        }
-    }
-
-    return clone;
-};
-
-window.cacheCloudFileToIndexedDB = async function(url, type = 'file') {
-    if (!url || typeof url !== 'string') return url;
-    if (!url.startsWith('http')) return url;
-    if (typeof dbGet === 'undefined' || typeof dbPut === 'undefined') return url;
-
-    const cacheKey = 'cloud://' + type + '_' + btoa(url).replace(/=/g, '');
-
-    const existing = await dbGet('app_photos', cacheKey);
-    if (existing && existing.data) return cacheKey;
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return url;
-
-        const blob = await response.blob();
-        const buffer = await blob.arrayBuffer();
-
-        await dbPut('app_photos', {
-            id: cacheKey,
-            data: buffer,
-            mimeType: blob.type || 'application/octet-stream',
-            cloudUrl: url,
-            fileType: type,
-            createdAt: new Date().toISOString()
-        });
-
-        return cacheKey;
-    } catch (e) {
-        console.warn('[Sync] Файл не сохранен офлайн:', e);
-        return url;
-    }
-};
-
-window.cacheObjectCloudFilesToIndexedDB = async function(obj, type = 'file') {
-    if (!obj || typeof obj !== 'object') return obj;
-
-    const clone = Array.isArray(obj) ? [...obj] : { ...obj };
-
-    for (const key of Object.keys(clone)) {
-        const val = clone[key];
-
-        if (typeof val === 'string' && val.startsWith('http')) {
-            const k = key.toLowerCase();
-
-            const looksLikeFile =
-                k.includes('photo') ||
-                k.includes('image') ||
-                k.includes('img') ||
-                k.includes('pdf') ||
-                k.includes('file') ||
-                k.includes('url') ||
-                val.includes('/storage/v1/object/public/');
-
-            if (looksLikeFile) {
-                clone[key] = await window.cacheCloudFileToIndexedDB(val, type);
-            }
-        } else if (val && typeof val === 'object') {
-            clone[key] = await window.cacheObjectCloudFilesToIndexedDB(val, type);
-        }
-    }
-
-    return clone;
-};
-
 window.uploadObjectFilesToCloud = async function(obj, bucketName, pathPrefix, type = 'file') {
     if (!obj || typeof obj !== 'object') return obj;
 
@@ -510,12 +334,16 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
 
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
-    const isDeleted = data._deleted === true; // Извлекаем флаг удаления
+    const isDeleted = data._deleted === true; 
+
+    // ОПРЕДЕЛЯЕМ: Это общий справочник или проектный документ?
+    const isSharedLibrary = ['custom_doc', 'custom_node', 'custom_twi_card', 'practice', 'user_template'].includes(objectType);
+    // ИСПРАВЛЕНИЕ: Вместо null шлем 'SHARED', чтобы база не ругалась на пустые поля
+    const targetProjectCode = isSharedLibrary ? 'SHARED' : pCode;
 
     let uploadedData = data;
     
     if (isDeleted) {
-        // Если объект удален, ищем внутри него ссылки на файлы и удаляем их физически из облака
         const pathsToRemove = [];
         const extractPaths = (obj) => {
             for (let k in obj) {
@@ -534,38 +362,47 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
             await window.supabaseClient.storage.from(bucketName).remove(pathsToRemove);
         }
     } else {
-        // Если не удалено - грузим файлы в облако как обычно
+        // У общих файлов свой префикс в Storage
+        const storagePrefix = isSharedLibrary ? `shared_library/${objectType}/${id}` : `${pCode}/${objectType}/${id}`;
         uploadedData = await window.uploadObjectFilesToCloud(
             data,
             bucketName,
-            `${pCode}/${objectType}/${id}`,
+            storagePrefix,
             objectType
         );
     }
 
+    // Сохраняем в БД 
     await window.supabaseClient
         .from('rbi_cloud_objects')
         .upsert({
-            id: `${pCode}_${objectType}_${id}`.replace(/\s+/g, '_'),
-            project_code: pCode,
+            id: isSharedLibrary ? `shared_${objectType}_${id}` : `${pCode}_${objectType}_${id}`.replace(/\s+/g, '_'),
+            project_code: targetProjectCode,
             object_type: objectType,
             engineer_name: iName,
             object_data: uploadedData,
             is_deleted: isDeleted,
+            deleted_at: isDeleted ? (data._deletedAt || new Date().toISOString()) : null,
             updated_at: uploadedData.updatedAt || uploadedData.updated_at || new Date().toISOString()
         }, { onConflict: 'id' });
 };
 
 window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
+    const isSharedLibrary = ['custom_doc', 'custom_node', 'custom_twi_card', 'practice', 'user_template'].includes(objectType);
 
     let query = window.supabaseClient
         .from('rbi_cloud_objects')
         .select('*')
-        .eq('project_code', pCode)
         .eq('object_type', objectType);
 
-    // УМНАЯ СКАЧКА: Тянем только то, что изменилось с прошлого раза
+    // ИСПРАВЛЕНИЕ: Ищем общие файлы по коду 'SHARED'
+    if (isSharedLibrary) {
+        query = query.eq('project_code', 'SHARED');
+    } else {
+        query = query.eq('project_code', pCode);
+    }
+
     if (lastPullTimeStr) {
         query = query.gt('updated_at', lastPullTimeStr);
     }
@@ -584,23 +421,24 @@ window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode 
     for (const row of data || []) {
         let obj = row.object_data || {};
         
-        // ЗАЩИТА: Если локальный файл новее облачного (например, мы его только что изменили) - не скачиваем
         if (localStoreName && typeof dbGet === 'function') {
             const localExisting = await dbGet(localStoreName, row.id.replace(`${pCode}_${objectType}_`, ''));
             const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || 0).getTime() : 0;
-            const cloudTime = new Date(row.updated_at || 0).getTime();
+            const cloudDeletedTime = row.is_deleted && row.deleted_at ? new Date(row.deleted_at).getTime() : 0;
+            const cloudTime = Math.max(new Date(row.updated_at || 0).getTime(), cloudDeletedTime);
             
-            if (localExisting && localTime >= cloudTime) {
+            if (localExisting && localTime >= cloudTime && !row.is_deleted) {
                 continue; 
             }
         }
 
-        obj = await window.cacheObjectCloudFilesToIndexedDB(obj, objectType);
-        obj.id = obj.id || row.id.replace(`${pCode}_${objectType}_`, '');
+        obj.id = obj.id || row.id.replace(`${pCode}_${objectType}_`, '').replace(`shared_${objectType}_`, '');
         obj.updatedAt = row.updated_at;
         
-        // Передаем флаг удаления, чтобы стереть файл у коллег
-        if (row.is_deleted) obj._deleted = true; 
+        if (row.is_deleted) {
+            obj._deleted = true; 
+            obj._deletedAt = row.deleted_at || new Date().toISOString();
+        }
         
         result.push(obj);
     }
@@ -698,23 +536,44 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
     if (!blobData || !blobData.blob) return value;
 
     const ext = window.extFromMime(blobData.mime);
-    const storagePath = `${pathPrefix}/${filePrefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 99999)}.${ext}`;
+    const arrayBuffer = await blobData.blob.arrayBuffer();
 
+    // 1. Вычисляем SHA-256 хеш файла
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashStr = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // 2. Формируем путь (Все фото в общую папку)
+    const storagePath = `hashed_assets/${hashStr}.${ext}`;
+
+    // 3. Получаем публичный URL
+    const { data: urlData } = window.supabaseClient.storage.from(bucketName).getPublicUrl(storagePath);
+    const publicUrl = urlData.publicUrl;
+
+    // 4. Проверяем наличие файла через .list() (БЕЗ ОШИБОК В КОНСОЛИ)
+    const { data: existingFiles } = await window.supabaseClient.storage
+        .from(bucketName)
+        .list('hashed_assets', { search: hashStr });
+
+    if (existingFiles && existingFiles.length > 0) {
+        console.log('[Sync] Дедупликация сработала (файл уже есть):', publicUrl);
+        return publicUrl;
+    }
+
+    // 5. Если файла нет - загружаем
     const { error } = await window.supabaseClient.storage
         .from(bucketName)
         .upload(storagePath, blobData.blob, {
             upsert: true,
-            cacheControl: '3600',
+            cacheControl: '31536000', 
             contentType: blobData.mime
         });
 
-    if (error) throw error;
-
-    const { data } = window.supabaseClient.storage
-        .from(bucketName)
-        .getPublicUrl(storagePath);
-
-    return data.publicUrl;
+    if (error) {
+        console.error('[Sync] Ошибка загрузки файла:', error);
+        throw error;
+    }
+    return publicUrl;
 };
 
     function getChecklistItem(templateKey, itemId) {
@@ -872,7 +731,7 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
                     isCompleted: h.is_completed !== false,
                     state,
                     details,
-                    photos: await window.cachePhotosMapToIndexedDB(photosMap[h.id] || {}),
+                    photos: photosMap[h.id] || {},
                     metrics: h.metrics || {},
                     updatedAt: h.updated_at || new Date().toISOString()
                 };
@@ -930,7 +789,7 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
                         room: cloudDraft.room || '',
                         state: cloudDraft.state || {},
                         details: cloudDraft.details || {},
-                        photos: await window.cachePhotosMapToIndexedDB(cloudDraft.photos || {}),
+                        photos: cloudDraft.photos || {},
                         customExpertConclusions: cloudDraft.custom_expert_conclusions || {}
                     });
 
@@ -954,7 +813,8 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
                 .from('rbi_tasks')
                 .select('*')
                 .eq('project_code', pCode)
-                .eq('is_deleted', false);
+                .eq('is_deleted', false)
+                .eq('task_data->>type', 'manual'); // <-- СКАЧИВАЕМ ТОЛЬКО РУЧНЫЕ ЗАДАЧИ
 
             if (window.syncConfig.syncMode === 'personal') {
                 taskQuery = taskQuery.eq('engineer_name', iName);
@@ -1082,7 +942,6 @@ async function downloadAllActPhotosForOffline(act) {
                 if (type === 'meeting' && typeof dbPut === 'function') {
                     window.rbi_meetingsData = window.rbi_meetingsData || [];
                     for (let obj of objects) {
-                        obj = await window.cacheObjectCloudFilesToIndexedDB(obj, 'meeting'); // <--- ДОБАВЛЕНА ЭТА СТРОКА
                         await dbPut('rbi_meetings', obj);
                         const idx = window.rbi_meetingsData.findIndex(x => String(x.id) === String(obj.id));
                         if (idx >= 0) window.rbi_meetingsData[idx] = obj;
@@ -1184,6 +1043,7 @@ async function downloadAllActPhotosForOffline(act) {
                         if (idx >= 0) window.customDocs[idx] = obj;
                         else window.customDocs.push(obj);
                     }
+                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_docs', data: window.customDocs.filter(c => !String(c.id).startsWith('sys_')) });
                 }
 
                 if (type === 'custom_node') {
@@ -1193,6 +1053,7 @@ async function downloadAllActPhotosForOffline(act) {
                         if (idx >= 0) window.customNodes[idx] = obj;
                         else window.customNodes.push(obj);
                     }
+                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_nodes', data: window.customNodes.filter(c => !String(c.id).startsWith('sys_')) });
                 }
 
                 if (type === 'custom_twi_card') {
@@ -1202,6 +1063,7 @@ async function downloadAllActPhotosForOffline(act) {
                         if (idx >= 0) window.customTwiCards[idx] = obj;
                         else window.customTwiCards.push(obj);
                     }
+                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_twi_cards', data: window.customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
                 }
             }
         } catch (e) {
@@ -1531,9 +1393,12 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         // 7.1. PUSH: задачи в rbi_tasks
         // =====================================================
         try {
-            const tasks = typeof dbGetAll === 'function'
+            let tasks = typeof dbGetAll === 'function'
                 ? (await dbGetAll('rbi_tasks') || [])
                 : (typeof window.rbi_tasksData !== 'undefined' ? window.rbi_tasksData : []);
+
+            // ОТПРАВЛЯЕМ В ОБЛАКО ТОЛЬКО РУЧНЫЕ ЗАДАЧИ
+            tasks = tasks.filter(t => t.type === 'manual');
 
             if (tasks.length > 0) {
                 // ИСПРАВЛЕНИЕ: Пакетная отправка (Batch Upsert). 
@@ -1566,6 +1431,7 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                         status: task.status || 'pending',
                         task_date: task.date || task.taskDate || null,
                         is_deleted: task._deleted || false,
+                        deleted_at: task._deleted ? (task._deletedAt || new Date().toISOString()) : null,
                         updated_at: task.updatedAt || task.updated_at || new Date().toISOString()
                     }));
                     
@@ -1625,7 +1491,12 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 try {
                     // УМНАЯ ОТПРАВКА: фильтруем только те объекты, которые изменились после прошлого PUSH
                       const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
-                    const filterNew = (arr) => arr.filter(i => new Date(i.updatedAt || i.updated_at || i.date || 0).getTime() >= lastPushTime);
+                    const filterNew = (arr) => arr.filter(i => {
+    // Получаем время. Если даты нет, t будет равно 0
+    const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
+    // Отправляем в облако, если файл свежий ИЛИ если у него вообще нет даты (значит он только что создан)
+    return t === 0 || t >= lastPushTime;
+});
 
                     if (typeof dbGetAll === 'function') {
                         const meetings = filterNew(await dbGetAll('rbi_meetings') || []);
@@ -1694,19 +1565,31 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         const pushedChecks = currentHistory ? currentHistory.length : 0;
         const hasChanges = pulledChecks > 0 || pushedChecks > 0;
 
+        // Включаем флаги "Грязных данных", чтобы вкладки обновились при переходе на них
         window.syncDirtyFlags.templates = true;
         window.syncDirtyFlags.history = true;
         window.syncDirtyFlags.analytics = true;
         window.syncDirtyFlags.tasks = true;
         window.syncDirtyFlags.session = true;
+        window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
 
         if (mode === 'manual') {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();
             
-            const settingsTab = document.getElementById('tab-settings');
-            if (settingsTab && settingsTab.classList.contains('active') && typeof rbi_renderBackupRegistry === 'function') {
-                rbi_renderBackupRegistry();
+            // При ручной синхронизации принудительно обновляем память и интерфейс
+            if (typeof window.rbi_reloadReferenceMemory === 'function') {
+                await window.rbi_reloadReferenceMemory();
+                window.syncDirtyFlags.reference = false;
+            }
+            if (typeof renderTwiList === 'function') renderTwiList();
+            if (typeof renderDocsList === 'function') renderDocsList();
+            if (typeof renderNodesList === 'function') renderNodesList();
+            
+            // Обновляем текущую активную аналитику, если мы на этой вкладке
+            const analyticsTab = document.getElementById('tab-analytics');
+            if (analyticsTab && analyticsTab.classList.contains('active') && typeof renderCurrentAnalyticsTab === 'function') {
+                renderCurrentAnalyticsTab();
             }
 
             if (hasChanges) {
@@ -1715,7 +1598,8 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 safeToast('✅ Синхронизировано. Новых данных нет.');
             }
         } else {
-             if (hasNewCriticalData) {
+            // Тихий режим: НИЧЕГО НЕ ПЕРЕРИСОВЫВАЕМ! Только уведомления о критическом
+            if (hasNewCriticalData) {
                 safeToast("⚠️ В фоне загружены новые аварии (B3). Обновите вкладку для просмотра.");
             }
         }
