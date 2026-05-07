@@ -603,32 +603,37 @@ function setupNavigation() {
 function updateBodyPadding() {
     const headerEl = document.getElementById('main-header');
     const navEl = document.querySelector('.bottom-nav');
-    let totalTop = 0;
     
-    // Проверяем, где находится навигация (сверху или снизу)
     const isNavTop = (document.body.classList.contains('nav-pos-top')) || 
                      (document.body.classList.contains('nav-pos-auto') && window.innerWidth >= 768);
 
-    // Добавляем высоту навигации, если она сверху
-    if (isNavTop && navEl) {
-        totalTop += navEl.offsetHeight; 
-    }
-
-    // Проверяем, находимся ли мы на вкладке "Осмотр"
     const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
+    
+    // Снимаем дефолтный отступ контента, так как мы сами контролируем миллиметраж
+    const mainEl = document.querySelector('main');
+    if (mainEl) mainEl.classList.remove('pt-4');
 
-    if (isAuditActive && headerEl && headerEl.style.display !== 'none') {
-        // ВАЖНО: Вычисляем отступ по ПОЛНОМУ размеру шапки, 
-        // чтобы контент больше не дергался при скролле.
-        const wasCollapsed = headerEl.classList.contains('header-collapsed');
-        if (wasCollapsed) headerEl.classList.remove('header-collapsed'); // Временно разворачиваем для замера
-        
-        totalTop += headerEl.offsetHeight;
-        
-        if (wasCollapsed) headerEl.classList.add('header-collapsed'); // Возвращаем как было
+    let totalTop = 0;
+
+    if (isAuditActive) {
+        if (isNavTop && navEl) totalTop += navEl.offsetHeight;
+        if (headerEl && headerEl.style.display !== 'none') {
+            const wasCollapsed = headerEl.classList.contains('header-collapsed');
+            if (wasCollapsed) headerEl.classList.remove('header-collapsed'); 
+            totalTop += headerEl.offsetHeight;
+            if (wasCollapsed) headerEl.classList.add('header-collapsed'); 
+        }
+        document.body.style.paddingTop = `${totalTop + 15}px`;
+        if (mainEl) mainEl.classList.add('pt-4'); // Для красоты внутри Осмотра
+    } else {
+        if (isNavTop && navEl) {
+            // Навигация сверху: Высота меню (60px) + зазор 10px = 70px
+            document.body.style.paddingTop = `70px`; 
+        } else {
+            // Навигация снизу (Телефон): Жесткий безопасный отступ от верха экрана 20px
+            document.body.style.paddingTop = `20px`; 
+        }
     }
-
-    document.body.style.paddingTop = totalTop > 0 ? `${totalTop + 15}px` : '20px';
 }
 
 // === НАВИГАЦИЯ И ВКЛАДКИ ===
@@ -683,11 +688,8 @@ function toggleDashboardExpand() {
     const expView = document.getElementById('dash-expanded-view');
     if (!expView) return;
     expView.classList.toggle('hidden');
-    // Обновляем отступ страницы
-    setTimeout(() => {
-        const headerEl = document.getElementById('main-header');
-        if (headerEl && window.scrollY < 60) document.body.style.paddingTop = `${headerEl.offsetHeight + 10}px`;
-    }, 50);
+    // Обновляем отступ страницы через нашу умную функцию
+    setTimeout(updateBodyPadding, 50);
 }
 // === ЕДИНАЯ УМНАЯ КНОПКА FAB (СКАЧАТЬ PDF) ===
 function updateFabButton(tabId) {
@@ -3953,33 +3955,53 @@ function exportAllTemplatesJson() {
 // БЛОК: БАЗА НОРМАТИВНЫХ ДОКУМЕНТОВ (НД)
 // ==========================================
 
-// Системные предустановленные нормативы
-
-let customDocs = []; // Пользовательские документы
+let customDocs = []; 
 let currentDocFilter = 'ALL';
-
-// Загрузка пользовательских документов при старте приложения
+// ЭКСПОРТ НД В КОД (ДЛЯ system_docs.js)
+window.exportDocsJsCode = function() {
+    if (customDocs.length === 0) return showToast('Нет своих документов для экспорта');
+    
+    let jsCode = "/* Сгенерировано из RBI Quality (Пользовательские НД) */\n\nconst CUSTOM_SYSTEM_DOCS = [\n";
+    customDocs.forEach((d, idx) => {
+        const comma = idx < customDocs.length - 1 ? ',' : '';
+        jsCode += `    {\n`;
+        jsCode += `        id: '${d.id}',\n`;
+        jsCode += `        type: '${d.type}',\n`;
+        jsCode += `        code: '${d.code.replace(/'/g, "\\'")}',\n`;
+        jsCode += `        title: '${d.title.replace(/'/g, "\\'")}',\n`;
+        if (d.link) jsCode += `        link: '${d.link}',\n`;
+        if (d.pdfData) jsCode += `        pdfData: '${d.pdfData}',\n`;
+        if (d.pdfName) jsCode += `        pdfName: '${d.pdfName}',\n`;
+        if (d.pdfSize) jsCode += `        pdfSize: '${d.pdfSize}',\n`;
+        jsCode += `        isSystem: true\n`;
+        jsCode += `    }${comma}\n`;
+    });
+    jsCode += "];\n";
+    
+    downloadFile(jsCode, `rbi_docs_code_${new Date().toLocaleDateString('ru-RU')}.js`, 'application/javascript');
+    showToast("✅ Код JS скачан!");
+};
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         const storedDocs = await dbGet(STORES.SETTINGS, 'custom_docs');
-        if (storedDocs && storedDocs.data) {
-            customDocs = storedDocs.data;
-        }
-    } catch (e) {
-        console.error("Ошибка загрузки пользовательских НД", e);
-    }
+        if (storedDocs && storedDocs.data) customDocs = storedDocs.data;
+    } catch (e) { console.error("Ошибка загрузки пользовательских НД", e); }
 });
 
-// Рендер списка документов
+// Рендер списка документов (В виде красивой сетки)
 function renderDocsList() {
     const container = document.getElementById('docs-list-container');
     const searchInput = document.getElementById('doc-search-input')?.value.toLowerCase() || '';
     if (!container) return;
 
-    // Объединяем системные и пользовательские
+    // Снимаем эмодзи с кнопок шапки фильтров
+    const aiBtn = document.querySelector('button[onclick="openAiDocChat()"]');
+    const addBtn = document.querySelector('button[onclick="openAddDocModal()"]');
+    if (aiBtn) aiBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Спросить ИИ`;
+    if (addBtn) addBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Свой НД`;
+
     const allDocs = [...SYSTEM_DOCS, ...customDocs];
     
-    // Фильтрация
     let filtered = allDocs.filter(doc => {
         const matchSearch = doc.code.toLowerCase().includes(searchInput) || doc.title.toLowerCase().includes(searchInput);
         const matchFilter = currentDocFilter === 'ALL' || doc.type === currentDocFilter;
@@ -3987,104 +4009,133 @@ function renderDocsList() {
     });
 
     if (filtered.length === 0) {
-        container.innerHTML = `<div class="text-center py-8 text-slate-500 text-sm font-bold bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">По вашему запросу документы не найдены</div>`;
+        container.innerHTML = `<div class="text-center py-10 text-slate-500 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">Документы не найдены</div>`;
         return;
     }
 
-    let html = '';
+    // Обертка сетки (1 колонка на мобилках, 2-3 на ПК)
+    let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pb-8">';
+
     filtered.forEach(doc => {
         const isSystem = String(doc.id).startsWith('sys_');
         const tagColor = doc.type === 'СП' ? 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300' : 
                         (doc.type === 'ГОСТ' ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300' : 
                         'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-700 dark:text-slate-300');
 
+        const pdfIcon = `<svg class="w-8 h-8 text-red-500 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg>`;
+
+        let infoText = isSystem ? "Встроенный стандарт" : (doc.pdfSize ? `Вложение: ${doc.pdfSize}` : "Без файла");
+
         html += `
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm relative overflow-hidden flex flex-col gap-2">
-            ${isSystem ? '<div class="absolute top-0 right-0 bg-indigo-500 text-white text-[8px] font-black px-2 py-0.5 rounded-bl-lg uppercase tracking-wider">Системный</div>' : ''}
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-4 shadow-sm flex flex-col justify-between active:scale-[0.98] transition-transform cursor-pointer relative" onclick="openDocViewer('${doc.id}')">
+            ${isSystem ? '<div class="absolute top-2 right-2 bg-indigo-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">СИС</div>' : ''}
             
-            <div class="flex items-start justify-between pr-16">
-                <div>
-                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded border ${tagColor} uppercase tracking-wider">${doc.type}</span>
-                    <div class="text-[13px] font-black text-slate-800 dark:text-white mt-1.5 leading-tight">${doc.code}</div>
+            <div class="flex items-start gap-3 border-b border-[var(--card-border)] pb-3 mb-3">
+                <div class="w-12 h-12 bg-red-50 dark:bg-red-900/10 rounded-xl flex items-center justify-center border border-red-100 dark:border-red-800 shrink-0">
+                    ${pdfIcon}
+                </div>
+                <div class="flex-1 min-w-0 pr-6">
+                    <div class="text-[9px] font-black px-1.5 py-0.5 rounded border ${tagColor} uppercase tracking-widest w-fit mb-1">${doc.type}</div>
+                    <div class="text-[13px] font-black text-slate-800 dark:text-white leading-tight truncate">${doc.code}</div>
                 </div>
             </div>
             
-            <div class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">${doc.title}</div>
-            
-            <div class="flex gap-2 mt-1 pt-2 border-t border-slate-100 dark:border-slate-700">
-                <button onclick="openDocLink('${doc.link}')" class="flex-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 px-3 py-2 rounded-lg text-[10px] font-bold uppercase flex items-center justify-center gap-1 active:scale-95 transition-colors">
-                    📄 Читать текст
-                </button>
-                ${!isSystem ? `<button onclick="deleteCustomDoc('${doc.id}')" class="w-10 bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded-lg flex items-center justify-center font-bold text-sm active:scale-95 border border-red-100 dark:border-red-800">🗑️</button>` : ''}
+            <div class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4 flex-1">
+                ${doc.title}
+            </div>
+
+            <div class="flex justify-between items-center bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)] mt-auto">
+                <div class="text-[9px] font-bold text-slate-500 flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ${infoText}
+                </div>
+                ${!isSystem ? `<button onclick="event.stopPropagation(); deleteCustomDoc('${doc.id}')" class="text-red-500 hover:text-red-700 active:scale-90 transition-transform"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}
             </div>
         </div>`;
     });
 
+    html += '</div>';
     container.innerHTML = html;
 }
 
-// Заглушка для открытия ссылки
-function openDocLink(link) {
-    if (link && link.trim() !== '') {
-        window.open(link, '_blank');
-    } else {
-        showToast('📄 Полный текст норматива сейчас недоступен (Демо-режим)');
-    }
-}
-
-// Переключение кнопок-фильтров
+// Фильтры НД
 function filterDocs(type, btnElement) {
     currentDocFilter = type;
-    
-    // Сбрасываем цвета всех кнопок
     const container = document.getElementById('doc-filters-container');
     container.querySelectorAll('.doc-filter-btn').forEach(btn => {
         btn.className = "doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap border border-slate-200 dark:border-slate-700";
     });
-
-    // Подкрашиваем активную
     btnElement.className = "doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap border border-indigo-600";
-    
     renderDocsList();
 }
 
-// Модалка: Открыть
+// Открытие модалки добавления
 function openAddDocModal() {
     document.getElementById('add-doc-modal-overlay').style.display = 'flex';
     document.body.classList.add('modal-open');
-    // Сброс полей
     document.getElementById('new-doc-code').value = '';
     document.getElementById('new-doc-title').value = '';
-    document.getElementById('new-doc-link').value = '';
+    removeDocPdf();
 }
 
-// Модалка: Закрыть
 function closeAddDocModal() {
     document.getElementById('add-doc-modal-overlay').style.display = 'none';
     document.body.classList.remove('modal-open');
 }
 
-// Модалка: Сохранить
+// Обработка загрузки PDF для НД
+window.handleDocPdfUpload = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 5 МБ."); }
+    
+    showToast("⚙️ Чтение PDF файла...");
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const cont = document.getElementById('doc-pdf-preview');
+        cont.dataset.pdf = e.target.result;
+        document.getElementById('doc-pdf-name').innerText = file.name;
+        document.getElementById('doc-pdf-size').innerText = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+        
+        cont.classList.remove('hidden');
+        document.getElementById('doc-pdf-upload-btn').classList.add('hidden');
+        event.target.value = '';
+    }
+    reader.readAsDataURL(file);
+};
+
+window.removeDocPdf = function() {
+    const cont = document.getElementById('doc-pdf-preview');
+    if (cont) {
+        cont.dataset.pdf = '';
+        cont.classList.add('hidden');
+        document.getElementById('doc-pdf-upload-btn').classList.remove('hidden');
+    }
+};
+
+// Сохранение документа
 async function saveCustomDoc() {
     const type = document.getElementById('new-doc-type').value;
     const code = document.getElementById('new-doc-code').value.trim();
     const title = document.getElementById('new-doc-title').value.trim();
-    const link = document.getElementById('new-doc-link').value.trim();
+    const pdfData = document.getElementById('doc-pdf-preview').dataset.pdf;
 
-    if (!code || !title) {
-        return showToast('⚠️ Заполните шифр и название документа');
-    }
+    if (!code || !title) return showToast('⚠️ Заполните шифр и название документа');
 
     const newDoc = {
         id: 'usr_doc_' + Date.now().toString(36),
         type: type,
         code: code,
         title: title,
-        link: link,
         isSystem: false
     };
 
-    customDocs.push(newDoc);
+    if (pdfData) {
+        newDoc.pdfData = pdfData;
+        newDoc.pdfName = document.getElementById('doc-pdf-name').innerText;
+        newDoc.pdfSize = document.getElementById('doc-pdf-size').innerText;
+    }
+
+    customDocs.unshift(newDoc);
     
     try {
         await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
@@ -4094,24 +4145,51 @@ async function saveCustomDoc() {
         if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) {
         console.error(e);
-        showToast('❌ Ошибка сохранения');
+        showToast('❌ Ошибка сохранения (Файл слишком большой)');
     }
 }
 
-// Удаление своего норматива
+// Удаление
 async function deleteCustomDoc(id) {
     if (!confirm('Удалить этот документ из базы?')) return;
-    
     customDocs = customDocs.filter(d => d.id !== id);
     try {
         await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
         showToast('🗑️ Документ удален');
         renderDocsList();
-    } catch (e) {
-        console.error(e);
-        showToast('❌ Ошибка удаления');
-    }
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    } catch (e) { showToast('❌ Ошибка удаления'); }
 }
+
+// ПРОСМОТРЩИК НД (Используем оболочку TWI)
+window.openDocViewer = function(docId) {
+    const allDocs = [...SYSTEM_DOCS, ...customDocs];
+    const doc = allDocs.find(d => d.id === docId);
+    if (!doc) return showToast('Документ не найден');
+
+    if (doc.isSystem || !doc.pdfData) {
+        // Если это системный или без файла — показываем простое окно-заглушку с поиском
+        return findAndOpenND(doc.code + " " + doc.title);
+    }
+
+    // Если есть PDF, открываем его в нашей TWI-читалке, симулируя карточку TWI типа PDF
+    const fakeTwiCard = {
+        id: doc.id,
+        type: 'PDF',
+        title: doc.title,
+        checklistName: doc.code,
+        pdfData: doc.pdfData,
+        pdfName: doc.pdfName || doc.code,
+        pdfSize: doc.pdfSize || ''
+    };
+    
+    // Временно добавляем в массив, чтобы читалка его нашла, потом уберем
+    customTwiCards.push(fakeTwiCard);
+    openTwiViewer(doc.id);
+    // Сразу убираем, чтобы не засорять TWI-базу
+    customTwiCards.pop();
+};
 
 // ==========================================
 // БЛОК: TWI КАРТЫ И КОНСТРУКТОР (ЭТАП 1: БД и UI)

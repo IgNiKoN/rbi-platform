@@ -45,6 +45,7 @@
     <input type="file" id="twi-pdf-input" accept="application/pdf" style="display:none;"
         onchange="handleTwiPdfUpload(event)">
     <input type="file" id="node-import-input" accept=".json" style="display:none;" onchange="processNodeImport(event)">
+    <input type="file" id="doc-pdf-input" accept="application/pdf" style="display:none;" onchange="handleDocPdfUpload(event)">
     <!-- Разделенные инпуты для Камеры и Галереи -->
     <input type="file" id="photo-input-camera" accept="image/*" capture="environment" style="display:none;"
         onchange="handlePhotoUpload(event)">
@@ -128,26 +129,19 @@
         </div>
     </div>
     <!-- === МОДАЛКА ДОБАВЛЕНИЯ НОРМАТИВА (НД) === -->
-    <div id="add-doc-modal-overlay"
-        class="fixed inset-0 bg-slate-900/80 z-[2000] hidden items-center justify-center p-4 backdrop-blur-sm"
-        onclick="closeAddDocModal()">
-        <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]"
-            onclick="event.stopPropagation()">
-            <div
-                class="font-black text-[13px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 flex items-center gap-2 text-slate-800 dark:text-white">
-                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                    stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
-                </svg>
-                Добавить Норматив
-            </div>
+<div id="add-doc-modal-overlay" class="fixed inset-0 bg-slate-900/80 z-[2000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="closeAddDocModal()">
+    <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]" onclick="event.stopPropagation()">
+        <div class="font-black text-[13px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 flex items-center gap-2 text-slate-800 dark:text-white">
+            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+            Добавить Норматив
+        </div>
 
-            <div class="space-y-4 mb-6">
+        <div class="space-y-4 mb-6">
+            <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип документа
-                        *</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип документа *</label>
                     <select id="new-doc-type" class="input-base">
-                        <option value="СП">СП (Свод Правил)</option>
+                        <option value="СП">СП</option>
                         <option value="ГОСТ">ГОСТ</option>
                         <option value="ПРОЕКТ">Проект / РД</option>
                         <option value="ТУ">ТУ / Регламент</option>
@@ -155,33 +149,37 @@
                     </select>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Шифр /
-                        Обозначение *</label>
-                    <input type="text" id="new-doc-code" class="input-base" placeholder="Например: СТО-12345-2024">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название
-                        документа *</label>
-                    <textarea id="new-doc-title" class="input-base h-20 resize-none"
-                        placeholder="Полное наименование документа..."></textarea>
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ссылка на файл
-                        (Опционально)</label>
-                    <input type="url" id="new-doc-link" class="input-base" placeholder="https://...">
-                    <div class="text-[9px] text-slate-400 mt-1">Вставьте ссылку на облако (Яндекс.Диск, Google Drive)
-                    </div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Шифр *</label>
+                    <input type="text" id="new-doc-code" class="input-base" placeholder="СТО-12345">
                 </div>
             </div>
-
-            <div class="flex gap-2">
-                <button onclick="closeAddDocModal()"
-                    class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 dark:bg-slate-800 dark:text-slate-300">Отмена</button>
-                <button onclick="saveCustomDoc()"
-                    class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">Сохранить</button>
+            <div>
+                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название документа *</label>
+                <textarea id="new-doc-title" class="input-base h-16 resize-none" placeholder="Полное наименование..."></textarea>
+            </div>
+            
+            <div class="pt-2 border-t border-[var(--card-border)]">
+                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложенный файл (PDF)</label>
+                <div id="doc-pdf-preview" class="hidden mb-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-inner" data-pdf="">
+                    <div class="min-w-0 pr-3">
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white truncate" id="doc-pdf-name">doc.pdf</div>
+                        <div class="text-[9px] font-bold text-slate-500" id="doc-pdf-size">1.2 MB</div>
+                    </div>
+                    <button onclick="removeDocPdf()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                </div>
+                <button id="doc-pdf-upload-btn" onclick="document.getElementById('doc-pdf-input').click()" class="w-full bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase active:scale-95 transition-colors flex justify-center items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
+                    Прикрепить PDF файл (до 5 МБ)
+                </button>
             </div>
         </div>
+
+        <div class="flex gap-2">
+            <button onclick="closeAddDocModal()" class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 dark:bg-slate-800 dark:text-slate-300">Отмена</button>
+            <button onclick="saveCustomDoc()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">Сохранить</button>
+        </div>
     </div>
+</div>
 
     <!-- === КОНСТРУКТОР ШАБЛОНОВ === -->
     <div id="template-builder-overlay"
@@ -1465,6 +1463,11 @@
                         <button onclick="openAddDocModal()"
                             class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap">➕
                             Свой НД</button>
+                            <button onclick="exportDocsJsCode()"
+        class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap ml-2">
+        <svg class="w-4 h-4 inline-block -mt-0.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+        В код (JS)
+    </button>
                     </div>
                     <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-[var(--card-border)] pt-2"
                         id="doc-filters-container">
@@ -1488,8 +1491,8 @@
             <div id="ref-sub-twi" class="ref-sub-section hidden mx-1 mt-2 relative">
                 <!-- ЭКРАН 1: СПИСОК КАРТ -->
                 <div id="twi-list-view">
-                    <div
-                        class="bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-2xl p-3 shadow-sm mb-4 sticky top-[70px] z-40">
+                    <div id="twi-filters-block"
+                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mx-1 mt-2">
                         <div class="flex justify-between items-center gap-2 mb-2">
                             <div class="relative flex-1">
                                 <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none"
@@ -1548,7 +1551,7 @@
                             </div>
                         </div>
                     </div>
-                    <div id="twi-cards-container" class="pb-8"></div>
+                    <div id="twi-cards-container" class="pb-8 mx-1"></div>
                 </div>
 
                 <!-- ЭКРАН 2: КОНСТРУКТОР TWI -->
@@ -1836,8 +1839,8 @@
             <div id="ref-sub-nodes" class="ref-sub-section hidden mx-1 mt-2">
                 <!-- СПИСОК УЗЛОВ -->
                 <div id="nodes-main-view">
-                    <div
-                        class="bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-2xl p-3 shadow-sm mb-4 sticky top-[70px] z-40">
+                    <div id="node-filters-block"
+                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mx-1 mt-2">
                         <div class="flex justify-between items-center gap-2 mb-2">
                             <div class="relative flex-1">
                                 <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none"
@@ -1884,7 +1887,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round"
                                             d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
                                         </path>
-                                    </svg> JSON
+                                    </svg> Из JSON
                                 </button>
                                 <button onclick="exportNodeJson()"
                                     class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 active:scale-95 border border-[var(--card-border)] shadow-sm font-bold text-[10px] uppercase gap-1.5">
@@ -1893,7 +1896,7 @@
                                         <path stroke-linecap="round" stroke-linejoin="round"
                                             d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3">
                                         </path>
-                                    </svg> JSON
+                                    </svg> В JSON
                                 </button>
                                 <button onclick="exportNodeJsCode()"
                                     class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 active:scale-95 border border-indigo-200 dark:border-indigo-800 shadow-sm font-bold text-[10px] uppercase gap-1.5">
@@ -1906,7 +1909,7 @@
                             </div>
                         </div>
                     </div>
-                    <div id="nodes-list-container" class="pb-8"></div>
+                    <div id="nodes-list-container" class="pb-8 mx-1"></div>
                 </div>
 
                 <!-- КОНСТРУКТОР УЗЛОВ (ИСПРАВЛЕНО: fixed inset-0 z-[2000]) -->

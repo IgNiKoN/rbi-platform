@@ -2204,12 +2204,12 @@ window.rbi_renderFmeaRegistry = function() {
                     ${new Date(f.date).toLocaleDateString('ru-RU')}
                 </div>
             </div>
-            <div class="flex gap-2 pt-1">
-                <button onclick="rbi_printFmeaPdf('${f.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">📥 PDF</button>
-                <button onclick="rbi_printFmeaPdf('${f.id}', 'browser')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">🖨️ Печать</button>
-                <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-white text-slate-600 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
-                <button onclick="rbi_deleteFmea('${f.id}')" class="w-10 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg active:scale-95 shadow-sm transition-colors flex items-center justify-center">🗑️</button>
-            </div>
+           <div class="flex gap-2 pt-1">
+        <button onclick="rbi_viewFmea('${f.id}')" class="flex-1 bg-blue-50 text-blue-700 border border-blue-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">👁️ Просмотр</button>
+        <button onclick="rbi_printFmeaPdf('${f.id}', 'script')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">📥 В PDF</button>
+        <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-white text-slate-600 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
+        <button onclick="rbi_deleteFmea('${f.id}')" class="w-10 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg active:scale-95 shadow-sm transition-colors flex items-center justify-center">🗑️</button>
+    </div>
         </div>
         </div>
     `).join('');
@@ -2227,6 +2227,82 @@ window.rbi_deleteFmea = async function(id) {
     }
     rbi_renderFmeaRegistry();
     showToast("🗑️ Отчет удален");
+};
+// НОВАЯ ФУНКЦИЯ: Просмотр FMEA в интерфейсе
+window.rbi_viewFmea = async function(fmeaId) {
+    const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
+    if (!record) return showToast("Запись не найдена");
+
+    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
+
+    let rowsHtml = '';
+    for (let d of sortedDefects) {
+        let rpnColor = 'text-green-600 bg-green-50 border-green-200';
+        if (d.rpn >= 300) rpnColor = 'text-orange-600 bg-orange-50 border-orange-200';
+        if (d.rpn >= 600) rpnColor = 'text-red-600 bg-red-50 border-red-200';
+
+        let photoHtml = `<div class="text-[9px] text-slate-400 italic border border-dashed border-slate-300 p-2 rounded text-center">Нет фото</div>`;
+        if (d.photo) {
+            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
+            photoHtml = `<img src="${realSrc}" class="w-14 h-14 object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${d.photo}')">`;
+        }
+
+        rowsHtml += `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm mb-3">
+            <div class="flex gap-3 mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+                <div class="shrink-0">${photoHtml}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[9px] font-bold text-slate-500 uppercase">${d.workTitle}</div>
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight">${d.contractor}</div>
+                    <div class="text-[11px] font-bold text-red-600 mt-0.5">${d.defectName} (Повторов: ${d.count})</div>
+                </div>
+                <div class="shrink-0 text-center">
+                    <div class="text-[8px] font-black text-slate-400 uppercase mb-1">RPN</div>
+                    <div class="text-[14px] font-black px-2 py-0.5 rounded border ${rpnColor}">${d.rpn || 0}</div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span class="font-black text-slate-500 uppercase block mb-1">Причина (${d.stage}):</span>
+                    <span class="text-slate-700 dark:text-slate-300">${d.cause || '-'}</span>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span class="font-black text-slate-500 uppercase block mb-1">Последствия (Риски):</span>
+                    <span class="text-slate-700 dark:text-slate-300">${d.effect || '-'}</span>
+                </div>
+                <div class="bg-blue-50 dark:bg-blue-900/10 p-2 rounded-lg border border-blue-100 dark:border-blue-800/50">
+                    <span class="font-black text-blue-600 uppercase block mb-1">Как устранить (Fix):</span>
+                    <span class="text-blue-900 dark:text-blue-200">${d.fix || '-'}</span>
+                </div>
+                <div class="bg-green-50 dark:bg-green-900/10 p-2 rounded-lg border border-green-100 dark:border-green-800/50">
+                    <span class="font-black text-green-600 uppercase block mb-1">Предотвращение:</span>
+                    <span class="text-green-900 dark:text-green-200">${d.prevent || '-'}</span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `
+        <div class="flex justify-between items-center w-full">
+            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📊 FMEA Отчет</span>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
+        </div>
+    `;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-[11px] font-bold text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex justify-between items-center">
+            <span>Инженер: <b>${record.author}</b></span>
+            <span>Период: <b>${record.periodName}</b></span>
+        </div>
+        <div class="max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 pb-4">
+            ${rowsHtml}
+        </div>
+        <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="w-full mt-2 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform">📥 Скачать PDF версию</button>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
 };
 
 // НОВАЯ ФУНКЦИЯ: Загрузка FMEA в черновик для редактирования
