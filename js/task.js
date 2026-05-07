@@ -301,7 +301,18 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
                 }
             }
         }
-
+        // --- ЗАДАЧА: МАГИЯ TWI ---
+        const magicCandidates = window.getMagicTwiCandidates ? window.getMagicTwiCandidates() : [];
+        if (magicCandidates.length > 0) {
+            let existingMagicTask = window.rbi_tasksData.find(t => t.taskType === 'Магия TWI' && t.status === 'pending');
+            if (existingMagicTask) {
+                // Если задача уже есть, просто обновляем её цель (вдруг нашлись новые пары)
+                existingMagicTask.target = existingMagicTask.done + magicCandidates.length;
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingMagicTask);
+            } else {
+                addTask('magic', 'method', 'Развитие', 'Создать карту TWI', 'База Знаний', 'Системная', 'Система нашла пару OK и FAIL. Подключите ИИ и закончите формирование карточки.', 3, now, '', 'Магия TWI', magicCandidates.length);
+            }
+        } 
         // --- ЛОГИКА 2: РУТИНА И ОТЧЕТНОСТЬ (Будущие даты) ---
         const getNextTargetDate = (targetDayNumStr) => {
             const targetDay = parseInt(targetDayNumStr) === 0 ? 7 : parseInt(targetDayNumStr);
@@ -766,6 +777,14 @@ window.rbi_openTaskAction = async function(taskId) {
                     ▶ Провести инспекцию
                 </button>`;
         } 
+
+        else if (task.taskType === 'Магия TWI' || task.title.includes('Создать карту TWI')) {
+            // МАГИЯ TWI
+            actionButtonsHtml += `
+                <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); const magicBlock = document.getElementById('twi-magic-block'); if(magicBlock) magicBlock.classList.remove('magic-collapsed'); }, 300);" class="w-full bg-purple-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
+                    ✨ Сделать сейчас
+                </button>`;
+        }
         
         // Блок нижних кнопок управления задачей (Сдвинуть, Пауза, Отменить)
         let postponeCountHtml = task.postponeCount > 0 ? `<span class="absolute -top-2 -right-2 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full font-black">${task.postponeCount}</span>` : '';

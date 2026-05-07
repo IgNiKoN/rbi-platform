@@ -562,6 +562,20 @@ window.gameUpdatePlanProgress = function () {
                 dbPut(STORES.TASKS, task);
             }
         }
+        // 4. Проверяем Магию TWI
+        if (task.taskType === 'Магия TWI') {
+            const currentCandidates = window.getMagicTwiCandidates ? window.getMagicTwiCandidates() : [];
+            // Прогресс = Цель минус то, что еще осталось сделать
+            task.done = Math.max(0, task.target - currentCandidates.length);
+            
+            if (task.done >= task.target) {
+                task.status = 'done';
+                task.resultComment = `Оформлено карт: ${task.done}`;
+                task.updatedAt = new Date().toISOString();
+                newlyClosedTasks.push('Создание TWI карт');
+            }
+            dbPut(STORES.TASKS, task);
+        }
     });
     if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
         weeklyPlanData.completed = true;
@@ -2176,6 +2190,14 @@ window.rbi_renderFmeaRegistry = function() {
                     <div>
                         <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${f.title}</div>
                         <div class="text-[9px] font-bold text-slate-500">Период: ${f.periodName} | Разобрано дефектов: ${(f.defects || []).length}</div>
+                        ${(() => {
+                            const photos = (f.defects || []).map(d => d.photo).filter(Boolean).slice(0, 3);
+                            if (photos.length === 0) return '';
+                            return `<div class="flex gap-1.5 mt-2">
+                                ${photos.map(p => `<img src="${window.getPhotoSrc(p)}" class="w-8 h-8 rounded-md object-cover border border-slate-200 shadow-sm">`).join('')}
+                                ${f.defects.length > 3 ? `<div class="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-[9px] font-black text-slate-400">+${f.defects.length - 3}</div>` : ''}
+                            </div>`;
+                        })()}
                     </div>
                 </div>
                 <div class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">
@@ -2183,9 +2205,10 @@ window.rbi_renderFmeaRegistry = function() {
                 </div>
             </div>
             <div class="flex gap-2 pt-1">
-                <button onclick="rbi_printFmeaPdf('${f.id}')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">👁️ Просмотр</button>
-                <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
-                <button onclick="rbi_deleteFmea('${f.id}')" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
+                <button onclick="rbi_printFmeaPdf('${f.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">📥 PDF</button>
+                <button onclick="rbi_printFmeaPdf('${f.id}', 'browser')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">🖨️ Печать</button>
+                <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-white text-slate-600 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
+                <button onclick="rbi_deleteFmea('${f.id}')" class="w-10 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg active:scale-95 shadow-sm transition-colors flex items-center justify-center">🗑️</button>
             </div>
         </div>
         </div>
@@ -2214,7 +2237,20 @@ window.rbi_loadFmeaToWorkspace = function(id) {
     window.currentEditingFmeaId = id; // Глобально запоминаем ID
 
     let rowsHtml = record.defects.map((def, idx) => {
-        const photoHtml = def.photo ? `<img src="${window.getPhotoSrc(def.photo)}" class="w-12 h-12 object-cover rounded border border-slate-300 mt-1 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">` : '';
+        let photoHtml = '';
+        if (def.photo) {
+            photoHtml = `
+            <div class="relative w-16 h-16 mt-2 group">
+                <img src="${window.getPhotoSrc(def.photo)}" class="w-full h-full object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">
+                <button onclick="rbi_removeFmeaPhoto(this)" class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">✕</button>
+            </div>`;
+        } else {
+            photoHtml = `
+            <div class="mt-2 w-16">
+                <div class="text-[9px] text-slate-400 italic mb-1 text-center border border-dashed border-slate-300 rounded p-1">Нет фото</div>
+                <button onclick="document.getElementById('fmea-photo-upload').click(); window.currentFmeaRowIdx=${idx};" class="w-full bg-slate-100 text-slate-500 py-1 rounded border border-slate-300 text-[9px] font-bold uppercase active:scale-95 transition-colors">📷 Добавить</button>
+            </div>`;
+        }
         return `
         <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
             <input type="hidden" class="f-contr" value="${def.contractor}">
@@ -2371,7 +2407,20 @@ window.rbi_generateFmeaTable = function () {
 
     // Рендер строк мега-таблицы
     let rowsHtml = finalDefects.map((def, idx) => {
-        const photoHtml = def.photo ? `<img src="${window.getPhotoSrc(def.photo)}" class="w-12 h-12 object-cover rounded border border-slate-300 mt-1 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">` : '';
+        let photoHtml = '';
+        if (def.photo) {
+            photoHtml = `
+            <div class="relative w-16 h-16 mt-2 group">
+                <img src="${window.getPhotoSrc(def.photo)}" class="w-full h-full object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">
+                <button onclick="rbi_removeFmeaPhoto(this)" class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">✕</button>
+            </div>`;
+        } else {
+            photoHtml = `
+            <div class="mt-2 w-16">
+                <div class="text-[9px] text-slate-400 italic mb-1 text-center border border-dashed border-slate-300 rounded p-1">Нет фото</div>
+                <button onclick="document.getElementById('fmea-photo-upload').click(); window.currentFmeaRowIdx=${idx};" class="w-full bg-slate-100 text-slate-500 py-1 rounded border border-slate-300 text-[9px] font-bold uppercase active:scale-95 transition-colors">📷 Добавить</button>
+            </div>`;
+        }
         const repeatedTag = def.isRepeated ? `<div class="text-[8px] bg-red-600 text-white px-1 py-0.5 rounded uppercase font-black w-fit mt-1 animate-pulse">Повторный</div>` : '';
         
         return `
@@ -2566,8 +2615,6 @@ window.rbi_saveFmea = async function(periodName) {
     await dbPut(STORES.FMEA, fmeaRecord);
     window.currentEditingFmeaId = null; // Сбрасываем ID
 
-    window.rbi_fmeaRecords.push(fmeaRecord);
-    await dbPut(STORES.FMEA, fmeaRecord);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     
@@ -2590,27 +2637,37 @@ window.rbi_saveFmea = async function(periodName) {
 };
 
 // 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)
-window.rbi_printFmeaPdf = function(fmeaId) {
+window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
     const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
     if (!record) return showToast("Запись не найдена");
+
+    showToast("⏳ Формируем документ...");
 
     // Сортируем по RPN (Самые опасные сверху)
     const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
 
-    let rowsHtml = sortedDefects.map(d => {
-        let photoHtml = d.photo ? `<div style="margin-top:5px; height:60px; overflow:hidden; border-radius:4px;"><img src="${window.getPhotoSrc(d.photo)}" style="width:100%; height:100%; object-fit:cover;"></div>` : '';
-        
+    let rowsHtml = '';
+    // Используем цикл for...of, чтобы дождаться распаковки ВСЕХ фотографий из БД
+    for (let d of sortedDefects) {
         let rpnColor = '#16a34a'; // Зеленый
         if (d.rpn >= 300) rpnColor = '#d97706'; // Оранжевый
         if (d.rpn >= 600) rpnColor = '#dc2626'; // Красный
 
-        return `
-        <tr style="border-bottom: 1px solid #cbd5e1; background: white;">
+        let photoTd = `<div style="font-size:9px; color:#94a3b8; font-style:italic; border:1px dashed #cbd5e1; padding:10px; border-radius:4px;">Нет фото</div>`;
+        if (d.photo) {
+            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
+            photoTd = `<img src="${realSrc}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border: 1px solid #cbd5e1; display:block; margin:0 auto;">`;
+        }
+
+        rowsHtml += `
+        <tr style="border-bottom: 1px solid #cbd5e1; background: white; page-break-inside: avoid;">
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: center; vertical-align: middle;">
+                ${photoTd}
+            </td>
             <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top;">
                 <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${d.workTitle}</div>
                 <div style="font-size: 12px; font-weight: 900; color: #0f172a; margin-top: 2px;">${d.contractor}</div>
                 <div style="font-size: 11px; color: #b91c1c; font-weight: bold; margin-top: 4px;">${d.defectName} (Повторов: ${d.count})</div>
-                ${photoHtml}
             </td>
             <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">
                 <div style="font-size: 9px; background: #e2e8f0; display: inline-block; padding: 2px 4px; border-radius: 4px; margin-bottom: 4px; font-weight:bold;">${d.stage}</div>
@@ -2623,7 +2680,7 @@ window.rbi_printFmeaPdf = function(fmeaId) {
                 <div style="font-size: 20px; font-weight: 900; color: ${rpnColor};">${d.rpn || 0}</div>
             </td>
         </tr>`;
-    }).join('');
+    }
 
     const content = `
         <div style="text-align: center; margin-bottom: 20px;">
@@ -2631,15 +2688,16 @@ window.rbi_printFmeaPdf = function(fmeaId) {
             <div style="font-size: 14px; color: #64748b; font-weight: bold; margin-top: 5px;">Отчет: ${record.title} | Период: ${record.periodName} | Инженер: ${record.author}</div>
         </div>
 
-        <table style="width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1;">
+        <table style="width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1; table-layout: fixed;">
             <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 10px; color: #475569;">
                 <tr>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 10%; text-align: center;">ФОТО</th>
                     <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">1. Проблема / Подрядчик</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">2. Коренная причина</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">3. Риски и последствия</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left; color: #1d4ed8;">4. Устранение</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 20%; text-align: left; color: #166534;">5. Системное Предотвращение</th>
-                    <th style="padding: 12px 10px; border-bottom: 2px solid #cbd5e1; width: 8%; text-align: center; color: #7e22ce;">RPN</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">2. Коренная причина</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">3. Риски и последствия</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left; color: #1d4ed8;">4. Устранение</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left; color: #166534;">5. Предотвращение</th>
+                    <th style="padding: 12px 10px; border-bottom: 2px solid #cbd5e1; width: 6%; text-align: center; color: #7e22ce;">RPN</th>
                 </tr>
             </thead>
             <tbody>
@@ -2652,5 +2710,48 @@ window.rbi_printFmeaPdf = function(fmeaId) {
         </div>
     `;
 
-    printPdfShell(`FMEA Анализ`, content, "A3", "landscape", "browser");
+    if (typeof printPdfShell === 'function') {
+        printPdfShell(`FMEA Анализ`, content, "A3", "landscape", mode);
+    }
+};
+
+// === ОБРАБОТКА РУЧНОГО ФОТО В FMEA ===
+window.rbi_handleFmeaPhotoUpload = function(event) {
+    const file = event.target.files[0];
+    if (!file || window.currentFmeaRowIdx === undefined) return;
+    
+    showToast("⚙️ Загрузка фото FMEA...");
+    compressImageToBase64(file, 1000, 0.8, async (base64) => {
+        // Сохраняем в кэш IndexedDB
+        const localUrl = await PhotoManager.saveLocal(base64, 'fmea');
+        
+        // Находим нужную строку таблицы и её инпут
+        const row = document.querySelector(`.fmea-row[data-idx="${window.currentFmeaRowIdx}"]`);
+        if (row) {
+            row.querySelector('.f-photo').value = localUrl;
+            // Перерисовываем ячейку с фото
+            const photoContainer = row.querySelector('.min-w-\\[150px\\]');
+            const targetDiv = photoContainer.lastElementChild; 
+            targetDiv.outerHTML = `
+            <div class="relative w-16 h-16 mt-2 group">
+                <img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${localUrl}')">
+                <button onclick="rbi_removeFmeaPhoto(this)" class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">✕</button>
+            </div>`;
+        }
+        event.target.value = '';
+    });
+};
+
+window.rbi_removeFmeaPhoto = function(btnEl) {
+    const row = btnEl.closest('.fmea-row');
+    if (!row) return;
+    row.querySelector('.f-photo').value = '';
+    
+    const targetDiv = btnEl.closest('.relative');
+    const idx = row.dataset.idx;
+    targetDiv.outerHTML = `
+        <div class="mt-2 w-16">
+            <div class="text-[9px] text-slate-400 italic mb-1 text-center border border-dashed border-slate-300 rounded p-1">Нет фото</div>
+            <button onclick="document.getElementById('fmea-photo-upload').click(); window.currentFmeaRowIdx=${idx};" class="w-full bg-slate-100 text-slate-500 py-1 rounded border border-slate-300 text-[9px] font-bold uppercase active:scale-95 transition-colors">📷 Добавить</button>
+        </div>`;
 };

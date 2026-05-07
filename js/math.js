@@ -1,5 +1,7 @@
 /* Файл: js/math.js */
 
+window._metricsCache = {};
+window.clearMetricsCache = function() { window._metricsCache = {}; };
 // Вспомогательная функция для плоского массива
 function getFlatList(checklist) { 
     if (!checklist) return [];
@@ -97,7 +99,9 @@ function calcVolatility(arr) {
 // === БЛОК 2 и 3: ИНТЕГРАЛЬНЫЙ УРК ПОДРЯДЧИКА И ДОСТОВЕРНОСТЬ ===
 function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWindow = true) {
     if (!customArray || customArray.length === 0) return null;
-
+    // Мемоизация: если мы уже считали метрики для этого набора проверок - отдаем из кэша
+    const cacheKey = customArray.map(i => i.id).sort().join('_') + '_' + useSlidingWindow;
+    if (window._metricsCache[cacheKey]) return window._metricsCache[cacheKey];
     const sortedChronologically = [...customArray].sort((a, b) => new Date(b.date) - new Date(a.date));
     
     // Если включено скользящее окно - берем последние 15. Иначе - берем ВСЕ проверки.
@@ -233,7 +237,14 @@ function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWin
     if (capApplied) reason = "Применен потолок 84% (Наличие критических или системных дефектов)";
     else if (R_sys >= 20.0) reason = `Снижение из-за системного брака (повторяемость ${R_sys.toFixed(1)}%)`;
     else if (R_B3 >= 10.0) reason = `Снижение из-за доли осмотров с B3 (${R_B3.toFixed(1)}%)`;
-
+    const result = { 
+        finalC: Urk_contr, baseUrkContrPerc: Urk_contr_base, count: N, maxFailRate: R_sys, 
+        ks: Ks, kcritC: KB3, rateB3: R_B3, n_изделий_с_B3: N_B3, statusTxt, statusCls, isRedZone, 
+        confStatus: confidenceLevel, confCls, stdDev: s, ci95_margin: E, volatility: s, stabilityIndex, stabText, stabColor, stabDesc, riskStatus, riskCls, reason 
+    };
+    
+    window._metricsCache[cacheKey] = result;
+    return result;
     return { 
         finalC: Urk_contr, baseUrkContrPerc: Urk_contr_base, count: N, maxFailRate: R_sys, 
         ks: Ks, kcritC: KB3, rateB3: R_B3, n_изделий_с_B3: N_B3, statusTxt, statusCls, isRedZone, 

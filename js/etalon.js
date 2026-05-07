@@ -171,17 +171,12 @@ window.saveEtalonAct = async function(printAfter = false) {
         _deleted: false
     };
 
-    // ЗАМЕНЯЕМ: etalonActsArray.push(etalonRecord); на умную вставку:
+    // Сохраняем ТОЛЬКО в массив эталонов
     const idx = etalonActsArray.findIndex(x => String(x.id) === String(etalonId));
     if (idx !== -1) {
         etalonActsArray[idx] = etalonRecord;
-        if (typeof contractorArray !== 'undefined') {
-            const cIdx = contractorArray.findIndex(x => String(x.id) === String(etalonId));
-            if (cIdx !== -1) contractorArray[cIdx] = etalonRecord;
-        }
     } else {
         etalonActsArray.push(etalonRecord);
-        if (typeof contractorArray !== 'undefined') contractorArray.push(etalonRecord);
     }
     await dbPut(STORES.ETALON_ACTS, etalonRecord);
     window.currentEditingEtalonId = null; // Сбрасываем ID
@@ -414,17 +409,8 @@ window.deleteEtalonAct = async function(id) {
         record.updatedAt = new Date().toISOString();
         await dbPut(STORES.ETALON_ACTS, record);
         
-        // Помечаем удаленным в общем массиве проверок
-        if (typeof contractorArray !== 'undefined') {
-            const cIdx = contractorArray.findIndex(c => String(c.id) === String(id));
-            if (cIdx >= 0) contractorArray[cIdx]._deleted = true;
-        }
-
         // ЖЕСТКАЯ ОЧИСТКА МАССИВОВ В ОЗУ ДЛЯ МГНОВЕННОГО ОБНОВЛЕНИЯ ЭКРАНА
         etalonActsArray = etalonActsArray.filter(e => !e._deleted);
-        if (typeof contractorArray !== 'undefined') {
-            contractorArray = contractorArray.filter(c => !c._deleted);
-        }
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');

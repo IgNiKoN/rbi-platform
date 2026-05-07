@@ -2028,19 +2028,19 @@
 
         </div>
         <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
-        <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
-        <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
-            <div id="practices-auto-detector" class="mb-4"></div>
-            <div class="flex justify-between items-center mb-3">
-                <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека Практик</h2>
+            <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
+                <div id="practices-auto-detector" class="mb-4"></div>
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека Практик</h2>
+                </div>
+                <div id="practices-list-container" class="space-y-4 pb-8">
+                    <!-- Список карточек -->
+                </div>
             </div>
-            <div id="practices-list-container" class="space-y-4 pb-8">
-                <!-- Список карточек -->
-            </div>
-        </div>
 
-        </div> <!-- Вот сюда переехал закрывающий тег вкладки Справочника -->
+        </div> <!-- ИСТИННЫЙ ЗАКРЫВАЮЩИЙ ТЕГ ВКЛАДКИ СПРАВОЧНИКА (id="tab-reference") -->
 
+        <!-- ВКЛАДКА 5: НАСТРОЙКИ -->
         <!-- ВКЛАДКА 5: НАСТРОЙКИ -->
         <div id="tab-settings" class="view-section">
             <div class="text-2xl font-black mb-4 pl-2 flex justify-between items-center">
@@ -3152,6 +3152,7 @@
     </div>
     <input type="file" id="task-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleTaskCompletionPhoto(event)">
     <input type="file" id="meeting-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleMeetingPhotoUpload(event)">
+    <input type="file" id="fmea-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleFmeaPhotoUpload(event)">
     <!-- === МОДАЛКА AI-ЧАТА ПО НОРМАТИВАМ === -->
     <div id="ai-chat-modal"
         class="fixed inset-0 bg-slate-900/80 z-[7000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300"

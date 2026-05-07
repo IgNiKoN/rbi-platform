@@ -187,108 +187,7 @@ function renderContractorsSubTab(data) {
     // Списки для фотогалерей
     let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
     
-    // Словарь для поиска "Магии TWI" (совпадение OK и FAIL по одному пункту)
-    let twiMagicMap = {}; // Формат: { "sys_okna_101": { ok: url, fail: url, title: name, tmpl: sys_okna, itemId: 101 } }
-
-    for(let cName in groupedC) {
-        const cData = groupedC[cName];
-        if (cData.length >= 7) {
-            const m = getContractorMetrics(cData, userTemplates);
-            if (m) {
-                sumIntegralUrk += m.finalC;
-                validContrCount++;
-                cList.push({ name: cName, metrics: m, workType: cData[0].templateTitle });
-
-                if (m.finalC < 70 || m.n_изделий_с_B3 > 0) {
-                    defaultSmartText += `🚨 ${cName} (${m.finalC}%): Допущено ${m.n_изделий_с_B3} B3. Системность: ${m.maxFailRate.toFixed(1)}%. Действие: Остановить приемку.\n`;
-                } else if (m.finalC < 85 || m.stabilityIndex < 60) {
-                    defaultSmartText += `⚠️ ${cName} (${m.finalC}%): Условный допуск. Стабильность: ${m.stabilityIndex}. Действие: Усилить технадзор.\n`;
-                }
-            }
-        }
-
-        cData.forEach(check => {
-            if(check.state && check.photos) {
-                Object.keys(check.state).forEach(id => {
-                    const s = check.state[id];
-                    if (check.photos[id]) {
-                        const tType = check.templateKey.split('_')[0];
-                        const tKey = check.templateKey.replace(tType + '_', '');
-                        const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                        const foundItem = getFlatList(cl).find(x => x.id == id);
-                        let defName = foundItem ? foundItem.n : "Дефект";
-                        let photoObj = { photo: check.photos[id], name: defName, contr: cName, date: new Date(check.date).toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}) };
-                        
-                        // Запись для Магии TWI
-                        const magicKey = check.templateKey + '_' + id;
-                        if (!twiMagicMap[magicKey]) twiMagicMap[magicKey] = { ok: null, fail: null, title: defName, tmplKey: check.templateKey, itemId: id };
-
-                        if (s === 'ok') {
-                            allPhotosOK.push(photoObj);
-                            twiMagicMap[magicKey].ok = check.photos[id];
-                        } else if (s === 'fail' || s === 'fail_escalated') {
-                            let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
-                            if (isB3) allPhotosB3.push(photoObj); else allPhotosB2.push(photoObj);
-                            twiMagicMap[magicKey].fail = check.photos[id];
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    allPhotosB3.sort(() => Math.random() - 0.5);
-    allPhotosB2.sort(() => Math.random() - 0.5);
-    allPhotosOK.sort(() => Math.random() - 0.5);
-
-    // ГЕНЕРАЦИЯ БЛОКА "МАГИЯ TWI"
-    let magicTwiHtml = '';
-    const magicCandidates = Object.values(twiMagicMap).filter(m => m.ok && m.fail);
     
-    // Проверяем: нет ли УЖЕ созданной карты Технадзора (INSPECTOR) для этого пункта в этом шаблоне?
-    const newMagicCandidates = magicCandidates.filter(m => {
-        const existing = customTwiCards.find(c => c.checklistKey === m.tmplKey && String(c.itemId) === String(m.itemId) && c.type === 'INSPECTOR');
-        return !existing;
-    });
-
-    if (newMagicCandidates.length > 0) {
-        magicTwiHtml = `
-            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-sm mb-3 text-white overflow-hidden relative magic-collapsed" style="transition: padding 0.3s ease;">
-                <div onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="cursor-pointer p-2.5 px-3">
-                    <button class="absolute top-2.5 right-3 text-white/50 hover:text-white/100 transition-colors pointer-events-none">
-                        <svg class="w-4 h-4 magic-arrow transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
-                    </button>
-                    <div class="flex items-center gap-1.5 font-black uppercase tracking-widest text-[10px] drop-shadow-md">
-                        <span class="text-sm animate-pulse">✨</span> Магия TWI (Найдено: ${newMagicCandidates.length})
-                    </div>
-                </div>
-                
-                <div class="magic-content-wrapper px-3">
-                    <div class="magic-content">
-                        <div class="text-[10px] font-medium text-indigo-100 mb-2 leading-snug">
-                            Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Бонус XP!</b>
-                        </div>
-                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3">
-                            ${newMagicCandidates.map((m, i) => `
-                                <div class="bg-white/10 border border-white/20 p-2 rounded-lg shrink-0 w-40 flex flex-col justify-between">
-                                    <div class="text-[8px] font-bold leading-tight line-clamp-2 mb-2" title="${m.title}">${m.title}</div>
-                                    <button onclick="window.createMagicTwi('${m.tmplKey}', '${m.itemId}', '${m.ok}', '${m.fail}', '${m.title.replace(/'/g, "\\'")}')" class="w-full bg-white text-indigo-600 py-1.5 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">Создать (+100 XP)</button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <style>
-                #twi-magic-block.magic-collapsed { padding-bottom: 0px; }
-                #twi-magic-block.magic-collapsed .magic-arrow { transform: rotate(180deg); }
-                .magic-content-wrapper { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s ease-out; }
-                #twi-magic-block.magic-collapsed .magic-content-wrapper { grid-template-rows: 0fr; }
-                .magic-content { overflow: hidden; }
-            </style>
-        `;
-    }
-
     const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
     if (defaultSmartText === '') defaultSmartText = '✅ Все подрядчики в зеленой зоне. Вмешательство не требуется.';
 
@@ -330,8 +229,6 @@ function renderContractorsSubTab(data) {
                 <div><span class="text-[9px] font-bold text-slate-400 uppercase block">Критичные (B3)</span><span class="font-black text-red-600">${sumB3}</span></div>
             </div>
         </div>
-
-        ${magicTwiHtml}
 
         <!-- РЕДАКТИРУЕМЫЙ СМАРТ АНАЛИЗ СИСТЕМЫ -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">

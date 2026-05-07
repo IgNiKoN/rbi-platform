@@ -83,7 +83,22 @@ async function dbPut(storeName, data) {
         tx.onerror = () => reject(tx.error);
     });
 }
-
+// МАССОВОЕ СОХРАНЕНИЕ (УСКОРЕНИЕ В 10 РАЗ)
+async function dbPutBatch(storeName, itemsArray) {
+    if (!itemsArray || itemsArray.length === 0) return true;
+    const db = await openAppDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        
+        itemsArray.forEach(item => {
+            store.put(item);
+        });
+        
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+    });
+}
 async function dbGet(storeName, key) {
     const db = await openAppDb();
     return new Promise((resolve, reject) => {
@@ -430,6 +445,24 @@ window.downloadMissingCloudFiles = async function() {
     if (typeof customNodes !== 'undefined') {
         customNodes.forEach(node => {
             if (node.img && node.img.startsWith('http')) urlsToDownload.add(node.img);
+        });
+    }
+    // 4. Ищем фото в Совещаниях и Практиках
+    if (typeof window.rbi_meetingsData !== 'undefined') {
+        window.rbi_meetingsData.forEach(m => {
+            if (m.qDayPhoto && m.qDayPhoto.startsWith('http')) urlsToDownload.add(m.qDayPhoto);
+        });
+    }
+    if (typeof window.rbi_practicesData !== 'undefined') {
+        window.rbi_practicesData.forEach(p => {
+            if (p.photoBefore && p.photoBefore.startsWith('http')) urlsToDownload.add(p.photoBefore);
+            if (p.photoAfter && p.photoAfter.startsWith('http')) urlsToDownload.add(p.photoAfter);
+        });
+    }
+    // 5. Ищем фото закрытия в Задачах
+    if (typeof window.rbi_tasksData !== 'undefined') {
+        window.rbi_tasksData.forEach(t => {
+            if (t.completionPhoto && t.completionPhoto.startsWith('http')) urlsToDownload.add(t.completionPhoto);
         });
     }
 

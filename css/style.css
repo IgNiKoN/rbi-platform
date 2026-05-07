@@ -716,23 +716,24 @@ body.nav-pos-top #reference-subtabs-block {
 /* 4. КОРРЕКТИРОВКА ФИЛЬТРОВ (РЕШЕНИЕ ПРОБЛЕМЫ "ГАРМОШКИ") */
 /* 
    Когда подвкладки улетели наверх, фильтры должны прилипнуть ПОД НИМИ.
-   Естественная высота подвкладок ~60px.
-   Считаем: 60px (Главное меню) + 10px (Зазор) + 60px (Подвкладки) + 10px (Зазор) = 140px.
-   Теперь Фильтры остановятся ровно на 140px, и между ними и Подвкладками останется красивый зазор 10px!
 */
 body.nav-pos-top #analytics-filters-block,
 body.nav-pos-top #ref-filters-block,
-body.nav-pos-top #ref-docs-filters {
+body.nav-pos-top #ref-docs-filters,
+body.nav-pos-top #hist-sticky-panel {
     top: calc(140px + env(safe-area-inset-top)) !important; 
 }
 
 @media (min-width: 768px) {
     body.nav-pos-auto #analytics-filters-block,
     body.nav-pos-auto #ref-filters-block,
-    body.nav-pos-auto #ref-docs-filters {
+    body.nav-pos-auto #ref-docs-filters,
+    body.nav-pos-auto #hist-sticky-panel {
         top: 140px !important;
     }
 }
+
+/* 5. ОТСТУПЫ КОНТЕНТА (Чтобы списки не прятались за нижними панелями) */
 
 /* 5. ОТСТУПЫ КОНТЕНТА (Чтобы списки не прятались за нижними панелями) */
 #tab-analytics, 

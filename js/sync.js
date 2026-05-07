@@ -330,11 +330,14 @@ window.cacheCloudPhotoToIndexedDB = async function(url) {
 
 window.cachePhotosMapToIndexedDB = async function(photosMap) {
     const result = {};
+    if (!photosMap) return result;
 
-    for (const itemId of Object.keys(photosMap || {})) {
+    // Скачиваем все фото проверки одновременно (параллельно), а не по очереди
+    const promises = Object.keys(photosMap).map(async (itemId) => {
         result[itemId] = await window.cacheCloudPhotoToIndexedDB(photosMap[itemId]);
-    }
+    });
 
+    await Promise.all(promises);
     return result;
 };
 
@@ -476,21 +479,12 @@ window.uploadObjectFilesToCloud = async function(obj, bucketName, pathPrefix, ty
         const val = clone[key];
 
         if (typeof val === 'string') {
-            const k = key.toLowerCase();
-
-            const looksLikeFile =
-                k.includes('photo') ||
-                k.includes('image') ||
-                k.includes('img') ||
-                k.includes('pdf') ||
-                k.includes('file');
-
-            if (
-                looksLikeFile &&
-                typeof uploadAsset === 'function' &&
-                (val.startsWith('local://') || val.startsWith('data:'))
-            ) {
-                clone[key] = await uploadAsset(
+            // УМНАЯ ПРОВЕРКА: Смотрим не на название ключа, а на само значение!
+            // Если это локальная ссылка на фото - 100% грузим в бакет.
+            const isLocalAsset = val.startsWith('local://') || val.startsWith('data:image');
+            
+            if (isLocalAsset && typeof window.rbiUploadAsset === 'function') {
+                clone[key] = await window.rbiUploadAsset(
                     val,
                     bucketName,
                     pathPrefix,
@@ -498,6 +492,7 @@ window.uploadObjectFilesToCloud = async function(obj, bucketName, pathPrefix, ty
                 );
             }
         } else if (val && typeof val === 'object') {
+            // Рекурсия для вложенных массивов (как в FMEA)
             clone[key] = await window.uploadObjectFilesToCloud(
                 val,
                 bucketName,
@@ -634,14 +629,16 @@ window.triggerSync = async function(mode = 'silent') {
     }
 
     window.isSyncing = true;
+    let hasNewCriticalData = false;
     window.renderSyncUI();
-
+    
     if (syncTimeout) clearTimeout(syncTimeout);
     syncTimeout = setTimeout(() => {
         window.isSyncing = false;
         window.renderSyncUI();
+        safeToast("⚠️ Синхронизация прервана (слабый интернет). Попробуйте позже.");
         console.log("[Sync] Timeout. Снята блокировка.");
-    }, 45000);
+    }, 90000);
 
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
@@ -649,83 +646,76 @@ window.triggerSync = async function(mode = 'silent') {
     const lastPullAt = localStorage.getItem('rbi_sync_last_pull_at') || '';
     const lastPushAt = localStorage.getItem('rbi_sync_last_push_at') || '';
 
-    function isHttpUrl(v) {
-        return typeof v === 'string' && /^https?:\/\//i.test(v);
-    }
+    // === ГЛОБАЛЬНЫЕ ФУНКЦИИ ЗАГРУЗКИ ФОТО ===
+window.isHttpUrl = function(v) { return typeof v === 'string' && /^https?:\/\//i.test(v); };
+window.isLocalUrl = function(v) { return typeof v === 'string' && v.startsWith('local://'); };
+window.isDataUrl = function(v) { return typeof v === 'string' && v.startsWith('data:'); };
 
-    function isLocalUrl(v) {
-        return typeof v === 'string' && v.startsWith('local://');
-    }
+window.getStoragePathFromPublicUrl = function(url, bucketName) {
+    if (!url || !bucketName) return '';
+    const marker = `/storage/v1/object/public/${bucketName}/`;
+    const idx = url.indexOf(marker);
+    if (idx === -1) return '';
+    return decodeURIComponent(url.slice(idx + marker.length));
+};
 
-    function isDataUrl(v) {
-        return typeof v === 'string' && v.startsWith('data:');
-    }
+window.dataUrlToBlob = function(dataUrl) {
+    const parts = dataUrl.split(',');
+    const mime = (parts[0].match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
+    const binary = atob(parts[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return { blob: new Blob([bytes], { type: mime }), mime };
+};
 
-    function getStoragePathFromPublicUrl(url, bucketName) {
-        if (!url || !bucketName) return '';
-        const marker = `/storage/v1/object/public/${bucketName}/`;
-        const idx = url.indexOf(marker);
-        if (idx === -1) return '';
-        return decodeURIComponent(url.slice(idx + marker.length));
-    }
+window.extFromMime = function(mime) {
+    if (!mime) return 'bin';
+    if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+    if (mime.includes('png')) return 'png';
+    if (mime.includes('webp')) return 'webp';
+    if (mime.includes('pdf')) return 'pdf';
+    return 'bin';
+};
 
-    function dataUrlToBlob(dataUrl) {
-        const parts = dataUrl.split(',');
-        const mime = (parts[0].match(/data:(.*?);base64/) || [])[1] || 'image/jpeg';
-        const binary = atob(parts[1]);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return { blob: new Blob([bytes], { type: mime }), mime };
-    }
+window.localPhotoToBlob = async function(localUrl) {
+    if (!window.isLocalUrl(localUrl) || typeof dbGet !== 'function') return null;
+    const rec = await dbGet('app_photos', localUrl);
+    if (!rec || !rec.data) return null;
+    const mime = rec.mimeType || 'image/jpeg';
+    return { blob: new Blob([rec.data], { type: mime }), mime };
+};
 
-    function extFromMime(mime) {
-        if (!mime) return 'bin';
-        if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
-        if (mime.includes('png')) return 'png';
-        if (mime.includes('webp')) return 'webp';
-        if (mime.includes('pdf')) return 'pdf';
-        return 'bin';
-    }
+window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix) {
+    if (!value) return value;
+    if (window.isHttpUrl(value)) return value;
 
-    async function localPhotoToBlob(localUrl) {
-        if (!isLocalUrl(localUrl) || typeof dbGet !== 'function') return null;
-        const rec = await dbGet('app_photos', localUrl);
-        if (!rec || !rec.data) return null;
-        const mime = rec.mimeType || 'image/jpeg';
-        return { blob: new Blob([rec.data], { type: mime }), mime };
-    }
+    let blobData = null;
 
-    async function uploadAsset(value, bucketName, pathPrefix, filePrefix) {
-        if (!value) return value;
-        if (isHttpUrl(value)) return value;
+    if (window.isLocalUrl(value)) blobData = await window.localPhotoToBlob(value);
+    else if (window.isDataUrl(value)) blobData = window.dataUrlToBlob(value);
+    else return value;
 
-        let blobData = null;
+    if (!blobData || !blobData.blob) return value;
 
-        if (isLocalUrl(value)) blobData = await localPhotoToBlob(value);
-        else if (isDataUrl(value)) blobData = dataUrlToBlob(value);
-        else return value;
+    const ext = window.extFromMime(blobData.mime);
+    const storagePath = `${pathPrefix}/${filePrefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 99999)}.${ext}`;
 
-        if (!blobData || !blobData.blob) return value;
+    const { error } = await window.supabaseClient.storage
+        .from(bucketName)
+        .upload(storagePath, blobData.blob, {
+            upsert: true,
+            cacheControl: '3600',
+            contentType: blobData.mime
+        });
 
-        const ext = extFromMime(blobData.mime);
-        const storagePath = `${pathPrefix}/${filePrefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 99999)}.${ext}`;
+    if (error) throw error;
 
-        const { error } = await window.supabaseClient.storage
-            .from(bucketName)
-            .upload(storagePath, blobData.blob, {
-                upsert: true,
-                cacheControl: '3600',
-                contentType: blobData.mime
-            });
+    const { data } = window.supabaseClient.storage
+        .from(bucketName)
+        .getPublicUrl(storagePath);
 
-        if (error) throw error;
-
-        const { data } = window.supabaseClient.storage
-            .from(bucketName)
-            .getPublicUrl(storagePath);
-
-        return data.publicUrl;
-    }
+    return data.publicUrl;
+};
 
     function getChecklistItem(templateKey, itemId) {
         try {
@@ -782,8 +772,7 @@ window.triggerSync = async function(mode = 'silent') {
         // =====================================================
         // 2. PULL: проверки из новой нормальной архитектуры
         // =====================================================
-        if (mode === 'manual') safeToast('📥 Скачивание проверок...');
-
+       
         let inspectionsQuery = window.supabaseClient
             .from('rbi_inspections')
             .select('*')
@@ -888,9 +877,20 @@ window.triggerSync = async function(mode = 'silent') {
                     updatedAt: h.updated_at || new Date().toISOString()
                 };
 
-                if (typeof dbPut === 'function') {
-                    await dbPut('app_history', localItem);
+                // Собираем элементы в массив для пакетного сохранения
+                if (!window._tempHistoryBatch) window._tempHistoryBatch = [];
+                window._tempHistoryBatch.push(localItem);
+                
+                // Ловим новые критические дефекты
+                if (mode === 'silent' && localItem.metrics && localItem.metrics.n_B3_fail > 0) {
+                    hasNewCriticalData = true;
                 }
+            }
+
+            // МАССОВОЕ СОХРАНЕНИЕ ПРОВЕРОК
+            if (window._tempHistoryBatch && window._tempHistoryBatch.length > 0 && typeof dbPutBatch === 'function') {
+                await dbPutBatch('app_history', window._tempHistoryBatch);
+                window._tempHistoryBatch = []; // очищаем
             }
 
             if (typeof dbGetAll === 'function') {
@@ -930,7 +930,7 @@ window.triggerSync = async function(mode = 'silent') {
                         room: cloudDraft.room || '',
                         state: cloudDraft.state || {},
                         details: cloudDraft.details || {},
-                        photos: cloudDraft.photos || {},
+                        photos: await window.cachePhotosMapToIndexedDB(cloudDraft.photos || {}),
                         customExpertConclusions: cloudDraft.custom_expert_conclusions || {}
                     });
 
@@ -978,6 +978,12 @@ window.triggerSync = async function(mode = 'silent') {
                         t.id = row.id;
                         t.status = row.status || t.status;
                         t.updatedAt = row.updated_at;
+
+                        // --- НОВОЕ: Кэшируем фото закрытия задачи ---
+                        if (t.completionPhoto && t.completionPhoto.startsWith('http')) {
+                            t.completionPhoto = await window.cacheCloudPhotoToIndexedDB(t.completionPhoto);
+                        }
+                        // --------------------------------------------
 
                         await dbPut('rbi_tasks', t);
 
@@ -1075,7 +1081,8 @@ async function downloadAllActPhotosForOffline(act) {
 
                 if (type === 'meeting' && typeof dbPut === 'function') {
                     window.rbi_meetingsData = window.rbi_meetingsData || [];
-                    for (const obj of objects) {
+                    for (let obj of objects) {
+                        obj = await window.cacheObjectCloudFilesToIndexedDB(obj, 'meeting'); // <--- ДОБАВЛЕНА ЭТА СТРОКА
                         await dbPut('rbi_meetings', obj);
                         const idx = window.rbi_meetingsData.findIndex(x => String(x.id) === String(obj.id));
                         if (idx >= 0) window.rbi_meetingsData[idx] = obj;
@@ -1219,7 +1226,6 @@ async function downloadAllActPhotosForOffline(act) {
         }
 
         if (currentHistory.length > 0) {
-            if (mode === 'manual') safeToast(`📤 Отправка проверок: ${currentHistory.length}`);
 
             for (const c of currentHistory) {
                 const inspectionId = String(c.id);
@@ -1251,7 +1257,7 @@ async function downloadAllActPhotosForOffline(act) {
                         }
                     } else {
                         // Стандартная загрузка фото
-                        const publicUrl = await uploadAsset(
+                        const publicUrl = await window.rbiUploadAsset(
                             oldPhoto,
                             'inspection-photos',
                             `${pCode}/inspections/${inspectionId}/${itemId}`,
@@ -1442,7 +1448,7 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 const draftPhotos = {};
 
                 for (const itemId of Object.keys(currentSession.photos || {})) {
-                    draftPhotos[itemId] = await uploadAsset(
+                    draftPhotos[itemId] = await window.rbiUploadAsset(
                         currentSession.photos[itemId],
                         'inspection-photos',
                         `${pCode}/drafts/${stableInspectorId}/${itemId}`,
@@ -1534,6 +1540,22 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 // Решает проблему зависания, когда задач накопилось больше сотни.
                 for (let i = 0; i < tasks.length; i += 50) {
                     const batch = tasks.slice(i, i + 50);
+                    
+                   // --- НОВОЕ: Загружаем фото закрытия задачи в облако ---
+                    for (let task of batch) {
+                        if (task.completionPhoto && task.completionPhoto.startsWith('local://')) {
+                            task.completionPhoto = await window.rbiUploadAsset(
+                                task.completionPhoto,
+                                'inspection-photos',
+                                `${pCode}/tasks/${task.id}`,
+                                'photo'
+                            );
+                            if (typeof dbPut === 'function') await dbPut('rbi_tasks', task); // Обновляем локально, чтобы сохранить ссылку
+                        }
+                    }
+                    // ------------------------------------------------------
+                    // ------------------------------------------------------
+
                     const upsertData = batch.map(task => ({
                         id: String(task.id),
                         project_code: pCode,
@@ -1607,19 +1629,19 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
 
                     if (typeof dbGetAll === 'function') {
                         const meetings = filterNew(await dbGetAll('rbi_meetings') || []);
-                        for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'custom-assets'); }
+                        for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'inspection-photos'); }
 
                         const interventions = filterNew(await dbGetAll('rbi_interventions') || []);
-                        for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'custom-assets'); }
+                        for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'inspection-photos'); }
 
                         const practices = filterNew(await dbGetAll('rbi_practices') || []);
-                        for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'custom-assets'); }
+                        for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'inspection-photos'); }
 
                         const scheduleStages = filterNew(await dbGetAll('rbi_schedule_stages') || []);
-                        for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'custom-assets'); }
+                        for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'inspection-photos'); }
 
                         const fmeas = filterNew(await dbGetAll('rbi_fmea') || []);
-                        for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'custom-assets'); }
+                        for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'inspection-photos'); }
 
                         // Отправка ПК СК (Стройконтроль) отправляем только если есть изменения
                         const skRecs = await dbGetAll('sk_records') || [];
@@ -1667,28 +1689,35 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
         localStorage.setItem('rbi_cloud_dirty', '0');
 
-        if (mode === 'manual') safeToast('✅ Синхронизация завершена');
+        // Подсчитываем, были ли реальные загрузки
+        const pulledChecks = cloudInspections ? cloudInspections.length : 0;
+        const pushedChecks = currentHistory ? currentHistory.length : 0;
+        const hasChanges = pulledChecks > 0 || pushedChecks > 0;
 
-        // РАЗДЕЛЕНИЕ РЕЖИМОВ СИНХРОНИЗАЦИИ (Manual vs Silent)
+        window.syncDirtyFlags.templates = true;
+        window.syncDirtyFlags.history = true;
+        window.syncDirtyFlags.analytics = true;
+        window.syncDirtyFlags.tasks = true;
+        window.syncDirtyFlags.session = true;
+
         if (mode === 'manual') {
-            safeToast('✅ Синхронизация завершена');
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();
-            if (typeof renderHistoryTab === 'function') renderHistoryTab();
-            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
-            if (typeof gameForceUpdatePlan === 'function') {
-                await gameForceUpdatePlan(true);
-            } else if (typeof gameGenerateWeeklyPlan === 'function') {
-                await gameGenerateWeeklyPlan(false);
+            
+            const settingsTab = document.getElementById('tab-settings');
+            if (settingsTab && settingsTab.classList.contains('active') && typeof rbi_renderBackupRegistry === 'function') {
+                rbi_renderBackupRegistry();
             }
-            if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+
+            if (hasChanges) {
+                safeToast(`✅ Успешно! Отправлено: ${pushedChecks}, загружено: ${pulledChecks}.`);
+            } else {
+                safeToast('✅ Синхронизировано. Новых данных нет.');
+            }
         } else {
-            // Тихий режим. Никаких перерисовок. Только ставим грязные флаги.
-            window.syncDirtyFlags.templates = true;
-            window.syncDirtyFlags.history = true;
-            window.syncDirtyFlags.analytics = true;
-            window.syncDirtyFlags.tasks = true;
-            window.syncDirtyFlags.session = true;
+             if (hasNewCriticalData) {
+                safeToast("⚠️ В фоне загружены новые аварии (B3). Обновите вкладку для просмотра.");
+            }
         }
     } catch (e) {
         console.error("[Sync] Ошибка:", e);

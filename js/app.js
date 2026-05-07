@@ -77,55 +77,7 @@ const audioFail = new Audio("data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwM
 
 // Таймер для дебаунса сохранений (оптимизация)
 let __saveSessionTimer = null;
-// === ЛЕНИВОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (Lazy Rendering) ===
-window.lastInteractionTime = Date.now();
 
-// Отслеживаем активность, чтобы не сбрасывать экран прямо под руками (добавили 'scroll')
-['touchstart', 'click', 'input', 'keydown', 'scroll'].forEach(evt => {
-    document.addEventListener(evt, () => window.lastInteractionTime = Date.now(), { passive: true });
-});
-
-setInterval(() => {
-    if (!window.syncDirtyFlags) return;
-    
-    const timeSinceInteraction = Date.now() - window.lastInteractionTime;
-    const isIdle = timeSinceInteraction > 30000; // 30 секунд полного бездействия
-    const isTyping = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA');
-
-    // ГЛАВНОЕ ПРАВИЛО: Если пользователь сейчас скроллит, тыкает или пишет - мы ВООБЩЕ ничего не перерисовываем!
-    if (!isIdle || isTyping) return;
-
-    // 1. Вкладка "Осмотр" (Черновик)
-    if (window.syncDirtyFlags.session) {
-        window.syncDirtyFlags.session = false;
-        if (typeof restoreSession === 'function') restoreSession();
-    }
-
-    // 2. Вкладка "Аналитика" и "История"
-    if (window.syncDirtyFlags.analytics || window.syncDirtyFlags.history) {
-        if (document.getElementById('tab-analytics')?.classList.contains('active')) {
-            window.syncDirtyFlags.analytics = false;
-            window.syncDirtyFlags.history = false;
-            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
-        }
-    }
-
-    // 3. Вкладка "Инженер" (Задачи и дашборды)
-    if (window.syncDirtyFlags.tasks && document.getElementById('tab-engineer')?.classList.contains('active')) {
-        window.syncDirtyFlags.tasks = false;
-        if (typeof rbi_renderEngineerTab === 'function') rbi_renderEngineerTab();
-    }
-
-    // 4. Шаблоны и Справочник
-    if (window.syncDirtyFlags.templates) {
-        window.syncDirtyFlags.templates = false;
-        if (typeof renderSelector === 'function') renderSelector();
-        if (document.getElementById('tab-reference')?.classList.contains('active') && typeof renderReferenceTab === 'function') {
-            renderReferenceTab();
-        }
-    }
-
-}, 3000); // Проверяем флаги каждые 3 секунды
 document.addEventListener("DOMContentLoaded", async () => {
     try {
         // Запускаем облако до загрузки остальных настроек
@@ -258,15 +210,29 @@ async function restoreSession() {
         const hist = await dbGetAll(STORES.HISTORY);
         
         let fullHistory = hist || [];
-        contractorArray = fullHistory.filter(i => !i._deleted);
+        
+        // ЖЕСТКАЯ ОЧИСТКА: Убираем Эталоны из массива Истории
+        contractorArray = fullHistory.filter(i => !i._deleted && i.templateKey !== 'sys_etalon_act');
 
-        // Загружаем эталоны в отдельный массив
+        // Удаляем их физически из базы Истории, если они туда затесались
+        const etalonsInHistory = fullHistory.filter(i => i.templateKey === 'sys_etalon_act');
+        if (etalonsInHistory.length > 0) {
+            for (let e of etalonsInHistory) {
+                await dbDelete(STORES.HISTORY, e.id);
+            }
+            console.log(`[Очистка] Удалено ${etalonsInHistory.length} эталонов из Истории`);
+        }
+
+        // Загружаем эталоны в СВОЙ отдельный массив
         const etalons = await dbGetAll(STORES.ETALON_ACTS);
         etalonActsArray = (etalons || []).filter(i => !i._deleted);
 
         // НОВОЕ: Инициализируем кэш и запускаем миграцию
         await PhotoManager.init();
-        await runPhotoMigration(contractorArray);
+        if (!localStorage.getItem('photo_migration_v1_done')) {
+            await runPhotoMigration(contractorArray);
+            localStorage.setItem('photo_migration_v1_done', '1');
+        }
         
         if (!data) return;
 
@@ -400,26 +366,31 @@ document.addEventListener("DOMContentLoaded", () => {
 // === КОНЕЦ ЗАМЕНЫ 1 ===
 
 // === КАСТОМНЫЕ DROPDOWN АВТОЗАПОЛНЕНИЯ (БЕЗ DATALIST) ===
+let _smartInputMemoryCache = null;
+
 function getSmartInputCache(field) {
-    let cache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
-    if (!cache[field]) {
-        // Если кэша нет, собираем из истории
-        cache[field] = [...new Set(contractorArray.map(i => i[field]).filter(Boolean))].slice(0, 15);
-        localStorage.setItem('smart_input_cache', JSON.stringify(cache));
+    if (!_smartInputMemoryCache) {
+        _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
     }
-    return cache[field];
+    if (!_smartInputMemoryCache[field]) {
+        _smartInputMemoryCache[field] = [...new Set(contractorArray.map(i => i[field]).filter(Boolean))].slice(0, 15);
+        localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
+    }
+    return _smartInputMemoryCache[field];
 }
 
 function updateSmartInputCache(field, value) {
     if (!value) return;
-    let cache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
-    if (!cache[field]) cache[field] = [];
-    if (cache[field].includes(value)) {
-        cache[field] = cache[field].filter(v => v !== value); // Поднимаем наверх
+    if (!_smartInputMemoryCache) _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+    if (!_smartInputMemoryCache[field]) _smartInputMemoryCache[field] = [];
+    
+    if (_smartInputMemoryCache[field].includes(value)) {
+        _smartInputMemoryCache[field] = _smartInputMemoryCache[field].filter(v => v !== value);
     }
-    cache[field].unshift(value);
-    if (cache[field].length > 15) cache[field].pop();
-    localStorage.setItem('smart_input_cache', JSON.stringify(cache));
+    _smartInputMemoryCache[field].unshift(value);
+    if (_smartInputMemoryCache[field].length > 15) _smartInputMemoryCache[field].pop();
+    
+    localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
 }
 
 function initSmartInput(inputId, dataField) {
@@ -705,36 +676,7 @@ function switchTab(tabId, navElement = null) {
     window.scrollTo(0, 0);
 }
 
-// === ПЕРЕКЛЮЧАТЕЛЬ ПОДВКЛАДОК СПРАВОЧНИКА ===
-function switchReferenceSubTab(tabId, btnElement) {
-    document.querySelectorAll('.ref-sub-section').forEach(el => el.classList.add('hidden'));
-    
-    const btnContainer = document.getElementById('reference-subtabs-block');
-    if (btnContainer) {
-        btnContainer.querySelectorAll('.sub-tab-btn').forEach(el => {
-            el.classList.remove('bg-white', 'shadow-sm', 'text-indigo-600', 'dark:bg-slate-700', 'dark:text-indigo-400', 'active');
-            el.classList.add('text-[var(--text-muted)]');
-        });
-    }
-    
-    const targetTab = document.getElementById(tabId);
-    if (targetTab) targetTab.classList.remove('hidden');
-    
-    if (btnElement) {
-        btnElement.classList.add('bg-white', 'shadow-sm', 'text-indigo-600', 'dark:bg-slate-700', 'dark:text-indigo-400', 'active');
-        btnElement.classList.remove('text-[var(--text-muted)]');
-    }
 
-    // Инициализация контента при переключении
-    if (tabId === 'ref-sub-checklists') {
-        if (typeof renderReferenceTab === 'function') renderReferenceTab();
-    } else if (tabId === 'ref-sub-docs') {
-        if (typeof renderDocsList === 'function') renderDocsList();
-    } else if (tabId === 'ref-sub-nodes') {
-        // Запускаем рендер сетки узлов!
-        if (typeof renderNodesList === 'function') renderNodesList();
-    }
-}
 
 // === СВОРАЧИВАЕМ МИНИДАШБОРД ===
 function toggleDashboardExpand() {
@@ -3337,10 +3279,8 @@ function showContractorDetails() {
 
 // === ПЕРЕКЛЮЧАТЕЛЬ ПОДВКЛАДОК СПРАВОЧНИКА ===
 function switchReferenceSubTab(tabId, btnElement) {
-    // Скрываем все подвкладки справочника
     document.querySelectorAll('.ref-sub-section').forEach(el => el.classList.add('hidden'));
     
-    // Сбрасываем стили всех кнопок
     const btnContainer = document.getElementById('reference-subtabs-block');
     if (btnContainer) {
         btnContainer.querySelectorAll('.sub-tab-btn').forEach(el => {
@@ -3349,14 +3289,30 @@ function switchReferenceSubTab(tabId, btnElement) {
         });
     }
     
-    // Показываем нужную вкладку
     const targetTab = document.getElementById(tabId);
     if (targetTab) targetTab.classList.remove('hidden');
     
-    // Подкрашиваем активную кнопку
     if (btnElement) {
         btnElement.classList.add('bg-white', 'shadow-sm', 'text-indigo-600', 'dark:bg-slate-700', 'dark:text-indigo-400', 'active');
         btnElement.classList.remove('text-[var(--text-muted)]');
+    }
+
+    // Инициализация контента при переключении (ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ЭКРАНОВ)
+    if (tabId === 'ref-sub-checklists') {
+        if (typeof renderReferenceTab === 'function') renderReferenceTab();
+    } else if (tabId === 'ref-sub-docs') {
+        if (typeof renderDocsList === 'function') renderDocsList();
+    } else if (tabId === 'ref-sub-nodes') {
+        if (typeof renderNodesList === 'function') renderNodesList();
+    } else if (tabId === 'ref-sub-twi') {
+        // ВОТ ОНО: Теперь при входе в TWI мы заново ищем Магию!
+        if (typeof renderTwiList === 'function') renderTwiList();
+    } else if (tabId === 'ref-sub-practices') {
+        if (typeof rbi_loadPractices === 'function') {
+            rbi_loadPractices().then(() => {
+                if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab();
+            });
+        }
     }
 }
 // === АНАЛИТИКА И ОТЧЕТЫ (ПРО 4.0) ===
@@ -4265,87 +4221,163 @@ function processTwiImport(event) {
 }
 // 1. РЕНДЕР СПИСКА TWI КАРТ (С бейджиками типов)
 
+// === ПОИСК КАНДИДАТОВ ДЛЯ МАГИИ TWI ===
+window.getMagicTwiCandidates = function() {
+    let twiMagicMap = {};
+    contractorArray.forEach(check => {
+        if(check.state && check.photos) {
+            Object.keys(check.state).forEach(id => {
+                const s = check.state[id];
+                if (check.photos[id]) {
+                    const tType = check.templateKey.split('_')[0];
+                    const tKey = check.templateKey.replace(tType + '_', '');
+                    const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                    const foundItem = getFlatList(cl).find(x => x.id == id);
+                    let defName = foundItem ? foundItem.n : "Дефект";
+                    
+                    const magicKey = check.templateKey + '_' + id;
+                    if (!twiMagicMap[magicKey]) twiMagicMap[magicKey] = { ok: null, fail: null, title: defName, tmplKey: check.templateKey, itemId: id };
 
+                    if (s === 'ok') twiMagicMap[magicKey].ok = check.photos[id];
+                    else if (s === 'fail' || s === 'fail_escalated') twiMagicMap[magicKey].fail = check.photos[id];
+                }
+            });
+        }
+    });
+
+    const magicCandidates = Object.values(twiMagicMap).filter(m => m.ok && m.fail);
+    return magicCandidates.filter(m => {
+        const existing = customTwiCards.find(c => c.checklistKey === m.tmplKey && String(c.itemId) === String(m.itemId) && c.type === 'INSPECTOR');
+        return !existing; // Оставляем только те, для которых еще нет карточки
+    });
+};
 // 2. ОТКРЫТИЕ КОНСТРУКТОРА И ПЕРЕКЛЮЧЕНИЕ ТИПОВ
 
 // === 1. РЕНДЕР СПИСКА TWI КАРТ (ИОС СТИЛЬ С ГРУППИРОВКОЙ) ===
+// === 1. РЕНДЕР СПИСКА TWI КАРТ (ИОС СТИЛЬ С ГРУППИРОВКОЙ И СВОРАЧИВАНИЕМ) ===
 // === 1. РЕНДЕР СПИСКА TWI КАРТ (ИОС СТИЛЬ С ГРУППИРОВКОЙ И СВОРАЧИВАНИЕМ) ===
 function renderTwiList() {
     const container = document.getElementById('twi-cards-container');
     const searchInput = document.getElementById('twi-search-input')?.value.toLowerCase() || '';
     if (!container) return;
 
+    // --- 1. МАГИЯ TWI (ПЛАШКА) ---
+    const newMagicCandidates = window.getMagicTwiCandidates ? window.getMagicTwiCandidates() : [];
+    let magicTwiHtml = '';
+    
+    if (newMagicCandidates.length > 0 && !searchInput) {
+        magicTwiHtml = `
+            <div id="twi-magic-block" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-sm mb-4 text-white overflow-hidden relative magic-collapsed" style="transition: padding 0.3s ease;">
+                <div onclick="document.getElementById('twi-magic-block').classList.toggle('magic-collapsed')" class="cursor-pointer p-3">
+                    <button class="absolute top-3 right-3 text-white/50 hover:text-white/100 transition-colors pointer-events-none">
+                        <svg class="w-5 h-5 magic-arrow transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div class="flex items-center gap-2 font-black uppercase tracking-widest text-[11px] drop-shadow-md">
+                        <span class="text-lg animate-pulse">✨</span> Магия TWI (Найдено: ${newMagicCandidates.length})
+                    </div>
+                </div>
+                
+                <div class="magic-content-wrapper px-3">
+                    <div class="magic-content">
+                        <div class="text-[11px] font-medium text-indigo-100 mb-3 leading-snug">
+                            Система нашла эталоны (OK) и брак (FAIL) для одних и тех же пунктов. За создание TWI-карты начислен <b class="text-yellow-300">Бонус XP!</b>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3">
+                            ${newMagicCandidates.map((m) => `
+                                <div class="bg-white/10 border border-white/20 p-2.5 rounded-xl shrink-0 w-48 flex flex-col justify-between">
+                                    <div class="text-[10px] font-bold leading-tight line-clamp-2 mb-3" title="${m.title}">${m.title}</div>
+                                    <button onclick="window.createMagicTwi('${m.tmplKey}', '${m.itemId}', '${m.ok}', '${m.fail}', '${m.title.replace(/'/g, "\\'")}')" class="w-full bg-white text-indigo-600 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform">Создать (+100 XP)</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <style>
+                #twi-magic-block.magic-collapsed { padding-bottom: 0px; }
+                #twi-magic-block.magic-collapsed .magic-arrow { transform: rotate(0deg); }
+                #twi-magic-block:not(.magic-collapsed) .magic-arrow { transform: rotate(180deg); }
+                .magic-content-wrapper { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s ease-out; }
+                #twi-magic-block.magic-collapsed .magic-content-wrapper { grid-template-rows: 0fr; }
+                .magic-content { overflow: hidden; }
+            </style>
+        `;
+    }
+
+    // --- 2. СПИСОК КАРТОЧЕК ---
     const filtered = customTwiCards.filter(card => 
         card.title.toLowerCase().includes(searchInput) || 
         card.checklistName.toLowerCase().includes(searchInput)
     );
 
-    if (filtered.length === 0) {
-        container.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Инструкций пока нет</div>`;
-        return;
-    }
-
-    // Группируем по чек-листу
-    const grouped = {};
-    filtered.forEach(c => {
-        if (!grouped[c.checklistName]) grouped[c.checklistName] = [];
-        grouped[c.checklistName].push(c);
-    });
-
     let html = '';
-    for (let checklistName in grouped) {
-        // Обертка группы (Свернута по умолчанию)
-        html += `
-        <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
-                <span class="truncate pr-4">${checklistName} <span class="text-[10px] text-slate-400 ml-1">(${grouped[checklistName].length})</span></span>
-                <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-                </span>
-            </summary>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
-        `;
-        
-        grouped[checklistName].forEach(card => {
-            let typeIcon = ''; let typeText = ''; let typeColor = '';
-            if (card.type === 'INSPECTOR') {
-                typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>`;
-                typeText = 'Технадзор'; typeColor = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800';
-            } else if (card.type === 'WORKER') {
-                typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>`;
-                typeText = 'Пошаговая'; typeColor = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800';
-            } else if (card.type === 'PDF') {
-                typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg>`;
-                typeText = 'Регламент'; typeColor = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800';
-            }
+    
+    if (filtered.length === 0) {
+        html = `<div class="text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Инструкций пока нет</div>`;
+    } else {
+        // Группируем по чек-листу
+        const grouped = {};
+        filtered.forEach(c => {
+            if (!grouped[c.checklistName]) grouped[c.checklistName] = [];
+            grouped[c.checklistName].push(c);
+        });
 
-            let infoText = '';
-            if (card.type === 'WORKER') infoText = `Шагов: ${card.steps?.length || 0}`;
-            else if (card.type === 'INSPECTOR') infoText = `Привязка к пункту`;
-            else if (card.type === 'PDF') infoText = `${card.pdfSize || 'Внешний файл'}`;
-
+        for (let checklistName in grouped) {
             html += `
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex items-center justify-between cursor-pointer active:scale-95 transition-transform" onclick="openTwiViewer('${card.id}')">
-                <div class="flex items-center gap-3 min-w-0 pr-3">
-                    <div class="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${typeColor}">${typeIcon}</div>
-                    <div class="min-w-0">
-                        <div class="text-[13px] font-bold text-slate-800 dark:text-white leading-tight truncate mb-1">${card.title}</div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-[9px] font-black uppercase text-slate-500">${typeText}</span>
-                            <span class="w-1 h-1 bg-slate-300 rounded-full"></span>
-                            <span class="text-[9px] font-bold text-slate-400">${infoText}</span>
+            <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+                    <span class="truncate pr-4">${checklistName} <span class="text-[10px] text-slate-400 ml-1">(${grouped[checklistName].length})</span></span>
+                    <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                    </span>
+                </summary>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
+            `;
+            
+            grouped[checklistName].forEach(card => {
+                let typeIcon = ''; let typeText = ''; let typeColor = '';
+                if (card.type === 'INSPECTOR') {
+                    typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>`;
+                    typeText = 'Технадзор'; typeColor = 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800';
+                } else if (card.type === 'WORKER') {
+                    typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>`;
+                    typeText = 'Пошаговая'; typeColor = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800';
+                } else if (card.type === 'PDF') {
+                    typeIcon = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg>`;
+                    typeText = 'Регламент'; typeColor = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800';
+                }
+
+                let infoText = '';
+                if (card.type === 'WORKER') infoText = `Шагов: ${card.steps?.length || 0}`;
+                else if (card.type === 'INSPECTOR') infoText = `Привязка к пункту`;
+                else if (card.type === 'PDF') infoText = `${card.pdfSize || 'Внешний файл'}`;
+
+                html += `
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex items-center justify-between cursor-pointer active:scale-95 transition-transform" onclick="openTwiViewer('${card.id}')">
+                    <div class="flex items-center gap-3 min-w-0 pr-3">
+                        <div class="w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${typeColor}">${typeIcon}</div>
+                        <div class="min-w-0">
+                            <div class="text-[13px] font-bold text-slate-800 dark:text-white leading-tight truncate mb-1">${card.title}</div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[9px] font-black uppercase text-slate-500">${typeText}</span>
+                                <span class="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                <span class="text-[9px] font-bold text-slate-400">${infoText}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <button onclick="openTwiActionSheet('${card.id}', event)" class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-                </button>
-            </div>`;
-        });
-        
-        html += `</div></details>`;
+                    <button onclick="openTwiActionSheet('${card.id}', event)" class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                </div>`;
+            });
+            
+            html += `</div></details>`;
+        }
     }
-    container.innerHTML = html;
+
+    // --- 3. ИТОГОВЫЙ ВЫВОД ---
+    // Сначала ставим Магию, а потом уже список (или надпись "пусто")
+    container.innerHTML = magicTwiHtml + html;
 }
 
 // === КОНТЕКСТНОЕ МЕНЮ TWI ===
@@ -6888,21 +6920,23 @@ window.rbi_renderMeetingTab = function() {
 };
 
 // Открытие сохраненного мемо (ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК)
-window.rbi_openSavedMeeting = function(id) {
+// Открытие сохраненного мемо (ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК И РЕДАКТОР)
+window.rbi_openSavedMeeting = async function(id) {
     const meet = window.rbi_meetingsData.find(m => m.id === id);
     if (!meet) return;
 
-    // 1. Отрисовка фото совещания
+    window.currentEditingMeetingId = id; // Запоминаем для редактирования
+
     let photoHtml = '';
     if (meet.qDayPhoto) {
+        const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
         photoHtml = `
             <div class="mb-4 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm h-48 sm:h-56 relative bg-slate-50 dark:bg-slate-900">
-                <img src="${window.getPhotoSrc(meet.qDayPhoto)}" class="w-full h-full object-cover cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${meet.qDayPhoto}')">
+                <img src="${realSrc}" class="w-full h-full object-cover cursor-pointer active:scale-95 transition-transform" onclick="setTimeout(() => openPhotoViewer('${meet.qDayPhoto}'), 100)">
                 <div class="absolute top-2 left-2 bg-black/50 text-white text-[9px] font-black uppercase px-2 py-1 rounded backdrop-blur-sm">📸 Фото фиксация</div>
             </div>`;
     }
 
-    // 2. Отрисовка повестки и дефектов
     let agendaHtml = '';
     if (meet.agenda && meet.agenda.length > 0) {
         agendaHtml = meet.agenda.map(a => `
@@ -6910,29 +6944,27 @@ window.rbi_openSavedMeeting = function(id) {
                 <div class="text-[11px] font-black text-slate-800 dark:text-white mb-1">${a.contr}</div>
                 <div class="text-[11px] text-slate-700 dark:text-slate-300 font-medium mb-2 leading-snug">${a.defect}</div>
                 <div class="flex flex-wrap gap-2 text-[9px] font-bold">
-                    <span class="${a.isDone ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30' : 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30'} px-2 py-1 rounded border uppercase tracking-widest flex items-center gap-1">${a.isDone ? '✅ Решено' : '⏳ В работе'}</span>
-                    ${a.date ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
-                    ${a.resp ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">Отв: ${a.resp}</span>` : ''}
+                    <span class="${a.isDone ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-700 border-orange-200'} px-2 py-1 rounded border uppercase tracking-widest flex items-center gap-1">${a.isDone ? '✅ Решено' : '⏳ В работе'}</span>
+                    ${a.date ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
+                    ${a.resp ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200">Отв: ${a.resp}</span>` : ''}
                 </div>
-                ${a.comment ? `<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-2 italic bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800">💬 ${a.comment}</div>` : ''}
+                ${a.comment ? `<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-2 italic bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100">💬 ${a.comment}</div>` : ''}
             </div>
         `).join('');
     } else {
-        agendaHtml = `<div class="text-[10px] text-slate-400 italic text-center py-4 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Детальная повестка не сохранена (старая версия)</div>`;
+        agendaHtml = `<div class="text-[10px] text-slate-400 italic text-center py-4 bg-white rounded-xl border border-dashed border-slate-300">Детальная повестка не сохранена</div>`;
     }
 
-    // 3. Отрисовка доп. тезисов
     let notesHtml = meet.notes ? `
-        <div class="mt-3 text-[11px] bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-500 border border-yellow-200 dark:border-yellow-800/50 p-3 rounded-xl shadow-sm leading-relaxed">
+        <div class="mt-3 text-[11px] bg-yellow-50 text-yellow-800 border border-yellow-200 p-3 rounded-xl shadow-sm leading-relaxed">
             <span class="font-black uppercase mb-1 block">📌 Дополнительные тезисы:</span>
             ${meet.notes}
         </div>` : '';
     
-    // Сборка финального модального окна
     document.getElementById('modal-icon').innerHTML = ``;
     document.getElementById('modal-title').innerHTML = `
         <div class="flex justify-between items-center w-full">
-            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📅 ${meet.title}</span>
+            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📅 Протокол</span>
             <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
         </div>
     `;
@@ -6945,23 +6977,103 @@ window.rbi_openSavedMeeting = function(id) {
 
         ${photoHtml}
 
-        <div class="mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-inner">
+        <div class="mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[30vh] overflow-y-auto custom-scrollbar shadow-inner">
             <div class="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3 pl-1">📋 Повестка и решения</div>
             ${agendaHtml}
             ${notesHtml}
         </div>
 
-        <div class="text-[11px] font-black uppercase tracking-widest text-green-600 dark:text-green-500 mb-2 pl-1 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Итоговый протокол (ИИ)</div>
-        <textarea id="saved-memo-text" readonly class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-green-50 dark:bg-green-900/10 p-3 sm:p-4 rounded-xl border border-green-200 dark:border-green-800/50 shadow-inner whitespace-pre-wrap font-medium h-48 resize-none outline-none custom-scrollbar mb-4">${meet.memoText}</textarea>
+        <div class="text-[11px] font-black uppercase tracking-widest text-green-600 dark:text-green-500 mb-2 pl-1 flex justify-between items-center">
+            <span>Итоговый протокол (Мемо)</span>
+            <button onclick="rbi_saveEditedMeeting()" class="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded text-[9px] font-bold active:scale-95">💾 Сохранить правки</button>
+        </div>
+        <textarea id="saved-memo-text" class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-white p-3 sm:p-4 rounded-xl border border-slate-300 shadow-inner whitespace-pre-wrap font-medium h-48 resize-none outline-none custom-scrollbar mb-4">${meet.memoText}</textarea>
 
         <div class="flex gap-2">
-            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">📋 Скопировать</button>
+            <button onclick="rbi_printMeetingPdf('${meet.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors">📥 PDF</button>
+            <button onclick="rbi_printMeetingPdf('${meet.id}', 'browser')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors">🖨️ Печать</button>
+            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-md active:scale-95 transition-colors flex items-center justify-center gap-1">📋 Копировать</button>
         </div>
     `;
     
     const modal = document.getElementById('modal-overlay');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+};
+
+// Функция сохранения правок в тексте Мемо
+window.rbi_saveEditedMeeting = async function() {
+    if (!window.currentEditingMeetingId) return;
+    const meet = window.rbi_meetingsData.find(m => m.id === window.currentEditingMeetingId);
+    if (!meet) return;
+
+    meet.memoText = document.getElementById('saved-memo-text').value;
+    meet.updatedAt = new Date().toISOString();
+    
+    await dbPut(STORES.MEETINGS, meet);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    showToast("✅ Правки протокола сохранены");
+};
+
+// Функция печати Мемо в PDF
+window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
+    const meet = window.rbi_meetingsData.find(m => m.id === id);
+    if (!meet) return;
+
+    showToast("⏳ Собираем протокол для печати...");
+
+    let photoHtml = '';
+    if (meet.qDayPhoto) {
+        const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
+        photoHtml = `
+            <div style="height: 250px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 20px; text-align: center;">
+                <img src="${realSrc}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: inline-block;">
+            </div>
+        `;
+    }
+
+    let agendaHtml = '';
+    if (meet.agenda && meet.agenda.length > 0) {
+        agendaHtml = meet.agenda.map(a => `
+            <div style="background: white; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-bottom: 10px; page-break-inside: avoid;">
+                <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
+                <div style="font-size: 11px; color: #334155; margin-bottom: 8px;">${a.defect}</div>
+                <div style="font-size: 10px;">
+                    <span style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 2px 6px; border-radius: 4px; font-weight: bold; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'};">${a.isDone ? 'Решено' : 'В работе'}</span>
+                    ${a.date ? `<span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; margin-left: 5px;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
+                    ${a.resp ? `<span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; margin-left: 5px;">Отв: ${a.resp}</span>` : ''}
+                </div>
+                ${a.comment ? `<div style="font-size: 10px; color: #64748b; font-style: italic; margin-top: 8px; background: #f8fafc; padding: 6px; border-radius: 4px;">💬 ${a.comment}</div>` : ''}
+            </div>
+        `).join('');
+    }
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 20px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
+            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-top: 5px;">Автор: ${meet.author} | Дата: ${new Date(meet.date).toLocaleDateString('ru-RU')}</div>
+        </div>
+
+        ${photoHtml}
+
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 20px;">
+            <tr>
+                <td style="width: 45%; vertical-align: top; padding-right: 15px;">
+                    <h3 style="margin-top: 0; font-size: 12px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px;">📋 Обсуждаемая повестка</h3>
+                    ${agendaHtml}
+                    ${meet.notes ? `<div style="background: #fefce8; border: 1px solid #fde047; padding: 10px; border-radius: 8px; font-size: 11px; color: #854d0e; margin-top: 10px;"><b>Доп. тезисы:</b><br>${meet.notes}</div>` : ''}
+                </td>
+                <td style="width: 55%; vertical-align: top; padding-left: 15px; border-left: 2px solid #e2e8f0;">
+                    <h3 style="margin-top: 0; font-size: 12px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ Итоговое решение (МЕМО)</h3>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; font-size: 11px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">${meet.memoText}</div>
+                </td>
+            </tr>
+        </table>
+    `;
+
+    if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "landscape", mode);
 };
 
 window.rbi_deleteMeeting = async function(id) {
@@ -7371,8 +7483,9 @@ window.rbi_handleMeetingPhotoUpload = function(event) {
 window.rbi_generateMeetingMemo = async function() {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
     
-    // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ
-    let agendaContext = [];
+    // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ С ЖЕСТКОЙ ГРУППИРОВКОЙ
+    let agendaMap = {};
+    let totalItems = 0;
     const rows = document.querySelectorAll('.meeting-agenda-row');
     
     rows.forEach(row => {
@@ -7383,15 +7496,21 @@ window.rbi_generateMeetingMemo = async function() {
         const resp = row.querySelector('.agenda-resp').value.trim();
         const comment = row.querySelector('.agenda-comment').value.trim();
 
-        // Берем только те пункты, по которым инженер дал хоть какую-то резолюцию (галочка, срок, человек или текст)
         if (isDone || date || resp || comment) {
-            agendaContext.push(`Подрядчик: ${contr}. Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Дедлайн: ${date || 'Не указан'}. Ответственный: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
+            if (!agendaMap[contr]) agendaMap[contr] = [];
+            agendaMap[contr].push(`- Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Срок: ${date || 'Не указан'}. Отв: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
+            totalItems++;
         }
     });
 
+    let agendaContextString = "";
+    for (let c in agendaMap) {
+        agendaContextString += `ПОДРЯДЧИК: ${c}\n${agendaMap[c].join('\n')}\n\n`;
+    }
+
     const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
     
-    if (agendaContext.length === 0 && !extraNotes) {
+    if (totalItems === 0 && !extraNotes) {
         return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
     }
 
@@ -7399,19 +7518,19 @@ window.rbi_generateMeetingMemo = async function() {
     btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
     btn.disabled = true;
 
-    const promptSystem = `Ты — строгий секретарь-инженер. Составь структурированный итоговый протокол строительного совещания (Мемо).
-    Тебе передан список подрядчиков, выявленных дефектов и принятые по ним решения.
-    Сгруппируй информацию по подрядчикам. Тон деловой, без лишней воды.
+    const promptSystem = `Ты — секретарь-инженер. Составь итоговый протокол строительного совещания (Мемо).
+    Я передам тебе уже сгруппированные по подрядчикам данные. Твоя задача — превратить это в красивый деловой текст без лишней воды.
     Формат ответа СТРОГО:
     **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
     
-    **ПРИНЯТЫЕ РЕШЕНИЯ:**
-    1. По подрядчику [Имя]:
-       - Проблема: [Кратко дефект]. 
-         Решение: [Что делать]. Ответственный: [...]. Срок: [...].
-    ...`;
+    [ИМЯ ПОДРЯДЧИКА 1]
+    - [Кратко суть проблемы]. Решение: [Что делать]. Отв: [...]. Срок: [...].
+    - [Следующая проблема]...
+    
+    [ИМЯ ПОДРЯДЧИКА 2]...
+    `;
 
-    const promptUser = `ПРИНЯТЫЕ РЕШЕНИЯ ПО ДЕФЕКТАМ:\n${agendaContext.join('\n')}\n\nДОП. ВОПРОСЫ: ${extraNotes}`;
+    const promptUser = `ДАННЫЕ ДЛЯ ПРОТОКОЛА:\n\n${agendaContextString}\nДОП. ВОПРОСЫ: ${extraNotes}`;
 
     try {
         const response = await window.callAI([
@@ -7809,7 +7928,7 @@ window.rbi_loadPractices = async function() {
     } catch(e) { console.error("Ошибка загрузки практик", e); }
 };
 
-window.rbi_renderPracticesTab = function() {
+window.rbi_renderPracticesTab = async function() {
     const detectorContainer = document.getElementById('practices-auto-detector');
     const listContainer = document.getElementById('practices-list-container');
     if (!detectorContainer || !listContainer) return;
@@ -7818,17 +7937,15 @@ window.rbi_renderPracticesTab = function() {
     let detectorHtml = '';
     const myName = document.getElementById('inp-inspector')?.value.trim();
     
-    // Ищем воздействия с дельтой >= 10%, которые еще не стали практиками
     const successfulInterventions = window.rbi_interventionsData.filter(intItem => {
         if (intItem.inspector !== myName) return false;
         if (!intItem.deltaUrk || intItem.deltaUrk < 10) return false;
-        // Проверяем, есть ли уже практика по этому ID
-        const exists = window.rbi_practicesData.find(p => p.interventionId === intItem.id);
+        const exists = window.rbi_practicesData.find(p => p.interventionId === intItem.id && !p._deleted);
         return !exists;
     });
 
     if (successfulInterventions.length > 0) {
-        const item = successfulInterventions[0]; // Показываем по одной
+        const item = successfulInterventions[0]; 
         detectorHtml = `
             <div class="bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-2xl p-4 shadow-lg text-white mb-6 relative overflow-hidden">
                 <div class="absolute -right-4 -top-4 opacity-20 text-8xl">🏆</div>
@@ -7846,21 +7963,26 @@ window.rbi_renderPracticesTab = function() {
     detectorContainer.innerHTML = detectorHtml;
 
     // 2. РЕНДЕР СПИСКА ПРАКТИК
-    if (window.rbi_practicesData.length === 0) {
+    const sorted = [...window.rbi_practicesData]
+        .filter(p => p && p.id && !p._deleted && p.date && p.title) 
+        .sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    if (sorted.length === 0) {
         listContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Оформленных практик пока нет</div>`;
         return;
     }
 
-    // Сортировка - новые сверху (с отсевом пустых призраков)
-    const sorted = [...window.rbi_practicesData]
-        .filter(p => p && p.id && p.date && p.title) 
-        .sort((a,b) => new Date(b.date) - new Date(a.date));
+    // Предзагрузка фото из IndexedDB
+    for (let p of sorted) {
+        if (p.photoBefore) p._realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
+        if (p.photoAfter) p._realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
+    }
     
     listContainer.innerHTML = sorted.map(p => `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden">
             <div class="bg-gradient-to-r from-slate-50 to-white dark:from-slate-800 dark:to-slate-900 border-b border-[var(--card-border)] p-4 flex justify-between items-start">
-                <div class="pr-2">
-                    <div class="text-[14px] font-black text-slate-800 dark:text-white leading-tight mb-1">🏆 ${p.title}</div>
+                <div class="pr-2 flex-1">
+                    <div class="text-[14px] font-black text-slate-800 dark:text-white leading-tight mb-1 truncate pr-2">🏆 ${p.title}</div>
                     <div class="text-[10px] font-bold text-[var(--text-muted)] flex items-center gap-1.5"><span class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800 uppercase">${p.templateTitle}</span> • Автор: ${p.author}</div>
                 </div>
                 <div class="text-right shrink-0">
@@ -7873,18 +7995,24 @@ window.rbi_renderPracticesTab = function() {
                 <div class="bg-red-50 dark:bg-red-900/10 p-3 rounded-xl border border-red-100 dark:border-red-800/50">
                     <div class="text-[9px] font-black text-red-600 uppercase tracking-widest mb-1.5 border-b border-red-200 dark:border-red-800 pb-1">Проблема (ДО)</div>
                     <div class="text-[11px] font-medium text-red-900 dark:text-red-200 leading-relaxed">${p.problem}</div>
-                    ${p.photoBefore ? `<img src="${window.getPhotoSrc(p.photoBefore)}" class="mt-2 w-full h-24 object-cover rounded-lg border border-red-200 cursor-pointer" onclick="openPhotoViewer('${p.photoBefore}')">` : ''}
+                    ${p._realBefore ? `<img src="${p._realBefore}" class="mt-2 w-full h-24 object-cover rounded-lg border border-red-200 cursor-pointer" onclick="setTimeout(() => openPhotoViewer('${p.photoBefore}'), 100)">` : ''}
                 </div>
                 <div class="bg-green-50 dark:bg-green-900/10 p-3 rounded-xl border border-green-100 dark:border-green-800/50">
                     <div class="text-[9px] font-black text-green-600 uppercase tracking-widest mb-1.5 border-b border-green-200 dark:border-green-800 pb-1">Решение (ПОСЛЕ)</div>
                     <div class="text-[11px] font-medium text-green-900 dark:text-green-200 leading-relaxed">${p.solution}</div>
-                    ${p.photoAfter ? `<img src="${window.getPhotoSrc(p.photoAfter)}" class="mt-2 w-full h-24 object-cover rounded-lg border border-green-200 cursor-pointer" onclick="openPhotoViewer('${p.photoAfter}')">` : ''}
+                    ${p._realAfter ? `<img src="${p._realAfter}" class="mt-2 w-full h-24 object-cover rounded-lg border border-green-200 cursor-pointer" onclick="setTimeout(() => openPhotoViewer('${p.photoAfter}'), 100)">` : ''}
                 </div>
             </div>
             
-            <div class="p-3 bg-[var(--hover-bg)] border-t border-[var(--card-border)] flex gap-2">
+            <div class="p-3 bg-[var(--hover-bg)] border-t border-[var(--card-border)] flex flex-wrap gap-2">
                 <button onclick="rbi_publishPractice('${p.id}')" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1.5 transition-colors" ${p.isPublished ? 'disabled' : ''}>
-                    ${p.isPublished ? '✅ Отправлено в Компанию' : '📤 Поделиться с Командой (+50 XP)'}
+                    ${p.isPublished ? '✅ Отправлено' : '📤 Отправить'}
+                </button>
+                <button onclick="rbi_printPracticePdf('${p.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1.5 transition-colors">
+                    🖨️ PDF
+                </button>
+                <button onclick="rbi_deletePractice('${p.id}')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors">
+                    🗑️ Удалить
                 </button>
             </div>
         </div>
@@ -7999,8 +8127,79 @@ window.rbi_publishPractice = async function(id) {
     rbi_renderPracticesTab();
 };
 
+window.rbi_deletePractice = async function(id) {
+    if (!confirm("Вы уверены, что хотите удалить эту практику? Она удалится у всей команды.")) return;
+    
+    const pIndex = window.rbi_practicesData.findIndex(p => p.id === id);
+    if (pIndex === -1) return;
 
+    // Мягкое удаление
+    window.rbi_practicesData[pIndex]._deleted = true;
+    window.rbi_practicesData[pIndex].updatedAt = new Date().toISOString();
+    
+    await dbPut(STORES.PRACTICES, window.rbi_practicesData[pIndex]);
+    
+    // Даем команду облаку
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
 
+    showToast("🗑️ Практика успешно удалена.");
+    rbi_renderPracticesTab();
+};
+
+// === ПЕЧАТЬ ЛУЧШЕЙ ПРАКТИКИ В PDF ===
+window.rbi_printPracticePdf = async function(id) {
+    const p = window.rbi_practicesData.find(x => x.id === id);
+    if (!p) return;
+
+    let imgBeforeHtml = '';
+    let imgAfterHtml = '';
+
+    if (p.photoBefore) {
+        const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
+        imgBeforeHtml = `<div style="height: 250px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #fca5a5;"><img src="${realBefore}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
+    } else {
+        imgBeforeHtml = `<div style="height: 250px; border: 1px dashed #fca5a5; border-radius: 8px; text-align: center; line-height: 250px; color: #fca5a5;">Нет фото</div>`;
+    }
+
+    if (p.photoAfter) {
+        const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
+        imgAfterHtml = `<div style="height: 250px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #bbf7d0;"><img src="${realAfter}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
+    } else {
+        imgAfterHtml = `<div style="height: 250px; border: 1px dashed #bbf7d0; border-radius: 8px; text-align: center; line-height: 250px; color: #bbf7d0;">Нет фото</div>`;
+    }
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">БИБЛИОТЕКА ЛУЧШИХ ПРАКТИК</h1>
+            <div style="font-size: 14px; color: #4f46e5; font-weight: bold; margin-top: 5px;">ВИД РАБОТ: ${p.templateTitle} | АВТОР: ${p.author}</div>
+        </div>
+
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <h2 style="margin: 0 0 10px 0; font-size: 20px; color: #0f172a; text-transform: uppercase;">🏆 ${p.title}</h2>
+            <div style="font-size: 14px; color: #16a34a; font-weight: bold;">Доказанная эффективность: Качество выросло на +${p.deltaUrk}% УрК</div>
+        </div>
+
+        <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+            <tr>
+                <td style="width: 50%; padding: 15px; border-radius: 12px; background: #fef2f2; border: 2px solid #fecaca; vertical-align: top;">
+                    <h2 style="color: #991b1b; font-size: 16px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #fca5a5; padding-bottom: 10px;">❌ Проблема (ДО)</h2>
+                    <p style="font-size: 14px; color: #7f1d1d; white-space: pre-wrap; line-height: 1.5;">${p.problem}</p>
+                    ${imgBeforeHtml}
+                </td>
+                <td style="width: 50%; padding: 15px; border-radius: 12px; background: #f0fdf4; border: 2px solid #bbf7d0; vertical-align: top;">
+                    <h2 style="color: #166534; font-size: 16px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 10px;">✅ Решение (ПОСЛЕ)</h2>
+                    <p style="font-size: 14px; color: #14532d; white-space: pre-wrap; line-height: 1.5;">${p.solution}</p>
+                    ${imgAfterHtml}
+                </td>
+            </tr>
+        </table>
+    `;
+
+    if (typeof printPdfShell === 'function') {
+        printPdfShell(`Практика: ${p.title}`, content, "A4", "landscape", "browser");
+    }
+};
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */
 /* ============================================================================ */
