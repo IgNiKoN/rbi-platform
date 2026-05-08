@@ -13,6 +13,10 @@ window.activeTaskId = null; // Глобальная переменная для 
 let currentPhotoId = null;
 let chartInstances = {};
 let customExpertConclusions = {};
+window.twiOwnerFilter = 'ALL'; // Глобальный фильтр для TWI карт
+window.nodeOwnerFilter = 'ALL'; // Глобальный фильтр для Узлов
+window.docOwnerFilter = 'ALL';
+window.practiceOwnerFilter = 'ALL';
 // Состояние мульти-фильтров
 let activeMultiFilters = {
     history: { project: [], contractor: [], inspector: [] },
@@ -157,7 +161,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (hasNewNodes) {
                 clearTimeout(imgDebounceTimer);
                 imgDebounceTimer = setTimeout(() => {
-                    const imgs = document.querySelectorAll('img[src^="local://"]:not([data-local-src]), img[src^="cloud://"]:not([data-local-src])');
+                    const imgs = Array.from(document.querySelectorAll(
+    'img[src^="local://"]:not([data-local-src]), img[src^="cloud://"]:not([data-local-src])'
+)).filter(img => !img.closest('[data-no-observe]'));
                     for (let i = 0; i < imgs.length; i++) {
                         const img = imgs[i];
                         img.setAttribute('data-local-src', img.src);
@@ -274,6 +280,15 @@ async function restoreSession() {
         if (typeof updateDataSummary === 'function') updateDataSummary();
     } catch (e) {
         console.error('Ошибка восстановления:', e);
+    }
+    // Адаптивный глобальный фильтр Объектов
+    const uniqueProjs = [...new Set(contractorArray.map(i => i.projectName).filter(Boolean))];
+    if (uniqueProjs.length === 1) {
+        activeMultiFilters.analytics.project = [uniqueProjs[0]];
+        activeMultiFilters.history.project = [uniqueProjs[0]];
+    } else {
+        activeMultiFilters.analytics.project = [];
+        activeMultiFilters.history.project = [];
     }
     updateAllDynamicFilters();
     setTimeout(() => { if (typeof checkScheduledBackups === 'function') checkScheduledBackups(); }, 2000);
@@ -639,7 +654,7 @@ function updateBodyPadding() {
 // === НАВИГАЦИЯ И ВКЛАДКИ ===
 function switchTab(tabId, navElement = null) {
     // ОЧИСТКА RAM: При смене вкладки удаляем старые фото из памяти
-    if (typeof PhotoManager !== 'undefined') PhotoManager.clearMemory();
+    if (typeof PhotoManager !== 'undefined' && !window._pdfGenerating) PhotoManager.clearMemory();
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     
@@ -4008,18 +4023,50 @@ function renderDocsList() {
     const searchInput = document.getElementById('doc-search-input')?.value.toLowerCase() || '';
     if (!container) return;
 
-    // Снимаем эмодзи с кнопок шапки фильтров
-    const aiBtn = document.querySelector('button[onclick="openAiDocChat()"]');
-    const addBtn = document.querySelector('button[onclick="openAddDocModal()"]');
-    if (aiBtn) aiBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Спросить ИИ`;
-    if (addBtn) addBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Свой НД`;
+    // ОБНОВЛЯЕМ ШАПКУ (ДОБАВЛЯЕМ ПЕРЕКЛЮЧАТЕЛЬ "МОИ/ВСЕ")
+    const filtersBlock = document.getElementById('ref-docs-filters');
+    if (filtersBlock) {
+        filtersBlock.innerHTML = `
+            <div class="flex justify-between items-center mb-3">
+                <div class="flex gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <button onclick="window.docOwnerFilter='ALL'; renderDocsList()" class="px-3 py-1 text-[10px] font-bold rounded-md ${window.docOwnerFilter === 'ALL' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Все НД</button>
+                    <button onclick="window.docOwnerFilter='MY'; renderDocsList()" class="px-3 py-1 text-[10px] font-bold rounded-md ${window.docOwnerFilter === 'MY' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Мои</button>
+                </div>
+                <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать всё
+                </button>
+            </div>
+            <div class="flex justify-between items-center mb-2">
+                <div class="relative flex-1 mr-2">
+                    <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                    <input type="text" id="doc-search-input" class="input-base pl-9 text-[11px]" placeholder="Поиск ГОСТ, СП..." oninput="renderDocsList()" value="${searchInput}">
+                </div>
+                <button onclick="openAiDocChat()" class="bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-black uppercase whitespace-nowrap mr-2 flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Спросить ИИ
+                </button>
+                <button onclick="openAddDocModal()" class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap flex items-center gap-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Свой НД
+                </button>
+            </div>
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-[var(--card-border)] pt-2" id="doc-filters-container">
+                <button onclick="filterDocs('ALL', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter==='ALL'?'bg-indigo-600 text-white border-indigo-600':'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} shadow-sm active:scale-95 whitespace-nowrap border">Все</button>
+                <button onclick="filterDocs('СП', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter==='СП'?'bg-indigo-600 text-white border-indigo-600':'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} shadow-sm active:scale-95 whitespace-nowrap border">СП</button>
+                <button onclick="filterDocs('ГОСТ', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter==='ГОСТ'?'bg-indigo-600 text-white border-indigo-600':'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} shadow-sm active:scale-95 whitespace-nowrap border">ГОСТ</button>
+                <button onclick="filterDocs('ПРОЕКТ', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter==='ПРОЕКТ'?'bg-indigo-600 text-white border-indigo-600':'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} shadow-sm active:scale-95 whitespace-nowrap border">Проект / РД</button>
+            </div>
+        `;
+    }
 
-    const allDocs = [...SYSTEM_DOCS, ...customDocs];
+    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...customDocs];
+    const currentEngineer = appSettings.engineerName || 'Инженер';
     
     let filtered = allDocs.filter(doc => {
         const matchSearch = doc.code.toLowerCase().includes(searchInput) || doc.title.toLowerCase().includes(searchInput);
         const matchFilter = currentDocFilter === 'ALL' || doc.type === currentDocFilter;
-        return matchSearch && matchFilter;
+        // Фильтр владельца (системные документы видны всем)
+        const matchOwner = window.docOwnerFilter === 'ALL' || doc.isSystem || doc.owner === currentEngineer;
+        
+        return matchSearch && matchFilter && matchOwner;
     });
 
     if (filtered.length === 0) {
@@ -4059,10 +4106,13 @@ function renderDocsList() {
             </div>
 
             <div class="flex justify-between items-center bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)] mt-auto">
-                <div class="text-[9px] font-bold text-slate-500 flex items-center gap-1">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ${infoText}
+                <div class="flex items-center gap-2 min-w-0 pr-2">
+                    <div class="text-[9px] font-bold text-slate-500 flex items-center gap-1 shrink-0">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ${infoText}
+                    </div>
+                    ${!isSystem ? `<div class="text-[8px] font-bold text-slate-400 truncate w-full" title="Автор: ${doc.owner || 'Система'}">👤 ${doc.owner ? doc.owner.split(' ')[0] : 'Система'}</div>` : ''}
                 </div>
-                ${(!isSystem && (!doc.owner || doc.owner === (appSettings.engineerName || 'Инженер'))) ? `<button onclick="event.stopPropagation(); deleteCustomDoc('${doc.id}')" class="text-red-500 hover:text-red-700 active:scale-90 transition-transform"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}
+                ${(!isSystem && (!doc.owner || doc.owner === (appSettings.engineerName || 'Инженер'))) ? `<button onclick="event.stopPropagation(); deleteCustomDoc('${doc.id}')" class="text-red-500 hover:text-red-700 active:scale-90 transition-transform shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>` : ''}
             </div>
         </div>`;
     });
@@ -4235,10 +4285,13 @@ window.rbi_reloadReferenceMemory = async function() {
             });
         }
         
-        // Безопасное слияние с проверкой наличия системного массива
+        // Безопасное слияние
         const sysCards = typeof SYSTEM_TWI_CARDS !== 'undefined' ? SYSTEM_TWI_CARDS : [];
         const systemIds = sysCards.map(c => c.id);
-        const filteredUserCards = loadedCards.filter(c => !systemIds.includes(c.id));
+        
+        // Оставляем ВСЕ пользовательские карты, которые не пересекаются по ID с системными
+        // И игнорируем удаленные
+        const filteredUserCards = loadedCards.filter(c => !systemIds.includes(c.id) && !c._deleted);
         
         customTwiCards = [...sysCards, ...filteredUserCards];
     } catch (e) { console.error("Ошибка обновления памяти TWI", e); }
@@ -4399,10 +4452,12 @@ function renderTwiList() {
     }
 
     // --- 2. СПИСОК КАРТОЧЕК ---
-    const filtered = customTwiCards.filter(card => 
-        card.title.toLowerCase().includes(searchInput) || 
-        card.checklistName.toLowerCase().includes(searchInput)
-    );
+    const currentEngineer = appSettings.engineerName || 'Инженер';
+    const filtered = customTwiCards.filter(card => {
+        const matchSearch = card.title.toLowerCase().includes(searchInput) || card.checklistName.toLowerCase().includes(searchInput);
+        const matchOwner = window.twiOwnerFilter === 'ALL' || (card.owner === currentEngineer);
+        return matchSearch && matchOwner;
+    });
 
     let html = '';
     
@@ -4459,9 +4514,12 @@ function renderTwiList() {
                             </div>
                         </div>
                     </div>
-                    <button onclick="openTwiActionSheet('${card.id}', event)" class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm transition-colors">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-                    </button>
+                    <div class="flex flex-col items-end shrink-0 gap-2">
+                        <button onclick="openTwiActionSheet('${card.id}', event)" class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400 hover:text-indigo-600 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                        </button>
+                        <div class="text-[8px] font-bold text-slate-400 truncate max-w-[60px]" title="Автор: ${card.owner || 'Система'}">👤 ${card.owner || 'Система'}</div>
+                    </div>
                 </div>`;
             });
             
@@ -5092,7 +5150,6 @@ async function deleteTwiCard(id) {
     } catch (e) { showToast("❌ Ошибка удаления"); }
 }
 
-// === УПРАВЛЕНИЕ АККОРДЕОНАМИ (СПРАВОЧНИК) ===
 function toggleManagePanel() {
     const body = document.getElementById('ref-manage-body');
     const icon = document.getElementById('ref-manage-toggle-icon');
@@ -5106,9 +5163,20 @@ function toggleManagePanel() {
         body.style.marginTop = '12px';
         icon.style.transform = 'rotate(0deg)';
         
-        // Рендерим список шаблонов, если он пуст
-        if (typeof renderSettingsTab === 'function') {
-            renderSettingsTab();
+        // Рендерим список пользовательских шаблонов ПРЯМО ТУТ
+        const templatesList = document.getElementById('settings-user-templates-list');
+        if (templatesList) {
+            const customKeys = Object.keys(userTemplates).sort((a, b) => userTemplates[a].title.localeCompare(userTemplates[b].title, 'ru'));
+            if (customKeys.length === 0) {
+                templatesList.innerHTML = `<div class="text-[10px] text-slate-400 italic py-2 text-center">Созданных чек-листов пока нет</div>`;
+            } else {
+                templatesList.innerHTML = customKeys.map(key => `
+                    <div class="flex justify-between items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg mb-2 shadow-sm">
+                        <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate pr-2 flex-1">📋 ${userTemplates[key].title}</div>
+                        <button onclick="deleteUserTemplate('${key}')" class="text-[10px] font-black text-red-500 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 rounded border border-red-100 dark:border-red-900 shadow-sm active:scale-95">УДАЛИТЬ</button>
+                    </div>
+                `).join('');
+            }
         }
     } else {
         // Скрываем панель управления
@@ -5479,7 +5547,9 @@ function filterNodes(category, btnElement) {
 }
 
 function openNodeViewer(nodeId) {
-    const node = SYSTEM_NODES.find(n => n.id === nodeId);
+    // ИЩЕМ УЗЕЛ ВО ВСЕХ БАЗАХ СРАЗУ
+    const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
+    const node = allNodes.find(n => n.id === nodeId);
     if (!node) return;
 
     // Безопасно заполняем текстовые поля
@@ -6540,11 +6610,6 @@ window.rbi_renderBackupRegistry = async function() {
 /* RBI NEW: Рендер списка задач (Инженер) */
 window.rbi_tasksData = []; // Локальный массив задач
 
-window.rbi_importScheduleExcel = function() {
-    showToast("Модуль парсинга Excel-графика будет добавлен на следующем шаге.");
-};
-
-
 // --- РОУТЕР ВКЛАДОК ИНЖЕНЕРА ---
 let currentActiveEngineerTab = 'eng-sub-tasks';
 
@@ -7122,63 +7187,90 @@ window.rbi_saveEditedMeeting = async function() {
     showToast("✅ Правки протокола сохранены");
 };
 
-// Функция печати Мемо в PDF
+// Функция печати Мемо в PDF (Расширенный красивый шаблон А4)
 window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
     const meet = window.rbi_meetingsData.find(m => m.id === id);
     if (!meet) return;
 
-    showToast("⏳ Собираем протокол для печати...");
+    showToast("⏳ Формируем протокол...");
 
     let photoHtml = '';
     if (meet.qDayPhoto) {
         const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
         photoHtml = `
-            <div style="height: 250px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 20px; text-align: center;">
-                <img src="${realSrc}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: inline-block;">
+            <div style="height: 200px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 20px; text-align: center;">
+                <img src="${realSrc}" style="width: 100%; height: 100%; object-fit: cover; display: inline-block;">
             </div>
         `;
     }
 
     let agendaHtml = '';
     if (meet.agenda && meet.agenda.length > 0) {
-        agendaHtml = meet.agenda.map(a => `
-            <div style="background: white; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-bottom: 10px; page-break-inside: avoid;">
-                <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
-                <div style="font-size: 11px; color: #334155; margin-bottom: 8px;">${a.defect}</div>
-                <div style="font-size: 10px;">
-                    <span style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 2px 6px; border-radius: 4px; font-weight: bold; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'};">${a.isDone ? 'Решено' : 'В работе'}</span>
-                    ${a.date ? `<span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; margin-left: 5px;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
-                    ${a.resp ? `<span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1; margin-left: 5px;">Отв: ${a.resp}</span>` : ''}
-                </div>
-                ${a.comment ? `<div style="font-size: 10px; color: #64748b; font-style: italic; margin-top: 8px; background: #f8fafc; padding: 6px; border-radius: 4px;">💬 ${a.comment}</div>` : ''}
-            </div>
+        agendaHtml = meet.agenda.map((a, idx) => `
+            <tr style="border-bottom: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; page-break-inside: avoid;">
+                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 35%;">
+                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
+                    <div style="font-size: 11px; color: #b91c1c; font-weight: bold;">${a.defect}</div>
+                </td>
+                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 45%;">
+                    <div style="font-size: 11px; color: #334155; margin-bottom: 4px;">${a.comment || 'Решение не зафиксировано'}</div>
+                    ${a.resp ? `<div style="font-size: 9px; color: #64748b; font-weight: bold;">Отв: ${a.resp}</div>` : ''}
+                </td>
+                <td style="padding: 10px; vertical-align: top; width: 20%; text-align: center;">
+                    <div style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 4px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'}; display: inline-block; margin-bottom: 4px;">${a.isDone ? 'Решено' : 'В работе'}</div>
+                    ${a.date ? `<div style="font-size: 9px; color: #475569; font-weight: bold;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</div>` : ''}
+                </td>
+            </tr>
         `).join('');
     }
 
+    // Собираем всё в красивый шаблон
     const content = `
         <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="font-size: 20px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
-            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-top: 5px;">Автор: ${meet.author} | Дата: ${new Date(meet.date).toLocaleDateString('ru-RU')}</div>
+            <h1 style="font-size: 22px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
+            <div style="font-size: 12px; color: #4f46e5; font-weight: bold; margin-top: 5px;">ДАТА: ${new Date(meet.date).toLocaleDateString('ru-RU')} | АВТОР: ${meet.author}</div>
         </div>
 
         ${photoHtml}
 
-        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 20px;">
-            <tr>
-                <td style="width: 45%; vertical-align: top; padding-right: 15px;">
-                    <h3 style="margin-top: 0; font-size: 12px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px;">📋 Обсуждаемая повестка</h3>
-                    ${agendaHtml}
-                    ${meet.notes ? `<div style="background: #fefce8; border: 1px solid #fde047; padding: 10px; border-radius: 8px; font-size: 11px; color: #854d0e; margin-top: 10px;"><b>Доп. тезисы:</b><br>${meet.notes}</div>` : ''}
-                </td>
-                <td style="width: 55%; vertical-align: top; padding-left: 15px; border-left: 2px solid #e2e8f0;">
-                    <h3 style="margin-top: 0; font-size: 12px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ Итоговое решение (МЕМО)</h3>
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; font-size: 11px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">${meet.memoText}</div>
-                </td>
-            </tr>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
+            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ ИТОГОВОЕ РЕШЕНИЕ (МЕМО)</h3>
+            <div style="font-size: 12px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${meet.memoText || 'Текст протокола отсутствует.'}</div>
+        </div>
+
+        ${meet.notes ? `
+        <div style="background: #fffbeb; border: 1px solid #fde047; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
+            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #b45309; border-bottom: 2px solid #fef08a; padding-bottom: 6px; margin-bottom: 10px;">📌 Дополнительные тезисы</h3>
+            <div style="font-size: 11px; line-height: 1.5; color: #713f12; white-space: pre-wrap;">${meet.notes}</div>
+        </div>` : ''}
+
+        <h3 style="font-size: 14px; text-transform: uppercase; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 15px;">📋 Детальная повестка и разбор дефектов</h3>
+        
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #cbd5e1;">
+            <thead style="background: #e2e8f0; text-transform: uppercase; font-size: 10px; color: #475569;">
+                <tr>
+                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Подрядчик и Проблема</th>
+                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Решение и Ответственный</th>
+                    <th style="padding: 10px; text-align: center;">Статус и Срок</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${agendaHtml || `<tr><td colspan="3" style="text-align: center; padding: 15px; font-size: 11px; color: #64748b;">Повестка не заполнена</td></tr>`}
+            </tbody>
         </table>
+
+        <div style="margin-top: 40px; page-break-inside: avoid;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <tr>
+                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">${meet.author}</td>
+                    <td style="width: 20%;"></td>
+                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Подпись участников (Ознакомлен)</td>
+                </tr>
+            </table>
+        </div>
     `;
 
-    if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "landscape", mode);
+    if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "portrait", mode);
 };
 
 window.rbi_deleteMeeting = async function(id) {
@@ -7419,7 +7511,35 @@ window.rbi_createMeeting = function(customData = null) {
             }
         });
     }
-
+    // 3. ИНЪЕКЦИЯ НЕРЕШЕННЫХ ВОПРОСОВ С ПРОШЛЫХ СОВЕЩАНИЙ
+    if (typeof window.rbi_meetingsData !== 'undefined') {
+        window.rbi_meetingsData.forEach(meet => {
+            if (meet.agenda) {
+                meet.agenda.forEach(a => {
+                    if (!a.isDone) {
+                        // Если в фильтре выбраны конкретные подрядчики, отсеиваем лишних
+                        if (customData && !customData.some(c => c.contractorName === a.contr)) return;
+                        
+                        if (!contrDefects[a.contr]) contrDefects[a.contr] = [];
+                        // Проверяем, не добавлен ли этот дефект уже
+                        let existing = contrDefects[a.contr].find(d => d.name === a.defect);
+                        if (!existing) {
+                            contrDefects[a.contr].push({
+                                name: a.defect,
+                                count: 1,
+                                isB3: false,
+                                isSk: false,
+                                isCarryOver: true, // Флаг: это старый вопрос!
+                                oldDate: a.date,
+                                oldResp: a.resp,
+                                oldComment: a.comment
+                            });
+                        }
+                    }
+                });
+            }
+        });
+    }
     let goodContrsHtml = goodContrs.length > 0 
         ? goodContrs.map(c => `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[9px] font-black mr-1 mb-1 inline-block">${c}</span>`).join('') 
         : '<span class="text-[10px] text-slate-400 font-bold">Отличников нет</span>';
@@ -7445,6 +7565,10 @@ window.rbi_createMeeting = function(customData = null) {
                 borderCls = 'border-blue-500 bg-blue-50 dark:bg-blue-900/10';
                 badgeHtml = '<span class="text-[9px] bg-blue-600 text-white px-1 rounded mr-1">ПК СК</span>';
                 if (def.deadline) defDeadline = ` value="${def.deadline.split('T')[0]}"`;
+            }
+            if (def.isCarryOver) {
+                borderCls = 'border-purple-500 bg-purple-50 dark:bg-purple-900/10';
+                badgeHtml = '<span class="text-[9px] bg-purple-600 text-white px-1 rounded mr-1">С ПРОШЛОГО СОВЕЩАНИЯ</span>';
             }
 
             agendaHtml += `
@@ -8010,16 +8134,6 @@ window.rbi_renderImpactTab = function() {
 
 window.rbi_practicesData = [];
 
-// Переопределяем функцию загрузки справочника (добавляем рендер практик)
-const originalRenderRefTab = window.switchReferenceSubTab;
-window.switchReferenceSubTab = async function(tabId, btnElement) {
-    originalRenderRefTab(tabId, btnElement);
-    if (tabId === 'ref-sub-practices') {
-        await rbi_loadPractices();
-        rbi_renderPracticesTab();
-    }
-};
-
 window.rbi_loadPractices = async function() {
     try {
         const stored = await dbGetAll(STORES.PRACTICES);
@@ -8037,6 +8151,24 @@ window.rbi_renderPracticesTab = async function() {
     const detectorContainer = document.getElementById('practices-auto-detector');
     const listContainer = document.getElementById('practices-list-container');
     if (!detectorContainer || !listContainer) return;
+    // НОВЫЙ БЛОК: Фильтр и Кнопка Скачивания
+    const titleContainer = listContainer.previousElementSibling;
+    if (titleContainer) {
+        titleContainer.innerHTML = `
+            <div class="flex flex-col gap-3 w-full">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека Практик</h2>
+                    <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать всё
+                    </button>
+                </div>
+                <div class="flex gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 w-fit">
+                    <button onclick="window.practiceOwnerFilter='ALL'; rbi_renderPracticesTab()" class="px-3 py-1 text-[10px] font-bold rounded-md ${window.practiceOwnerFilter === 'ALL' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Все практики</button>
+                    <button onclick="window.practiceOwnerFilter='MY'; rbi_renderPracticesTab()" class="px-3 py-1 text-[10px] font-bold rounded-md ${window.practiceOwnerFilter === 'MY' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Мои</button>
+                </div>
+            </div>
+        `;
+    }
 
     // 1. АВТОДЕТЕКТОР УСПЕХА
     let detectorHtml = '';
@@ -8068,8 +8200,13 @@ window.rbi_renderPracticesTab = async function() {
     detectorContainer.innerHTML = detectorHtml;
 
     // 2. РЕНДЕР СПИСКА ПРАКТИК
+    const currentEngineer = appSettings.engineerName || 'Инженер';
     const sorted = [...window.rbi_practicesData]
-        .filter(p => p && p.id && !p._deleted && p.date && p.title) 
+        .filter(p => {
+            if (!p || !p.id || p._deleted || !p.date || !p.title) return false;
+            // Фильтр владельца
+            return window.practiceOwnerFilter === 'ALL' || p.author === currentEngineer;
+        })
         .sort((a,b) => new Date(b.date) - new Date(a.date));
 
     if (sorted.length === 0) {
@@ -8110,15 +8247,19 @@ window.rbi_renderPracticesTab = async function() {
             </div>
             
             <div class="p-3 bg-[var(--hover-bg)] border-t border-[var(--card-border)] flex flex-wrap gap-2">
+                ${p.author === currentEngineer ? `
                 <button onclick="rbi_publishPractice('${p.id}')" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1.5 transition-colors" ${p.isPublished ? 'disabled' : ''}>
-                    ${p.isPublished ? '✅ Отправлено' : '📤 Отправить'}
+                    ${p.isPublished ? '✅ Опубликовано' : '📤 В Библиотеку'}
+                </button>` : ''}
+                
+                <button onclick="rbi_printPracticePdf('${p.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1.5 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> PDF
                 </button>
-                <button onclick="rbi_printPracticePdf('${p.id}')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm flex justify-center items-center gap-1.5 transition-colors">
-                    🖨️ PDF
-                </button>
-                <button onclick="rbi_deletePractice('${p.id}')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors">
+                
+                ${p.author === currentEngineer ? `
+                <button onclick="rbi_deletePractice('${p.id}')" class="flex-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors">
                     🗑️ Удалить
-                </button>
+                </button>` : ''}
             </div>
         </div>
     `).join('');
@@ -8309,15 +8450,27 @@ window.rbi_printPracticePdf = async function(id) {
 // ============================================================================
 // ЭКСПОРТ ВСЕЙ БИБЛИОТЕКИ СПРАВОЧНИКОВ В КОД (ДЛЯ ВШИВАНИЯ В PWA)
 // ============================================================================
-window.exportLibraryToJsCode = function() {
-    // Проверяем, есть ли несинхронизированные локальные картинки
+window.exportLibraryToJsCode = async function() {
     const checkLocal = (obj) => {
         let str = JSON.stringify(obj);
         return str.includes('"local://') || str.includes('"data:image');
     };
 
+    // Если есть локальные фотки — предлагаем авто-синхронизацию
     if (checkLocal(customTwiCards) || checkLocal(customNodes) || checkLocal(window.rbi_practicesData)) {
-        return showToast("⚠️ Сначала нажмите 'Синхронизировать сейчас'! В базе есть локальные фото, нужно получить публичные ссылки из облака.");
+        if(confirm("⚠️ В базе есть локальные фото.\n\nЧтобы они работали у всей команды без интернета, их нужно сгенерировать в облачные ссылки.\n\nЗапустить быструю синхронизацию сейчас и затем скачать код?")) {
+            showToast("⏳ Выгружаем фото в облако...");
+            
+            // Принудительно помечаем данные как "грязные", чтобы Sync точно их обработал
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            
+            if (typeof window.triggerSync === 'function') {
+                await window.triggerSync('manual');
+                // Даем время на обновление ОЗУ
+                setTimeout(() => window.exportLibraryToJsCode(), 1500);
+            }
+        }
+        return;
     }
 
     let jsCode = "/* =================================================== */\n";

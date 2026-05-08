@@ -213,6 +213,8 @@ function exportPdfOnePager(data, mode = 'script') {
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
+                        const isB1 = foundItem && foundItem.w === 1;
+                        if (isB1) return; // B1 не попадает в топ дефектов
                         if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно'), name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
@@ -717,6 +719,8 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
                             if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
                             b3Map[defName].count++; if (photo) b3Map[defName].photo = photo; 
                         } else {
+                            const isB1 = foundItem && foundItem.w === 1;
+                            if (isB1) return; // B1 не попадает в топ дефектов
                             if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
                             b2Map[defName].count++; if (photo) b2Map[defName].photo = photo;
                         }
@@ -1585,6 +1589,7 @@ function exportPdfData(data, mode = 'script') {
 
 // 9. Универсальная печатная оболочка (Диспетчер потоков PDF / Print)
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
+    window._pdfGenerating = true;
     // 1. Управление лоадером
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
@@ -1642,6 +1647,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     // ============================================================================
     if (mode === 'browser') {
         const printContainer = document.getElementById('print-content');
+        printContainer.setAttribute('data-no-observe', 'true');
         if (!printContainer) {
             console.error('Контейнер #print-content не найден!');
             return;
@@ -1676,6 +1682,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         await waitForPdfImages(printContainer, 5000);
         
         setTimeout(() => {
+            window._pdfGenerating = false;
             window.print();
             // Очищаем DOM и убираем лоадер после закрытия окна печати
             setTimeout(() => {
@@ -1695,6 +1702,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     const hiddenDiv = document.createElement('div');
     // Держим блок в координатах экрана с opacity: 0.01, чтобы агрессивный сборщик мусора iOS Safari не удалил его из оперативной памяти
     hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 100}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
+    hiddenDiv.setAttribute('data-no-observe', 'true');
     document.body.appendChild(hiddenDiv);
 
     const styleElem = document.createElement('style');
@@ -1708,6 +1716,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     hiddenDiv.appendChild(styleElem);
 
     const cleanup = () => {
+        window._pdfGenerating = false;
         if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
@@ -2459,6 +2468,7 @@ function processDataImport(event) {
 window.exportPersonalContractorReport = async function(contractorName) {
     const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
     if (data.length === 0) return showToast('Нет данных для отчета');
+    if (data.length < 7) return showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.');
     
     showToast("⚙️ Подготовка персонального отчета...");
 
@@ -2816,19 +2826,27 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
-// Преобразует все local:// ссылки в контейнере в реальные blob:
 async function resolveLocalPhotosForPdf(container) {
     const images = container.querySelectorAll('img');
     const promises = [];
 
     for (let img of images) {
-        const src = img.getAttribute('src');
-        if (src && src.startsWith('local://')) {
-            promises.push(
-                PhotoManager.getAsyncUrl(src).then(realUrl => {
-                    if (realUrl) img.src = realUrl;
-                }).catch(e => console.warn("Ошибка подгрузки фото для PDF:", e))
-            );
+        // Браузерный механизм мог уже подменить local:// на серый квадрат
+        // и убрать оригинальный адрес в data-local-src — ищем там тоже
+        const src = img.getAttribute('data-local-src') || img.getAttribute('src');
+
+        if (src && (src.startsWith('local://') || src.startsWith('cloud://'))) {
+            promises.push((async () => {
+                try {
+                    const realUrl = await PhotoManager.getAsyncUrl(src);
+                    if (realUrl) {
+                        img.src = realUrl;
+                        img.removeAttribute('data-local-src');
+                    }
+                } catch(e) {
+                    console.warn('[PDF] Фото не загружено:', src, e);
+                }
+            })());
         }
     }
     await Promise.all(promises);

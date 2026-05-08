@@ -125,7 +125,13 @@ function renderCurrentAnalyticsTab() {
 
     const data = getFilteredAnalyticsData();
     
-    if (currentActiveAnalyticsTab === 'sub-contractors') renderContractorsSubTab(data);
+    if (currentActiveAnalyticsTab === 'sub-contractors') {
+    renderContractorsSubTab(data);
+    // Если была открыта детализация — восстанавливаем с пересозданием графика
+    if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
+        showContractorDetailView(currentDetailedContractor);
+    }
+}
     else if (currentActiveAnalyticsTab === 'sub-onepager') renderOnePagerSubTab(data);
     else if (currentActiveAnalyticsTab === 'sub-schedule') { if(typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
     else if (currentActiveAnalyticsTab === 'sub-data') renderDataSubTab(data);
@@ -156,6 +162,9 @@ function renderContractorsSubTab(data) {
     const groupedC = {};
     const causesCount = {};
 
+    // Глобальные массивы для фотогалерей
+    let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
+
     data.forEach(i => { 
         if(i.metrics) { 
             sumUrkProd += i.metrics.final; 
@@ -167,11 +176,33 @@ function renderContractorsSubTab(data) {
         groupedC[cKey] = groupedC[cKey] || []; 
         groupedC[cKey].push(i);
 
-        if(i.state && i.details) {
+        if(i.state) {
             Object.keys(i.state).forEach(id => {
-                if (i.state[id] === 'fail' || i.state[id] === 'fail_escalated') {
-                    let code = i.details[id]?.causeCode || 'C00';
+                const s = i.state[id];
+                
+                if (s === 'fail' || s === 'fail_escalated') {
+                    let code = i.details && i.details[id] ? i.details[id].causeCode || 'C00' : 'C00';
                     causesCount[code] = (causesCount[code] || 0) + 1;
+                }
+
+                const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
+                if (photo) {
+                    let defName = "Дефект";
+                    const tType = i.templateKey ? i.templateKey.split('_')[0] : '';
+                    const tKey = i.templateKey ? i.templateKey.replace(tType + '_', '') : '';
+                    const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                    const foundItem = getFlatList(cl).find(x => String(x.id) === String(id));
+                    if(foundItem) defName = foundItem.n;
+
+                    const photoObj = { photo: photo, name: defName, contr: i.contractorName, date: new Date(i.date).toLocaleDateString('ru-RU') };
+
+                    if(s === 'fail' || s === 'fail_escalated') {
+                        let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
+                        if (isB3) allPhotosB3.push(photoObj);
+                        else allPhotosB2.push(photoObj);
+                    } else if (s === 'ok') {
+                        allPhotosOK.push(photoObj);
+                    }
                 }
             });
         }
@@ -184,12 +215,17 @@ function renderContractorsSubTab(data) {
     let defaultSmartText = '';
     let cList = [];
     
-    // Списки для фотогалерей
-    let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
-    
+    for(let cName in groupedC) {
+        const cData = groupedC[cName];
+        const m = getContractorMetrics(cData, typeof userTemplates !== 'undefined' ? userTemplates : {});
+        if (m) {
+            cList.push({ name: cName, metrics: m });
+            if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
+        }
+    }
     
     const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
-    if (defaultSmartText === '') defaultSmartText = '✅ Все подрядчики в зеленой зоне. Вмешательство не требуется.';
+    if (defaultSmartText === '') defaultSmartText = 'Все подрядчики в зеленой зоне. Вмешательство не требуется.';
 
     const globalKey = 'global_main_analysis';
     const rawSmartText = customExpertConclusions[globalKey] || defaultSmartText;
@@ -197,7 +233,7 @@ function renderContractorsSubTab(data) {
     const isCustomText = !!customExpertConclusions[globalKey];
 
     const getSelectHtml = (type) => `
-        <select onchange="updateTrendCharts('${type}', this.value)" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-white rounded px-1 py-1 outline-none cursor-pointer shadow-sm">
+        <select onchange="updateTrendCharts('${type}', this.value)" class="text-[9px] font-semibold border border-indigo-200 text-indigo-700 bg-white rounded px-1 py-1 outline-none cursor-pointer shadow-sm">
             <option value="WEEK" ${trendGroupings[type]==='WEEK'?'selected':''}>Недели</option>
             <option value="MONTH" ${trendGroupings[type]==='MONTH'?'selected':''}>Месяцы</option>
         </select>
@@ -206,40 +242,44 @@ function renderContractorsSubTab(data) {
     topContainer.innerHTML = `
         <div class="grid grid-cols-2 min-[400px]:grid-cols-4 gap-2 mb-3">
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
-                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1" title="Средний УрК всех изделий">Ср. УрК Изд.</div>
-                <div class="text-2xl font-black ${avgUrkProd < 70 ? 'text-red-600' : (avgUrkProd < 85 ? 'text-orange-500' : 'text-green-600')}">${avgUrkProd}%</div>
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1" title="Средний УрК всех изделий">Ср. УрК Изд.</div>
+                <div class="text-2xl font-bold ${avgUrkProd < 70 ? 'text-red-600' : (avgUrkProd < 85 ? 'text-orange-500' : 'text-green-600')}">${avgUrkProd}%</div>
             </div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
-                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1" title="Средний Интегральный рейтинг подрядчиков">Надежность (ИУрК)</div>
-                <div class="text-2xl font-black ${avgIntegralUrk < 70 ? 'text-red-600' : (avgIntegralUrk < 85 ? 'text-orange-500' : 'text-indigo-600')}">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1" title="Средний Интегральный рейтинг подрядчиков">Надежность (ИУрК)</div>
+                <div class="text-2xl font-bold ${avgIntegralUrk < 70 ? 'text-red-600' : (avgIntegralUrk < 85 ? 'text-orange-500' : 'text-indigo-600')}">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
             </div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
-                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Подрядчиков</div>
-                <div class="text-2xl font-black text-slate-800 dark:text-white">${contrCount}</div>
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Подрядчиков</div>
+                <div class="text-2xl font-bold text-slate-800 dark:text-white">${contrCount}</div>
             </div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
-                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Проверок</div>
-                <div class="text-2xl font-black text-slate-800 dark:text-white">${data.length}</div>
+                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Проверок</div>
+                <div class="text-2xl font-bold text-slate-800 dark:text-white">${data.length}</div>
             </div>
             <div class="col-span-2 min-[400px]:col-span-4 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-2 shadow-inner flex justify-around text-center">
-                <div><span class="text-[9px] font-bold text-slate-400 uppercase block">Мелкие (B1)</span><span class="font-black text-blue-600">${sumB1}</span></div>
+                <div><span class="text-[9px] font-semibold text-slate-400 uppercase block">Мелкие (B1)</span><span class="font-bold text-blue-600">${sumB1}</span></div>
                 <div class="w-px bg-[var(--card-border)]"></div>
-                <div><span class="text-[9px] font-bold text-slate-400 uppercase block">Значимые (B2)</span><span class="font-black text-orange-500">${sumB2}</span></div>
+                <div><span class="text-[9px] font-semibold text-slate-400 uppercase block">Значимые (B2)</span><span class="font-bold text-orange-500">${sumB2}</span></div>
                 <div class="w-px bg-[var(--card-border)]"></div>
-                <div><span class="text-[9px] font-bold text-slate-400 uppercase block">Критичные (B3)</span><span class="font-black text-red-600">${sumB3}</span></div>
+                <div><span class="text-[9px] font-semibold text-slate-400 uppercase block">Критичные (B3)</span><span class="font-bold text-red-600">${sumB3}</span></div>
             </div>
         </div>
 
-        <!-- РЕДАКТИРУЕМЫЙ СМАРТ АНАЛИЗ СИСТЕМЫ -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
-                <span class="flex items-center gap-2">🧠 Анализ зон риска (AI)</span>
+            <summary class="p-3 font-bold text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Анализ зон риска (AI)
+                </span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 relative">
-                <button onclick="editExpertText('${globalKey}', 'hidden_global_analysis')" class="absolute top-3 right-3 text-[9px] font-bold bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-2 py-1 rounded shadow-sm active:scale-95 text-slate-600 dark:text-slate-300">✏️ Изменить</button>
-                <div class="text-[10px] text-slate-500 uppercase font-bold mb-3 border-b border-slate-100 pb-2 pr-20">Статус выборки: проанализировано ${validContrCount} подрядчиков</div>
-                ${isCustomText ? `<div class="text-[9px] font-bold text-yellow-700 uppercase mb-2 bg-yellow-100 w-fit px-2 py-0.5 rounded">⚠️ Скорректировано инженером</div>` : ''}
+                <button onclick="editExpertText('${globalKey}', 'hidden_global_analysis')" class="absolute top-3 right-3 text-[9px] font-semibold bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-2 py-1 rounded shadow-sm active:scale-95 text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Изменить
+                </button>
+                <div class="text-[10px] text-slate-500 uppercase font-semibold mb-3 border-b border-slate-100 pb-2 pr-20">Статус выборки: проанализировано ${validContrCount} подрядчиков</div>
+                ${isCustomText ? `<div class="text-[9px] font-semibold text-yellow-700 uppercase mb-2 bg-yellow-100 w-fit px-2 py-0.5 rounded flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Скорректировано инженером</div>` : ''}
                 <div class="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
                     ${uiSmartText}
                 </div>
@@ -247,18 +287,22 @@ function renderContractorsSubTab(data) {
             </div>
         </details>
 
-        <!-- АККОРДЕОН 2: ГРАФИКИ ДИНАМИКИ -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
-                <span class="flex items-center gap-2">📈 Динамика и Тренды</span>
+            <summary class="p-3 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+                    Динамика и Тренды
+                </span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
                 <div class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm mb-3">
                     <div class="flex justify-between items-center mb-2">
-                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase">Динамика: Подрядчики (Топ-10)</div>
+                        <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase">Динамика: Подрядчики (Топ-10)</div>
                         <div class="flex gap-1">
-                            <button onclick="openChartFilterModal('contrs')" class="text-[9px] font-bold border border-slate-200 text-slate-600 bg-white rounded px-2 py-1 shadow-sm">⚙️ Линии</button>
+                            <button onclick="openChartFilterModal('contrs')" class="text-[9px] font-semibold border border-slate-200 text-slate-600 bg-white rounded px-2 py-1 shadow-sm flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Линии
+                            </button>
                             ${getSelectHtml('contrs')}
                         </div>
                     </div>
@@ -267,42 +311,46 @@ function renderContractorsSubTab(data) {
             </div>
         </details>
 
-        <!-- АККОРДЕОН 3: ПРИЧИНЫ И СРАВНЕНИЕ -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
-                <span class="flex items-center gap-2">📊 Причины и Сравнение</span>
+            <summary class="p-3 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Причины и Сравнение
+                </span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2">Коренные причины дефектов</div>
+                    <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2">Коренные причины дефектов</div>
                     <div style="height: 180px; position: relative;"><canvas id="chart_eng_causes"></canvas></div>
                 </div>
                 <div class="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                    <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2">Сравнение Подрядчиков (Интегр. УрК)</div>
+                    <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2">Сравнение Подрядчиков (Интегр. УрК)</div>
                     <div style="height: 180px; position: relative;"><canvas id="chart_eng_compare"></canvas></div>
                 </div>
             </div>
         </details>
 
-        <!-- АККОРДЕОН 4: ФОТОГАЛЕРЕЯ (ТЕПЕРЬ С ЭТАЛОНАМИ) -->
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-3 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
-                <span class="flex items-center gap-2">📸 Фотогалерея (Брак и Эталоны)</span>
+            <summary class="p-3 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+                    Фотогалерея (Брак и Эталоны)
+                </span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
             </summary>
             <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 space-y-4">
                 <div>
-                    <h3 class="text-[10px] font-black text-red-600 uppercase mb-2">Критический брак (B3)</h3>
-                    ${window.initPhotoGallery ? window.initPhotoGallery('main_b3', allPhotosB3, true) : '<div class="text-xs">Загрузка...</div>'}
+                    <h3 class="text-[10px] font-bold text-red-600 uppercase mb-2">Критический брак (B3)</h3>
+                    ${window.initPhotoGallery ? window.initPhotoGallery('main_b3', allPhotosB3, true) : '<div class="text-xs text-slate-400">Загрузка...</div>'}
                 </div>
                 <div>
-                    <h3 class="text-[10px] font-black text-orange-600 uppercase mb-2">Значимые дефекты (B2)</h3>
-                    ${window.initPhotoGallery ? window.initPhotoGallery('main_b2', allPhotosB2, false) : '<div class="text-xs">Загрузка...</div>'}
+                    <h3 class="text-[10px] font-bold text-orange-600 uppercase mb-2">Значимые дефекты (B2)</h3>
+                    ${window.initPhotoGallery ? window.initPhotoGallery('main_b2', allPhotosB2, false) : '<div class="text-xs text-slate-400">Загрузка...</div>'}
                 </div>
                 <div>
-                    <h3 class="text-[10px] font-black text-green-600 uppercase mb-2">Эталонные работы (OK)</h3>
-                    ${window.initPhotoGallery ? window.initPhotoGallery('main_ok', allPhotosOK, false, 'text-green-700 bg-green-100 border-green-200', 'OK') : '<div class="text-xs">Загрузка...</div>'}
+                    <h3 class="text-[10px] font-bold text-green-600 uppercase mb-2">Эталонные работы (OK)</h3>
+                    ${window.initPhotoGallery ? window.initPhotoGallery('main_ok', allPhotosOK, false, 'text-green-700 bg-green-100 border-green-200', 'OK') : '<div class="text-xs text-slate-400">Загрузка...</div>'}
                 </div>
             </div>
         </details>
@@ -317,7 +365,7 @@ function renderContractorsSubTab(data) {
 
         let causesLabels = []; let causesData = [];
         Object.keys(causesCount).sort((a,b) => causesCount[b] - causesCount[a]).forEach(code => {
-            const name = DEFECT_CAUSES.find(c => c.code === code)?.name || 'Иное';
+            const name = typeof DEFECT_CAUSES !== 'undefined' ? (DEFECT_CAUSES.find(c => c.code === code)?.name || 'Иное') : 'Иное';
             causesLabels.push(name.substring(0,15)); causesData.push(causesCount[code]);
         });
         const ctxCauses = document.getElementById('chart_eng_causes')?.getContext('2d');
@@ -617,6 +665,8 @@ function renderOnePagerSubTab(data) {
                         b3Map[defName].count++;
                         if (photo) b3Map[defName].photo = photo; 
                     } else {
+                        const isB1 = foundItem && foundItem.w === 1;
+                        if (isB1) return; // B1 не попадает в топ дефектов
                         if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b2Map[defName].count++;
                         if (photo) b2Map[defName].photo = photo;
@@ -836,7 +886,7 @@ function renderOnePagerSubTab(data) {
             <!-- АККОРДЕОН 2: ПУЛЬС ОБЪЕКТА -->
             <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
                 <summary class="p-3 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors select-none">
-                    <span class="flex items-center gap-2">❤️ Пульс объекта (AI)</span>
+                    <span class="flex items-center gap-2">❤️ Пульс объекта (AI) <button onclick="event.preventDefault(); showToast('Индекс Здоровья рассчитывается на основе Индекса Риска (ИКО), процента красной зоны и аварий B3. ИИ анализирует эти данные и дает краткое заключение.')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-colors ml-1" title="Справка">❓</button></span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
                 <div class="p-4 border-t border-indigo-100 dark:border-indigo-800 bg-white dark:bg-slate-800">
@@ -983,54 +1033,59 @@ function showContractorDetailView(contractorName) {
     let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
     
     data.forEach(unit => {
-        const stagesArray = (unit.checkedStagesInfo && unit.checkedStagesInfo.length > 0) ? unit.checkedStagesInfo : [unit.stageName || 'Этап не указан'];
-        stagesArray.forEach(stName => {
-            if(!cStageData[stName]) cStageData[stName] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0 };
-            cStageData[stName].checks++;
+        if(unit.metrics) { 
+            sumB1 += unit.metrics.n_B1_fail; 
+            sumB2 += unit.metrics.n_B2_fail; 
+            sumB3 += unit.metrics.n_B3_fail; 
+        }
 
-            if(unit.metrics) { 
-                cStageData[stName].sumUrk += unit.metrics.final;
-                cStageData[stName].b1 += unit.metrics.n_B1_fail;
-                cStageData[stName].b2 += unit.metrics.n_B2_fail;
-                cStageData[stName].b3 += unit.metrics.n_B3_fail;
-                
-                if (stagesArray.indexOf(stName) === 0) {
-                    sumB1 += unit.metrics.n_B1_fail; sumB2 += unit.metrics.n_B2_fail; sumB3 += unit.metrics.n_B3_fail;
-                }
-            }
-        });
+        const tType = unit.templateKey ? unit.templateKey.split('_')[0] : '';
+        const tKey = unit.templateKey ? unit.templateKey.replace(tType + '_', '') : '';
+        const clGroups = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
 
         if(unit.state) {
             Object.keys(unit.state).forEach(id => {
                 const s = unit.state[id];
                 let defName = "Дефект";
-                let parentStage = 'Этап не указан';
-                const tType = unit.templateKey.split('_')[0];
-                const tKey = unit.templateKey.replace(tType + '_', '');
-                const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                
-                cl.forEach(group => {
-                    const found = group.items.find(x => x.id == id);
-                    if (found) { defName = found.n; parentStage = group.group || group.title; }
+                let parentStage = 'Прочее'; // Дефолтное имя, если не найдем
+
+                // Ищем реальную группу из чек-листа
+                clGroups.forEach(group => {
+                    const found = group.items.find(x => String(x.id) === String(id));
+                    if (found) { defName = found.n; parentStage = group.group || group.title || 'Прочее'; }
                 });
+
+                if (!cStageData[parentStage]) {
+                    cStageData[parentStage] = { checks: 0, sumUrk: 0, ok: 0, fail: 0, b1: 0, b2: 0, b3: 0, _countedUnits: new Set() };
+                }
+
+                // Считаем уникальные проверки (чтобы не плюсовать УрК за каждый дефект)
+                if (!cStageData[parentStage]._countedUnits.has(unit.id)) {
+                    cStageData[parentStage]._countedUnits.add(unit.id);
+                    cStageData[parentStage].checks++;
+                    cStageData[parentStage].sumUrk += (unit.metrics ? unit.metrics.final : 0);
+                }
 
                 const photo = (unit.photos && unit.photos[id]) ? unit.photos[id] : null;
 
-                if (s === 'ok' && cStageData[parentStage]) {
+                if (s === 'ok') {
                     cStageData[parentStage].ok++;
                     if (photo) allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                 }
-                if ((s === 'fail' || s === 'fail_escalated') && cStageData[parentStage]) {
+                
+                if (s === 'fail' || s === 'fail_escalated') {
                     cStageData[parentStage].fail++;
-                    const flatList = getFlatList(cl);
-                    const foundItem = flatList.find(x => x.id == id);
+                    const flatList = getFlatList(clGroups);
+                    const foundItem = flatList.find(x => String(x.id) === String(id));
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
 
                     if (isB3) {
+                        cStageData[parentStage].b3++;
                         if(!cB3Counts[defName]) cB3Counts[defName] = { count: 0, photo: null, name: defName };
                         cB3Counts[defName].count++;
                         if(photo) allPhotosB3.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                     } else {
+                        cStageData[parentStage].b2++;
                         if(!cFailCounts[defName]) cFailCounts[defName] = { count: 0, photo: null, name: defName };
                         cFailCounts[defName].count++;
                         if(photo) allPhotosB2.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
@@ -1119,16 +1174,24 @@ function showContractorDetailView(contractorName) {
 
     container.innerHTML = `
     ${skHtmlBlock}
-        <!-- НОВАЯ КНОПКА: ПЕРСОНАЛЬНЫЙ ОТЧЕТ -->
-        <button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отправить Отчет Подрядчику
-        </button>
+        <!-- КНОПКА ПЕЧАТИ С ЗАЩИТОЙ -->
+        ${m.count < 7 
+            ? `<button onclick="showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.')" class="w-full mb-4 bg-slate-300 text-slate-500 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-none cursor-not-allowed flex justify-center items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Отчет недоступен (Мало данных)
+               </button>`
+            : `<button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отправить Отчет Подрядчику
+               </button>`
+        }
 
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm mb-4">
             <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">
-                <div onclick="openContractorMathModal('${safeContractorNameForHtml}')" class="cursor-pointer active:scale-95 transition-transform bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
+                <div class="bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm flex flex-col justify-center min-h-[70px]">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК)</div>
-                    <div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>
+                    ${m.count < 7 
+                        ? `<div class="text-[12px] font-black text-slate-500 uppercase leading-tight">Проведите минимум 7 проверок<br><span class="text-indigo-500">Собрано: ${m.count} из 7</span></div>`
+                        : `<div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>`
+                    }
                 </div>
                 <div class="text-right">
                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest block border border-[var(--card-border)] px-1.5 py-0.5 rounded mb-1 ${m.confCls}">${m.confStatus}</span>
@@ -1494,7 +1557,7 @@ window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeCl
 
     const cardsHtml = photosArray.map(d => `
         <div class="snap-start shrink-0 w-36 sm:w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
-            <img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${d.photo}')" loading="lazy">
+            <img src="${d.photo}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${d.photo}')" loading="lazy">
             <div class="p-2 flex-1 flex flex-col justify-between">
                 <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5" title="${d.name}">${d.name}</div>
                 <div>

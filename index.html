@@ -45,7 +45,8 @@
     <input type="file" id="twi-pdf-input" accept="application/pdf" style="display:none;"
         onchange="handleTwiPdfUpload(event)">
     <input type="file" id="node-import-input" accept=".json" style="display:none;" onchange="processNodeImport(event)">
-    <input type="file" id="doc-pdf-input" accept="application/pdf" style="display:none;" onchange="handleDocPdfUpload(event)">
+    <input type="file" id="doc-pdf-input" accept="application/pdf" style="display:none;"
+        onchange="handleDocPdfUpload(event)">
     <!-- Разделенные инпуты для Камеры и Галереи -->
     <input type="file" id="photo-input-camera" accept="image/*" capture="environment" style="display:none;"
         onchange="handlePhotoUpload(event)">
@@ -57,8 +58,9 @@
         onchange="handleExcelImport(event)">
     <input type="file" id="twi-import-input" accept=".json" style="display:none;" onchange="processTwiImport(event)">
     <!-- RBI NEW: Инпут для импорта Графика производства работ -->
-     <!-- RBI NEW: Инпут для импорта выгрузки из ПК Стройконтроль -->
-    <input type="file" id="sk-excel-input" accept=".xlsx, .xls" style="display:none;" onchange="sk_handleExcelImport(event)">
+    <!-- RBI NEW: Инпут для импорта выгрузки из ПК Стройконтроль -->
+    <input type="file" id="sk-excel-input" accept=".xlsx, .xls" style="display:none;"
+        onchange="sk_handleExcelImport(event)">
     <input type="file" id="schedule-excel-input" accept=".xlsx, .xls" style="display:none;"
         onchange="rbi_handleScheduleImport(event)">
     <canvas id="photo-canvas" style="display:none;"></canvas>
@@ -84,15 +86,21 @@
         onclick="this.style.display='none'">
         <div class="bg-[var(--card-bg)] w-full max-w-xs p-6 rounded-2xl shadow-2xl flex flex-col gap-3"
             onclick="event.stopPropagation()">
-            <div class="font-black text-center text-[14px] uppercase tracking-tight mb-2 text-slate-800 dark:text-white">
+            <div
+                class="font-black text-center text-[14px] uppercase tracking-tight mb-2 text-slate-800 dark:text-white">
                 Добавить фото</div>
-            <button onclick="document.getElementById('photo-input-camera').click(); document.getElementById('photo-source-modal').style.display='none';" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md flex items-center justify-center gap-2 active:scale-95">
+            <button
+                onclick="document.getElementById('photo-input-camera').click(); document.getElementById('photo-source-modal').style.display='none';"
+                class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-md flex items-center justify-center gap-2 active:scale-95">
                 Сделать снимок
             </button>
-            <button onclick="document.getElementById('photo-input-gallery').click(); document.getElementById('photo-source-modal').style.display='none';" class="w-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-sm flex items-center justify-center gap-2 active:scale-95 border border-slate-200 dark:border-slate-700">
+            <button
+                onclick="document.getElementById('photo-input-gallery').click(); document.getElementById('photo-source-modal').style.display='none';"
+                class="w-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[12px] uppercase shadow-sm flex items-center justify-center gap-2 active:scale-95 border border-slate-200 dark:border-slate-700">
                 Из галереи
             </button>
-            <button onclick="document.getElementById('photo-source-modal').style.display='none'" class="w-full mt-1 text-slate-400 py-2 font-bold text-[10px] uppercase active:scale-95">Отмена</button>
+            <button onclick="document.getElementById('photo-source-modal').style.display='none'"
+                class="w-full mt-1 text-slate-400 py-2 font-bold text-[10px] uppercase active:scale-95">Отмена</button>
         </div>
     </div>
 
@@ -129,57 +137,85 @@
         </div>
     </div>
     <!-- === МОДАЛКА ДОБАВЛЕНИЯ НОРМАТИВА (НД) === -->
-<div id="add-doc-modal-overlay" class="fixed inset-0 bg-slate-900/80 z-[2000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="closeAddDocModal()">
-    <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]" onclick="event.stopPropagation()">
-        <div class="font-black text-[13px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 flex items-center gap-2 text-slate-800 dark:text-white">
-            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-            Добавить Норматив
-        </div>
+    <div id="add-doc-modal-overlay"
+        class="fixed inset-0 bg-slate-900/80 z-[2000] hidden items-center justify-center p-4 backdrop-blur-sm"
+        onclick="closeAddDocModal()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)]"
+            onclick="event.stopPropagation()">
+            <div
+                class="font-black text-[13px] uppercase tracking-tight mb-4 border-b border-[var(--card-border)] pb-3 flex items-center gap-2 text-slate-800 dark:text-white">
+                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
+                    </path>
+                </svg>
+                Добавить Норматив
+            </div>
 
-        <div class="space-y-4 mb-6">
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип документа *</label>
-                    <select id="new-doc-type" class="input-base">
-                        <option value="СП">СП</option>
-                        <option value="ГОСТ">ГОСТ</option>
-                        <option value="ПРОЕКТ">Проект / РД</option>
-                        <option value="ТУ">ТУ / Регламент</option>
-                        <option value="ИНСТРУКЦИЯ">Инструкция</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Шифр *</label>
-                    <input type="text" id="new-doc-code" class="input-base" placeholder="СТО-12345">
-                </div>
-            </div>
-            <div>
-                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название документа *</label>
-                <textarea id="new-doc-title" class="input-base h-16 resize-none" placeholder="Полное наименование..."></textarea>
-            </div>
-            
-            <div class="pt-2 border-t border-[var(--card-border)]">
-                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложенный файл (PDF)</label>
-                <div id="doc-pdf-preview" class="hidden mb-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-inner" data-pdf="">
-                    <div class="min-w-0 pr-3">
-                        <div class="text-[11px] font-black text-slate-800 dark:text-white truncate" id="doc-pdf-name">doc.pdf</div>
-                        <div class="text-[9px] font-bold text-slate-500" id="doc-pdf-size">1.2 MB</div>
+            <div class="space-y-4 mb-6">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип документа
+                            *</label>
+                        <select id="new-doc-type" class="input-base">
+                            <option value="СП">СП</option>
+                            <option value="ГОСТ">ГОСТ</option>
+                            <option value="ПРОЕКТ">Проект / РД</option>
+                            <option value="ТУ">ТУ / Регламент</option>
+                            <option value="ИНСТРУКЦИЯ">Инструкция</option>
+                        </select>
                     </div>
-                    <button onclick="removeDocPdf()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Шифр
+                            *</label>
+                        <input type="text" id="new-doc-code" class="input-base" placeholder="СТО-12345">
+                    </div>
                 </div>
-                <button id="doc-pdf-upload-btn" onclick="document.getElementById('doc-pdf-input').click()" class="w-full bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase active:scale-95 transition-colors flex justify-center items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
-                    Прикрепить PDF файл (до 5 МБ)
-                </button>
-            </div>
-        </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название
+                        документа *</label>
+                    <textarea id="new-doc-title" class="input-base h-16 resize-none"
+                        placeholder="Полное наименование..."></textarea>
+                </div>
 
-        <div class="flex gap-2">
-            <button onclick="closeAddDocModal()" class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 dark:bg-slate-800 dark:text-slate-300">Отмена</button>
-            <button onclick="saveCustomDoc()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">Сохранить</button>
+                <div class="pt-2 border-t border-[var(--card-border)]">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложенный файл
+                        (PDF)</label>
+                    <div id="doc-pdf-preview"
+                        class="hidden mb-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl flex justify-between items-center shadow-inner"
+                        data-pdf="">
+                        <div class="min-w-0 pr-3">
+                            <div class="text-[11px] font-black text-slate-800 dark:text-white truncate"
+                                id="doc-pdf-name">doc.pdf</div>
+                            <div class="text-[9px] font-bold text-slate-500" id="doc-pdf-size">1.2 MB</div>
+                        </div>
+                        <button onclick="removeDocPdf()"
+                            class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90"><svg
+                                class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg></button>
+                    </div>
+                    <button id="doc-pdf-upload-btn" onclick="document.getElementById('doc-pdf-input').click()"
+                        class="w-full bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-[10px] font-bold uppercase active:scale-95 transition-colors flex justify-center items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
+                            </path>
+                        </svg>
+                        Прикрепить PDF файл (до 5 МБ)
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="closeAddDocModal()"
+                    class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 dark:bg-slate-800 dark:text-slate-300">Отмена</button>
+                <button onclick="saveCustomDoc()"
+                    class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-md active:scale-95">Сохранить</button>
+            </div>
         </div>
     </div>
-</div>
 
     <!-- === КОНСТРУКТОР ШАБЛОНОВ === -->
     <div id="template-builder-overlay"
@@ -680,26 +716,40 @@
                             Вид работ не выбран</div>
                     </div>
                 </div>
-                <div id="data-block-content" class="grid grid-cols-2 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
-                        <!-- Скрытое поле Инспектора (оставляем для логики JS, но прячем от глаз) -->
-                        <input type="hidden" id="inp-inspector" value="">
-                        
-                        <!-- Подрядчик и Объект теперь делят экран пополам -->
-                        <div class="relative"><input type="text" id="inp-contractor" class="input-base text-center" placeholder="Подрядчик *" autocomplete="off"></div>
-                        <div class="relative" onmousedown="startSmartLock(event, 'inp-project')" ontouchstart="startSmartLock(event, 'inp-project')" onmouseup="cancelSmartLock()" onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
-                            <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="Объект *" autocomplete="off">
-                            <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
-                            </span>
-                        </div>
-                        
-                        <div class="col-span-2 grid grid-cols-3 gap-1.5 mt-1">
-                            <div class="relative"><input type="text" id="inp-section" class="input-base text-center" placeholder="Корпус*" autocomplete="off"></div>
-                            <div class="relative"><input type="text" id="inp-floor" class="input-base text-center" placeholder="Этаж*" autocomplete="off"></div>
-                            <div class="relative"><input type="text" id="inp-room" class="input-base text-center" placeholder="Оси/Пом.*" autocomplete="off"></div>
-                        </div>
-                        <input type="hidden" id="inp-location">
+                <div id="data-block-content"
+                    class="grid grid-cols-2 gap-1.5 header-collapsible bg-[var(--card-border)]/80 backdrop-blur-md p-2 rounded-xl border border-[var(--card-border)] shadow-sm">
+                    <!-- Скрытое поле Инспектора (оставляем для логики JS, но прячем от глаз) -->
+                    <input type="hidden" id="inp-inspector" value="">
+
+                    <!-- Подрядчик и Объект теперь делят экран пополам -->
+                    <div class="relative"><input type="text" id="inp-contractor" class="input-base text-center"
+                            placeholder="Подрядчик *" autocomplete="off"></div>
+                    <div class="relative" onmousedown="startSmartLock(event, 'inp-project')"
+                        ontouchstart="startSmartLock(event, 'inp-project')" onmouseup="cancelSmartLock()"
+                        onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
+                        <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors"
+                            placeholder="Объект *" autocomplete="off">
+                        <span id="lock-inp-project"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z">
+                                </path>
+                            </svg>
+                        </span>
                     </div>
+
+                    <div class="col-span-2 grid grid-cols-3 gap-1.5 mt-1">
+                        <div class="relative"><input type="text" id="inp-section" class="input-base text-center"
+                                placeholder="Корпус*" autocomplete="off"></div>
+                        <div class="relative"><input type="text" id="inp-floor" class="input-base text-center"
+                                placeholder="Этаж*" autocomplete="off"></div>
+                        <div class="relative"><input type="text" id="inp-room" class="input-base text-center"
+                                placeholder="Оси/Пом.*" autocomplete="off"></div>
+                    </div>
+                    <input type="hidden" id="inp-location">
+                </div>
 
                 <!-- СТРОКА 4: Навигация -->
                 <div id="audit-group-nav" class="overflow-x-auto whitespace-nowrap mt-1.5 no-scrollbar flex gap-2">
@@ -842,8 +892,13 @@
                                 d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
                         </svg>Impact
                     </button>
-                    <button onclick="rbi_switchEngineerSubTab('eng-sub-fmea', this)" class="sub-tab-btn flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>FMEA
+                    <button onclick="rbi_switchEngineerSubTab('eng-sub-fmea', this)"
+                        class="sub-tab-btn flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>FMEA
                     </button>
 
                 </div>
@@ -875,7 +930,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div id="rbi-tasks-container" class="space-y-4 pb-8"></div>
             </div>
 
@@ -953,18 +1008,32 @@
             <div id="eng-sub-badges" class="eng-sub-section hidden mx-1 mt-2">
                 <div class="flex flex-col mb-4 pl-2 pr-2">
                     <div class="flex justify-between items-center w-full">
-                        <div id="profile-title-text" class="text-[14px] min-[400px]:text-[16px] font-black flex items-center gap-2 text-slate-800 dark:text-white uppercase tracking-tight">
-                            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
+                        <div id="profile-title-text"
+                            class="text-[14px] min-[400px]:text-[16px] font-black flex items-center gap-2 text-slate-800 dark:text-white uppercase tracking-tight">
+                            <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z">
+                                </path>
+                            </svg>
                             Профиль Инженера
                         </div>
-                        <button onclick="gameOpenManagerPanelAuth()" class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-800 rounded-full text-slate-500 active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        <button onclick="gameOpenManagerPanelAuth()"
+                            class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-800 rounded-full text-slate-500 active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                </path>
+                            </svg>
                         </button>
                     </div>
                     <!-- Умное поле ввода имени (по умолчанию скрыто, если имя есть) -->
                     <div id="profile-name-edit-container" class="hidden mt-2 w-full">
-                        <input type="text" id="profile-name-input" class="input-base text-[13px] border-indigo-300 bg-indigo-50 dark:bg-indigo-900/30" placeholder="Введите вашу Фамилию и И.О..." onchange="saveEngineerNameForce(this.value)">
-                        <div class="text-[9px] text-slate-400 mt-1 pl-1">Имя привяжется ко всем актам навсегда. Для изменения зажмите имя на карточке ниже.</div>
+                        <input type="text" id="profile-name-input"
+                            class="input-base text-[13px] border-indigo-300 bg-indigo-50 dark:bg-indigo-900/30"
+                            placeholder="Введите вашу Фамилию и И.О..." onchange="saveEngineerNameForce(this.value)">
+                        <div class="text-[9px] text-slate-400 mt-1 pl-1">Имя привяжется ко всем актам навсегда. Для
+                            изменения зажмите имя на карточке ниже.</div>
                     </div>
                 </div>
                 <div id="game-dashboard-container"></div>
@@ -1010,7 +1079,9 @@
                     <button onclick="switchAnalyticsSubTab('sub-sk', this)"
                         class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
                         </svg>
                         ПК СК
                     </button>
@@ -1294,7 +1365,7 @@
                 </div>
             </div>
             <!-- КОНЕЦ БЛОКА: РЕЙТИНГ ИНЖЕНЕРА -->
-             <!-- НОВЫЙ БЛОК: ПК СТРОЙКОНТРОЛЬ -->
+            <!-- НОВЫЙ БЛОК: ПК СТРОЙКОНТРОЛЬ -->
             <div id="sub-sk" class="analytics-sub-section hidden mx-1 mt-2">
                 <div id="sk-main-container" class="pb-8">
                     <!-- Сюда JS будет рисовать интерфейс модуля -->
@@ -1440,10 +1511,7 @@
 
             <!-- ПОДВКЛАДКА 2: НОРМАТИВЫ (НД) -->
             <div id="ref-sub-docs" class="ref-sub-section hidden mx-1">
-                <div
-                    class="bg-amber-100 text-amber-800 text-center py-1 text-[10px] font-black uppercase mb-2 rounded border border-amber-200 shadow-sm">
-                    Раздел в стадии наполнения</div>
-                <!-- ЛИПКАЯ ПАНЕЛЬ ФИЛЬТРОВ НД (ДОБАВЛЕН ID) -->
+                                <!-- ЛИПКАЯ ПАНЕЛЬ ФИЛЬТРОВ НД (ДОБАВЛЕН ID) -->
                 <div id="ref-docs-filters"
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2">
                     <div class="flex justify-between items-center mb-2">
@@ -1463,11 +1531,15 @@
                         <button onclick="openAddDocModal()"
                             class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap">➕
                             Свой НД</button>
-                            <button onclick="exportDocsJsCode()"
-        class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap ml-2">
-        <svg class="w-4 h-4 inline-block -mt-0.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
-        В код (JS)
-    </button>
+                        <button onclick="exportDocsJsCode()"
+                            class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-bold uppercase whitespace-nowrap ml-2">
+                            <svg class="w-4 h-4 inline-block -mt-0.5 mr-1" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                            </svg>
+                            В код (JS)
+                        </button>
                     </div>
                     <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-[var(--card-border)] pt-2"
                         id="doc-filters-container">
@@ -1493,6 +1565,29 @@
                 <div id="twi-list-view">
                     <div id="twi-filters-block"
                         class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mx-1 mt-2">
+
+                        <!-- НОВЫЙ БЛОК: Фильтр Мои/Все и Офлайн-загрузка -->
+                        <div class="flex justify-between items-center mb-3">
+                            <div
+                                class="flex gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <button onclick="window.twiOwnerFilter='ALL'; renderTwiList()"
+                                    class="px-3 py-1 text-[10px] font-bold rounded-md ${window.twiOwnerFilter === 'ALL' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Все
+                                    карты</button>
+                                <button onclick="window.twiOwnerFilter='MY'; renderTwiList()"
+                                    class="px-3 py-1 text-[10px] font-bold rounded-md ${window.twiOwnerFilter === 'MY' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Мои</button>
+                            </div>
+                            <button onclick="downloadMissingCloudFiles()"
+                                class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
+                                    </path>
+                                </svg> Скачать всё
+                            </button>
+                        </div>
+
                         <div class="flex justify-between items-center gap-2 mb-2">
                             <div class="relative flex-1">
                                 <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none"
@@ -2031,15 +2126,16 @@
 
         </div>
         <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
-            <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
-                <div id="practices-auto-detector" class="mb-4"></div>
-                <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека Практик</h2>
-                </div>
-                <div id="practices-list-container" class="space-y-4 pb-8">
-                    <!-- Список карточек -->
-                </div>
+        <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
+            <div id="practices-auto-detector" class="mb-4"></div>
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека
+                    Практик</h2>
             </div>
+            <div id="practices-list-container" class="space-y-4 pb-8">
+                <!-- Список карточек -->
+            </div>
+        </div>
 
         </div> <!-- ИСТИННЫЙ ЗАКРЫВАЮЩИЙ ТЕГ ВКЛАДКИ СПРАВОЧНИКА (id="tab-reference") -->
 
@@ -2363,18 +2459,22 @@
                         </div>
                     </div>
                 </details>
-                 <!-- РАСПИСАНИЕ ЗАДАЧ -->
-                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
-                    <summary class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">🗓  Расписание рутинных задач</span>
+                <!-- РАСПИСАНИЕ ЗАДАЧ -->
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary
+                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">🗓 Расписание рутинных задач</span>
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div>
-                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
+                        <div
+                            class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
                             <div>
                                 <div class="font-bold text-sm">Совещание (Мемо)</div>
                             </div>
-                            <select id="set-task-meeting" class="input-base w-32" onchange="toggleSetting('taskMeetingDay', this)">
+                            <select id="set-task-meeting" class="input-base w-32"
+                                onchange="toggleSetting('taskMeetingDay', this)">
                                 <option value="1">Понедельник</option>
                                 <option value="2">Вторник</option>
                                 <option value="3">Среда</option>
@@ -2382,11 +2482,13 @@
                                 <option value="5">Пятница</option>
                             </select>
                         </div>
-                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
+                        <div
+                            class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
                             <div>
                                 <div class="font-bold text-sm">FMEA и Плакаты</div>
                             </div>
-                            <select id="set-task-fmea" class="input-base w-32" onchange="toggleSetting('taskFmeaDay', this)">
+                            <select id="set-task-fmea" class="input-base w-32"
+                                onchange="toggleSetting('taskFmeaDay', this)">
                                 <option value="1">Понедельник</option>
                                 <option value="4">Четверг</option>
                                 <option value="5">Пятница</option>
@@ -2396,7 +2498,8 @@
                             <div>
                                 <div class="font-bold text-sm">Ежемесячный отчет</div>
                             </div>
-                            <select id="set-task-month" class="input-base w-32" onchange="toggleSetting('taskMonthReportDay', this)">
+                            <select id="set-task-month" class="input-base w-32"
+                                onchange="toggleSetting('taskMonthReportDay', this)">
                                 <option value="1">1-е число</option>
                                 <option value="5">5-е число</option>
                                 <option value="10">10-е число</option>
@@ -2435,14 +2538,26 @@
                                 <span>Свободно: <span id="storage-free">--</span> МБ</span>
                             </div>
                             <div class="grid grid-cols-2 gap-2 mb-2">
-                                <button onclick="clearPdfCache()" class="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Очистить кэш PDF</button>
-                                <button onclick="emptyTrashBin()" class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors">Очистить корзину</button>
+                                <button onclick="clearPdfCache()"
+                                    class="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Очистить
+                                    кэш PDF</button>
+                                <button onclick="emptyTrashBin()"
+                                    class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors">Очистить
+                                    корзину</button>
                             </div>
-                            <button onclick="downloadMissingCloudFiles()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 mb-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg>
+                            <button onclick="downloadMissingCloudFiles()"
+                                class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 mb-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
+                                    </path>
+                                </svg>
                                 Скачать всё для Офлайна
                             </button>
-                            <button onclick="exportLibraryToJsCode()" class="w-full bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 shadow-md">
+                            <button onclick="exportLibraryToJsCode()"
+                                class="w-full bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 py-3 rounded-lg font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 shadow-md">
                                 💻 Выгрузить Библиотеку в код (JS)
                             </button>
                         </div>
@@ -2579,32 +2694,36 @@
                 </details>
 
                 <!-- БАЗА ЗНАНИЙ (FAQ) -->
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex justify-between items-center mb-3">
+                <div
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex justify-between items-center mb-3">
                     <div>
-                        <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight">Методология RBI</div>
-                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Формулы, логика ИКО и ответы на вопросы</div>
+                        <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight">
+                            Методология RBI</div>
+                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Формулы, логика ИКО и ответы на вопросы
+                        </div>
                     </div>
-                    <button onclick="openFaqModal()" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-transform shadow-sm">
+                    <button onclick="openFaqModal()"
+                        class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-transform shadow-sm">
                         Открыть FAQ
                     </button>
                 </div>
 
-            <div class="text-center mt-4 mb-6">
-                <button onclick="fullFactoryReset()"
-                    class="text-[10px] font-bold text-red-500 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 border border-red-200 transition-colors uppercase shadow-sm">⚠️
-                    Полный сброс (Удалить всё)</button>
-            </div>
+                <div class="text-center mt-4 mb-6">
+                    <button onclick="fullFactoryReset()"
+                        class="text-[10px] font-bold text-red-500 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 border border-red-200 transition-colors uppercase shadow-sm">⚠️
+                        Полный сброс (Удалить всё)</button>
+                </div>
 
-            <div class="text-center text-[10px] text-[var(--text-muted)] pb-10">
-                <button onclick="showAboutApp()"
-                    class="font-bold text-indigo-500 mb-2 flex items-center justify-center gap-1 mx-auto"><svg
-                        class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg> О приложении и Безопасности</button><br>
-                RBI Quality PWA<br>Версия 17.0 (AI + Tasks + Sync)<br>Developed by Igor Kondratiev
+                <div class="text-center text-[10px] text-[var(--text-muted)] pb-10">
+                    <button onclick="showAboutApp()"
+                        class="font-bold text-indigo-500 mb-2 flex items-center justify-center gap-1 mx-auto"><svg
+                            class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg> О приложении и Безопасности</button><br>
+                    RBI Quality PWA<br>Версия 17.0 (AI + Tasks + Sync)<br>Developed by Igor Kondratiev
+                </div>
             </div>
-        </div>
 
     </main>
 
@@ -2962,49 +3081,75 @@
 
     <!-- === ИЗОЛИРОВАННЫЙ КОНТЕЙНЕР ДЛЯ БРАУЗЕРНОЙ ПЕЧАТИ === -->
     <div id="print-content" class="print-only"></div>
-     <!-- === КОНСТРУКТОР АКТА-ЭТАЛОНА === -->
-    <div id="etalon-constructor-view" class="hidden bg-[var(--bg-main)] fixed inset-0 z-[3000] h-screen pb-32 overflow-y-auto custom-scrollbar">
-        <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
-            <button onclick="closeEtalonConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
+    <!-- === КОНСТРУКТОР АКТА-ЭТАЛОНА === -->
+    <div id="etalon-constructor-view"
+        class="hidden bg-[var(--bg-main)] fixed inset-0 z-[3000] h-screen pb-32 overflow-y-auto custom-scrollbar">
+        <div
+            class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center">
+            <button onclick="closeEtalonConstructor()"
+                class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path>
+                </svg> Назад
             </button>
-            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center" id="etalon-title-text">Акт-Эталон</div>
-            <button onclick="saveEtalonAct()" class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-lg active:scale-95 shadow-md transition-colors">Сохранить</button>
+            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center"
+                id="etalon-title-text">Акт-Эталон</div>
+            <button onclick="saveEtalonAct()"
+                class="text-[11px] font-bold text-white bg-indigo-600 px-4 py-2 rounded-lg active:scale-95 shadow-md transition-colors">Сохранить</button>
         </div>
 
         <div class="space-y-4 px-3 max-w-2xl mx-auto">
             <!-- БЛОК 1: Основные данные -->
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
-                <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2">Общие данные</div>
+            <div
+                class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
+                <div
+                    class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2">
+                    Общие данные</div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Расположение эталона (Оси, Этаж) *</label>
-                    <input type="text" id="etalon-location" class="input-base text-[12px]" placeholder="Напр: Секция 1, Этаж 5, Оси А-Б">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Расположение
+                        эталона (Оси, Этаж) *</label>
+                    <input type="text" id="etalon-location" class="input-base text-[12px]"
+                        placeholder="Напр: Секция 1, Этаж 5, Оси А-Б">
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Присутствовали при приемке *</label>
-                    <textarea id="etalon-participants" class="input-base text-[11px] h-14 resize-none" placeholder="ФИО, Должность представителей Подрядчика и Заказчика..."></textarea>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Присутствовали
+                        при приемке *</label>
+                    <textarea id="etalon-participants" class="input-base text-[11px] h-14 resize-none"
+                        placeholder="ФИО, Должность представителей Подрядчика и Заказчика..."></textarea>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допущенные отклонения (если есть)</label>
-                    <textarea id="etalon-deviations" class="input-base text-[11px] h-14 resize-none" placeholder="Напр: Допущено отклонение по вертикали 3мм (вместо 2мм) в связи с..."></textarea>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допущенные
+                        отклонения (если есть)</label>
+                    <textarea id="etalon-deviations" class="input-base text-[11px] h-14 resize-none"
+                        placeholder="Напр: Допущено отклонение по вертикали 3мм (вместо 2мм) в связи с..."></textarea>
                 </div>
             </div>
 
             <!-- БЛОК 2: Элементы эталона -->
             <div>
-                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg> Фиксация узлов
+                <div
+                    class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z">
+                        </path>
+                    </svg> Фиксация узлов
                 </div>
                 <div id="etalon-elements-container"></div>
-                <button onclick="addEtalonElement()" class="w-full bg-indigo-50 border border-dashed border-indigo-300 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400 py-4 rounded-2xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-colors">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить узел эталона
+                <button onclick="addEtalonElement()"
+                    class="w-full bg-indigo-50 border border-dashed border-indigo-300 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400 py-4 rounded-2xl font-bold text-[11px] uppercase active:scale-95 flex items-center justify-center gap-2 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                    </svg> Добавить узел эталона
                 </button>
             </div>
         </div>
     </div>
-    
+
     <!-- Невидимый инпут для фото эталона -->
-    <input type="file" id="etalon-photo-input" accept="image/*" style="display:none;" onchange="handleEtalonPhotoUpload(event)">
+    <input type="file" id="etalon-photo-input" accept="image/*" style="display:none;"
+        onchange="handleEtalonPhotoUpload(event)">
     <!-- === МОДАЛКА УПРАВЛЕНИЯ СТАТУСОМ ЗАДАЧИ === -->
     <div id="task-status-modal"
         class="fixed inset-0 bg-slate-900/70 z-[6000] hidden items-center justify-center p-4 backdrop-blur-sm"
@@ -3095,7 +3240,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
                             </path>
-                        </svg></div>
+                        </svg>
+                    </div>
                     <span class="text-[12px] font-bold">Смотреть</span>
                 </button>
                 <button onclick="handleTwiAction('edit')"
@@ -3106,7 +3252,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125">
                             </path>
-                        </svg></div>
+                        </svg>
+                    </div>
                     <span class="text-[12px] font-bold">Редактировать</span>
                 </button>
                 <button onclick="handleTwiAction('duplicate')"
@@ -3117,7 +3264,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
                             </path>
-                        </svg></div>
+                        </svg>
+                    </div>
                     <span class="text-[12px] font-bold">Дублировать</span>
                 </button>
                 <div class="border-t border-slate-100 dark:border-slate-800 my-1"></div>
@@ -3129,36 +3277,48 @@
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
                             </path>
-                        </svg></div>
+                        </svg>
+                    </div>
                     <span class="text-[12px] font-bold">Удалить</span>
                 </button>
             </div>
         </div>
     </div>
-    
+
     <!-- === СУПЕР-МОДАЛКА ДЕТАЛИЗАЦИИ ЗАДАЧИ (V2.0) === -->
     <!-- === СУПЕР-МОДАЛКА ДЕТАЛИЗАЦИИ ЗАДАЧИ (V2.0) === -->
-    <div id="task-details-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm" onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
-        <div class="bg-[var(--card-bg)] w-full max-w-lg max-h-[95vh] rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
-                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2" id="task-details-header-title">
+    <div id="task-details-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[6000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm"
+        onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
+        <div class="bg-[var(--card-bg)] w-full max-w-lg max-h-[95vh] rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] flex flex-col overflow-hidden"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2"
+                    id="task-details-header-title">
                     📋 Детализация задачи
                 </div>
-                <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+                <button
+                    onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open');"
+                    class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
             </div>
-            
+
             <div id="task-details-body" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-4">
                 <!-- Контент генерируется через JS -->
             </div>
-            
-            <div id="task-details-footer" class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 shrink-0 flex flex-col gap-2">
+
+            <div id="task-details-footer"
+                class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 shrink-0 flex flex-col gap-2">
                 <!-- Кнопки действий генерируются через JS -->
             </div>
         </div>
     </div>
-    <input type="file" id="task-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleTaskCompletionPhoto(event)">
-    <input type="file" id="meeting-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleMeetingPhotoUpload(event)">
-    <input type="file" id="fmea-photo-upload" accept="image/*" class="hidden" onchange="rbi_handleFmeaPhotoUpload(event)">
+    <input type="file" id="task-photo-upload" accept="image/*" class="hidden"
+        onchange="rbi_handleTaskCompletionPhoto(event)">
+    <input type="file" id="meeting-photo-upload" accept="image/*" class="hidden"
+        onchange="rbi_handleMeetingPhotoUpload(event)">
+    <input type="file" id="fmea-photo-upload" accept="image/*" class="hidden"
+        onchange="rbi_handleFmeaPhotoUpload(event)">
     <!-- === МОДАЛКА AI-ЧАТА ПО НОРМАТИВАМ === -->
     <div id="ai-chat-modal"
         class="fixed inset-0 bg-slate-900/80 z-[7000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300"
@@ -3215,7 +3375,7 @@
         </div>
     </div>
 
-    
+
 
     <!-- RBI NEW: МОДАЛКА ВОЗДЕЙСТВИЙ НА ПОДРЯДЧИКА -->
     <div id="rbi-intervention-modal"
@@ -3364,22 +3524,34 @@
         </div>
     </div>
     <!-- === МОДАЛКА РУЧНОЙ ЗАДАЧИ === -->
-    <div id="manual-task-modal" class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="rbi_closeTaskModal()">
-        <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-3xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
-                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> Новая задача
+    <div id="manual-task-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-center justify-center p-4 backdrop-blur-sm"
+        onclick="rbi_closeTaskModal()">
+        <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-3xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <div
+                    class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
+                    </svg> Новая задача
                 </div>
-                <button onclick="rbi_closeTaskModal()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+                <button onclick="rbi_closeTaskModal()"
+                    class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
             </div>
-            
+
             <div class="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название задачи *</label>
-                    <input type="text" id="manual-task-title" class="input-base" placeholder="Напр: Провести воркшоп...">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название задачи
+                        *</label>
+                    <input type="text" id="manual-task-title" class="input-base"
+                        placeholder="Напр: Провести воркшоп...">
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип (Категория)</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип
+                        (Категория)</label>
                     <select id="manual-task-type" class="input-base">
                         <option value="control">Контрольная (Проверка)</option>
                         <option value="method">Методическая (Инструкции, FMEA)</option>
@@ -3387,54 +3559,90 @@
                     </select>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик (Из истории)</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик (Из
+                        истории)</label>
                     <select id="manual-task-contractor" class="input-base"></select>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок (Дедлайн)</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок
+                        (Дедлайн)</label>
                     <input type="date" id="manual-task-date" class="input-base !py-2 text-[12px]">
                 </div>
-                
-                <button onclick="rbi_saveManualTask()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2 mt-2">
+
+                <button onclick="rbi_saveManualTask()"
+                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2 mt-2">
                     Добавить в план
                 </button>
             </div>
         </div>
     </div>
     <!-- === НОВОЕ МОДАЛЬНОЕ ОКНО FAQ === -->
-    <div id="faq-modal-overlay" class="fixed inset-0 bg-slate-900/70 z-[8000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeFaqModal()">
-        <div class="bg-[var(--bg-main)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform transform translate-y-full flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-t-3xl sm:rounded-t-2xl z-10">
-                <div class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    <div id="faq-modal-overlay"
+        class="fixed inset-0 bg-slate-900/70 z-[8000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
+        onclick="closeFaqModal()">
+        <div class="bg-[var(--bg-main)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform transform translate-y-full flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-t-3xl sm:rounded-t-2xl z-10">
+                <div
+                    class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
                     Справочник FAQ
                 </div>
-                <button onclick="closeFaqModal()" class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">✕</button>
+                <button onclick="closeFaqModal()"
+                    class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">✕</button>
             </div>
-            <div class="p-3 border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm z-10 relative">
-                <span class="absolute left-6 top-5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
-                <input type="text" id="faq-search-input" class="input-base text-[12px] !py-2.5 pl-10" placeholder="Поиск по вопросам..." oninput="filterFaq()">
+            <div
+                class="p-3 border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm z-10 relative">
+                <span class="absolute left-6 top-5 text-slate-400"><svg class="w-4 h-4" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg></span>
+                <input type="text" id="faq-search-input" class="input-base text-[12px] !py-2.5 pl-10"
+                    placeholder="Поиск по вопросам..." oninput="filterFaq()">
             </div>
-            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50" id="faq-list-container"></div>
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50"
+                id="faq-list-container"></div>
         </div>
     </div>
 
     <!-- === МОДАЛКА ПРОСМОТРА ЭТАЛОНА === -->
-    <div id="etalon-view-modal" class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm" onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
-        <div class="bg-[var(--card-bg)] w-full max-w-2xl max-h-[95vh] rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
-                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+    <div id="etalon-view-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-center justify-center p-2 sm:p-4 backdrop-blur-sm"
+        onclick="this.style.display='none'; document.body.classList.remove('modal-open');">
+        <div class="bg-[var(--card-bg)] w-full max-w-2xl max-h-[95vh] rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col overflow-hidden"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <div
+                    class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
+                        </path>
+                    </svg>
                     Акт-Эталон
                 </div>
-                <button onclick="document.getElementById('etalon-view-modal').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+                <button
+                    onclick="document.getElementById('etalon-view-modal').style.display='none'; document.body.classList.remove('modal-open');"
+                    class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
             </div>
             <div id="etalon-view-body" class="p-4 overflow-y-auto custom-scrollbar flex-1 space-y-4">
                 <!-- Контент генерируется JS -->
             </div>
             <div class="p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 shrink-0">
-                <button id="etalon-view-print-btn" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                <button id="etalon-view-print-btn"
+                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z">
+                        </path>
+                    </svg>
                     Скачать / Распечатать (PDF)
                 </button>
             </div>

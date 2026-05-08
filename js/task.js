@@ -329,8 +329,40 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             return d;
         };
 
+        // Умная задача FMEA (Создается только если есть неразобранные системные дефекты)
         const fmeaDate = getNextTargetDate(appSettings.taskFmeaDay || '5');
-        addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Позвольте ИИ проанализировать коренные причины брака.', 3, fmeaDate, '', 'Отчет');
+        const recentFmeaChecks = contractorArray.filter(c => new Date(c.date) >= startOfThisWeek);
+        const defectCounts = {};
+        
+        recentFmeaChecks.forEach(c => {
+            if(c.state) {
+                Object.keys(c.state).forEach(id => {
+                    if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                        const tType = c.templateKey ? c.templateKey.split('_')[0] : '';
+                        const tKey = c.templateKey ? c.templateKey.replace(tType + '_', '') : '';
+                        const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                        const flat = getFlatList(cl);
+                        const item = flat.find(x => String(x.id) === String(id));
+                        if(item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
+                            const dKey = `${c.contractorName}_${item.n}`;
+                            defectCounts[dKey] = (defectCounts[dKey] || 0) + 1;
+                        }
+                    }
+                });
+            }
+        });
+        
+        let needsFmea = false;
+        for (let k in defectCounts) {
+            if (defectCounts[k] >= 3) {
+                const isAnalyzed = window.rbi_fmeaRecords && window.rbi_fmeaRecords.some(f => f.defects && f.defects.some(d => `${d.contractor}_${d.defectName}` === k));
+                if (!isAnalyzed) { needsFmea = true; break; }
+            }
+        }
+        
+        if (needsFmea) {
+            addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Накопились системные дефекты (>3 повторений), требующие анализа коренных причин.', 3, fmeaDate, '', 'Отчет');
+        }
         
         const posterDate = getNextTargetDate(appSettings.taskFmeaDay || '5'); 
         addTask('post_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте плакат А3 и повесьте в штабе подрядчиков.', 2, posterDate, '', 'Отчет');
@@ -412,7 +444,12 @@ window.rbi_renderTasksList = async function() {
 
         if (t.status === 'done' || t.status === 'blocked') {
             archiveTasks.push(t);
-            if (t.status === 'done') { weekTotal++; weekDone++; }
+            // Засчитываем в статистику недели только те, что сделаны/отменены на этой неделе
+            const tDate = t.date ? new Date(t.date) : new Date();
+            tDate.setHours(0,0,0,0);
+            if (t.status === 'done' && tDate.getTime() >= startW.getTime() && tDate.getTime() <= endW.getTime()) { 
+                weekTotal++; weekDone++; 
+            }
             return; 
         }
         
@@ -813,20 +850,23 @@ window.rbi_openTaskAction = async function(taskId) {
 
 // Фоновая отметка задачи выполненной (без модалок)
 // Фоновая отметка задачи выполненной (без модалок)
+// Фоновая отметка задачи выполненной (без модалок)
 window.rbi_markTaskDone = async function(taskId, silent = false) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if(task) {
-        task.status = 'done';
-        task.resultComment = 'Выполнено из быстрого действия';
+        task.status = 'done'; // <-- Меняем статус на DONE
+        task.resultComment = 'Выполнено инженером вручную';
         task.updatedAt = new Date().toISOString();
+        
         if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
         
-        // ЖЕСТКО ЗАКРЫВАЕМ МОДАЛКУ, ЧТОБЫ НЕ ЗАВИСАЛИ КНОПКИ
+        // ЖЕСТКО ЗАКРЫВАЕМ МОДАЛКУ
         document.getElementById('task-details-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
 
         if (!silent) {
-            showToast("✅ Задача выполнена!");
+            showToast("✅ Задача выполнена и перенесена в Архив!");
+            // ПРИНУДИТЕЛЬНО ПЕРЕРИСОВЫВАЕМ СПИСОК ЗАДАЧ
             rbi_renderTasksList();
         }
     }

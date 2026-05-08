@@ -1610,7 +1610,7 @@ window.startInspectionWithValues = function (contractor, templateKey, statusKey 
 
         const projInput = document.getElementById('inp-project');
         if (projInput && !projInput.hasAttribute('readonly')) {
-            if (project) {
+            if (project && project !== 'Все') {
                 projInput.value = project;
             } else {
                 const pastCheck = contractorArray.find(c => c.contractorName === contractor && c.templateKey === templateKey);
@@ -2396,6 +2396,9 @@ window.rbi_loadFmeaToWorkspace = function(id) {
                     <tbody>${rowsHtml}</tbody>
                 </table>
             </div>
+            <button onclick="rbi_addManualFmeaRow()" class="w-full mt-3 bg-slate-100 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase border border-slate-300 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                ➕ Добавить строку вручную
+            </button>
             <button onclick="rbi_saveFmea('${record.periodName}')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
                 💾 Сохранить изменения
             </button>
@@ -2576,7 +2579,9 @@ window.rbi_generateFmeaTable = function () {
                     </tbody>
                 </table>
             </div>
-            
+            <button onclick="rbi_addManualFmeaRow()" class="w-full mt-3 bg-slate-100 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase border border-slate-300 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                ➕ Добавить строку вручную
+            </button>
             <button onclick="rbi_saveFmea('${periodName}')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
                 💾 Сохранить отчет в Систему
             </button>
@@ -2830,4 +2835,48 @@ window.rbi_removeFmeaPhoto = function(btnEl) {
             <div class="text-[9px] text-slate-400 italic mb-1 text-center border border-dashed border-slate-300 rounded p-1">Нет фото</div>
             <button onclick="document.getElementById('fmea-photo-upload').click(); window.currentFmeaRowIdx=${idx};" class="w-full bg-slate-100 text-slate-500 py-1 rounded border border-slate-300 text-[9px] font-bold uppercase active:scale-95 transition-colors">📷 Добавить</button>
         </div>`;
+};
+
+window.rbi_addManualFmeaRow = function() {
+    const tbody = document.querySelector('#fmea-workspace tbody');
+    if(!tbody) return;
+    const idx = tbody.children.length;
+    const newRow = `
+        <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
+            <input type="hidden" class="f-contr" value="Ручной ввод">
+            <input type="hidden" class="f-work" value="Ручной ввод">
+            <input type="hidden" class="f-defect" value="Ручной ввод">
+            <input type="hidden" class="f-photo" value="">
+            <input type="hidden" class="f-count" value="1">
+            
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[150px]">
+                <input type="text" class="f-work-input input-base !py-1 !text-[10px] font-bold mb-1" placeholder="Вид работ" onchange="this.closest('tr').querySelector('.f-work').value = this.value">
+                <input type="text" class="f-contr-input input-base !py-1 !text-[10px] font-black mb-1" placeholder="Подрядчик" onchange="this.closest('tr').querySelector('.f-contr').value = this.value">
+                <input type="text" class="f-defect-input input-base !py-1 !text-[10px] font-bold text-red-600" placeholder="Опишите дефект" onchange="this.closest('tr').querySelector('.f-defect').value = this.value">
+                <div class="mt-2 w-16">
+                    <div class="text-[9px] text-slate-400 italic mb-1 text-center border border-dashed border-slate-300 rounded p-1">Нет фото</div>
+                    <button onclick="document.getElementById('fmea-photo-upload').click(); window.currentFmeaRowIdx=${idx};" class="w-full bg-slate-100 text-slate-500 py-1 rounded border border-slate-300 text-[9px] font-bold uppercase active:scale-95 transition-colors">📷 Добавить</button>
+                </div>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[120px]">
+                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50">
+                    <option value="Ошибки СМР">Ошибки СМР</option>
+                    <option value="Проект">Проектная ошибка</option>
+                    <option value="Материалы">Материалы / Завод</option>
+                    <option value="Условия">Внешние условия</option>
+                </select>
+            </td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]"><textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Коренная причина..."></textarea></td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]"><textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Последствия (Риски)..."></textarea></td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]"><textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-blue-50" placeholder="Как устранить сейчас..."></textarea></td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]"><textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-green-50" placeholder="Системное предотвращение..."></textarea></td>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[80px]">
+                <div class="text-center">
+                    <div class="text-[8px] font-bold text-slate-400 mb-1">RPN</div>
+                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 !py-2" placeholder="0" min="1" max="1000">
+                </div>
+                <button onclick="this.closest('tr').remove()" class="mt-2 w-full text-red-500 bg-red-50 py-1 rounded text-[9px] font-bold uppercase border border-red-200">Удалить</button>
+            </td>
+        </tr>`;
+    tbody.insertAdjacentHTML('beforeend', newRow);
 };

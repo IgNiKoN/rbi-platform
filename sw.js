@@ -1,6 +1,6 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const CACHE_NAME = 'rbi-quality-v17.8.99'; 
+const CACHE_NAME = 'rbi-quality-v17.8.101'; 
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
 const urlsToCache = [
@@ -66,24 +66,35 @@ self.addEventListener('activate', event => {
   self.clients.claim(); 
 });
 
-// 4. ПЕРЕХВАТ ЗАПРОСОВ (Stale-While-Revalidate)
+// 4. ПЕРЕХВАТ ЗАПРОСОВ (Stale-While-Revalidate & Cache-First для файлов)
 self.addEventListener('fetch', event => {
-  // Игнорируем запросы не по HTTP
   if (!event.request.url.startsWith('http')) return;
   if (event.request.method !== 'GET') return;
   
-  // Запросы к Supabase (API БД) мы НЕ кэшируем, чтобы данные были актуальными
-  if (event.request.url.includes('supabase.co')) return;
+  // РАЗДЕЛЯЕМ ЗАПРОСЫ (С учетом кастомного домена api.rbi-q.ru)
+  // 1. Запросы к хранилищу файлов (картинки, PDF)
+  const isStorage = event.request.url.includes('api.rbi-q.ru/storage/v1/object/public/');
+  // 2. Запросы к API (база данных, функции, авторизация)
+  const isApi = event.request.url.includes('api.rbi-q.ru') && !isStorage;
+
+  // ЗАПРОСЫ К БД СТРОГО ИГНОРИРУЕМ! Иначе ServiceWorker сломает синхронизацию в офлайне.
+  if (isApi) return;
 
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       
-      // Фоновый запрос в сеть за свежей версией файла
+      // СТРАТЕГИЯ CACHE-FIRST ДЛЯ ОБЛАЧНЫХ ФАЙЛОВ:
+      // Если это картинка/PDF из бакета Supabase и она уже есть в кэше — отдаем её мгновенно
+      if (cachedResponse && isStorage) {
+          return cachedResponse;
+      }
+
+      // Для остальных файлов (HTML, CSS, JS) — фоновый запрос в сеть за свежей версией
       const fetchPromise = fetch(event.request).then(networkResponse => {
         if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache); // Обновляем кэш на лету
+            cache.put(event.request, responseToCache); // Обновляем кэш
           });
         }
         return networkResponse;
@@ -91,7 +102,6 @@ self.addEventListener('fetch', event => {
         console.log('[SW] Офлайн: Сеть недоступна, пытаемся отдать из кэша.', event.request.url);
       });
 
-      // Отдаем кэш сразу (если он есть), а в фоне скачиваем обновления
       return cachedResponse || fetchPromise;
     })
   );

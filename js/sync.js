@@ -335,114 +335,91 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
     const isDeleted = data._deleted === true; 
+    const deletedAt = isDeleted ? (data._deletedAt || data.updatedAt || new Date().toISOString()) : null;
+    const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
 
-    // ОПРЕДЕЛЯЕМ: Это общий справочник или проектный документ?
-    const isSharedLibrary = ['custom_doc', 'custom_node', 'custom_twi_card', 'practice', 'user_template'].includes(objectType);
-    // ИСПРАВЛЕНИЕ: Вместо null шлем 'SHARED', чтобы база не ругалась на пустые поля
-    const targetProjectCode = isSharedLibrary ? 'SHARED' : pCode;
+    // МАППИНГ НОВЫХ ТАБЛИЦ И БАКЕТОВ
+    let tableName = ''; let isShared = false; let targetBucket = bucketName;
+    switch(objectType) {
+        case 'custom_twi_card': tableName = 'shared_twi_cards'; isShared = true; targetBucket = 'library-twi'; break;
+        case 'custom_node': tableName = 'shared_nodes'; isShared = true; targetBucket = 'library-nodes'; break;
+        case 'custom_doc': tableName = 'shared_docs'; isShared = true; targetBucket = 'library-docs'; break;
+        case 'user_template': tableName = 'shared_checklists'; isShared = true; targetBucket = 'library-checklists'; break;
+        case 'practice': tableName = 'shared_practices'; isShared = true; targetBucket = 'library-practices'; break;
+        case 'meeting': tableName = 'project_meetings'; targetBucket = 'inspection-photos'; break;
+        case 'intervention': tableName = 'project_interventions'; targetBucket = 'inspection-photos'; break;
+        case 'fmea': tableName = 'project_fmea'; targetBucket = 'inspection-photos'; break;
+        case 'schedule': tableName = 'project_schedule_stages'; targetBucket = 'inspection-photos'; break;
+        case 'sk_data_bundle': tableName = 'sk_data_bundles'; targetBucket = 'inspection-photos'; break;
+        default: return;
+    }
 
     let uploadedData = data;
     
     if (isDeleted) {
-        const pathsToRemove = [];
-        const extractPaths = (obj) => {
-            for (let k in obj) {
-                const val = obj[k];
-                if (typeof val === 'string' && val.startsWith('http') && val.includes(`/public/${bucketName}/`)) {
-                    const marker = `/public/${bucketName}/`;
-                    pathsToRemove.push(decodeURIComponent(val.slice(val.indexOf(marker) + marker.length)));
-                } else if (val && typeof val === 'object') {
-                    extractPaths(val);
-                }
-            }
-        };
-        extractPaths(data);
-        
-        if (pathsToRemove.length > 0) {
-            await window.supabaseClient.storage.from(bucketName).remove(pathsToRemove);
-        }
+        // Мягкое удаление: мы не удаляем файлы физически, чтобы не сломать чужие кэши
+        // Мы просто ставим флаг в базе
     } else {
-        // У общих файлов свой префикс в Storage
-        const storagePrefix = isSharedLibrary ? `shared_library/${objectType}/${id}` : `${pCode}/${objectType}/${id}`;
-        uploadedData = await window.uploadObjectFilesToCloud(
-            data,
-            bucketName,
-            storagePrefix,
-            objectType
-        );
+        const storagePrefix = isShared ? `hashed_assets` : `${pCode}/${objectType}/${id}`;
+        uploadedData = await window.uploadObjectFilesToCloud(data, targetBucket, storagePrefix, objectType);
     }
 
-    // Сохраняем в БД 
-    await window.supabaseClient
-        .from('rbi_cloud_objects')
-        .upsert({
-            id: isSharedLibrary ? `shared_${objectType}_${id}` : `${pCode}_${objectType}_${id}`.replace(/\s+/g, '_'),
-            project_code: targetProjectCode,
-            object_type: objectType,
-            engineer_name: iName,
-            object_data: uploadedData,
-            is_deleted: isDeleted,
-            deleted_at: isDeleted ? (data._deletedAt || new Date().toISOString()) : null,
-            updated_at: uploadedData.updatedAt || uploadedData.updated_at || new Date().toISOString()
-        }, { onConflict: 'id' });
+    const payload = {
+        id: id,
+        data: uploadedData,
+        is_deleted: isDeleted,
+        deleted_at: deletedAt,
+        updated_at: updatedAt
+    };
+
+    if (isShared) payload.owner = data.owner || iName;
+    else { payload.project_code = pCode; payload.engineer_name = iName; }
+
+    await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
 };
 
 window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
-    const isSharedLibrary = ['custom_doc', 'custom_node', 'custom_twi_card', 'practice', 'user_template'].includes(objectType);
+    let tableName = ''; let isShared = false;
 
-    let query = window.supabaseClient
-        .from('rbi_cloud_objects')
-        .select('*')
-        .eq('object_type', objectType);
-
-    // ИСПРАВЛЕНИЕ: Ищем общие файлы по коду 'SHARED'
-    if (isSharedLibrary) {
-        query = query.eq('project_code', 'SHARED');
-    } else {
-        query = query.eq('project_code', pCode);
+    switch(objectType) {
+        case 'custom_twi_card': tableName = 'shared_twi_cards'; isShared = true; break;
+        case 'custom_node': tableName = 'shared_nodes'; isShared = true; break;
+        case 'custom_doc': tableName = 'shared_docs'; isShared = true; break;
+        case 'user_template': tableName = 'shared_checklists'; isShared = true; break;
+        case 'practice': tableName = 'shared_practices'; isShared = true; break;
+        case 'meeting': tableName = 'project_meetings'; break;
+        case 'intervention': tableName = 'project_interventions'; break;
+        case 'fmea': tableName = 'project_fmea'; break;
+        case 'schedule': tableName = 'project_schedule_stages'; break;
+        case 'sk_data_bundle': tableName = 'sk_data_bundles'; break;
+        default: return [];
     }
 
-    if (lastPullTimeStr) {
-        query = query.gt('updated_at', lastPullTimeStr);
-    }
+    let query = window.supabaseClient.from(tableName).select('*');
+    if (!isShared) query = query.eq('project_code', pCode);
+    if (lastPullTimeStr) query = query.gt('updated_at', lastPullTimeStr);
 
     const { data, error } = await query;
     if (error) throw error;
 
     const result = [];
-    let localStoreName = null;
-    if (objectType === 'meeting') localStoreName = 'rbi_meetings';
-    if (objectType === 'intervention') localStoreName = 'rbi_interventions';
-    if (objectType === 'practice') localStoreName = 'rbi_practices';
-    if (objectType === 'schedule') localStoreName = 'rbi_schedule_stages';
-    if (objectType === 'fmea') localStoreName = 'rbi_fmea';
 
     for (const row of data || []) {
-        let obj = row.object_data || {};
-        
-        if (localStoreName && typeof dbGet === 'function') {
-            const localExisting = await dbGet(localStoreName, row.id.replace(`${pCode}_${objectType}_`, ''));
-            const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || 0).getTime() : 0;
-            const cloudDeletedTime = row.is_deleted && row.deleted_at ? new Date(row.deleted_at).getTime() : 0;
-            const cloudTime = Math.max(new Date(row.updated_at || 0).getTime(), cloudDeletedTime);
-            
-            if (localExisting && localTime >= cloudTime && !row.is_deleted) {
-                continue; 
-            }
-        }
-
-        obj.id = obj.id || row.id.replace(`${pCode}_${objectType}_`, '').replace(`shared_${objectType}_`, '');
+        let obj = row.data || {};
+        obj.id = row.id;
         obj.updatedAt = row.updated_at;
         
+        // ЖЕЛЕЗОБЕТОННОЕ УДАЛЕНИЕ (Soft Delete)
         if (row.is_deleted) {
             obj._deleted = true; 
             obj._deletedAt = row.deleted_at || new Date().toISOString();
         }
         
+        if (isShared && row.owner) obj.owner = row.owner;
+        
         result.push(obj);
     }
-
     return result;
 };
 // ============================================================================
@@ -538,19 +515,19 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
     const ext = window.extFromMime(blobData.mime);
     const arrayBuffer = await blobData.blob.arrayBuffer();
 
-    // 1. Вычисляем SHA-256 хеш файла
+    // 1. УМНАЯ ДЕДУПЛИКАЦИЯ: Вычисляем SHA-256 хеш файла
     const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashStr = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // 2. Формируем путь (Все фото в общую папку)
+    // 2. Формируем путь (Все файлы падают в папку hashed_assets под своим хешем)
     const storagePath = `hashed_assets/${hashStr}.${ext}`;
 
     // 3. Получаем публичный URL
     const { data: urlData } = window.supabaseClient.storage.from(bucketName).getPublicUrl(storagePath);
     const publicUrl = urlData.publicUrl;
 
-    // 4. Проверяем наличие файла через .list() (БЕЗ ОШИБОК В КОНСОЛИ)
+    // 4. Проверяем наличие файла через .list() (Экономим трафик!)
     const { data: existingFiles } = await window.supabaseClient.storage
         .from(bucketName)
         .list('hashed_assets', { search: hashStr });
@@ -925,145 +902,119 @@ async function downloadAllActPhotosForOffline(act) {
         // =====================================================
         try {
             const cloudTypes = [
-                'meeting',
-                'intervention',
-                'practice',
-                'schedule',
-                'custom_doc',
-                'custom_node',
-                'custom_twi_card',
-                'fmea', // <-- ДОБАВЛЕНО FMEA
-                'sk_data_bundle' // <-- НОВОЕ: Пакет данных ПК СК
+                { type: 'meeting', store: 'rbi_meetings', memory: 'rbi_meetingsData' },
+                { type: 'intervention', store: 'rbi_interventions', memory: 'rbi_interventionsData' },
+                { type: 'practice', store: 'rbi_practices', memory: 'rbi_practicesData' },
+                { type: 'schedule', store: 'rbi_schedule_stages', memory: 'rbi_scheduleData' },
+                { type: 'fmea', store: 'rbi_fmea', memory: 'rbi_fmeaRecords' }
             ];
 
-            for (const type of cloudTypes) {
-                const objects = await window.pullCloudObjects(type, lastPullAt, mode);
+            for (const cType of cloudTypes) {
+                const objects = await window.pullCloudObjects(cType.type, lastPullAt, mode);
+                if (!objects || objects.length === 0) continue;
 
-                if (type === 'meeting' && typeof dbPut === 'function') {
-                    window.rbi_meetingsData = window.rbi_meetingsData || [];
-                    for (let obj of objects) {
-                        await dbPut('rbi_meetings', obj);
-                        const idx = window.rbi_meetingsData.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.rbi_meetingsData[idx] = obj;
-                        else window.rbi_meetingsData.push(obj);
+                window[cType.memory] = window[cType.memory] || [];
+                
+                for (const obj of objects) {
+                    const localExisting = await dbGet(cType.store, obj.id);
+                    const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || 0).getTime() : 0;
+                    const cloudTime = new Date(obj.updatedAt || 0).getTime();
+                    
+                    // Применяем изменения ТОЛЬКО если облако новее
+                    if (!localExisting || cloudTime > localTime) {
+                        await dbPut(cType.store, obj);
+                        const idx = window[cType.memory].findIndex(x => String(x.id) === String(obj.id));
+                        if (idx >= 0) window[cType.memory][idx] = obj;
+                        else window[cType.memory].push(obj);
                     }
                 }
+            }
 
-                if (type === 'intervention' && typeof dbPut === 'function') {
-                    window.rbi_interventionsData = window.rbi_interventionsData || [];
-                    for (const obj of objects) {
-                        await dbPut('rbi_interventions', obj);
-                        const idx = window.rbi_interventionsData.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.rbi_interventionsData[idx] = obj;
-                        else window.rbi_interventionsData.push(obj);
-                    }
-                }
+            // Пакет Стройконтроля
+            const skBundles = await window.pullCloudObjects('sk_data_bundle', lastPullAt, mode);
+            if (skBundles && skBundles.length > 0 && typeof dbGetAll === 'function') {
+                let localRecords = await dbGetAll('sk_records') || [];
+                const localMap = new Map();
+                localRecords.forEach(r => localMap.set(r.id, r));
 
-                if (type === 'practice' && typeof dbPut === 'function') {
-                    window.rbi_practicesData = window.rbi_practicesData || [];
-                    for (const obj of objects) {
-                        await dbPut('rbi_practices', obj);
-                        const idx = window.rbi_practicesData.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.rbi_practicesData[idx] = obj;
-                        else window.rbi_practicesData.push(obj);
-                    }
-                }
+                for (const obj of skBundles) {
+                    if (!obj.records) continue;
+                    for (const cloudRecord of obj.records) {
+                        const localRecord = localMap.get(cloudRecord.id);
+                        const cloudTime = cloudRecord._updatedAt ? new Date(cloudRecord._updatedAt).getTime() : 0;
+                        const localTime = localRecord?._updatedAt ? new Date(localRecord._updatedAt).getTime() : 0;
 
-                if (type === 'schedule' && typeof dbPut === 'function') {
-                    window.rbi_scheduleData = window.rbi_scheduleData || [];
-                    for (const obj of objects) {
-                        await dbPut('rbi_schedule_stages', obj);
-                        const idx = window.rbi_scheduleData.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.rbi_scheduleData[idx] = obj;
-                        else window.rbi_scheduleData.push(obj);
-                    }
-                }
-
-                // <-- НОВОЕ: Обработка скачанных FMEA
-                if (type === 'fmea' && typeof dbPut === 'function') {
-                    window.rbi_fmeaRecords = window.rbi_fmeaRecords || [];
-                    for (const obj of objects) {
-                        await dbPut('rbi_fmea', obj);
-                        const idx = window.rbi_fmeaRecords.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.rbi_fmeaRecords[idx] = obj;
-                        else window.rbi_fmeaRecords.push(obj);
-                    }
-                }
-                                // <-- НОВОЕ: Обработка скачанного пакета ПК СК (с защитой от затирания)
-                                // Синхронизация данных ПК Стройконтроль (двусторонняя, с soft delete)
-                                // Синхронизация данных ПК Стройконтроль (сравнение по времени)
-                if (type === 'sk_data_bundle' && typeof dbPut === 'function' && typeof dbGetAll === 'function') {
-                    let localRecords = await dbGetAll('sk_records') || [];
-                    const localMap = new Map();
-                    localRecords.forEach(r => localMap.set(r.id, r));
-
-                    const saveSkRecord = async (record) => {
-                        record._updatedAt = record._updatedAt || new Date().toISOString();
-                        await dbPut('sk_records', record);
-                    };
-
-                    for (const obj of objects) {
-                        if (!obj.records || !Array.isArray(obj.records)) continue;
-                        
-                        for (const cloudRecord of obj.records) {
-                            const localRecord = localMap.get(cloudRecord.id);
-                            const cloudTime = cloudRecord._updatedAt ? new Date(cloudRecord._updatedAt).getTime() : 0;
-                            const localTime = localRecord?._updatedAt ? new Date(localRecord._updatedAt).getTime() : 0;
-
-                            if (!localRecord || cloudTime > localTime) {
-                                if (cloudRecord._deleted === true) {
-                                    if (localRecord) {
-                                        await dbDelete('sk_records', cloudRecord.id);
-                                        localMap.delete(cloudRecord.id);
-                                    }
-                                } else {
-                                    await saveSkRecord(cloudRecord);
-                                    localMap.set(cloudRecord.id, cloudRecord);
-                                }
+                        if (!localRecord || cloudTime > localTime) {
+                            if (cloudRecord._deleted === true) {
+                                if (localRecord) { await dbDelete('sk_records', cloudRecord.id); localMap.delete(cloudRecord.id); }
+                            } else {
+                                cloudRecord._updatedAt = cloudRecord._updatedAt || new Date().toISOString();
+                                await dbPut('sk_records', cloudRecord);
+                                localMap.set(cloudRecord.id, cloudRecord);
                             }
                         }
+                    }
+                    if (obj.volumes) { window.skVolumes = obj.volumes; await dbPut('app_settings', { key: 'sk_volumes', data: window.skVolumes }); }
+                    if (obj.contractorMap) { window.skContractorMap = obj.contractorMap; await dbPut('app_settings', { key: 'sk_contractor_map', data: window.skContractorMap }); }
+                }
+                window.skRecords = Array.from(localMap.values()).filter(r => !r._deleted);
+            }
 
-                        if (obj.volumes) {
-                            window.skVolumes = obj.volumes;
-                            await dbPut('app_settings', { key: 'sk_volumes', data: window.skVolumes });
+            // Справочники (TWI, Узлы, Документы, Чек-листы)
+            const refTypes = [
+                { type: 'custom_doc', memory: 'customDocs', storeKey: 'custom_docs' },
+                { type: 'custom_node', memory: 'customNodes', storeKey: 'custom_nodes' },
+                { type: 'custom_twi_card', memory: 'customTwiCards', storeKey: 'custom_twi_cards' },
+                { type: 'user_template', memory: 'userTemplates', storeKey: 'user_templates', isDict: true }
+            ];
+
+            for (const rType of refTypes) {
+                const objects = await window.pullCloudObjects(rType.type, lastPullAt, mode);
+                if (!objects || objects.length === 0) continue;
+
+                if (rType.isDict) {
+                    // Чек-листы (Объект, а не массив)
+                    window[rType.memory] = window[rType.memory] || {};
+                    for (const obj of objects) {
+                        const localExisting = await dbGet('user_templates', obj.id);
+                        const localTime = localExisting?.data ? new Date(localExisting.data.updatedAt || 0).getTime() : 0;
+                        const cloudTime = new Date(obj.updatedAt || 0).getTime();
+                        
+                        if (!localExisting || cloudTime > localTime) {
+                            if (obj._deleted) {
+                                delete window[rType.memory][obj.id];
+                                await dbDelete('user_templates', obj.id);
+                            } else {
+                                window[rType.memory][obj.id] = obj;
+                                await dbPut('user_templates', { slug: obj.id, data: obj });
+                            }
                         }
-                        if (obj.contractorMap) {
-                            window.skContractorMap = obj.contractorMap;
-                            await dbPut('app_settings', { key: 'sk_contractor_map', data: window.skContractorMap });
+                    }
+                } else {
+                    // Массивы (TWI, Узлы, Доки)
+                    window[rType.memory] = window[rType.memory] || [];
+                    let memoryChanged = false;
+                    
+                    for (const obj of objects) {
+                        // Для них мы храним данные единым массивом в Settings
+                        const idx = window[rType.memory].findIndex(x => String(x.id) === String(obj.id));
+                        const localTime = idx >= 0 ? new Date(window[rType.memory][idx].updatedAt || 0).getTime() : 0;
+                        const cloudTime = new Date(obj.updatedAt || 0).getTime();
+
+                        if (idx === -1 || cloudTime > localTime) {
+                            if (obj._deleted) {
+                                if (idx >= 0) window[rType.memory].splice(idx, 1);
+                            } else {
+                                if (idx >= 0) window[rType.memory][idx] = obj;
+                                else window[rType.memory].push(obj);
+                            }
+                            memoryChanged = true;
                         }
                     }
                     
-                    window.skRecords = Array.from(localMap.values()).filter(r => !r._deleted);
-                }
-
-                if (type === 'custom_doc') {
-                    window.customDocs = window.customDocs || [];
-                    for (const obj of objects) {
-                        const idx = window.customDocs.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.customDocs[idx] = obj;
-                        else window.customDocs.push(obj);
+                    if (memoryChanged && typeof dbPut === 'function') {
+                        await dbPut('app_settings', { key: rType.storeKey, data: window[rType.memory].filter(c => !String(c.id).startsWith('sys_')) });
                     }
-                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_docs', data: window.customDocs.filter(c => !String(c.id).startsWith('sys_')) });
-                }
-
-                if (type === 'custom_node') {
-                    window.customNodes = window.customNodes || [];
-                    for (const obj of objects) {
-                        const idx = window.customNodes.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.customNodes[idx] = obj;
-                        else window.customNodes.push(obj);
-                    }
-                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_nodes', data: window.customNodes.filter(c => !String(c.id).startsWith('sys_')) });
-                }
-
-                if (type === 'custom_twi_card') {
-                    window.customTwiCards = window.customTwiCards || [];
-                    for (const obj of objects) {
-                        const idx = window.customTwiCards.findIndex(x => String(x.id) === String(obj.id));
-                        if (idx >= 0) window.customTwiCards[idx] = obj;
-                        else window.customTwiCards.push(obj);
-                    }
-                    if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'custom_twi_cards', data: window.customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
                 }
             }
         } catch (e) {
