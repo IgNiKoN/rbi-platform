@@ -1220,7 +1220,7 @@ function showContractorDetailView(contractorName) {
         </div>
         
         <!-- НОВЫЙ БЛОК: ПРЕДИКТИВНЫЙ ИИ ПРОГНОЗ -->
-        <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
+        <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors">
                 <span class="flex items-center gap-2">🔮 Предиктивный прогноз (AI)</span>
                 <span class="transition-transform group-open:rotate-180">▼</span>
@@ -1266,7 +1266,7 @@ function showContractorDetailView(contractorName) {
         </details>
 
         <div class="flex flex-col gap-4 mb-4">
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
                 <summary class="p-3 font-black text-[10px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                     <span>📉 Динамика по проверкам</span><span>▼</span>
                 </summary>
@@ -1290,7 +1290,7 @@ function showContractorDetailView(contractorName) {
             </details>
         </div>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                 <span class="flex items-center gap-2">📸 Фотогалереи (Брак и Эталоны)</span>
                 <span class="transition-transform group-open:rotate-180">▼</span>

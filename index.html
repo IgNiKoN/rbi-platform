@@ -67,6 +67,18 @@
 
     <!-- === ТОСТЫ И УВЕДОМЛЕНИЯ === -->
     <div id="toast-container"></div>
+    <!-- RBI NEW: УНИВЕРСАЛЬНОЕ МЕНЮ ДЕЙСТВИЙ (3 ТОЧКИ) -->
+    <div id="universal-action-sheet" class="fixed inset-0 bg-slate-900/60 z-[9500] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeUniversalActionSheet()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[20px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0 flex justify-between items-center">
+                <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white" id="uas-title">Действия</h3>
+                <button onclick="closeUniversalActionSheet()" class="text-slate-400 active:scale-90 p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            <div class="p-2 space-y-1" id="uas-buttons">
+                <!-- Сюда вставятся кнопки из JS -->
+            </div>
+        </div>
+    </div>
     <!-- === ЛОУДЕР (ГЛОБАЛЬНЫЙ) === -->
     <div id="global-loader"
         class="fixed inset-0 bg-slate-900/80 z-[9999] hidden flex-col items-center justify-center backdrop-blur-md transition-opacity duration-300 opacity-0">
@@ -164,6 +176,8 @@
                             <option value="ПРОЕКТ">Проект / РД</option>
                             <option value="ТУ">ТУ / Регламент</option>
                             <option value="ИНСТРУКЦИЯ">Инструкция</option>
+                            <option value="ТЕХ. КАРТА">Тех. карта</option>
+                            <option value="СТАНДАРТ">Стандарт</option>
                         </select>
                     </div>
                     <div>
@@ -1464,36 +1478,15 @@
                             class="text-lg leading-none transform -rotate-90 transition-transform duration-300">▾</span>
                     </div>
 
-                    <!-- ТЕЛО УПРАВЛЕНИЯ (Скрыто по умолчанию) -->
-                    <div id="ref-manage-body"
-                        style="transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease; max-height: 0px; opacity: 0; overflow: hidden; margin-top: 0px;">
-
-                        <button onclick="openTemplateBuilder()"
-                            class="w-full flex justify-between items-center p-3 rounded-xl bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 active:scale-95 transition-all mb-2 border border-indigo-100 dark:border-indigo-800 shadow-sm mt-3">
-                            <span class="font-bold text-sm flex items-center gap-2">➕ Создать новый чек-лист</span>
-                        </button>
-
-                        <div class="flex gap-2 mb-2">
-                            <button onclick="triggerExcelImport()"
-                                class="flex-1 flex justify-center items-center py-2.5 rounded-xl bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300 active:scale-95 transition-all border border-slate-200 dark:border-slate-700 shadow-sm font-bold text-[10px] uppercase">📥
-                                Загрузить Excel</button>
-                            <button onclick="showExcelHelp()"
-                                class="w-12 flex justify-center items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400 border border-slate-200 dark:border-slate-600 active:scale-95 shadow-sm">❓</button>
+                    <!-- ТЕЛО УПРАВЛЕНИЯ (Компактное) -->
+                    <div id="ref-manage-body" style="transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease; max-height: 0px; opacity: 0; overflow: hidden; margin-top: 0px;">
+                        <div class="grid grid-cols-4 gap-2 mt-3 mb-2">
+                            <button onclick="openTemplateBuilder()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">+ Создать</button>
+                            <button onclick="triggerExcelImport()" class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↑ Excel</button>
+                            <button onclick="exportAllTemplatesJson()" class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↓ В код</button>
+                            <button onclick="showExcelHelp()" class="bg-slate-100 text-slate-500 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">Формат?</button>
                         </div>
-
-                        <div class="flex gap-2 mb-2">
-                            <button onclick="exportAllTemplatesJson()"
-                                class="flex-1 bg-slate-50 text-slate-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">В
-                                код (JSON)</button>
-                            <button onclick="exportAllTemplatesExcel()"
-                                class="flex-1 bg-green-50 text-green-700 py-2.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 border border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400">В
-                                Excel</button>
-                        </div>
-
-                        <!-- Список созданных шаблонов для удаления -->
-                        <div id="settings-user-templates-list"
-                            class="space-y-2 mt-3 border-t border-slate-100 dark:border-slate-700 pt-3 max-h-[150px] overflow-y-auto custom-scrollbar">
-                        </div>
+                        <div id="settings-user-templates-list" class="space-y-1.5 mt-2 border-t border-slate-100 dark:border-slate-700 pt-2 max-h-[150px] overflow-y-auto custom-scrollbar"></div>
                     </div>
 
                 </div>
@@ -1568,23 +1561,15 @@
 
                         <!-- НОВЫЙ БЛОК: Фильтр Мои/Все и Офлайн-загрузка -->
                         <div class="flex justify-between items-center mb-3">
-                            <div
-                                class="flex gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
-                                <button onclick="window.twiOwnerFilter='ALL'; renderTwiList()"
-                                    class="px-3 py-1 text-[10px] font-bold rounded-md ${window.twiOwnerFilter === 'ALL' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Все
-                                    карты</button>
-                                <button onclick="window.twiOwnerFilter='MY'; renderTwiList()"
-                                    class="px-3 py-1 text-[10px] font-bold rounded-md ${window.twiOwnerFilter === 'MY' ? 'bg-white shadow-sm text-indigo-600 dark:bg-slate-700 dark:text-indigo-400' : 'text-slate-500'} transition-colors">Мои</button>
-                            </div>
-                            <button onclick="downloadMissingCloudFiles()"
-                                class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
-                                    </path>
-                                </svg> Скачать всё
+                            <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400" id="twi-toggle-label">Только мои</span>
+                                <div class="relative">
+                                    <input type="checkbox" id="twi-owner-toggle" class="sr-only peer" onchange="window.twiOwnerFilter = this.checked ? 'MY' : 'ALL'; document.getElementById('twi-toggle-label').className = this.checked ? 'text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400' : 'text-[10px] font-black uppercase tracking-widest text-slate-400'; renderTwiList()">
+                                    <div class="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+                                </div>
+                            </label>
+                            <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать всё
                             </button>
                         </div>
 
@@ -2040,10 +2025,15 @@
                                     *</label>
                                 <select id="node-category-input" class="input-base text-[12px]">
                                     <option value="ФАСАД">ФАСАД</option>
-                                    <option value="КЖ">КЖ (Бетон)</option>
-                                    <option value="ОКНА">ОКНА / ДВЕРИ</option>
-                                    <option value="ИНЖЕНЕРИЯ">ИНЖЕНЕРИЯ</option>
+                                    <option value="МОНОЛИТ">МОНОЛИТ</option>
+                                    <option value="ОКНА / ВИТРАЖИ">ОКНА / ВИТРАЖИ</option>
+                                    <option value="ДВЕРИ">ДВЕРИ</option>
+                                    <option value="КРОВЛЯ">КРОВЛЯ</option>
+                                    <option value="КИРПИЧ / СКЦ">КИРПИЧ / СКЦ</option>
                                     <option value="ОТДЕЛКА">ОТДЕЛКА</option>
+                                    <option value="БЛАГОУСТРОЙСТВО">БЛАГОУСТРОЙСТВО</option>
+                                    <option value="ЗЕМЛЯ / СВАИ">ЗЕМЛЯ / СВАИ</option>
+                                    <option value="ИНЖЕНЕРИЯ">ИНЖЕНЕРИЯ</option>
                                     <option value="ДРУГОЕ">ДРУГОЕ</option>
                                 </select>
                             </div>
@@ -2124,7 +2114,6 @@
 
             <!-- ПОДВКЛАДКА 5: FAQ И ЛОГИКА РАСЧЕТОВ (ОБНОВЛЕННЫЙ БОЛЬШОЙ FAQ) -->
 
-        </div>
         <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
         <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
             <div id="practices-auto-detector" class="mb-4"></div>
@@ -3519,6 +3508,64 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-6 4h6m-3-10v.01"></path>
                     </svg>
                     Оформить практику
+                </button>
+            </div>
+        </div>
+    </div>
+    <!-- RBI NEW: МОДАЛКА РУЧНОЙ ПРАКТИКИ (БЕЗ ЭМОДЗИ) -->
+    <div id="manual-practice-modal" class="fixed inset-0 bg-slate-900/80 z-[9000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="rbi_closeManualPracticeModal()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+            
+            <div class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+                    Новая практика
+                </div>
+                <button onclick="rbi_closeManualPracticeModal()" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-4 overflow-y-auto custom-scrollbar space-y-4">
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Название (Суть)</label>
+                    <button onclick="rbi_beautifyPracticeAi()" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Улучшить текст (ИИ)
+                    </button>
+                </div>
+                <input type="text" id="man-prac-title" class="input-base" placeholder="Напр: Замена типа анкеров на фасаде...">
+
+                <div class="grid grid-cols-1 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Что делали / В чем проблема</label>
+                        <textarea id="man-prac-problem" class="input-base h-20 resize-none text-[11px]" placeholder="Опишите исходную ситуацию..."></textarea>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Результат / Решение</label>
+                        <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px]" placeholder="Опишите, к какому выводу пришли..."></textarea>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото 1</label>
+                        <button onclick="document.getElementById('man-prac-photo-before').click()" class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold" id="man-prac-btn-before">
+                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить
+                        </button>
+                        <input type="file" id="man-prac-photo-before" accept="image/*" class="hidden" onchange="rbi_handleManualPracticePhoto(event, 'before')">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото 2</label>
+                        <button onclick="document.getElementById('man-prac-photo-after').click()" class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold" id="man-prac-btn-after">
+                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить
+                        </button>
+                        <input type="file" id="man-prac-photo-after" accept="image/*" class="hidden" onchange="rbi_handleManualPracticePhoto(event, 'after')">
+                    </div>
+                </div>
+
+                <button onclick="rbi_saveManualPractice()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mt-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
+                    Сохранить в базу
                 </button>
             </div>
         </div>

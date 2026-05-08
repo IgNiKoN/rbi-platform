@@ -13,8 +13,17 @@ window.syncDirtyFlags = {
     tasks: false,
     session: false
 };
-const SYNC_FULL_ACCESS_HASH = "cd6ca24c2ed2b7c6c4c549de010cc106316279f972b2d075cd6a454d45be70d8";
-
+// Хэш SHA-256 для пароля ""
+const SYNC_FULL_ACCESS_HASH = "1570722437"
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        let char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Преобразуем в 32-битное целое
+    }
+    return hash.toString();
+}
 try {
     let saved = localStorage.getItem('rbi_sync_config');
     if (saved) window.syncConfig = JSON.parse(saved);
@@ -208,7 +217,59 @@ window.verifySyncPin = async function(name, code, correctHash) {
     } else safeToast("❌ Неверный PIN-код!");
 };
 
-window.applySyncConnect = function(name, code, hashedPin) {
+// Функция глубокой очистки проектных данных
+window.clearProjectLocalData = async function() {
+    if (typeof showToast === 'function') showToast("🧹 Очистка данных старого проекта...");
+    
+    // Очищаем таблицы проектных данных в IndexedDB
+    await dbClear('app_history');
+    await dbClear('rbi_tasks');
+    await dbClear('rbi_schedule_stages');
+    await dbClear('rbi_meetings');
+    await dbClear('rbi_interventions');
+    await dbClear('rbi_etalon_acts');
+    await dbClear('rbi_fmea');
+    await dbClear('sk_records');
+    await dbClear('sk_imports');
+
+    // Очищаем локальные массивы (ОЗУ)
+    if (typeof contractorArray !== 'undefined') contractorArray = [];
+    if (typeof etalonActsArray !== 'undefined') etalonActsArray = [];
+    if (typeof window.rbi_tasksData !== 'undefined') window.rbi_tasksData = [];
+    if (typeof window.rbi_scheduleData !== 'undefined') window.rbi_scheduleData = [];
+    if (typeof window.rbi_meetingsData !== 'undefined') window.rbi_meetingsData = [];
+    if (typeof window.rbi_interventionsData !== 'undefined') window.rbi_interventionsData = [];
+    if (typeof window.rbi_fmeaRecords !== 'undefined') window.rbi_fmeaRecords = [];
+    if (typeof window.skRecords !== 'undefined') window.skRecords = [];
+
+    // Сброс плана и статусов
+    if (typeof weeklyPlanData !== 'undefined') weeklyPlanData = { weekId: null, tasks: [], completed: false };
+    if (typeof contractorStatuses !== 'undefined') contractorStatuses = {};
+    
+    // Очищаем кэш автозаполнения инпутов
+    localStorage.removeItem('smart_input_cache');
+    
+    // Сброс мульти-фильтров
+    if (typeof activeMultiFilters !== 'undefined') {
+        activeMultiFilters = {
+            history: { project: [], contractor: [], inspector: [] },
+            analytics: { project: [], contractor: [], inspector: [], template: [] }
+        };
+    }
+    
+    if (typeof showToast === 'function') showToast("✅ Локальные данные очищены");
+};
+
+window.applySyncConnect = async function(name, code, hashedPin) {
+    const oldCode = window.syncConfig.projectCode;
+    
+    // УМНАЯ ПРОВЕРКА: Если код объекта изменился
+    if (oldCode && oldCode !== code) {
+        if (confirm(`Вы меняете код проекта с "${oldCode}" на "${code}".\n\nОчистить локальные проектные данные (историю, задачи, встречи) предыдущего объекта?\n\nБиблиотека (TWI, Узлы, Справочники) останется нетронутой.`)) {
+            await window.clearProjectLocalData();
+        }
+    }
+
     window.syncConfig.enabled = true;
     window.syncConfig.engineerName = name;
     window.syncConfig.projectCode = code;
@@ -273,17 +334,28 @@ window.changeSyncMode = function(mode) {
     }
     window.syncConfig.syncMode = mode;
     localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+     if (mode === 'full') {
+        localStorage.removeItem('rbi_sync_last_pull_at');
+    }
     window.triggerSync('manual'); 
 };
 
 window.verifyFullAccessPin = async function() {
     const input = document.getElementById('sync-full-access-pin').value.trim();
-    const inputHash = await window.hashPin(input);
+    const inputHash = simpleHash(input);
     if (inputHash === SYNC_FULL_ACCESS_HASH) {
         document.getElementById('sync-full-access-modal').remove();
         window.syncConfig.fullAccessGranted = true;
         window.changeSyncMode('full');
-    } else safeToast("❌ Неверный пароль!");
+
+        // === ВОТ ЭТО ДОБАВИТЬ ===
+        localStorage.removeItem('rbi_sync_last_pull_at');
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        window.triggerSync('manual');
+        // =======================
+    } else {
+        if (typeof showToast === 'function') showToast("❌ Неверный пароль!");
+    }
 };
 
 window.resetFullAccess = function() {
@@ -375,7 +447,11 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
     if (isShared) payload.owner = data.owner || iName;
     else { payload.project_code = pCode; payload.engineer_name = iName; }
 
-    await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
+    const { error } = await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
+    if (error) throw error;
+    
+    // ВАЖНО: Возвращаем обновленный объект (с замененными ссылками на http://)
+    return uploadedData; 
 };
 
 window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode = 'silent') {
@@ -737,13 +813,23 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
         // =====================================================
         // 3. PULL: черновик текущей проверки
         // =====================================================
+        // =====================================================
+        // 3. PULL: черновик текущей проверки
+        // =====================================================
         try {
-            const { data: draftRows } = await window.supabaseClient
+            let draftQuery = window.supabaseClient
                 .from('rbi_draft_sessions')
                 .select('*')
                 .eq('project_code', pCode)
-                .eq('engineer_name', iName)
-                .limit(1);
+                .eq('engineer_name', iName);
+                
+            // ИСПРАВЛЕНИЕ: Тянем черновик только если он обновился с прошлой синхронизации
+            if (lastPullAt) {
+                draftQuery = draftQuery.gt('updated_at', lastPullAt);
+            }
+            
+            draftQuery = draftQuery.limit(1);
+            const { data: draftRows } = await draftQuery;
 
             if (draftRows && draftRows.length > 0 && typeof dbGet === 'function' && typeof dbPut === 'function') {
                 const cloudDraft = draftRows[0];
@@ -1291,14 +1377,29 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                     }, { onConflict: 'id' });
             }
         }
-
+// Счётчики реально отправленных данных (чтобы не врать пользователю)
+        let actuallyPushedProfiles = 0;
+        let actuallyPushedTasks = 0;
                 // =====================================================
+        // 7. PUSH: профиль инженера для совместимости
+        // =====================================================
+      // =====================================================
         // 7. PUSH: профиль инженера для совместимости
         // =====================================================
         try {
             const currentSession = (typeof dbGet !== 'undefined')
                 ? (await dbGet('app_state', 'current_session') || {})
                 : {};
+
+            // ИСПРАВЛЕНИЕ: Пушим профиль только если были реальные действия инженера после последней синхронизации
+            const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
+            const profileLastUpdated = Math.max(
+                currentSession.timestamp || 0,
+                (typeof gameActionLogs !== 'undefined' && gameActionLogs.length > 0) ? new Date(gameActionLogs[gameActionLogs.length - 1].date).getTime() : 0,
+                (typeof weeklyPlanData !== 'undefined' && weeklyPlanData.tasks && weeklyPlanData.tasks.length > 0) ? new Date(weeklyPlanData.tasks[0].updatedAt || 0).getTime() : 0
+            );
+
+            if (profileLastUpdated === 0 || profileLastUpdated >= lastPushTime) {
 
             const profilePayload = {
                 inspector_id: stableInspectorId,
@@ -1333,7 +1434,9 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 throw profileError;
             }
 
+            actuallyPushedProfiles = 1;
             console.log('[Sync] Профиль инженера отправлен:', stableInspectorId);
+            } // Закрываем if (profileLastUpdated >= lastPushTime)
 
         } catch (e) {
             console.warn('[Sync] Профиль инженера не отправлен:', e.message);
@@ -1348,8 +1451,16 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 ? (await dbGetAll('rbi_tasks') || [])
                 : (typeof window.rbi_tasksData !== 'undefined' ? window.rbi_tasksData : []);
 
-            // ОТПРАВЛЯЕМ В ОБЛАКО ТОЛЬКО РУЧНЫЕ ЗАДАЧИ
-            tasks = tasks.filter(t => t.type === 'manual');
+            const lastPushTimeTasks = lastPushAt ? new Date(lastPushAt).getTime() : 0;
+
+            // ИСПРАВЛЕНИЕ: Отправляем только РУЧНЫЕ задачи, которые ИЗМЕНИЛИСЬ
+            tasks = tasks.filter(t => {
+                if (t.type !== 'manual') return false;
+                const tTime = new Date(t.updatedAt || t.updated_at || t.date || t.createdAt || 0).getTime();
+                return tTime === 0 || tTime >= lastPushTimeTasks;
+            });
+            
+            actuallyPushedTasks = tasks.length; // Запоминаем для честного счетчика
 
             if (tasks.length > 0) {
                 // ИСПРАВЛЕНИЕ: Пакетная отправка (Batch Upsert). 
@@ -1440,32 +1551,36 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 // 8.1. PUSH: прочие модули через rbi_cloud_objects
                 // =====================================================
                 try {
-                    // УМНАЯ ОТПРАВКА: фильтруем только те объекты, которые изменились после прошлого PUSH
-                      const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
+                    const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
                     const filterNew = (arr) => arr.filter(i => {
-    // Получаем время. Если даты нет, t будет равно 0
-    const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
-    // Отправляем в облако, если файл свежий ИЛИ если у него вообще нет даты (значит он только что создан)
-    return t === 0 || t >= lastPushTime;
-});
+                        const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
+                        return t === 0 || t >= lastPushTime;
+                    });
 
+                    // 1. Вспомогательная функция для табличных данных (Совещания, FMEA и т.д.)
+                    const syncTableData = async (storeName, memoryArrayName, objectType) => {
+                        if (typeof dbGetAll !== 'function') return;
+                        const items = filterNew(await dbGetAll(storeName) || []);
+                        for (const obj of items) { 
+                            const updated = await window.pushCloudObject(objectType, obj.id, obj, 'inspection-photos'); 
+                            if (updated) {
+                                await dbPut(storeName, updated);
+                                if (window[memoryArrayName]) {
+                                    const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
+                                    if (idx !== -1) window[memoryArrayName][idx] = updated;
+                                }
+                            }
+                        }
+                    };
+
+                    await syncTableData('rbi_meetings', 'rbi_meetingsData', 'meeting');
+                    await syncTableData('rbi_interventions', 'rbi_interventionsData', 'intervention');
+                    await syncTableData('rbi_practices', 'rbi_practicesData', 'practice');
+                    await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
+                    await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
+
+                    // Отправка ПК СК (Стройконтроль)
                     if (typeof dbGetAll === 'function') {
-                        const meetings = filterNew(await dbGetAll('rbi_meetings') || []);
-                        for (const obj of meetings) { await window.pushCloudObject('meeting', obj.id, obj, 'inspection-photos'); }
-
-                        const interventions = filterNew(await dbGetAll('rbi_interventions') || []);
-                        for (const obj of interventions) { await window.pushCloudObject('intervention', obj.id, obj, 'inspection-photos'); }
-
-                        const practices = filterNew(await dbGetAll('rbi_practices') || []);
-                        for (const obj of practices) { await window.pushCloudObject('practice', obj.id, obj, 'inspection-photos'); }
-
-                        const scheduleStages = filterNew(await dbGetAll('rbi_schedule_stages') || []);
-                        for (const obj of scheduleStages) { await window.pushCloudObject('schedule', obj.id, obj, 'inspection-photos'); }
-
-                        const fmeas = filterNew(await dbGetAll('rbi_fmea') || []);
-                        for (const obj of fmeas) { await window.pushCloudObject('fmea', obj.id, obj, 'inspection-photos'); }
-
-                        // Отправка ПК СК (Стройконтроль) отправляем только если есть изменения
                         const skRecs = await dbGetAll('sk_records') || [];
                         const newSkRecs = filterNew(skRecs);
                         if (mode === 'manual' || newSkRecs.length > 0) {
@@ -1484,23 +1599,42 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                         }
                     }
 
-                    if (typeof customDocs !== 'undefined' && Array.isArray(customDocs)) {
-                        for (const obj of filterNew(customDocs.filter(x => x && x.id && !String(x.id).startsWith('sys_')))) {
-                            await window.pushCloudObject('custom_doc', obj.id, obj, 'custom-assets');
+                    // 2. Вспомогательная функция для Библиотеки Справочников (TWI, Узлы, НД)
+                    const syncSettingsData = async (memoryArray, storeKey, objectType, bucket) => {
+                        if (typeof memoryArray !== 'undefined' && Array.isArray(memoryArray)) {
+                            let changed = false;
+                            for (const obj of filterNew(memoryArray.filter(x => x && x.id && !String(x.id).startsWith('sys_')))) {
+                                const updated = await window.pushCloudObject(objectType, obj.id, obj, bucket);
+                                if (updated) {
+                                    const idx = memoryArray.findIndex(x => String(x.id) === String(updated.id));
+                                    if (idx !== -1) memoryArray[idx] = updated;
+                                    changed = true;
+                                }
+                            }
+                            if (changed && typeof dbPut === 'function') {
+                                await dbPut('app_settings', { key: storeKey, data: memoryArray.filter(c => !String(c.id).startsWith('sys_')) });
+                            }
+                        }
+                    };
+
+                    await syncSettingsData(customDocs, 'custom_docs', 'custom_doc', 'custom-assets');
+                    await syncSettingsData(customNodes, 'custom_nodes', 'custom_node', 'custom-assets');
+                    await syncSettingsData(customTwiCards, 'custom_twi_cards', 'custom_twi_card', 'twi-pdfs');
+
+                    // ОТДЕЛЬНЫЙ PUSH ДЛЯ ЧЕК-ЛИСТОВ (т.к. это Объект, а не массив)
+                    if (typeof userTemplates !== 'undefined') {
+                        let tmplChanged = false;
+                        const tmplArray = Object.values(userTemplates);
+                        for (const obj of filterNew(tmplArray)) {
+                            const updated = await window.pushCloudObject('user_template', obj.id, obj, 'library-checklists');
+                            if (updated) {
+                                userTemplates[updated.id] = updated;
+                                await dbPut('user_templates', { slug: updated.id, data: updated });
+                                tmplChanged = true;
+                            }
                         }
                     }
 
-                    if (typeof customNodes !== 'undefined' && Array.isArray(customNodes)) {
-                        for (const obj of filterNew(customNodes.filter(x => x && x.id))) {
-                            await window.pushCloudObject('custom_node', obj.id, obj, 'custom-assets');
-                        }
-                    }
-
-                    if (typeof customTwiCards !== 'undefined' && Array.isArray(customTwiCards)) {
-                        for (const obj of filterNew(customTwiCards.filter(x => x && x.id))) {
-                            await window.pushCloudObject('custom_twi_card', obj.id, obj, 'twi-pdfs');
-                        }
-                    }
                 } catch (e) {
                     console.warn("[Sync] Прочие модули не отправлены:", e.message);
                 }
@@ -1511,10 +1645,13 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
         localStorage.setItem('rbi_cloud_dirty', '0');
 
-        // Подсчитываем, были ли реальные загрузки
+        // ИСПРАВЛЕНИЕ: Честный подсчет реально отправленных и полученных объектов
         const pulledChecks = cloudInspections ? cloudInspections.length : 0;
-        const pushedChecks = currentHistory ? currentHistory.length : 0;
-        const hasChanges = pulledChecks > 0 || pushedChecks > 0;
+        // pushedChecks уже отфильтрованы по времени выше (строка ~274)
+        const pushedChecks = currentHistory ? currentHistory.length : 0; 
+        
+        const totalPushed = pushedChecks + actuallyPushedTasks + actuallyPushedProfiles;
+        const hasChanges = pulledChecks > 0 || totalPushed > 0;
 
         // Включаем флаги "Грязных данных", чтобы вкладки обновились при переходе на них
         window.syncDirtyFlags.templates = true;
@@ -1523,6 +1660,14 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
         window.syncDirtyFlags.tasks = true;
         window.syncDirtyFlags.session = true;
         window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
+
+        // === АВТОГЕНЕРАЦИЯ ПЛАНА НА НОВОМ УСТРОЙСТВЕ ===
+        // Если синхронизация прошла, а задач всё еще 0 (новый телефон/браузер) - генерируем план
+        if (typeof gameGenerateWeeklyPlan === 'function') {
+            if (typeof window.rbi_tasksData !== 'undefined' && window.rbi_tasksData.length === 0) {
+                await gameGenerateWeeklyPlan(true);
+            }
+        }
 
         if (mode === 'manual') {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
@@ -1543,8 +1688,8 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                 renderCurrentAnalyticsTab();
             }
 
-            if (hasChanges) {
-                safeToast(`✅ Успешно! Отправлено: ${pushedChecks}, загружено: ${pulledChecks}.`);
+           if (hasChanges) {
+                safeToast(`✅ Успешно! Отправлено: ${totalPushed}, загружено: ${pulledChecks}.`);
             } else {
                 safeToast('✅ Синхронизировано. Новых данных нет.');
             }

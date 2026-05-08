@@ -393,8 +393,6 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
         // СРАЗУ ПОДСЧИТЫВАЕМ ПРОГРЕСС, ЧТОБЫ НОВЫЕ ЗАДАЧИ УВИДЕЛИ СТАРЫЕ ПРОВЕРКИ
         if (typeof gameUpdatePlanProgress === 'function') gameUpdatePlanProgress();
 
-        if (force) showToast(`✅ План актуализирован!`);
-
     } finally {
         // Обязательно снимаем замок, чтобы при следующем запросе планировщик отработал
         window.isPlanGenerating = false;
@@ -848,25 +846,23 @@ window.rbi_openTaskAction = async function(taskId) {
 // ИНТЕГРАЦИЯ УМНЫХ КНОПОК ИЗ КАРТОЧЕК ЗАДАЧ
 // ==========================================
 
-// Фоновая отметка задачи выполненной (без модалок)
-// Фоновая отметка задачи выполненной (без модалок)
-// Фоновая отметка задачи выполненной (без модалок)
 window.rbi_markTaskDone = async function(taskId, silent = false) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if(task) {
-        task.status = 'done'; // <-- Меняем статус на DONE
+        task.status = 'done'; 
         task.resultComment = 'Выполнено инженером вручную';
         task.updatedAt = new Date().toISOString();
         
         if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
         
-        // ЖЕСТКО ЗАКРЫВАЕМ МОДАЛКУ
         document.getElementById('task-details-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
+        
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
 
         if (!silent) {
             showToast("✅ Задача выполнена и перенесена в Архив!");
-            // ПРИНУДИТЕЛЬНО ПЕРЕРИСОВЫВАЕМ СПИСОК ЗАДАЧ
             rbi_renderTasksList();
         }
     }

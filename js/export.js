@@ -1740,7 +1740,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
     try {
         if (loaderText) loaderText.innerText = "Создание PDF (Высокое качество)...";
-        await new Promise(resolve => setTimeout(resolve, 300)); // Даем DOM обновиться
+         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
         // Разделяем контент на отдельные страницы по маркеру разрыва
         const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
