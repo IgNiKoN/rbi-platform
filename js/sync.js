@@ -418,6 +418,7 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
         case 'custom_doc': tableName = 'shared_docs'; isShared = true; targetBucket = 'library-docs'; break;
         case 'user_template': tableName = 'shared_checklists'; isShared = true; targetBucket = 'library-checklists'; break;
         case 'practice': tableName = 'shared_practices'; isShared = true; targetBucket = 'library-practices'; break;
+        case 'etalon': tableName = 'shared_etalons'; isShared = true; targetBucket = 'library-etalons'; break;
         case 'meeting': tableName = 'project_meetings'; targetBucket = 'inspection-photos'; break;
         case 'intervention': tableName = 'project_interventions'; targetBucket = 'inspection-photos'; break;
         case 'fmea': tableName = 'project_fmea'; targetBucket = 'inspection-photos'; break;
@@ -464,6 +465,7 @@ window.pullCloudObjects = async function(objectType, lastPullTimeStr = '', mode 
         case 'custom_doc': tableName = 'shared_docs'; isShared = true; break;
         case 'user_template': tableName = 'shared_checklists'; isShared = true; break;
         case 'practice': tableName = 'shared_practices'; isShared = true; break;
+        case 'etalon': tableName = 'shared_etalons'; isShared = true; break;
         case 'meeting': tableName = 'project_meetings'; break;
         case 'intervention': tableName = 'project_interventions'; break;
         case 'fmea': tableName = 'project_fmea'; break;
@@ -806,8 +808,9 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
             }
 
             if (typeof dbGetAll === 'function') {
-                contractorArray = (await dbGetAll('app_history') || []).filter(x => !x._deleted);
-            }
+            contractorArray = (await dbGetAll('app_history') || []).filter(x => !x._deleted);
+            etalonActsArray = (await dbGetAll('rbi_etalon_acts') || []).filter(x => !x._deleted); // <-- ОЧЕНЬ ВАЖНО: обновляем и эталоны
+        }
         }
 
         // =====================================================
@@ -920,53 +923,6 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
             console.warn("[Sync] Задачи не подтянуты:", e.message);
         }
 
-// =====================================================
-// 4.2. PULL: акты-эталоны напрямую из rbi_etalon_acts
-// =====================================================
-try {
-    let etalonQuery = window.supabaseClient
-        .from('rbi_etalon_acts')
-        .select('*')
-        .eq('project_code', pCode)
-        .eq('is_deleted', false);
-
-    if (window.syncConfig.syncMode === 'personal') {
-        etalonQuery = etalonQuery.eq('engineer_name', iName);
-    }
-
-    if (lastPullAt) {
-        etalonQuery = etalonQuery.gt('updated_at', lastPullAt);
-    }
-
-    const { data: etalonRows } = await etalonQuery;
-
-    if (etalonRows && etalonRows.length > 0) {
-        for (const row of etalonRows) {
-            let actData = row.act_data || {};
-
-            // 1. Скачиваем все фото в офлайн-кеш, НО НЕ МЕНЯЕМ публичные URL
-            await downloadAllActPhotosForOffline(actData);
-
-            actData.id = row.id;
-            actData.updatedAt = row.updated_at;
-
-            // 2. Сравниваем время, чтобы не перезаписать локальные правки
-            const localExisting = await dbGet('rbi_etalon_acts', row.id);
-            const localTime = localExisting ? new Date(localExisting.updatedAt || 0).getTime() : 0;
-            const cloudTime = new Date(row.updated_at || 0).getTime();
-
-            if (!localExisting || cloudTime > localTime) {
-                await dbPut('rbi_etalon_acts', actData);
-                // Обновляем в оперативной памяти
-                const idx = etalonActsArray.findIndex(x => String(x.id) === String(actData.id));
-                if (idx >= 0) etalonActsArray[idx] = actData;
-                else etalonActsArray.push(actData);
-            }
-        }
-    }
-} catch (e) {
-    console.warn("[Sync] Эталоны не подтянуты:", e.message);
-}
 
 // Вспомогательная функция для фоновой загрузки всех фото эталона в кеш
 async function downloadAllActPhotosForOffline(act) {
@@ -992,7 +948,8 @@ async function downloadAllActPhotosForOffline(act) {
                 { type: 'intervention', store: 'rbi_interventions', memory: 'rbi_interventionsData' },
                 { type: 'practice', store: 'rbi_practices', memory: 'rbi_practicesData' },
                 { type: 'schedule', store: 'rbi_schedule_stages', memory: 'rbi_scheduleData' },
-                { type: 'fmea', store: 'rbi_fmea', memory: 'rbi_fmeaRecords' }
+                { type: 'fmea', store: 'rbi_fmea', memory: 'rbi_fmeaRecords' },
+                { type: 'etalon', store: 'rbi_etalon_acts', memory: 'etalonActsArray' }
             ];
 
             for (const cType of cloudTypes) {
@@ -1258,85 +1215,7 @@ async function downloadAllActPhotosForOffline(act) {
                 }
             }
         }
-                        // 5.1. PUSH: акты-эталоны в rbi_etalon_acts (с принудительной загрузкой фото)
-                try {
-                    const etalons = typeof dbGetAll === 'function'
-                        ? (await dbGetAll('rbi_etalon_acts') || [])
-                        : (typeof etalonActsArray !== 'undefined' ? etalonActsArray : []);
-
-                    for (const act of etalons) {
-                        if (!act || !act.id) continue;
-
-                        // Создаём копию, чтобы не менять оригинал до успешной загрузки фото
-                        let uploadedAct = JSON.parse(JSON.stringify(act));
-                        
-                        // Принудительно обрабатываем фото в элементах эталона
-                        if (uploadedAct.details && uploadedAct.details.elements && Array.isArray(uploadedAct.details.elements)) {
-                            for (let i = 0; i < uploadedAct.details.elements.length; i++) {
-                                const element = uploadedAct.details.elements[i];
-                                if (element.photo && typeof element.photo === 'string' && element.photo.startsWith('local://')) {
-                                    try {
-                                        // Достаём фото из IndexedDB
-                                        const photoRecord = await dbGet('app_photos', element.photo);
-                                        if (photoRecord && photoRecord.data) {
-                                            const blob = new Blob([photoRecord.data], { type: photoRecord.mimeType || 'image/jpeg' });
-                                            const ext = photoRecord.mimeType?.includes('png') ? 'png' : 'jpg';
-                                            const fileName = `etalon_${act.id}_elem${i}_${Date.now()}.${ext}`;
-                                            const filePath = `${pCode}/etalons/${act.id}/${fileName}`;
-                                            
-                                            // Загружаем в Storage Supabase
-                                            const { error: uploadError } = await window.supabaseClient.storage
-                                                .from('inspection-photos')
-                                                .upload(filePath, blob, { upsert: true, contentType: photoRecord.mimeType });
-                                            
-                                            if (uploadError) throw uploadError;
-                                            
-                                            // Получаем публичный URL
-                                            const { data: urlData } = window.supabaseClient.storage
-                                                .from('inspection-photos')
-                                                .getPublicUrl(filePath);
-                                            
-                                            // Заменяем local:// на публичный URL
-                                            element.photo = urlData.publicUrl;
-                                            
-                                            // Обновляем запись в IndexedDB, чтобы локально тоже был публичный URL
-                                            if (typeof dbPut === 'function') {
-                                                const updatedAct = JSON.parse(JSON.stringify(act));
-updatedAct.details.elements[i].photo = urlData.publicUrl;
-updatedAct.updatedAt = new Date().toISOString();
-await dbPut('rbi_etalon_acts', updatedAct);
-const idx = etalonActsArray.findIndex(x => String(x.id) === String(act.id));
-if (idx !== -1) etalonActsArray[idx] = updatedAct;
-                                            }
-                                        }
-                                    } catch (photoError) {
-                                        console.error(`[Sync] Ошибка загрузки фото для эталона ${act.id}, элемент ${i}:`, photoError);
-                                        // Не прерываем отправку, фото останется local:// (будет загружено при следующей синхронизации)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Отправляем запись в таблицу Supabase
-                        const { error: etalonError } = await window.supabaseClient
-                            .from('rbi_etalon_acts')
-                            .upsert({
-                                id: String(uploadedAct.id),
-                                project_code: pCode,
-                                engineer_name: uploadedAct.inspectorName || uploadedAct.engineerName || iName,
-                                contractor_name: uploadedAct.contractorName || uploadedAct.contractor || '',
-                                template_key: uploadedAct.templateKey || 'sys_etalon_act',
-                                template_title: uploadedAct.templateTitle || '',
-                                act_data: uploadedAct,
-                                is_deleted: uploadedAct._deleted || false,
-                                updated_at: uploadedAct.updatedAt || uploadedAct.updated_at || new Date().toISOString()
-                            }, { onConflict: 'id' });
-
-                        if (etalonError) throw etalonError;
-                    }
-                } catch (e) {
-                    console.warn("[Sync] Эталоны не отправлены:", e.message);
-                }
+         
         // =====================================================
         // 6. PUSH: черновик
         // =====================================================
@@ -1578,6 +1457,7 @@ if (idx !== -1) etalonActsArray[idx] = updatedAct;
                     await syncTableData('rbi_practices', 'rbi_practicesData', 'practice');
                     await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
                     await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
+                    await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
 
                     // Отправка ПК СК (Стройконтроль)
                     if (typeof dbGetAll === 'function') {

@@ -234,7 +234,12 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
         for (let key in pairMap) {
             const pair = pairMap[key];
             
-            const hasEtalon = etalonActsArray.some(c => c.contractorName === pair.contractor && c.templateKey === 'sys_etalon_act' && c.templateTitle === pair.templateTitle);
+            const hasEtalon = etalonActsArray.some(c => 
+                c.contractorName === pair.contractor && 
+                c.templateKey === 'sys_etalon_act' && 
+                c.templateTitle === pair.templateTitle &&
+                c.projectName === pair.project // <-- НОВОЕ УСЛОВИЕ: ПРИВЯЗКА К ПРОЕКТУ
+            );
             if (!hasEtalon) {
                 addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, 'Эталон');
             }
@@ -767,7 +772,7 @@ window.rbi_openTaskAction = async function(taskId) {
         else if (task.taskType === 'Эталон' || task.icon === 'Эталон' || task.title.includes('Эталон')) {
             // ЭТАЛОН
             actionButtonsHtml += `
-                <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; openEtalonConstructor('${safeContractor}', '${task.templateKey}', '${task.workTitle || task.templateTitle}', '${safeStatusKeyForHtml}');" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
+                <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; openEtalonConstructor('${safeContractor}', '${task.templateKey}', '${task.workTitle || task.templateTitle}', '${task.project}', '${safeStatusKeyForHtml}');" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
                     📐 Снять Эталон
                 </button>`;
         } 
@@ -1074,11 +1079,10 @@ window.rbi_generateIntroBriefing = async function(taskId) {
     }
 };
 
-window.rbi_printIntroBriefing = function(taskId) {
+window.rbi_printIntroBriefing = async function(taskId, mode = 'browser') {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task || !task.aiData) return showToast("Сначала сгенерируйте данные!");
 
-    // Собираем таблицу требований
     const tableRows = task.aiData.checklist.map((item, idx) => `
         <tr>
             <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center;">${idx + 1}</td>
@@ -1088,11 +1092,14 @@ window.rbi_printIntroBriefing = function(taskId) {
         </tr>
     `).join('');
 
-    // Ищем TWI карты, привязанные к этому виду работ
     const linkedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => c.checklistKey === task.templateKey && c.type === 'INSPECTOR') : [];
     
     let twiHtml = '';
-    linkedTwi.forEach(card => {
+    // ВАЖНО: Используем for...of, чтобы дождаться картинок
+    for (let card of linkedTwi) {
+        let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
+        let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
+        
         twiHtml += `
             <div style="page-break-before: always; margin-top: 20px;">
                 <h2 style="font-size: 16px; text-align: center; text-transform: uppercase; color: #0f172a; margin-bottom: 20px;">ВИЗУАЛЬНЫЙ СТАНДАРТ: ${card.title}</h2>
@@ -1100,17 +1107,17 @@ window.rbi_printIntroBriefing = function(taskId) {
                     <tr>
                         <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
                             <h2 style="color: #166534; font-size: 14px; text-transform: uppercase;">✅ ЭТАЛОН</h2>
-                            ${card.photoGood ? `<div style="height: 200px; background: white;"><img src="${window.getPhotoSrc(card.photoGood)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
+                            ${resolvedGood ? `<div style="height: 200px; background: white;"><img src="${resolvedGood}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
                         </td>
                         <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
                             <h2 style="color: #991b1b; font-size: 14px; text-transform: uppercase;">❌ БРАК</h2>
-                            ${card.photoBad ? `<div style="height: 200px; background: white;"><img src="${window.getPhotoSrc(card.photoBad)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
+                            ${resolvedBad ? `<div style="height: 200px; background: white;"><img src="${resolvedBad}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
                         </td>
                     </tr>
                 </table>
             </div>
         `;
-    });
+    }
 
     const content = `
         <div style="text-align:center; margin-bottom: 20px;">
@@ -1136,7 +1143,7 @@ window.rbi_printIntroBriefing = function(taskId) {
         ${twiHtml}
     `;
 
-    if (typeof printPdfShell === 'function') printPdfShell(`Инструктаж ${task.contractor}`, content, "A4", "portrait", "browser");
+    if (typeof printPdfShell === 'function') printPdfShell(`Инструктаж ${task.contractor}`, content, "A4", "portrait", mode);
 };
 
 
@@ -1286,7 +1293,7 @@ window.rbi_handleTaskCompletionPhoto = function(event) {
     });
 };
 
-window.rbi_printWorkshop = function(taskId, mode = 'browser') {
+window.rbi_printWorkshop = async function(taskId, mode = 'browser') {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const scenario = document.getElementById('workshop-ai-scenario')?.value;
     if (!scenario || scenario.includes('⏳')) return showToast("Сгенерируйте сценарий!");
@@ -1302,6 +1309,10 @@ window.rbi_printWorkshop = function(taskId, mode = 'browser') {
     `;
 
     if (relatedTwi && relatedTwi.type === 'INSPECTOR') {
+        // ВАЖНО: Асинхронно достаем картинки
+        let resolvedGood = relatedTwi.photoGood ? await PhotoManager.getAsyncUrl(relatedTwi.photoGood) || window.getPhotoSrc(relatedTwi.photoGood) : null;
+        let resolvedBad = relatedTwi.photoBad ? await PhotoManager.getAsyncUrl(relatedTwi.photoBad) || window.getPhotoSrc(relatedTwi.photoBad) : null;
+
         content += `
             <div style="page-break-before: always; margin-top: 20px;">
                 <h2 style="font-size: 18px; text-align: center; text-transform: uppercase; color: #0f172a; margin-bottom: 20px;">ВИЗУАЛЬНЫЙ СТАНДАРТ: ${relatedTwi.title}</h2>
@@ -1309,11 +1320,11 @@ window.rbi_printWorkshop = function(taskId, mode = 'browser') {
                     <tr>
                         <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
                             <h2 style="color: #166534; font-size: 14px; text-transform: uppercase;">✅ ЭТАЛОН</h2>
-                            ${relatedTwi.photoGood ? `<img src="${window.getPhotoSrc(relatedTwi.photoGood)}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
+                            ${resolvedGood ? `<img src="${resolvedGood}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
                         </td>
                         <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
                             <h2 style="color: #991b1b; font-size: 14px; text-transform: uppercase;">❌ БРАК</h2>
-                            ${relatedTwi.photoBad ? `<img src="${window.getPhotoSrc(relatedTwi.photoBad)}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
+                            ${resolvedBad ? `<img src="${resolvedBad}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
                         </td>
                     </tr>
                 </table>

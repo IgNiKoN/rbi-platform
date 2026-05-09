@@ -1664,6 +1664,11 @@ window.startInspectionWithValues = function (contractor, templateKey, statusKey 
             if (originalCheck) {
                 auditOriginalData = { isCrossAudit: true, state: originalCheck.state, photos: originalCheck.photos, inspector: originalCheck.inspectorName };
 
+                // ВАЖНО: Копируем старые ответы в текущий рабочий чек-лист
+                state = JSON.parse(JSON.stringify(originalCheck.state || {}));
+                details = JSON.parse(JSON.stringify(originalCheck.details || {}));
+                photos = JSON.parse(JSON.stringify(originalCheck.photos || {}));
+
                 // Предзаполняем локацию, чтобы аудит был в том же месте
                 ['inp-section', 'inp-floor', 'inp-room'].forEach(id => {
                     const el = document.getElementById(id);
@@ -2136,33 +2141,35 @@ window.rbi_renderFmeaHistory = function () {
 
     // Кнопки управления и фильтры
     let headerHtml = `
-        <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-2xl p-4 shadow-sm mb-4">
-            <div class="flex justify-between items-center mb-3">
-                <div>
-                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white">Новый FMEA-Анализ</h2>
-                    <p class="text-[10px] text-slate-500 font-bold mt-0.5">В таблицу попадут только дефекты B2/B3, повторившиеся более 3 раз за выбранный период.</p>
+        <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40">
+            <div class="flex justify-between items-center mb-3 border-b border-[var(--card-border)] pb-2">
+                <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Архив FMEA
+                </h2>
+                <div class="flex gap-2">
+                    <button onclick="rbi_createEmptyFmea()" class="bg-white text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg shadow-sm active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Пустой бланк
+                    </button>
                 </div>
             </div>
-            <div class="flex gap-2 items-end">
+            
+            <div class="flex gap-2 items-center">
                 <div class="flex-1">
-                    <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Период анализа</label>
-                    <select id="fmea-period-select" class="input-base !py-2.5 text-[11px] font-bold">
-                        <option value="WEEK">За последние 7 дней (Неделя)</option>
-                        <option value="MONTH">За последние 30 дней (Месяц)</option>
-                        <option value="QUARTER">За последние 90 дней (Квартал)</option>
+                    <select id="fmea-period-select" class="input-base !py-2 text-[10px] font-bold">
+                        <option value="WEEK">Дефекты за 7 дней (Неделя)</option>
+                        <option value="MONTH">Дефекты за 30 дней (Месяц)</option>
+                        <option value="QUARTER">Дефекты за 90 дней (Квартал)</option>
                     </select>
                 </div>
-                <button onclick="rbi_generateFmeaTable()" class="flex-1 bg-purple-600 text-white py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 
-                    Сформировать таблицу
+                <button onclick="rbi_generateFmeaTable()" class="bg-purple-600 text-white px-3 py-2 rounded-lg font-black text-[10px] uppercase shadow-md active:scale-95 transition-transform flex items-center gap-1.5 shrink-0">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Сформировать
                 </button>
             </div>
         </div>
         
         <div id="fmea-workspace" class="mb-4"></div>
-
-        <div class="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2 pl-1">Архив проведенных FMEA</div>
-        <div id="fmea-registry-list" class="space-y-3 pb-8"></div>
+        <div id="fmea-registry-list" class="pb-8"></div>
     `;
 
     container.innerHTML = headerHtml;
@@ -2174,45 +2181,55 @@ window.rbi_renderFmeaRegistry = function() {
     if (!listContainer) return;
 
     if (!window.rbi_fmeaRecords || window.rbi_fmeaRecords.length === 0) {
-        listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Архив пуст</div>`;
+        listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)]">Архив пуст</div>`;
         return;
     }
 
-    // Скрываем удаленные, отсекаем призраков и чужие объекты
+    const currentEngineer = appSettings.engineerName || 'Инженер';
     const sorted = [...window.rbi_fmeaRecords]
-        .filter(f => f && f.id && !f._deleted && f.date && f.title && f.defects) // <-- Строго проверяем, что это FMEA
+        .filter(f => f && f.id && !f._deleted && f.date && f.title && f.defects)
         .sort((a,b) => new Date(b.date) - new Date(a.date));
-    listContainer.innerHTML = sorted.map(f => `
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col gap-2">
-            <div class="flex justify-between items-start border-b border-slate-100 dark:border-slate-700 pb-2">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg flex items-center justify-center font-black text-sm">📊</div>
-                    <div>
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${f.title}</div>
-                        <div class="text-[9px] font-bold text-slate-500">Период: ${f.periodName} | Разобрано дефектов: ${(f.defects || []).length}</div>
-                        ${(() => {
-                            const photos = (f.defects || []).map(d => d.photo).filter(Boolean).slice(0, 3);
-                            if (photos.length === 0) return '';
-                            return `<div class="flex gap-1.5 mt-2">
-                                ${photos.map(p => `<img src="${window.getPhotoSrc(p)}" class="w-8 h-8 rounded-md object-cover border border-slate-200 shadow-sm">`).join('')}
-                                ${f.defects.length > 3 ? `<div class="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-[9px] font-black text-slate-400">+${f.defects.length - 3}</div>` : ''}
-                            </div>`;
-                        })()}
+
+    listContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(f => {
+        let isOwner = !f.author || f.author === currentEngineer;
+        
+        // Берем первое фото для обложки, если есть
+        let previewHtml = '';
+        const photos = (f.defects || []).map(d => d.photo).filter(Boolean);
+        if (photos.length > 0) {
+            // Внимание: мы используем getPhotoSrc синхронно. Для 100% точности лучше так:
+            previewHtml = `<img src="${window.getPhotoSrc(photos[0])}" class="w-full h-full object-cover">`;
+        } else {
+            previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
+        }
+
+        return `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_viewFmea('${f.id}')">
+            
+            <div class="h-24 sm:h-28 border-b border-[var(--card-border)] relative">
+                ${previewHtml}
+                <button onclick="event.stopPropagation(); openUniversalActionSheet('${f.id}', 'fmea', '${f.title.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                </button>
+                <div class="absolute bottom-2 left-2 bg-purple-600 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">${f.periodName}</div>
+            </div>
+            
+            <div class="p-3 flex flex-col flex-1">
+                <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-1">${f.title}</div>
+                <div class="text-[9px] text-slate-500 font-bold mb-2">Разобрано дефектов: ${(f.defects || []).length} шт.</div>
+                
+                <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
+                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2">
+                        <svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        ${f.author ? f.author.split(' ')[0] : 'Инженер'}
                     </div>
-                </div>
-                <div class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700">
-                    ${new Date(f.date).toLocaleDateString('ru-RU')}
+                    <div class="text-[9px] font-black text-slate-400">${new Date(f.date).toLocaleDateString('ru-RU')}</div>
                 </div>
             </div>
-           <div class="flex gap-2 pt-1">
-        <button onclick="rbi_viewFmea('${f.id}')" class="flex-1 bg-blue-50 text-blue-700 border border-blue-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">👁️ Просмотр</button>
-        <button onclick="rbi_printFmeaPdf('${f.id}', 'script')" class="flex-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">📥 В PDF</button>
-        <button onclick="rbi_loadFmeaToWorkspace('${f.id}')" class="flex-1 bg-white text-slate-600 border border-slate-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center justify-center gap-1">✏️ Изменить</button>
-        <button onclick="rbi_deleteFmea('${f.id}')" class="w-10 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg active:scale-95 shadow-sm transition-colors flex items-center justify-center">🗑️</button>
-    </div>
+            
         </div>
-        </div>
-    `).join('');
+        `;
+    }).join('') + `</div>`;
 };
 
 window.rbi_deleteFmea = async function(id) {
@@ -2299,7 +2316,10 @@ window.rbi_viewFmea = async function(fmeaId) {
         <div class="max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 pb-4">
             ${rowsHtml}
         </div>
-        <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="w-full mt-2 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform">📥 Скачать PDF версию</button>
+        <div class="flex gap-2 mt-2">
+            <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В Файл (PDF)</button>
+            <button onclick="rbi_printFmeaPdf('${record.id}', 'browser')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
+        </div>
     `;
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
@@ -2396,11 +2416,11 @@ window.rbi_loadFmeaToWorkspace = function(id) {
                     <tbody>${rowsHtml}</tbody>
                 </table>
             </div>
-            <button onclick="rbi_addManualFmeaRow()" class="w-full mt-3 bg-slate-100 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase border border-slate-300 active:scale-95 transition-colors flex items-center justify-center gap-2">
-                ➕ Добавить строку вручную
+             <button onclick="rbi_addManualFmeaRow()" class="w-full mt-3 bg-slate-100 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase border border-slate-300 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить строку
             </button>
-            <button onclick="rbi_saveFmea('${record.periodName}')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                💾 Сохранить изменения
+            <button onclick="rbi_saveFmea('${record ? record.periodName : 'Ручной ввод'}')" class="w-full mt-3 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Сохранить отчет в Систему
             </button>
         </div>
     `;
@@ -2557,8 +2577,8 @@ window.rbi_generateFmeaTable = function () {
                     Черновик FMEA (${periodName})
                 </div>
                 <button onclick="rbi_fillFmeaWithAi()" id="btn-fmea-ai" class="bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1.5">
-                    🤖 Автозаполнение (ИИ)
-                </button>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Автозаполнение (ИИ)
+            </button>
             </div>
             
             <div class="overflow-x-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl">
@@ -2879,4 +2899,54 @@ window.rbi_addManualFmeaRow = function() {
             </td>
         </tr>`;
     tbody.insertAdjacentHTML('beforeend', newRow);
+};
+
+// НОВАЯ ФУНКЦИЯ: Создание пустого бланка FMEA
+window.rbi_createEmptyFmea = function() {
+    const workspace = document.getElementById('fmea-workspace');
+    window.currentEditingFmeaId = null; // Сбрасываем ID, чтобы сохранился как новый
+
+    workspace.innerHTML = `
+        <div class="bg-white border border-purple-300 rounded-2xl shadow-sm p-4 mb-4 animate-fadeIn">
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-[11px] font-black text-purple-700 uppercase tracking-widest">
+                    Новый ручной FMEA-Анализ
+                </div>
+                <button onclick="rbi_fillFmeaWithAi()" id="btn-fmea-ai" class="bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Автозаполнение (ИИ)
+            </button>
+            </div>
+            
+            <div class="overflow-x-auto custom-scrollbar border border-slate-200 rounded-xl">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-500 uppercase text-[9px] font-bold tracking-wider">
+                            <th class="p-2 border border-slate-200">1. Подрядчик / Проблема</th>
+                            <th class="p-2 border border-slate-200">2. Этап возникновения</th>
+                            <th class="p-2 border border-slate-200">3. Коренная причина</th>
+                            <th class="p-2 border border-slate-200">4. Последствия (Риски)</th>
+                            <th class="p-2 border border-slate-200 text-blue-600">5. Устранение (Fix)</th>
+                            <th class="p-2 border border-slate-200 text-green-600">6. Предотвращение</th>
+                            <th class="p-2 border border-slate-200 text-purple-600 text-center">7. RPN</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Строки появятся здесь -->
+                    </tbody>
+                </table>
+            </div>
+            <button onclick="rbi_addManualFmeaRow()" class="w-full mt-3 bg-slate-100 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase border border-slate-300 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить строку вручную
+            </button>
+            <button onclick="rbi_saveFmea('Ручной ввод')" class="w-full mt-4 bg-purple-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Сохранить отчет в Систему
+            </button>
+        </div>
+    `;
+    
+    // Сразу добавляем одну пустую строку
+    rbi_addManualFmeaRow();
+    
+    // Скроллим к рабочей области
+    workspace.scrollIntoView({ behavior: 'smooth' });
 };

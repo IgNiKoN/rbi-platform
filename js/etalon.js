@@ -20,11 +20,12 @@ function escapeHtml(str) {
         return m;
     });
 }
-window.openEtalonConstructor = function(contractor, templateKey, templateTitle, statusKey) {
+window.openEtalonConstructor = function(contractor, templateKey, templateTitle, projectName, statusKey) { // <-- ДОБАВЛЕНО projectName
     currentEtalonContext = {
         contractor: contractor,
         templateKey: templateKey,
         templateTitle: templateTitle,
+        projectName: projectName, // <-- НОВОЕ ПОЛЕ
         statusKey: statusKey,
         elements: []
     };
@@ -36,8 +37,39 @@ window.openEtalonConstructor = function(contractor, templateKey, templateTitle, 
     document.getElementById('etalon-deviations').value = '';
     document.getElementById('etalon-elements-container').innerHTML = '';
 
-    document.getElementById('etalon-title-text').innerText = `${contractor} | ${templateTitle}`;
+    document.getElementById('etalon-title-text').innerText = `${projectName} | ${contractor} | ${templateTitle}`;
+    // === НОВОЕ: Заполняем выпадающий список видов работ ===
+    const tmplSelect = document.getElementById('etalon-template');
+    let tmplOpts = '<option value="" disabled selected>-- Выберите вид работ --</option>';
+    
+    // Сортируем системные чек-листы по алфавиту
+    const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort((a, b) => SYSTEM_TEMPLATES[a].title.localeCompare(SYSTEM_TEMPLATES[b].title));
+    sysKeys.forEach(k => tmplOpts += `<option value="sys_${k}">[СИС] ${SYSTEM_TEMPLATES[k].title}</option>`);
+    
+    // Сортируем пользовательские чек-листы
+    if (typeof userTemplates !== 'undefined') {
+        const userKeys = Object.keys(userTemplates).sort((a, b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
+        userKeys.forEach(k => tmplOpts += `<option value="user_${k}">[МОЙ] ${userTemplates[k].title}</option>`);
+    }
+    tmplSelect.innerHTML = tmplOpts;
 
+    // === Заполняем поля значениями ===
+    document.getElementById('etalon-project').value = projectName || document.getElementById('inp-project')?.value || '';
+    document.getElementById('etalon-contractor').value = contractor || '';
+    if (templateKey) tmplSelect.value = templateKey;
+
+    // Активируем умные выпадающие списки (история ввода) для Объекта и Подрядчика
+    if (typeof initSmartInput === 'function') {
+        initSmartInput('etalon-project', 'projectName');
+        initSmartInput('etalon-contractor', 'contractorName');
+    }
+
+    // Делаем красивый заголовок в зависимости от того, откуда открыли
+    if (contractor && templateTitle) {
+        document.getElementById('etalon-title-text').innerText = `${projectName || 'Объект'} | ${contractor}`;
+    } else {
+        document.getElementById('etalon-title-text').innerText = `Новый Акт-Эталон`;
+    }
     // Добавляем первый пустой элемент по умолчанию
     addEtalonElement();
     // ИСПРАВЛЕНИЕ: Динамически внедряем кнопки "Сохранить" и "Печать"
@@ -46,7 +78,7 @@ window.openEtalonConstructor = function(contractor, templateKey, templateTitle, 
         <button onclick="closeEtalonConstructor()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors shrink-0">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
         </button>
-        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center flex-1 truncate px-2" id="etalon-title-text">${contractor} | ${templateTitle}</div>
+        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center flex-1 truncate px-2" id="etalon-title-text">${projectName} | ${contractor} | ${templateTitle}</div>
         <div class="flex gap-1.5 shrink-0">
             <button onclick="saveEtalonAct(false)" class="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">Сохранить</button>
             <button onclick="saveEtalonAct(true)" class="text-[10px] font-bold text-white bg-indigo-600 px-3 py-2 rounded-lg active:scale-95 shadow-md transition-colors flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
@@ -130,10 +162,18 @@ window.removeEtalonPhoto = function(elId) {
 
 
 window.saveEtalonAct = async function(printAfter = false) {
+    // Считываем значения из новых полей
+    const selProject = document.getElementById('etalon-project').value.trim();
+    const selContractor = document.getElementById('etalon-contractor').value.trim();
+    const selTemplateKey = document.getElementById('etalon-template').value;
+    const selTemplateTitle = document.getElementById('etalon-template').options[document.getElementById('etalon-template').selectedIndex]?.text.replace(/\[.*?\]\s*/, '') || '';
+
     const location = document.getElementById('etalon-location').value.trim();
     const participants = document.getElementById('etalon-participants').value.trim();
     const deviations = document.getElementById('etalon-deviations').value.trim() || 'Отклонений не выявлено';
+    const myName = typeof appSettings !== 'undefined' ? (appSettings.engineerName || 'Инженер') : 'Инженер';
     
+    if (!selProject || !selContractor || !selTemplateKey) return showToast("⚠️ Укажите Объект, Подрядчика и Вид работ!");
     if (!location || !participants) return showToast("⚠️ Заполните локацию и участников!");
 
     const elements = [];
@@ -150,12 +190,13 @@ window.saveEtalonAct = async function(printAfter = false) {
 
     const etalonRecord = {
         id: etalonId,
+        owner: myName, // Для синхронизации прав
         date: new Date().toISOString(), 
-        projectName: document.getElementById('inp-project')?.value || "Объект", 
-        inspectorName: document.getElementById('inp-inspector')?.value || "Инженер", 
-        contractorName: currentEtalonContext.contractor,
-        templateKey: 'sys_etalon_act', 
-        templateTitle: currentEtalonContext.templateTitle, 
+        projectName: selProject, // Строго берем из поля Объект
+        inspectorName: myName, 
+        contractorName: selContractor, // Строго берем из поля Подрядчик
+        templateKey: selTemplateKey, 
+        templateTitle: selTemplateTitle, 
         location: location, 
         instanceId: "etalon", 
         stageId: 0, 
@@ -222,14 +263,14 @@ window.saveEtalonAct = async function(printAfter = false) {
         if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
         if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
         if (typeof renderHistoryTab === 'function') renderHistoryTab();
+        if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab(); // <-- ВОТ ЭТА СТРОКА
     }, 200);
 };
 
-window.printEtalonAct = async function(historyId) {
+window.printEtalonAct = async function(historyId, mode = 'script') {
     const record = etalonActsArray.find(c => c.id === historyId);
     if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
 
-    const mode = 'script'; 
     const d = record.details;
 
     // АСИНХРОННОЕ ИЗВЛЕЧЕНИЕ ФОТО: Дожидаемся, пока все фотки выгрузятся из БД в оперативную память
@@ -357,7 +398,8 @@ if (el.photo) {
 
     const bodyHtml = `
         <div class="text-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
-            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase">${escapeHtml(record.contractorName)}</div>
+            <div class="text-[12px] font-bold text-slate-500 uppercase leading-tight mb-0.5">${escapeHtml(record.projectName || 'Без проекта')}</div>
+            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase leading-tight mb-1">${escapeHtml(record.contractorName)}</div>
             <div class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">${escapeHtml(record.templateTitle)}</div>
             <div class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">${new Date(record.date).toLocaleString('ru-RU')}</div>
         </div>
@@ -419,8 +461,8 @@ window.deleteEtalonAct = async function(id) {
     document.body.classList.remove('modal-open');
     showToast("🗑️ Эталон удален");
     
-    // Обновляем экраны
-    if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
+    // Обновляем экраны (Теперь эталоны живут в Практиках)
+    if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab();
     if (typeof renderHistoryTab === 'function') renderHistoryTab();
 };
 
@@ -430,7 +472,7 @@ window.editEtalonAct = async function(id) {
     if (!record) return;
 
     window.currentEditingEtalonId = id; // Глобально запоминаем ID
-    openEtalonConstructor(record.contractorName, record.templateKey, record.templateTitle, null);
+    openEtalonConstructor(record.contractorName, record.templateKey, record.templateTitle, record.projectName, null); // <-- ПЕРЕДАЕМ projectName
 
     // Заполняем поля
     document.getElementById('etalon-location').value = record.location || '';

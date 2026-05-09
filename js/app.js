@@ -1344,17 +1344,33 @@ async function openTwiViewer(twiId) {
 
                 content.innerHTML = `
                     <div class="w-full h-full flex flex-col relative bg-slate-100 dark:bg-slate-900">
-                        <div style="-webkit-overflow-scrolling: touch; overflow-y: auto; flex: 1; width: 100%; min-height: 60vh;">
-                            <iframe src="${blobUrl}#toolbar=0" class="w-full h-full border-none bg-white dark:bg-slate-800" style="min-height: 60vh;"></iframe>
+                        <!-- Подсказка для iPhone -->
+                        <div class="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-2 text-[10px] text-center font-bold flex justify-between items-center shrink-0 border-b border-indigo-100 dark:border-indigo-800">
+                            <span>📱 Не листается вниз? Откройте в читалке 👉</span>
+                            <a href="${blobUrl}" target="_blank" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg active:scale-95 shadow-sm uppercase tracking-widest">Открыть</a>
                         </div>
+                        
+                        <!-- Само окно просмотра -->
+                        <div style="-webkit-overflow-scrolling: touch; overflow-y: auto; flex: 1; width: 100%; min-height: 60vh;">
+                            <object data="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full border-none bg-white dark:bg-slate-800" style="min-height: 60vh;">
+                                <embed src="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full" />
+                            </object>
+                        </div>
+                        
+                        <!-- Подвал с кнопками -->
                         <div class="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10">
-                            <div class="min-w-0 pr-3">
+                            <div class="min-w-0 pr-2 flex-1">
                                 <div class="text-[11px] font-black text-slate-800 dark:text-white truncate">${card.pdfName || 'Документ.pdf'}</div>
                                 <div class="text-[9px] font-bold text-slate-500">${card.pdfSize || 'Загружено из облака'}</div>
                             </div>
-                            <a href="${blobUrl}" target="_blank" download="${card.pdfName || 'document.pdf'}" class="bg-red-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5 shrink-0">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Скачать
-                            </a>
+                            <div class="flex gap-2 shrink-0">
+                                <a href="${blobUrl}" target="_blank" download="${card.pdfName || 'document.pdf'}" class="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex items-center justify-center" title="Скачать файл">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                </a>
+                                <a href="${blobUrl}" target="_blank" class="bg-red-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5">
+                                    На весь экран
+                                </a>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -5956,7 +5972,7 @@ function closeNodeViewer() {
 }
 
 // === ПЕЧАТЬ TWI КАРТЫ ДЛЯ РАБОЧИХ ===
-window.printCurrentTwi = function(mode = 'browser') {
+window.printCurrentTwi = async function(mode = 'browser') {
     const twiId = document.getElementById('twi-viewer-overlay').dataset.currentTwiId;
     if (!twiId) return;
     const card = customTwiCards.find(c => c.id === twiId);
@@ -5964,13 +5980,15 @@ window.printCurrentTwi = function(mode = 'browser') {
 
     let content = '';
 
-    // Адаптивные шрифты и уменьшенные размеры картинок для TWI (чтобы влезало на 1 лист)
     const fsTitle = mode === 'browser' ? '12pt' : '16px';
     const fsText = mode === 'browser' ? '9pt' : '12px';
     const imgHeight = mode === 'browser' ? '40mm' : '180px';
 
+    // ВАЖНО: Асинхронно достаем картинки из БД
+    let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
+    let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
+
     if (card.type === 'INSPECTOR') {
-        // Парсим поля для печати
         let compliance = "", prep = "";
         if (card.howToCheck) {
             if (card.howToCheck.includes('[Как подготовить]')) {
@@ -5986,12 +6004,12 @@ window.printCurrentTwi = function(mode = 'browser') {
             <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
                 <tr>
                     <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
-                        <h2 style="color: #166534; margin: 0 0 10px 0; font-size: ${fsTitle}; text-transform: uppercase;">✅ ЭТАЛОН (ПРАВИЛЬНО)</h2>
-                        ${card.photoGood ? `<div style="height: ${imgHeight}; overflow: hidden; border-radius: 8px; background: white;"><img src="${window.getPhotoSrc(card.photoGood)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #166534;">Нет фото</div>`}
+                        <div style="color: #166534; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">ЭТАЛОН (ПРАВИЛЬНО)</div>
+                        ${resolvedGood ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedGood}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #166534;">Нет фото</div>`}
                     </td>
                     <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
-                        <h2 style="color: #991b1b; margin: 0 0 10px 0; font-size: ${fsTitle}; text-transform: uppercase;">❌ БРАК (НАРУШЕНИЕ)</h2>
-                        ${card.photoBad ? `<div style="height: ${imgHeight}; overflow: hidden; border-radius: 8px; background: white;"><img src="${window.getPhotoSrc(card.photoBad)}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #991b1b;">Нет фото</div>`}
+                        <div style="color: #991b1b; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">БРАК (НАРУШЕНИЕ)</div>
+                        ${resolvedBad ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedBad}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #991b1b;">Нет фото</div>`}
                     </td>
                 </tr>
             </table>
@@ -6034,7 +6052,10 @@ window.printCurrentTwi = function(mode = 'browser') {
             </table>
         `;
         
-        card.steps.forEach(step => {
+        // ВАЖНО: Используем for...of вместо forEach, чтобы await работал
+        for (let step of card.steps) {
+            let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
+            
             content += `
                 <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
                     <tr>
@@ -6042,23 +6063,22 @@ window.printCurrentTwi = function(mode = 'browser') {
                             <h3 style="color: #047857; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color: #64748b; font-size: ${mode === 'browser' ? '9pt' : '11px'};">(⏱ ${step.time} мин)</span>` : ''}</h3>
                             <p style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: bold; color: #1e293b; white-space: pre-wrap; margin: 0;">${step.text}</p>
                         </td>
-                        ${step.photo ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: top; text-align: right;">
-                            <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; overflow: hidden;">
-                                <img src="${window.getPhotoSrc(step.photo)}" style="width: 100%; height: 100%; object-fit: contain;">
+                        ${stepPhoto ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: middle; text-align: center;">
+                            <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center;">
+                                <img src="${stepPhoto}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
                             </div>
                         </td>` : ''}
                     </tr>
                 </table>
             `;
-        });
+        }
     } else {
         return showToast('Печать PDF-файлов осуществляется внешними средствами.');
     }
 
     const orientation = card.type === 'INSPECTOR' ? 'landscape' : 'portrait';
-    // Вызываем нашу универсальную оболочку из export.js!
     printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode);
-}
+};
 
 // === ГОРИЗОНТАЛЬНЫЙ СКРОЛЛ МЫШКОЙ (ДЛЯ ПК) ===
 function initHorizontalMouseScroll() {
@@ -7186,7 +7206,11 @@ window.rbi_renderScheduleTab = async function(skipLoad = false) {
                 <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-start" value="${d1}"></td>
                 <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-end" value="${d2}"></td>
                 <td class="p-1"><select class="input-base !py-1.5 text-[10px] w-full sched-tmpl">${currentSelect}</select></td>
-                <td class="p-1 text-center"><button onclick="rbi_deleteScheduleRow('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90">🗑️</button></td>
+                <td class="p-1 text-center">
+                    <button onclick="rbi_deleteScheduleRow('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90 flex items-center justify-center mx-auto transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </td>
             </tr>`;
     }).join('');
 
@@ -7196,22 +7220,26 @@ window.rbi_renderScheduleTab = async function(skipLoad = false) {
 
     let html = `
         <div class="flex justify-between items-center mb-3 px-1">
-            <div class="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300 tracking-widest">Редактор Графика СМР</div>
+            <div class="text-[11px] font-bold uppercase text-slate-700 dark:text-slate-300 tracking-widest">Редактор Графика СМР</div>
             <div class="flex gap-2">
-                <button onclick="rbi_clearSchedule()" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">🗑️ Очистить всё</button>
-                <button onclick="rbi_saveSchedule()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-transform">💾 Сохранить</button>
+                <button onclick="rbi_clearSchedule()" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-transform flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Очистить всё
+                </button>
+                <button onclick="rbi_saveSchedule()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить
+                </button>
             </div>
         </div>
         <div class="overflow-x-auto custom-scrollbar bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] shadow-sm mb-3">
             <table class="w-full text-left text-[10px] whitespace-nowrap min-w-[800px]">
-                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider font-black">
+                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider font-bold">
                     <tr><th class="p-2 pl-3 w-1/4">Вид работ</th><th class="p-2 w-1/5">Подрядчик</th><th class="p-2 w-32">Начало</th><th class="p-2 w-32">Окончание</th><th class="p-2 w-1/4">Чек-лист (Привязка)</th><th class="p-2 w-10 text-center">Удал.</th></tr>
                 </thead>
                 <tbody id="sched-tbody" class="divide-y divide-[var(--card-border)]">${rowsHtml}</tbody>
             </table>
         </div>
-        <button onclick="rbi_addScheduleRow()" class="w-full bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-600 text-[10px] font-black uppercase active:scale-95 transition-colors mb-4">
-            ➕ Добавить этап (строку)
+        <button onclick="rbi_addScheduleRow()" class="w-full bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-600 text-[10px] font-bold uppercase active:scale-95 transition-colors mb-4 flex items-center justify-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить этап (строку)
         </button>
     `;
     container.innerHTML = html;
@@ -7396,41 +7424,78 @@ window.rbi_renderMeetingTab = function() {
     const container = document.getElementById('rbi-meeting-container');
     if (!container) return;
 
+    // ОБНОВЛЯЕМ ШАПКУ И КНОПКУ "СОЗДАТЬ" (Без эмодзи, в стиле iOS)
+    const titleContainer = container.previousElementSibling;
+    if (titleContainer) {
+        titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40";
+        titleContainer.innerHTML = `
+            <div class="flex justify-between items-center">
+                <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    Протоколы Совещаний
+                </h2>
+                <button onclick="rbi_createMeeting()" class="bg-orange-500 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Новое совещание
+                </button>
+            </div>
+        `;
+    }
+
     if (window.rbi_meetingsData.length === 0) {
-        container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">Активных протоколов нет</div>`;
+        container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">Активных протоколов нет</div>`;
         return;
     }
 
-    // Сортировка - новые сверху (отсев призраков и чужих объектов)
+    const currentEngineer = appSettings.engineerName || 'Инженер';
     const sorted = [...window.rbi_meetingsData]
-        .filter(m => m && m.id && m.date && m.title && m.memoText) // <-- Строго проверяем, что это Совещание
+        .filter(m => m && m.id && m.date && m.title && m.memoText && !m._deleted)
         .sort((a,b) => new Date(b.date) - new Date(a.date));
     
-    let html = sorted.map(m => `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col gap-2">
-            <div class="flex justify-between items-start border-b border-[var(--card-border)] pb-2">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg flex items-center justify-center font-black text-sm">📅</div>
-                    <div>
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight">${m.title}</div>
-                        <div class="text-[9px] font-bold text-[var(--text-muted)]">Автор: ${m.author}</div>
-                    </div>
-                </div>
-                <div class="text-[9px] font-bold text-slate-400 bg-[var(--hover-bg)] px-2 py-1 rounded-md border border-[var(--card-border)]">
-                    ${new Date(m.date).toLocaleDateString('ru-RU')}
-                </div>
-            </div>
-            <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-3 italic">
-                ${(m.memoText || '').replace(/<br>/g, ' ')}
-            </div>
-            <div class="flex gap-2 mt-1 pt-2 border-t border-[var(--card-border)]">
-                <button onclick="rbi_openSavedMeeting('${m.id}')" class="flex-1 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm transition-colors">👁️ Открыть</button>
-                <button onclick="rbi_deleteMeeting('${m.id}')" class="bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800 px-3 py-2 rounded-lg active:scale-95 shadow-sm transition-colors">🗑️</button>
-            </div>
-        </div>
-    `).join('');
+    container.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(m => {
+        let isOwner = !m.author || m.author === currentEngineer;
+        
+        let previewHtml = '';
+        if (m.qDayPhoto) {
+            previewHtml = `<img src="${window.getPhotoSrc(m.qDayPhoto)}" class="w-full h-full object-cover">`;
+        } else {
+            previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path></svg></div>`;
+        }
 
-    container.innerHTML = html;
+        const resolvedCount = m.agenda ? m.agenda.filter(a => a.isDone).length : 0;
+        const totalCount = m.agenda ? m.agenda.length : 0;
+
+        return `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_openSavedMeeting('${m.id}')">
+            
+            <div class="h-24 sm:h-28 border-b border-[var(--card-border)] relative">
+                ${previewHtml}
+                <button onclick="event.stopPropagation(); openUniversalActionSheet('${m.id}', 'meeting', '${m.title.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-3 flex flex-col flex-1">
+                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight mb-1 truncate">${m.title}</div>
+                <div class="text-[9px] font-bold text-[var(--text-muted)] mb-2 flex items-center gap-1">
+                    Вопросов: ${resolvedCount}/${totalCount}
+                </div>
+                
+                <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-2 italic mb-2 flex-1">
+                    ${(m.memoText || '').replace(/<br>/g, ' ')}
+                </div>
+                
+                <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
+                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2">
+                        <svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        ${m.author ? m.author.split(' ')[0] : 'Инженер'}
+                    </div>
+                    <div class="text-[9px] font-black text-slate-400">${new Date(m.date).toLocaleDateString('ru-RU')}</div>
+                </div>
+            </div>
+            
+        </div>
+        `;
+    }).join('');
 };
 
 // Открытие сохраненного мемо (ПОЛНОЦЕННЫЙ ПРОСМОТРЩИК)
@@ -7504,9 +7569,9 @@ window.rbi_openSavedMeeting = async function(id) {
         <textarea id="saved-memo-text" class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-white p-3 sm:p-4 rounded-xl border border-slate-300 shadow-inner whitespace-pre-wrap font-medium h-48 resize-none outline-none custom-scrollbar mb-4">${meet.memoText}</textarea>
 
         <div class="flex gap-2">
-            <button onclick="rbi_printMeetingPdf('${meet.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors">📥 PDF</button>
-            <button onclick="rbi_printMeetingPdf('${meet.id}', 'browser')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors">🖨️ Печать</button>
-            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-md active:scale-95 transition-colors flex items-center justify-center gap-1">📋 Копировать</button>
+            <button onclick="rbi_printMeetingPdf('${meet.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> PDF</button>
+            <button onclick="rbi_printMeetingPdf('${meet.id}', 'browser')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
+            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-md active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Копировать</button>
         </div>
     `;
     
@@ -7542,8 +7607,8 @@ window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
     if (meet.qDayPhoto) {
         const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
         photoHtml = `
-            <div style="height: 200px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; margin-bottom: 20px; text-align: center;">
-                <img src="${realSrc}" style="width: 100%; height: 100%; object-fit: cover; display: inline-block;">
+            <div style="height: 250px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
+                <img src="${realSrc}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
             </div>
         `;
     }
@@ -8391,26 +8456,7 @@ window.rbi_renderImpactTab = function() {
             const avgImpact = impactCount > 0 ? (totalScore / impactCount) : 0;
             let impactColor = avgImpact > 0.2 ? 'text-green-500' : (avgImpact < -0.2 ? 'text-red-500' : 'text-slate-400');
 
-            const myEtalons = etalonActsArray.filter(c => c.inspectorName === myProfile.name && c.templateKey === 'sys_etalon_act');
-            let etalonsHtml = '';
             
-            if (myEtalons.length > 0) {
-                etalonsHtml = myEtalons.sort((a,b) => new Date(b.date) - new Date(a.date)).map(e => `
-                    <div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-[var(--card-border)] flex justify-between items-center shadow-sm cursor-pointer hover:border-indigo-400 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${e.id}')">
-                        <div class="min-w-0 pr-3">
-                            <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${e.contractorName}</div>
-                            <div class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold truncate">${e.templateTitle}</div>
-                            <div class="text-[9px] text-slate-400 mt-1">${new Date(e.date).toLocaleDateString('ru-RU')} | ${e.location}</div>
-                        </div>
-                        <button onclick="event.stopPropagation(); printEtalonAct('${e.id}')" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 p-2.5 rounded-lg active:scale-90 shadow-sm flex items-center justify-center shrink-0">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                        </button>
-                    </div>
-                `).join('');
-            } else {
-                etalonsHtml = `<div class="text-center text-slate-400 text-[10px] font-bold py-4">Вы еще не оформляли Акты-Эталоны.</div>`;
-            }
-
             let html = `
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-4 animate-fadeIn">
                     <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 text-center shadow-sm">
@@ -8456,15 +8502,6 @@ window.rbi_renderImpactTab = function() {
                     </div>
                 </div>
 
-                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden" open>
-                    <summary class="p-4 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl transition-colors select-none group-open:border-b border-indigo-100 dark:border-indigo-800">
-                        <span class="flex items-center gap-2">📐 Реестр Актов-Эталонов (${myEtalons.length})</span>
-                        <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
-                    </summary>
-                    <div class="p-3 bg-slate-50 dark:bg-slate-900/50 space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
-                        ${etalonsHtml}
-                    </div>
-                </details>
             `;
 
             container.innerHTML = html;
@@ -8509,54 +8546,64 @@ window.rbi_loadPractices = async function() {
     } catch(e) { console.error("Ошибка загрузки практик", e); }
 };
 
+// Глобальные фильтры для новой объединенной вкладки
+window.kbShowPractices = true;
+window.kbShowEtalons = true;
+
 window.rbi_renderPracticesTab = async function() {
     const detectorContainer = document.getElementById('practices-auto-detector');
     const listContainer = document.getElementById('practices-list-container');
     if (!detectorContainer || !listContainer) return;
-    // НОВЫЙ БЛОК: Фильтр и Кнопка Скачивания
-    // НОВЫЙ БЛОК: Красивая шапка-панель для Практик
+
     const titleContainer = listContainer.previousElementSibling;
     if (titleContainer) {
-        // Оформляем сам контейнер как "липкую" панель, как в других разделах
         titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40";
         
         titleContainer.innerHTML = `
             <div class="flex justify-between items-center mb-3 border-b border-[var(--card-border)] pb-2">
                 <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
                     <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
-                    Библиотека Практик
+                    Библиотека Практик и Эталоны
                 </h2>
-                <div class="flex gap-2">
-                    <button onclick="rbi_openManualPracticeModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Создать
-                    </button>
-                </div>
+                <button onclick="rbi_openKbCreateChoice()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Создать
+                </button>
             </div>
             
-            <div class="flex justify-between items-center">
-                <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                    <span class="text-[10px] font-black uppercase tracking-widest ${window.practiceOwnerFilter === 'MY' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">Только мои</span>
-                    <div class="relative">
-                        <input type="checkbox" class="sr-only peer" onchange="window.practiceOwnerFilter = this.checked ? 'MY' : 'ALL'; rbi_renderPracticesTab()" ${window.practiceOwnerFilter === 'MY' ? 'checked' : ''}>
-                        <div class="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
-                    </div>
-                </label>
-                <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
-                </button>
+            <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <label class="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest active:scale-95">
+                        <input type="checkbox" class="w-4 h-4 accent-indigo-600 rounded" ${window.kbShowPractices ? 'checked' : ''} onchange="window.kbShowPractices=this.checked; rbi_renderPracticesTab()"> Практики
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest active:scale-95">
+                        <input type="checkbox" class="w-4 h-4 accent-indigo-600 rounded" ${window.kbShowEtalons ? 'checked' : ''} onchange="window.kbShowEtalons=this.checked; rbi_renderPracticesTab()"> Эталоны
+                    </label>
+                </div>
+                <div class="flex justify-between items-center">
+                    <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                        <span class="text-[10px] font-black uppercase tracking-widest ${window.practiceOwnerFilter === 'MY' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">Только мои</span>
+                        <div class="relative">
+                            <input type="checkbox" class="sr-only peer" onchange="window.practiceOwnerFilter = this.checked ? 'MY' : 'ALL'; rbi_renderPracticesTab()" ${window.practiceOwnerFilter === 'MY' ? 'checked' : ''}>
+                            <div class="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+                        </div>
+                    </label>
+                    <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
+                    </button>
+                </div>
             </div>
         `;
     }
 
-    // 1. АВТОДЕТЕКТОР УСПЕХА
-    let detectorHtml = '';
     const myName = document.getElementById('inp-inspector')?.value.trim();
+    const currentEngineer = appSettings.engineerName || 'Инженер';
     
+    // 1. АВТОДЕТЕКТОР УСПЕХА (Для Практик)
+    let detectorHtml = '';
     const successfulInterventions = window.rbi_interventionsData.filter(intItem => {
         if (intItem.inspector !== myName) return false;
         if (!intItem.deltaUrk || intItem.deltaUrk < 10) return false;
-        const exists = window.rbi_practicesData.find(p => p.interventionId === intItem.id && !p._deleted);
-        return !exists;
+        return !window.rbi_practicesData.find(p => p.interventionId === intItem.id && !p._deleted);
     });
 
     if (successfulInterventions.length > 0) {
@@ -8566,80 +8613,132 @@ window.rbi_renderPracticesTab = async function() {
                 <div class="absolute -right-4 -top-4 opacity-20 text-8xl">🏆</div>
                 <div class="relative z-10">
                     <div class="text-[10px] font-black uppercase tracking-widest mb-1 opacity-90 flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Автодетектор Успеха</div>
-                    <div class="text-[14px] font-bold leading-snug mb-3">
-                        Потрясающий результат! Качество подрядчика <b>${item.contractor}</b> по виду <b>${item.templateTitle}</b> выросло на <b class="text-yellow-100">+${item.deltaUrk}%</b> после вашей работы (${item.typeText}).
-                    </div>
-                    <button onclick="rbi_openCreatePracticeModal('${item.id}')" class="bg-white text-yellow-700 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 shadow-sm transition-transform">
-                        Кристаллизовать опыт (+120 XP)
-                    </button>
+                    <div class="text-[14px] font-bold leading-snug mb-3">Потрясающий результат! Качество подрядчика <b>${item.contractor}</b> по виду <b>${item.templateTitle}</b> выросло на <b class="text-yellow-100">+${item.deltaUrk}%</b> после вашей работы.</div>
+                    <button onclick="rbi_openCreatePracticeModal('${item.id}')" class="bg-white text-yellow-700 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 shadow-sm transition-transform">Кристаллизовать опыт (+120 XP)</button>
                 </div>
             </div>`;
     }
     detectorContainer.innerHTML = detectorHtml;
 
-    // 2. РЕНДЕР СПИСКА ПРАКТИК
-    const currentEngineer = appSettings.engineerName || 'Инженер';
-    const sorted = [...window.rbi_practicesData]
-        .filter(p => {
-            if (!p || !p.id || p._deleted || !p.date || !p.title) return false;
-            // Фильтр владельца
-            return window.practiceOwnerFilter === 'ALL' || p.author === currentEngineer;
-        })
-        .sort((a,b) => new Date(b.date) - new Date(a.date));
+    // 2. СБОР И СОРТИРОВКА ДАННЫХ (Практики + Эталоны)
+    let mixedData = [];
 
-    if (sorted.length === 0) {
-        listContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Оформленных практик пока нет</div>`;
+    if (window.kbShowPractices) {
+        const pracs = [...window.rbi_practicesData].filter(p => !p._deleted && p.title && (window.practiceOwnerFilter === 'ALL' || p.author === currentEngineer));
+        for (let p of pracs) {
+            p._uiType = 'practice';
+            p._realAfter = p.photoAfter ? await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter) : null;
+            p._realBefore = p.photoBefore ? await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore) : null;
+            mixedData.push(p);
+        }
+    }
+
+    if (window.kbShowEtalons) {
+        const etals = [...(typeof etalonActsArray !== 'undefined' ? etalonActsArray : [])].filter(e => !e._deleted && (window.practiceOwnerFilter === 'ALL' || e.owner === currentEngineer || e.inspectorName === currentEngineer));
+        for (let e of etals) {
+            e._uiType = 'etalon';
+            // Достаем первое фото эталона для обложки
+            e._previewImg = null;
+            if (e.details && e.details.elements && e.details.elements.length > 0) {
+                const photo = e.details.elements[0].photo;
+                if (photo) e._previewImg = await PhotoManager.getAsyncUrl(photo) || window.getPhotoSrc(photo);
+            }
+            mixedData.push(e);
+        }
+    }
+
+    mixedData.sort((a,b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    if (mixedData.length === 0) {
+        listContainer.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">В библиотеке пока пусто</div>`;
         return;
     }
-
-    // Предзагрузка фото из IndexedDB
-    for (let p of sorted) {
-        if (p.photoBefore) p._realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
-        if (p.photoAfter) p._realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
-    }
     
-    // === СЕТКА КАРТОЧЕК ПРАКТИК (iOS STYLE) ===
-    listContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(p => {
-        // Определяем, какое фото пустить на превью (лучше "После")
-        let previewImg = p._realAfter || p._realBefore;
+    // 3. РЕНДЕР КАРТОЧЕК
+    listContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + mixedData.map(item => {
         
-        let previewHtml = previewImg 
-            ? `<img src="${previewImg}" class="w-full h-full object-cover">` 
-            : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
-            
-        let isOwner = p.author === currentEngineer;
-        let pubStatus = p.isPublished ? 'published' : 'draft';
+        if (item._uiType === 'practice') {
+            const previewImg = item._realAfter || item._realBefore;
+            const previewHtml = previewImg ? `<img src="${previewImg}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
+            const isOwner = item.author === currentEngineer;
+            const pubStatus = item.isPublished ? 'published' : 'draft';
 
-        return `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_openPracticeViewer('${p.id}')">
-            
-            <!-- МИНИ ПРЕВЬЮ С 3 ТОЧКАМИ -->
-            <div class="h-28 sm:h-32 border-b border-[var(--card-border)] relative">
-                ${previewHtml}
-                <!-- ТРИ ТОЧКИ (Перехватываем клик, чтобы не открылась карточка) -->
-                <button onclick="event.stopPropagation(); openUniversalActionSheet('${p.id}', 'practice', '${p.title.replace(/'/g, "\\'")}', ${isOwner}, '${pubStatus}')" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
-                </button>
-                ${!p.isPublished ? `<div class="absolute bottom-2 left-2 bg-yellow-500 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">Черновик</div>` : ''}
-            </div>
-            
-            <!-- ИНФО О ПРАКТИКЕ -->
-            <div class="p-3 flex flex-col flex-1">
-                <div class="text-[8px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded w-fit mb-1.5 uppercase border border-indigo-100 dark:border-indigo-800 truncate max-w-full">${p.templateTitle}</div>
-                <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-2">${p.title}</div>
-                
-                <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2">
-                        <svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        ${p.author.split(' ')[0]}
-                    </div>
-                    ${p.deltaUrk > 0 ? `<div class="text-[10px] font-black text-green-600">+${p.deltaUrk}%</div>` : `<div class="text-[10px] font-black text-indigo-500">Ручная</div>`}
+            return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_openPracticeViewer('${item.id}')">
+                <div class="h-28 sm:h-32 border-b border-[var(--card-border)] relative">
+                    ${previewHtml}
+                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'practice', '${item.title.replace(/'/g, "\\'")}', ${isOwner}, '${pubStatus}')" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                    ${!item.isPublished ? `<div class="absolute bottom-2 left-2 bg-yellow-500 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">Черновик</div>` : ''}
                 </div>
-            </div>
-            
-        </div>
-        `;
+                <div class="p-3 flex flex-col flex-1">
+                    <div class="text-[8px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-1.5 py-0.5 rounded w-fit mb-1.5 uppercase border border-indigo-100 dark:border-indigo-800 truncate max-w-full">Практика: ${item.templateTitle}</div>
+                    <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-2">${item.title}</div>
+                    <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
+                        <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2"><svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> ${item.author.split(' ')[0]}</div>
+                        ${item.deltaUrk > 0 ? `<div class="text-[10px] font-black text-green-600">+${item.deltaUrk}%</div>` : `<div class="text-[10px] font-black text-indigo-500">Ручная</div>`}
+                    </div>
+                </div>
+            </div>`;
+        } 
+        
+        else if (item._uiType === 'etalon') {
+            const previewHtml = item._previewImg ? `<img src="${item._previewImg}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex flex-col items-center justify-center text-blue-400 bg-blue-50 dark:bg-blue-900/20"><svg class="w-8 h-8 opacity-50 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg></div>`;
+            const isOwner = item.inspectorName === currentEngineer;
+
+            return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openEtalonViewer('${item.id}')">
+                <div class="h-28 sm:h-32 border-b border-[var(--card-border)] relative">
+                    ${previewHtml}
+                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'etalon', '${item.contractorName.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                </div>
+                <div class="p-3 flex flex-col flex-1">
+                    <div class="text-[8px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded w-fit mb-1.5 uppercase border border-blue-100 dark:border-blue-800 truncate max-w-full">Эталон: ${item.templateTitle}</div>
+                    
+                    <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-1">${item.projectName || 'Без проекта'}</div>
+                    <div class="text-[10px] font-medium text-slate-500 truncate mb-2">👤 ${item.contractorName}</div>
+                    
+                    <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
+                        <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2">
+                            <svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            ${item.inspectorName ? item.inspectorName.split(' ')[0] : 'Инженер'}
+                        </div>
+                        <div class="text-[9px] font-black text-slate-400">${new Date(item.date).toLocaleDateString('ru-RU')}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
     }).join('') + `</div>`;
+};
+
+// Вспомогательная модалка выбора "Что создать?"
+window.rbi_openKbCreateChoice = function() {
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Добавить в библиотеку</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="space-y-3 mb-2">
+            <button onclick="closeModal(); rbi_openManualPracticeModal()" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-yellow-50 text-yellow-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg></div>
+                <div>
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Лучшая Практика</div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Поделиться решением проблемы</div>
+                </div>
+            </button>
+            <button onclick="closeModal(); openEtalonConstructor('', '', '', '', '')" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg></div>
+                <div>
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Акт-Эталон</div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Зафиксировать идеальный образец СМР</div>
+                </div>
+            </button>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
 };
 
 window.rbi_openCreatePracticeModal = function(intId) {
@@ -8876,7 +8975,7 @@ window.rbi_saveManualPractice = async function() {
     if (typeof triggerSync === 'function') triggerSync('silent');
 };
 // === ПЕЧАТЬ ПРАКТИКИ В PDF (А3 АЛЬБОМ, БЕЗ ЭМОДЗИ) ===
-window.rbi_printPracticePdf = async function(id) {
+window.rbi_printPracticePdf = async function(id, mode = 'browser') {
     const p = window.rbi_practicesData.find(x => x.id === id);
     if (!p) return;
 
@@ -8934,7 +9033,7 @@ window.rbi_printPracticePdf = async function(id) {
 
     if (typeof printPdfShell === 'function') {
         // Формат А3, Альбомная (landscape)
-        printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", "browser");
+        printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode);
     }
 };
 
@@ -9063,7 +9162,26 @@ window.openUniversalActionSheet = function(id, type, title, isOwner, extraData) 
             <span class="text-[12px] font-bold">Опубликовать в библиотеку</span>
         </button>`;
     }
+    // Кнопки для Эталонов
+    if (type === 'etalon') {
+        btnsHtml += `
+        <button onclick="handleUasAction('${id}', '${type}', 'pdf')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Скачать PDF</span>
+        </button>`;
 
+        if (isOwner) {
+            btnsHtml += `
+            <button onclick="handleUasAction('${id}', '${type}', 'edit')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+                <div class="w-8 h-8 bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-lg flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"></path></svg>
+                </div>
+                <span class="text-[12px] font-bold">Изменить</span>
+            </button>`;
+        }
+    }
     // Изменить (Только TWI)
     if (type === 'twi' && isOwner) {
         btnsHtml += `
@@ -9074,7 +9192,22 @@ window.openUniversalActionSheet = function(id, type, title, isOwner, extraData) 
             <span class="text-[12px] font-bold">Изменить</span>
         </button>`;
     }
-
+    // Кнопки для FMEA и Совещаний (Редактировать и PDF)
+    if ((type === 'fmea' || type === 'meeting') && isOwner) {
+        btnsHtml += `
+        <button onclick="handleUasAction('${id}', '${type}', 'edit')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Изменить</span>
+        </button>
+        <button onclick="handleUasAction('${id}', '${type}', 'pdf')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Скачать PDF</span>
+        </button>`;
+    }
     // Удаление (Только для автора, не системные)
     if (isOwner && !id.startsWith('sys_')) {
         btnsHtml += `
@@ -9116,6 +9249,13 @@ window.handleUasAction = function(id, type, action) {
             if (action === 'publish') rbi_publishPractice(id);
             if (action === 'delete') rbi_deletePractice(id);
         }
+        // --- ДЕЙСТВИЯ ЭТАЛОНОВ ---
+        if (type === 'etalon') {
+            if (action === 'view') openEtalonViewer(id);
+            if (action === 'pdf') printEtalonAct(id, 'script');
+            if (action === 'edit') editEtalonAct(id);
+            if (action === 'delete') deleteEtalonAct(id);
+        }
         // --- ДЕЙСТВИЯ TWI ---
         if (type === 'twi') {
             if (action === 'view') openTwiViewer(id);
@@ -9132,6 +9272,20 @@ window.handleUasAction = function(id, type, action) {
         if (type === 'doc') {
             if (action === 'view') openDocViewer(id);
             if (action === 'delete') deleteCustomDoc(id);
+        }
+        // --- ДЕЙСТВИЯ FMEA ---
+        if (type === 'fmea') {
+            if (action === 'view') rbi_viewFmea(id);
+            if (action === 'edit') rbi_loadFmeaToWorkspace(id);
+            if (action === 'pdf') rbi_printFmeaPdf(id, 'script');
+            if (action === 'delete') rbi_deleteFmea(id);
+        }
+        // --- ДЕЙСТВИЯ СОВЕЩАНИЙ ---
+        if (type === 'meeting') {
+            if (action === 'view') rbi_openSavedMeeting(id);
+            if (action === 'edit') rbi_openSavedMeeting(id); // Совещания редактируются в том же окне просмотра
+            if (action === 'pdf') rbi_printMeetingPdf(id, 'script');
+            if (action === 'delete') rbi_deleteMeeting(id);
         }
     }, 350);
 };
@@ -9191,10 +9345,14 @@ window.rbi_openPracticeViewer = async function(id) {
             </div>
         </div>
         
-        <button onclick="closeModal(); rbi_printPracticePdf('${p.id}')" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-            Сохранить как PDF (A3)
-        </button>
+        <div class="flex gap-2 w-full">
+            <button onclick="closeModal(); rbi_printPracticePdf('${p.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform">
+                📥 Скачать PDF
+            </button>
+            <button onclick="closeModal(); rbi_printPracticePdf('${p.id}', 'browser')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">
+                🖨️ Печать (А3)
+            </button>
+        </div>
     `;
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';

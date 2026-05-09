@@ -11,21 +11,20 @@ function handleFabExportAction(actionType, mode = 'script') {
 
     showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к выгрузке...');
     
-    setTimeout(() => {
+    setTimeout(async () => {
         if (actionType === 'current') {
-            exportPdfCurrentScreen(data, mode);
+            await exportPdfCurrentScreen(data, mode);
         } else if (actionType === 'full_report') {
-            exportPdfFullObjectReport(data, mode);
+            await exportPdfFullObjectReport(data, mode);
         } else if (actionType === 'poster') {
-            exportPdfPoster(data, mode);
+            await exportPdfPoster(data, mode);
         } else if (actionType === 'onepager') {
-            exportPdfOnePager(data, mode);
+            await exportPdfOnePager(data, mode);
         } else if (actionType === 'global_onepager') {
-            exportPdfGlobalOnePager(data, mode);
+            await exportPdfGlobalOnePager(data, mode);
         } else if (actionType === 'data') {
             exportPdfData(data, mode);
         } else if (actionType === 'tender') {
-            // Если выбран "Скрипт" (левая кнопка) - качаем PDF, если "Принтер" (правая кнопка) - качаем Excel (CSV)
             if (mode === 'script') exportTenderPDF();
             else exportTenderCSV();
         }
@@ -47,7 +46,7 @@ function generatePdfChart(config, width = 600, height = 200) {
 }
 
 // Универсальный генератор сетки фотографий (Поддерживает PDF и Browser Print)
-function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, columns, mode) {
+async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, columns, mode) {
     const fontSizeTitle = mode === 'browser' ? '11pt' : '14px';
     const fontSizeName = mode === 'browser' ? '8pt' : '10px';
     const fontSizeContr = mode === 'browser' ? '7pt' : '9px';
@@ -67,7 +66,7 @@ function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, colu
 
     const colWidth = (100 / columns).toFixed(2) + '%';
 
-    const tds = paddedArr.map((p, idx) => {
+    const tdsList = await Promise.all(paddedArr.map(async (p, idx) => {
         let paddingStyle = 'padding: 0 4px;';
         if (idx === 0) paddingStyle = 'padding: 0 4px 0 0;';
         if (idx === columns - 1) paddingStyle = 'padding: 0 0 0 4px;';
@@ -78,7 +77,8 @@ function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, colu
                     </td>`;
         }
 
-        const imgSrc = window.getPhotoSrc(p.src || p.photo);
+        // ДОСТАЕМ РЕАЛЬНУЮ КАРТИНКУ ИЗ БАЗЫ
+        const imgSrc = await PhotoManager.getAsyncUrl(p.src || p.photo) || window.getPhotoSrc(p.src || p.photo);
         let contrHtml = '';
         if (p.contr) contrHtml = `<div style="font-size: ${fontSizeContr}; color: #64748b; font-weight: bold; margin-top: 2px; white-space: nowrap; overflow: hidden;">👤 ${p.contr} ${p.count ? `(${p.count} шт)` : ''}</div>`;
 
@@ -94,7 +94,9 @@ function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, colu
                 </div>
             </div>
         </td>`;
-    }).join('');
+    }));
+    
+    const tds = tdsList.join('');
 
     return `
     <div class="no-break" style="margin-bottom: 15px; background: ${bgCell}; border-radius: 8px; padding: 10px;">
@@ -106,7 +108,7 @@ function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell, colu
 }
 
 // 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
-function exportPdfOnePager(data, mode = 'script') {
+async function exportPdfOnePager(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
@@ -337,9 +339,9 @@ function exportPdfOnePager(data, mode = 'script') {
 
                 <!-- ПРАВАЯ КОЛОНКА (68%) -->
                 <td style="width: 68%; vertical-align: top;">
-                    ${buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
-                    ${buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
-                    ${buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
+                    ${await buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
+                    ${await buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
+                    ${await buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
 
                     <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
                         <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
@@ -354,7 +356,7 @@ function exportPdfOnePager(data, mode = 'script') {
 }
 
 // 6.5. ГЛОБАЛЬНЫЙ СВОДНЫЙ ОТЧЕТ КОМПАНИИ (Титул + Объекты a-la OnePager)
-function exportPdfGlobalOnePager(data, mode = 'script') {
+async function exportPdfGlobalOnePager(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
     // ==========================================
@@ -485,12 +487,9 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
     // ==========================================
     const projectsByUrk = [...projectsArray].sort((a,b) => b.avgUrk - a.avgUrk);
     
-    // Лидеры динамики (Топ-3)
     const topGrowth = [...projectsArray].filter(p => p.urkGrowth > 0).sort((a,b) => b.urkGrowth - a.urkGrowth).slice(0, 3);
-    // Антилидеры динамики (Топ-3 падения)
     const topDrop = [...projectsArray].filter(p => p.urkGrowth < 0).sort((a,b) => a.urkGrowth - b.urkGrowth).slice(0, 3);
 
-    // Сборка единой таблицы всех объектов
     const renderObjectTableRow = (p) => {
         const urkColor = p.avgUrk < 70 ? '#ef4444' : (p.avgUrk < 85 ? '#f59e0b' : '#22c55e');
         const ikoColor = parseFloat(p.IKO) >= 0.6 ? '#dc2626' : (parseFloat(p.IKO) >= 0.3 ? '#f59e0b' : '#16a34a');
@@ -593,19 +592,16 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
                 </td>
                 <td style="width: 40%; vertical-align: top;">
                     
-                    <!-- ТОП-3 ДИНАМИКА РОСТА -->
                     <div style="background: #f0fdf4; border: 2px solid #bbf7d0; border-radius: 12px; padding: 15px; margin-bottom: 15px;">
                         <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #166534; text-transform: uppercase; margin-bottom: 8px;">🚀 ТОП-3 Объектов (Рост УрК)</div>
                         ${topGrowth.length > 0 ? topGrowth.map(p => renderDynamicsCard(p, true)).join('') : `<div style="color:#166534; font-size:12px; text-align:center; padding:10px 0;">Роста не зафиксировано</div>`}
                     </div>
 
-                    <!-- ТОП-3 ПАДЕНИЕ (АНТИЛИДЕРЫ) -->
                     <div style="background: #fff7ed; border: 2px solid #fed7aa; border-radius: 12px; padding: 15px; margin-bottom: 15px;">
                         <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #9a3412; text-transform: uppercase; margin-bottom: 8px;">📉 ТОП-3 Объектов (Падение УрК)</div>
                         ${topDrop.length > 0 ? topDrop.map(p => renderDynamicsCard(p, false)).join('') : `<div style="color:#9a3412; font-size:12px; text-align:center; padding:10px 0;">Падения не зафиксировано</div>`}
                     </div>
 
-                    <!-- ПОДРЯДЧИКИ В ЗОНЕ РИСКА -->
                     <div style="background: #fef2f2; border: 2px solid #fca5a5; border-radius: 12px; padding: 15px; height: auto; box-sizing: border-box;">
                         <div style="font-size: ${mode === 'browser' ? '10pt' : '14px'}; font-weight: 900; color: #991b1b; text-transform: uppercase; margin-bottom: 8px;">🚨 Зона риска: Подрядчики (УрК < 70% или B3)</div>
                         <table style="width: 100%; border-collapse: collapse;">
@@ -618,21 +614,17 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
                         </table>
                         ${riskContractors.length > 5 ? `<div style="font-size: 10px; color: #991b1b; font-weight: bold; text-align: center; margin-top: 8px;">...и ещё ${riskContractors.length - 5} компаний</div>` : ''}
                     </div>
-
                 </td>
             </tr>
         </table>
     `;
 
     // ==========================================
-
+    // 5. ГЕНЕРАЦИЯ ONE-PAGER ДЛЯ КАЖДОГО ОБЪЕКТА (Цикл for...of вместо forEach)
     // ==========================================
-    // 5. ГЕНЕРАЦИЯ ONE-PAGER ДЛЯ КАЖДОГО ОБЪЕКТА
-    // ==========================================
-    projectsArray.forEach(proj => {
+    for (let proj of projectsArray) {
         const pData = proj.data;
         
-        // Сбор метрик для объекта
         const pChecksCount = pData.length;
         const pContractorsCount = new Set(pData.map(i => i.contractorName).filter(Boolean)).size;
 
@@ -641,7 +633,6 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
         else if (proj.IKO >= 0.3) pIkoColor = "#d97706";
         else pIkoColor = "#16a34a";
 
-        // Генерация графиков на лету
         const sparkLabels = []; const sparkData = [];
         for(let i=5; i>=0; i--) {
             const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
@@ -659,7 +650,6 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
         }, 300, 100);
         const imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${sparkUrl}">`;
 
-        // Рейтинг подрядчиков на объекте
         const groupedC = {};
         pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
         const ratingData = [];
@@ -700,7 +690,6 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
             else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
         }
 
-        // Сбор Топ-фото для объекта
         let b3Map = {}; let b2Map = {}; let okMap = {}; let sumB3Obj = 0;
         pData.forEach(i => {
             if (i.metrics && i.metrics.n_B3_fail > 0) sumB3Obj += i.metrics.n_B3_fail;
@@ -720,7 +709,7 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
                             b3Map[defName].count++; if (photo) b3Map[defName].photo = photo; 
                         } else {
                             const isB1 = foundItem && foundItem.w === 1;
-                            if (isB1) return; // B1 не попадает в топ дефектов
+                            if (isB1) return;
                             if (!b2Map[defName]) b2Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
                             b2Map[defName].count++; if (photo) b2Map[defName].photo = photo;
                         }
@@ -736,7 +725,11 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
         const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
         const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
 
-        // PDCA текст
+        // --- ВАЖНОЕ ИЗМЕНЕНИЕ ДЛЯ ФОТО: ИСПОЛЬЗУЕМ AWAIT ВНУТРИ ЦИКЛА ---
+        const gridB3 = await buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode);
+        const gridB2 = await buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode);
+        const gridOK = await buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode);
+
         const isDanger = parseFloat(proj.IKO) >= 0.60 || sumB3Obj > 0;
         let pdcaText = `[АНАЛИТИКА ОБЪЕКТА]\nИндекс критичности объекта (ИКО): ${proj.IKO}.\nРаботы в красной зоне: ${proj.redZone}%.\nОхват: ${pChecksCount} проверок.\n\n`;
         if (isDanger) pdcaText += `1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.\n`;
@@ -811,9 +804,9 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
                     </div>
                 </td>
                 <td style="width: 68%; vertical-align: top;">
-                    ${buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
-                    ${buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
-                    ${buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
+                    ${gridB3}
+                    ${gridB2}
+                    ${gridOK}
 
                     <div class="no-break" style="background: ${isDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
                         <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
@@ -823,7 +816,7 @@ function exportPdfGlobalOnePager(data, mode = 'script') {
             </tr>
         </table>
         `;
-    });
+    } // Конец цикла for...of
 
     printPdfShell("Сводный Отчет Компании", content, "A3", "landscape", mode);
 }
@@ -914,7 +907,7 @@ function generatePosterData() {
 // ============================================================================
 // 5. Текущий экран (Детализация Подрядчика или Список А4)
 // 5. Текущий экран (Детализация Подрядчика или Список А4)
-function exportPdfCurrentScreen(data, mode = 'script') {
+async function exportPdfCurrentScreen(data, mode = 'script') {
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
         const cData = data.filter(c => `${c.contractorName} [${c.projectName || 'Без объекта'}]` === currentDetailedContractor);
@@ -978,9 +971,12 @@ function exportPdfCurrentScreen(data, mode = 'script') {
 
             ${expertText}
             
-            ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', 'transparent', 5, mode)}
-            ${buildPhotoGridHTML(photosB2, '⚠️ Значимые дефекты (B2)', '#d97706', '#fde68a', 'transparent', 5, mode)}
-        `;
+            `;
+        
+        const gridB3 = await buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', 'transparent', 5, mode);
+        const gridB2 = await buildPhotoGridHTML(photosB2, '⚠️ Значимые дефекты (B2)', '#d97706', '#fde68a', 'transparent', 5, mode);
+        
+        content += gridB3 + gridB2;
         printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4", "portrait", mode);
 
     } else {
@@ -1129,7 +1125,7 @@ function exportPdfCurrentScreen(data, mode = 'script') {
 
 
 // 6. Выгрузка Полного отчета по объекту (Паспорта подрядчиков А3)
-function exportPdfFullObjectReport(data, mode = 'script') {
+async function exportPdfFullObjectReport(data, mode = 'script') {
     if(data.length === 0) return showToast('Нет данных для выгрузки');
 
     let projName = 'Все объекты';
@@ -1246,7 +1242,7 @@ function exportPdfFullObjectReport(data, mode = 'script') {
     `;
 
     // --- ГЕНЕРАЦИЯ ПАСПОРТОВ ПОДРЯДЧИКОВ ---
-    cList.forEach((cObj) => {
+    for (let cObj of cList) {
         const cName = cObj.name;
         const cData = cObj.data;
         const m = cObj.metrics;
@@ -1352,20 +1348,20 @@ function exportPdfFullObjectReport(data, mode = 'script') {
                     ${expertHtml}
                 </td>
                 <td style="width: 75%; vertical-align: top; padding: 0;">
-                    ${buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
-                    ${buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
-                    ${buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
+                    ${await buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
+                    ${await buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
+                    ${await buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
                 </td>
             </tr>
         </table>
         `;
-    });
+    } // Конец цикла for...of
 
     printPdfShell("Полный отчет по объекту", content, "A3", "landscape", mode);
 }
 
 // 4. Плакат Качества (A3 Альбом)
-function exportPdfPoster(data, mode = 'script') {
+async function exportPdfPoster(data, mode = 'script') {
     let weekData = [];
     let periodStr = '';
 
@@ -1521,10 +1517,10 @@ function exportPdfPoster(data, mode = 'script') {
             <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left:-20px;">
                 <tr>
                     <td style="vertical-align:top; width:50%;">
-                        ${buildPhotoGridHTML(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
+                        ${await buildPhotoGridHTML(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
                     </td>
                     <td style="vertical-align:top; width:50%;">
-                        ${buildPhotoGridHTML(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
+                        ${await buildPhotoGridHTML(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
                     </td>
                 </tr>
             </table>
@@ -2826,28 +2822,68 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
+// Бронебойный конвертер: превращает ЛЮБЫЕ ссылки в Base64 перед печатью
 async function resolveLocalPhotosForPdf(container) {
     const images = container.querySelectorAll('img');
     const promises = [];
 
     for (let img of images) {
-        // Браузерный механизм мог уже подменить local:// на серый квадрат
-        // и убрать оригинальный адрес в data-local-src — ищем там тоже
-        const src = img.getAttribute('data-local-src') || img.getAttribute('src');
+        let src = img.getAttribute('data-local-src') || img.getAttribute('src');
+        if (!src) continue;
 
-        if (src && (src.startsWith('local://') || src.startsWith('cloud://'))) {
-            promises.push((async () => {
-                try {
-                    const realUrl = await PhotoManager.getAsyncUrl(src);
-                    if (realUrl) {
-                        img.src = realUrl;
-                        img.removeAttribute('data-local-src');
+        promises.push((async () => {
+            try {
+                let base64 = null;
+                
+                if (src.startsWith('data:')) {
+                    // Уже в нужном формате, пропускаем
+                    return; 
+                } else if (src.startsWith('blob:')) {
+                    // Если это оперативная память - скачиваем и конвертируем
+                    const response = await fetch(src);
+                    const blob = await response.blob();
+                    base64 = await new Promise(r => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => r(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                } else if (src.startsWith('local://') || src.startsWith('cloud://')) {
+                    // Достаем из базы телефона
+                    if (typeof PhotoManager.getBase64 === 'function') {
+                        base64 = await PhotoManager.getBase64(src);
+                    } else {
+                        // Резервный вариант, если забыли обновить storage.js
+                        const blobUrl = await PhotoManager.getAsyncUrl(src);
+                        if (blobUrl) {
+                            const response = await fetch(blobUrl);
+                            const blob = await response.blob();
+                            base64 = await new Promise(r => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => r(reader.result);
+                                reader.readAsDataURL(blob);
+                            });
+                        }
                     }
-                } catch(e) {
-                    console.warn('[PDF] Фото не загружено:', src, e);
+                } else if (src.startsWith('http')) {
+                    // Если картинка из интернета - качаем и конвертируем
+                    const response = await fetch(src);
+                    const blob = await response.blob();
+                    base64 = await new Promise(r => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => r(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
                 }
-            })());
-        }
+
+                // Вставляем чистый код картинки в HTML
+                if (base64 && base64.startsWith('data:')) {
+                    img.src = base64;
+                    img.removeAttribute('data-local-src');
+                }
+            } catch(e) {
+                console.warn('[PDF] Фото не конвертировано:', src, e);
+            }
+        })());
     }
     await Promise.all(promises);
 }
@@ -2860,14 +2896,24 @@ async function waitForPdfImages(container, maxMs = 5000) {
     const promises = images.map(img => {
         if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
         return new Promise((resolve) => {
-            img.onload = resolve;
-            img.onerror = resolve; // Если ошибка - всё равно идем дальше
+            // Принудительная распаковка фото в видеопамять (критично для iPhone)
+            if (img.decode) {
+                img.decode().then(resolve).catch(() => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                });
+            } else {
+                img.onload = resolve;
+                img.onerror = resolve;
+            }
         });
     });
 
-    // Ждем либо загрузки всех фото, либо отсечки по таймауту (чтобы не зависнуть навсегда)
     await Promise.race([
         Promise.all(promises),
         new Promise(resolve => setTimeout(resolve, maxMs))
     ]);
+    
+    // Даем процессору телефона 800 мс, чтобы гарантированно нарисовать всё на канвасе
+    await new Promise(r => setTimeout(r, 800));
 }

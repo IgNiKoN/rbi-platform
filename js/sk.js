@@ -68,22 +68,25 @@ window.sk_renderMainTab = async function() {
         <div class="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-sm mb-4">
             <div class="flex justify-between items-start mb-3">
                 <div>
-                    <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white">Данные ПК Стройконтроль</h2>
+                    <h2 class="text-[13px] font-bold uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Данные ПК Стройконтроль
+                    </h2>
                     <p class="text-[10px] text-slate-500 font-bold mt-1">Всего в базе: <b class="text-indigo-600">${window.skRecords.length}</b> позиций</p>
-                    <p class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Загруженный период: ${periodStr}</p>
+                    <p class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Период: ${periodStr}</p>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="sk_clearData()" class="w-10 h-10 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-transform" title="Очистить базу СК">
-                        🗑️
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
-                    <button onclick="document.getElementById('sk-excel-input').click()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95 flex items-center gap-2 h-10">
-                        📥 Импорт
+                    <button onclick="document.getElementById('sk-excel-input').click()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold uppercase shadow-md active:scale-95 flex items-center gap-1.5 h-10">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
                     </button>
                 </div>
             </div>
             
             <div class="flex items-center gap-2 border-t border-[var(--card-border)] pt-3">
-                <span class="text-[9px] font-black uppercase text-slate-400">Фильтр для аналитики:</span>
+                <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Фильтр:</span>
                 <select id="sk-period-filter" class="input-base !py-1 !text-[10px] font-bold flex-1" onchange="window.skCurrentPeriodFilter = this.value; sk_renderDashboard();">
                     <option value="ALL" ${window.skCurrentPeriodFilter === 'ALL' ? 'selected' : ''}>Анализировать всё время</option>
                     <option value="14" ${window.skCurrentPeriodFilter === '14' ? 'selected' : ''}>За последние 14 дней</option>
@@ -93,9 +96,9 @@ window.sk_renderMainTab = async function() {
         </div>
 
         <div class="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar pb-1">
-            <button onclick="sk_switchView('dashboard')" id="sk-btn-dashboard" class="shrink-0 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm">📊 Дашборд</button>
-            <button onclick="sk_switchView('volumes')" id="sk-btn-volumes" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm">📐 Объемы</button>
-            <button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm">👤 Инженеры СК</button>
+            <button onclick="sk_switchView('dashboard')" id="sk-btn-dashboard" class="shrink-0 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Дашборд</button>
+            <button onclick="sk_switchView('volumes')" id="sk-btn-volumes" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Объемы</button>
+            <button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>
         </div>
 
         <div id="sk-view-dashboard" class="block"></div>
@@ -129,8 +132,8 @@ window.sk_switchView = function(view) {
     document.getElementById('sk-view-volumes').classList.add('hidden');
     document.getElementById('sk-view-hr').classList.add('hidden');
     
-    const defaultBtnClass = "shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm";
-    const activeBtnClass = "shrink-0 px-4 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm";
+    const defaultBtnClass = "shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
+    const activeBtnClass = "shrink-0 px-4 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
 
     document.getElementById('sk-btn-dashboard').className = defaultBtnClass;
     document.getElementById('sk-btn-volumes').className = defaultBtnClass;
@@ -155,8 +158,7 @@ window.sk_renderVolumes = function() {
             <div class="flex items-center gap-2 mb-2 bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
                 <div class="flex-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${workType}</div>
                 <div class="w-16 text-center text-[10px] font-black bg-[var(--card-bg)] border border-[var(--card-border)] py-1 rounded shadow-inner">${v.amount} ${v.unit}</div>
-                <button onclick="sk_deleteVolume('${workType}')" class="text-red-500 bg-red-50 border border-red-200 p-1.5 rounded active:scale-90">✕</button>
-            </div>
+                <button onclick="sk_deleteVolume('${workType}')" class="text-red-500 bg-red-50 border border-red-200 w-8 h-8 rounded-lg flex items-center justify-center active:scale-90 transition-transform"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>
         `;
     }
 
@@ -297,7 +299,7 @@ window.sk_showMappingModal = function(fileHeaders, sampleRow) {
             Система угадала назначение колонок. Проверьте правильность и нажмите "Загрузить".
         </div>
         <button onclick="sk_aiMapColumns()" id="btn-ai-mapping" class="w-full bg-slate-100 text-indigo-600 border border-indigo-200 py-2 rounded-lg font-bold text-[10px] uppercase mb-4 active:scale-95 transition-colors flex justify-center items-center gap-1.5">
-            🤖 Угадать через ИИ (DeepSeek)
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Угадать через ИИ (DeepSeek)
         </button>
         <div class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1 mb-4">
             ${mappingHtml}
@@ -503,8 +505,8 @@ window.sk_showNormalizationModal = function() {
                 </div>
             </div>
             <div class="flex gap-2">
-                <button onclick="sk_resolvePair(${idx}, false)" class="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 border border-slate-200">❌ Разные</button>
-                <button onclick="sk_resolvePair(${idx}, true)" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm">✅ Объединить</button>
+                <button onclick="sk_resolvePair(${idx}, false)" class="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 border border-slate-200">Разные</button>
+                <button onclick="sk_resolvePair(${idx}, true)" class="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm">Объединить</button>
             </div>
         </div>
     `).join('');
@@ -912,16 +914,16 @@ window.sk_renderDashboard = function() {
                     let isd = Math.round((mData.total / expected) * 100);
                     
                     let colorClass = 'text-green-600 bg-green-50 border-green-200'; 
-                    statusBadge = '<span class="text-green-600 font-black text-[9px] uppercase">🟢 Прозрачно</span>';
+                    statusBadge = '<span class="text-green-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Прозрачно</span>';
                     
                     if (isd < 20) { 
                         colorClass = 'text-red-600 bg-red-50 border-red-200'; 
-                        statusBadge = '<span class="text-red-600 font-black text-[9px] uppercase animate-pulse">🔴 Скрывают брак</span>';
+                        statusBadge = '<span class="text-red-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Скрывают брак</span>';
                         skIssues.isd.push(`${mData.contractor} (${mData.category})`);
                     }
                     else if (isd < 60) { 
                         colorClass = 'text-orange-500 bg-orange-50 border-orange-200'; 
-                        statusBadge = '<span class="text-orange-500 font-black text-[9px] uppercase">🟡 Подозрительно</span>'; 
+                        statusBadge = '<span class="text-orange-500 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Подозрительно</span>'; 
                     }
 
                     if (isd > 100) {
@@ -953,8 +955,8 @@ window.sk_renderDashboard = function() {
         const isLinked = rbiContractors.includes(cName.toLowerCase().trim()) || Object.values(window.skContractorMap).includes(cName);
         
         const linkBadge = isLinked 
-            ? `<span class="bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest shadow-sm">🔗 Связан с RBI</span>`
-            : `<span class="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest">⚪ Без связи</span>`;
+            ? `<span class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest shadow-sm flex items-center gap-1 w-fit"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"></path></svg> Связан с RBI</span>`
+            : `<span class="bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 w-fit"><svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Без связи</span>`;
 
         const overduePerc = data.total > 0 ? Math.round((data.overdueCount / data.total) * 100) : 0;
         const avgOverdueDepth = data.overdueDaysArr.length > 0 ? Math.round(data.overdueDaysArr.reduce((a,b)=>a+b,0) / data.overdueDaysArr.length) : 0;
@@ -1087,23 +1089,25 @@ window.sk_renderDashboard = function() {
     container.innerHTML = `
         <div class="grid grid-cols-2 gap-2 mb-4">
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm text-center">
-                <div class="text-[9px] font-black uppercase text-slate-400 mb-1">Всего замечаний СК</div>
+                <div class="text-[9px] font-bold uppercase text-slate-400 tracking-widest mb-1">Всего замечаний СК</div>
                 <div class="text-2xl font-black text-slate-800 dark:text-white">${totalIssues}</div>
             </div>
             <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 p-3 rounded-xl shadow-sm text-center">
-                <div class="text-[9px] font-black uppercase text-red-600 dark:text-red-400 mb-1">Открыто сейчас</div>
+                <div class="text-[9px] font-bold uppercase text-red-600 dark:text-red-400 tracking-widest mb-1">Открыто сейчас</div>
                 <div class="text-2xl font-black text-red-600 dark:text-red-400">${totalOpen}</div>
             </div>
         </div>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="font-black text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1">📊 Матрица Рисков (ИСД) <button onclick="event.stopPropagation(); sk_showInfoModal('isd')" class="text-indigo-500 hover:scale-110 active:scale-95 transition-transform text-lg ml-1">❓</button></span>
-                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Матрица Рисков (ИСД) <button onclick="event.stopPropagation(); sk_showInfoModal('isd')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-transform ml-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
             </summary>
             <div class="overflow-x-auto custom-scrollbar max-h-[60vh]">
                 <table class="w-full text-left whitespace-nowrap">
-                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase sticky top-0 shadow-sm z-10">
+                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase sticky top-0 shadow-sm z-10 font-bold">
                         <tr>
                             <th class="p-2.5 pl-4">Подрядчик / Вид работ</th>
                             <th class="p-2.5 text-center" title="Сколько выдали СК / Сколько ожидаем по статистике">Факт / Ожидание</th>
@@ -1117,33 +1121,39 @@ window.sk_renderDashboard = function() {
             </div>
         </details>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="font-black text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300">📉 Тренд доли открытых замечаний</span>
-                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Тренд открытых замечаний</span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
             </summary>
             <div class="p-3" style="height: 180px; position: relative; width: 100%;">
                 <canvas id="sk-trend-chart"></canvas>
             </div>
         </details>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="font-black text-[11px] uppercase tracking-widest text-indigo-600 dark:text-indigo-400">🔗 Связано с проверками RBI</span>
-                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="font-bold text-[11px] uppercase tracking-widest text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"></path></svg> Связано с проверками RBI</span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
             </summary>
             <div class="p-3 bg-slate-50 dark:bg-slate-900/50">
-                ${linkedHtml || `<div class="text-center py-4 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400 text-[10px] font-bold uppercase">Связанных подрядчиков не найдено</div>`}
+                ${linkedHtml || `<div class="text-center py-4 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400 text-[10px] font-bold uppercase tracking-widest">Связанных подрядчиков не найдено</div>`}
             </div>
         </details>
 
-        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="p-3 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="font-black text-[11px] uppercase tracking-widest text-slate-500">⚪ Изолированный анализ (Без связи)</span>
-                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">▼</span>
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-500 flex items-center gap-1.5"><svg class="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Изолированный анализ (Без связи)</span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
             </summary>
             <div class="p-3 bg-slate-50 dark:bg-slate-900/50">
-                ${unlinkedHtml || `<div class="text-center py-4 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400 text-[10px] font-bold uppercase">Все подрядчики связаны с RBI</div>`}
+                ${unlinkedHtml || `<div class="text-center py-4 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400 text-[10px] font-bold uppercase tracking-widest">Все подрядчики связаны с RBI</div>`}
             </div>
         </details>
     `;
@@ -1343,7 +1353,7 @@ window.sk_renderHrTab = function() {
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4">
             <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex items-center justify-between">
                 <div>
-                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI) <button onclick="sk_showInfoModal('hr')" class="text-indigo-500 hover:scale-110 active:scale-95 transition-transform text-lg ml-1">❓</button></div>
+                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI) <button onclick="sk_showInfoModal('hr')" class="text-indigo-500 hover:scale-110 active:scale-95 transition-transform text-lg ml-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></div>
                     <div class="text-[9px] text-slate-500 mt-1">Учитывает просрочки по выданным замечаниям и заполняемость категорий.</div>
                 </div>
             </div>

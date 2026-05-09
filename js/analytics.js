@@ -793,77 +793,88 @@ function renderOnePagerSubTab(data) {
     let healthColor = healthIndex > 80 ? 'text-green-500' : (healthIndex > 50 ? 'text-orange-500' : 'text-red-500');
 
     // ==========================================
-    // СБОРКА ИТОГОВОГО HTML (ОДИН СПИСОК АККОРДЕОНОВ)
+    // СБОРКА ИТОГОВОГО HTML (ОДИН СПИСОК АККОРДЕОНОВ - iOS STYLE)
     // ==========================================
     container.innerHTML = `
-        <div class="text-center sm:text-left border-b border-[var(--card-border)] pb-3 mb-4 mx-1">
-            <h2 class="text-[16px] min-[400px]:text-lg font-black uppercase tracking-tight text-slate-800 dark:text-white">Сводный статус объекта</h2>
-            <div class="text-[10px] font-bold text-[var(--text-muted)] mt-1">Охват: ${data.length} независимых проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
+        <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40 flex justify-between items-center">
+            <div>
+                <h2 class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Сводный статус
+                </h2>
+                <div class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5">Охват: ${data.length} проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
+            </div>
         </div>
         
         <div class="space-y-3 mx-1">
             
             <!-- АККОРДЕОН 1: ГЛАВНЫЕ МЕТРИКИ И РЕЙТИНГ -->
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
-                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
-                    <span class="flex items-center gap-2">📊 Статистика и Тренды</span>
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg>
+                        Статистика и Тренды
+                    </span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
-                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-4">
+                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-3 rounded-b-2xl">
                     
                     <div class="grid grid-cols-2 lg:grid-cols-3 gap-2">
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ср. УрК Объекта</div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ср. УрК Объекта</div>
                             <div class="flex justify-between items-end">
                                 <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currAvgUrk}%</span>
                                 ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
                             </div>
                         </div>
                         <div class="bg-[var(--card-bg)] border ${parseFloat(mData.IKO) >= 0.6 ? 'border-red-300 bg-red-50/50' : 'border-[var(--card-border)]'} rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Индекс Риска (ИКО)</div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Индекс Риска (ИКО)</div>
                             <div class="flex justify-between items-end">
                                 <span class="text-2xl font-black ${mData.ikoColor} leading-none">${mData.IKO}</span>
                                 ${renderTrend(mData.IKO, prevIko, trendLabel, true)}
                             </div>
                         </div>
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Объем проверок</div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Объем проверок</div>
                             <div class="flex justify-between items-end">
                                 <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${data.length}</span>
                                 ${renderTrend(data.length, prevChecks, trendLabel)}
                             </div>
                         </div>
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Акт. Подрядчиков</div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Акт. Подрядчиков</div>
                             <div class="flex justify-between items-end">
                                 <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currContractorsCount}</span>
                                 ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
                             </div>
                         </div>
-                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                            <div class="text-[9px] font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-1">В красной зоне</div>
+                        <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                            <div class="text-[9px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest mb-1">В красной зоне</div>
                             <div class="flex justify-between items-end">
                                 <span class="text-2xl font-black text-red-600 dark:text-red-400 leading-none">${mData.redZonePerc}%</span>
                                 <span class="text-[9px] font-bold text-red-700/70">от объема</span>
                             </div>
                         </div>
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between relative overflow-hidden">
-                            <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 z-10">Тренд УрК (6 нед)</div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1 z-10">Тренд УрК (6 нед)</div>
                             <div class="absolute bottom-0 left-0 right-0 h-[40px] opacity-70"><canvas id="op-sparkline-chart"></canvas></div>
                         </div>
                     </div>
 
                     <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
                         <div class="flex justify-between items-center mb-2">
-                            <div class="text-[10px] font-black text-[var(--text-muted)] uppercase">Динамика Подрядчиков (Ср. УРк)</div>
-                            <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 rounded px-2 py-1 active:scale-95 shadow-sm">⚙️ Фильтр линий</button>
+                            <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase">Динамика Подрядчиков (Ср. УРк)</div>
+                            <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 rounded px-2 py-1 active:scale-95 shadow-sm flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Фильтр
+                            </button>
                         </div>
                         <div style="height: 180px; position: relative;"><canvas id="op-line-chart"></canvas></div>
                     </div>
 
                     <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
-                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 flex justify-between items-center">
-                            🏆 Рейтинг Подрядчиков (Интегральный УрК)
+                        <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-3 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg> 
+                            Рейтинг Подрядчиков (ИУрК)
                         </div>
                         <div class="space-y-2.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                             ${ratingData.map(r => `
@@ -873,7 +884,7 @@ function renderOnePagerSubTab(data) {
                                         <div class="h-full ${r.val < 70 ? 'bg-red-500' : (r.val < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${r.val}%"></div>
                                     </div>
                                     <div class="w-14 flex items-center justify-end gap-1 shrink-0">
-                                        ${r.isPrelim ? '<span class="text-[8px]" title="Предварительный рейтинг (Мало проверок)">⚠️</span>' : ''}
+                                        ${r.isPrelim ? '<span class="text-[8px] text-slate-400 font-bold border border-slate-300 rounded px-1" title="Предварительный рейтинг">СБОР</span>' : ''}
                                         <span class="text-[11px] font-black ${r.val < 70 ? 'text-red-500' : (r.val < 85 ? 'text-orange-500' : 'text-green-500')}">${r.val}%</span>
                                     </div>
                                 </div>
@@ -884,58 +895,70 @@ function renderOnePagerSubTab(data) {
             </details>
 
             <!-- АККОРДЕОН 2: ПУЛЬС ОБЪЕКТА -->
-            <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                <summary class="p-3 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 transition-colors select-none">
-                    <span class="flex items-center gap-2">❤️ Пульс объекта (AI) <button onclick="event.preventDefault(); showToast('Индекс Здоровья рассчитывается на основе Индекса Риска (ИКО), процента красной зоны и аварий B3. ИИ анализирует эти данные и дает краткое заключение.')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-colors ml-1" title="Справка">❓</button></span>
+            <details class="bg-[var(--card-bg)] border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3.5 font-bold text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl hover:bg-indigo-100 transition-colors select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg> 
+                        Пульс объекта (AI) 
+                        <button onclick="event.preventDefault(); showToast('Индекс Здоровья рассчитывается на основе Индекса Риска (ИКО), процента красной зоны и аварий B3. ИИ анализирует эти данные и дает краткое заключение.')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-colors ml-1" title="Справка">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
-                <div class="p-4 border-t border-indigo-100 dark:border-indigo-800 bg-white dark:bg-slate-800">
+                <div class="p-4 border-t border-indigo-100 dark:border-indigo-800 bg-white dark:bg-slate-800 rounded-b-2xl">
                     <div class="flex justify-between items-center mb-4">
-                        <div class="text-[10px] font-black uppercase text-slate-400">Индекс Здоровья</div>
+                        <div class="text-[10px] font-bold uppercase text-slate-400">Индекс Здоровья</div>
                         <div class="text-4xl font-black ${healthColor}">${healthIndex}<span class="text-lg text-slate-400">/100</span></div>
                     </div>
                     <div class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 font-medium" id="pulse-ai-text">
                         ${customExpertConclusions['pulse_ai'] || 'Нажмите кнопку ниже для генерации пульса.'}
                     </div>
-                    <button onclick="generatePulseAi()" class="mt-3 w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2 transition-transform">
-                        🤖 Обновить Пульс
+                    <button onclick="generatePulseAi()" class="mt-3 w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest active:scale-95 shadow-sm flex items-center justify-center gap-1.5 transition-transform">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Обновить Пульс
                     </button>
                 </div>
             </details>
 
             <!-- АККОРДЕОН 3: ТЕПЛОВАЯ КАРТА -->
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
-                    <span class="flex items-center gap-2">🗺️ Тепловая карта этапов</span>
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                        Тепловая карта этапов
+                    </span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
-                <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800">
+                <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-2xl">
                     ${heatmapHtml}
-                    <button onclick="generateHeatmapAi()" class="mt-3 w-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-black text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-600 transition-transform">
-                        🤖 Анализ Рисков (ИИ)
+                    <button onclick="generateHeatmapAi()" class="mt-3 w-full bg-slate-50 text-slate-600 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-600 transition-transform">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Анализ Рисков (ИИ)
                     </button>
-                    <div id="heatmap-ai-text" class="hidden mt-3 text-[11px] leading-relaxed text-red-800 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800 font-medium"></div>
+                    <div id="heatmap-ai-text" class="hidden mt-3 text-[11px] leading-relaxed text-red-800 dark:text-red-400 bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-200 dark:border-red-800 font-medium"></div>
                 </div>
             </details>
 
             <!-- АККОРДЕОН 4: ТОП ФОТО -->
             ${appSettings.anaOpTopDefects ? `
-            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                <summary class="p-3 font-black text-[12px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl select-none">
-                    <span class="flex items-center gap-2">📸 ТОП-5 Дефектов и Эталонов</span>
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></circle></svg>
+                        ТОП-5 Дефектов и Эталонов
+                    </span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
-                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-3">
-                    <div class="bg-red-50 dark:bg-red-900/10 border-2 border-red-200 dark:border-red-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                        <h3 class="margin-0 mb-3 font-black text-[10px] text-red-700 dark:text-red-500 uppercase border-b border-red-200 dark:border-red-800 pb-2">🚨 ТОП-5 Критических дефектов (B3)</h3>
+                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 flex flex-col gap-3 rounded-b-2xl">
+                    <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-bold text-[10px] text-red-600 dark:text-red-400 uppercase border-b border-red-200 dark:border-red-800 pb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Критические дефекты (B3)</h3>
                         ${renderUIPhotoCards(topB3, true)}
                     </div>
-                    <div class="bg-orange-50 dark:bg-orange-900/10 border-2 border-orange-200 dark:border-orange-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                        <h3 class="margin-0 mb-3 font-black text-[10px] text-orange-700 dark:text-orange-500 uppercase border-b border-orange-200 dark:border-orange-800 pb-2">🔄 ТОП-5 Повторяющихся нарушений (B2)</h3>
+                    <div class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-bold text-[10px] text-orange-600 dark:text-orange-400 uppercase border-b border-orange-200 dark:border-orange-800 pb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Повторяющиеся нарушения (B2)</h3>
                         ${renderUIPhotoCards(topB2, false)}
                     </div>
-                    <div class="bg-green-50 dark:bg-green-900/10 border-2 border-green-200 dark:border-green-800/50 rounded-xl p-3 shadow-sm flex flex-col">
-                        <h3 class="margin-0 mb-3 font-black text-[10px] text-green-700 dark:text-green-500 uppercase border-b border-green-200 dark:border-green-800 pb-2">✅ ТОП-5 Эталонных работ (OK)</h3>
+                    <div class="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-xl p-3 shadow-sm flex flex-col">
+                        <h3 class="margin-0 mb-3 font-bold text-[10px] text-green-600 dark:text-green-400 uppercase border-b border-green-200 dark:border-green-800 pb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Эталонные работы (OK)</h3>
                         ${renderUIPhotoCards(topOK, false, true)}
                     </div>
                 </div>
@@ -943,17 +966,20 @@ function renderOnePagerSubTab(data) {
             ` : ''}
 
             <!-- АККОРДЕОН 5: УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ -->
-            <details class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border-2 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
-                <summary class="p-3 font-black text-[12px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase tracking-widest cursor-pointer flex justify-between items-center rounded-xl transition-colors select-none">
-                    <span class="flex items-center gap-2">🎯 Управленческое Решение</span>
+            <details class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                <summary class="p-3.5 font-bold text-[11px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase tracking-widest cursor-pointer flex justify-between items-center rounded-2xl transition-colors select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                        Управленческое Решение
+                    </span>
                     <span class="transition-transform group-open:rotate-180">▼</span>
                 </summary>
-                <div class="p-4 border-t ${isGlobalDanger ? 'border-orange-200 dark:border-orange-800' : 'border-green-200 dark:border-green-800'}">
+                <div class="p-4 border-t ${isGlobalDanger ? 'border-orange-200 dark:border-orange-800' : 'border-green-200 dark:border-green-800'} rounded-b-2xl">
                     <div class="flex justify-between items-center mb-3">
-                        <div class="text-[10px] font-black uppercase opacity-70">Стратегия действий</div>
+                        <div class="text-[10px] font-bold uppercase opacity-70">Стратегия действий</div>
                         <div class="flex gap-2">
-                            <button onclick="generateOnePagerForecastAi('${pdcaKey}')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1">🤖 AI-Анализ</button>
-                            <button onclick="editExpertText('${pdcaKey}', 'hidden_pdca_text')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1">✏️ Изменить</button>
+                            <button onclick="generateOnePagerForecastAi('${pdcaKey}')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1.5"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Анализ</button>
+                            <button onclick="editExpertText('${pdcaKey}', 'hidden_pdca_text')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1.5"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Изменить</button>
                         </div>
                     </div>
                     <textarea id="hidden_pdca_text" class="hidden">${rawPdcaText}</textarea>
