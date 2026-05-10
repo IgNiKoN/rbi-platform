@@ -1672,11 +1672,11 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         return;
     }
 
+        // ============================================================================
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (ИСПРАВЛЕНО ДЛЯ iOS)
     // ============================================================================
-    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Постраничная сборка для iOS)
-    // ============================================================================
-    const hiddenDiv = document.createElement('div');
-    hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 100}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
+        const hiddenDiv = document.createElement('div');
+    hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 50}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
     hiddenDiv.setAttribute('data-no-observe', 'true');
     document.body.appendChild(hiddenDiv);
 
@@ -1694,26 +1694,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         window._pdfGenerating = false;
         if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
-        
-        if (window.activeTaskId) {
-            const task = window.rbi_tasksData?.find(t => t.id === window.activeTaskId);
-            if (task && task.taskType === 'Отчет' && task.status === 'pending') {
-                task.status = 'done';
-                task.resultComment = 'Файл сгенерирован';
-                task.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
-                if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
-            }
-            window.activeTaskId = null;
-        }
     };
 
     const opt = {
         margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
         filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },   
+        image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
-            scale: HIGH_QUALITY_SCALE, // Оставляем честные 2.5
+            scale: HIGH_QUALITY_SCALE,
             useCORS: true, letterRendering: true, width: widthPx, windowWidth: widthPx,
             x: 0, y: 0, scrollX: 0, scrollY: 0, logging: false, allowTaint: true, backgroundColor: '#ffffff'
         },
@@ -1722,57 +1710,93 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     };
 
     try {
-        if (loaderText) loaderText.innerText = "Сборка страниц...";
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (loaderText) loaderText.innerText = "Создание PDF…";
+        await new Promise(r => requestAnimationFrame(r));
 
-        // Режем контент на отдельные страницы
         const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
-        let worker = html2pdf().set(opt);
-        
-        // Обрабатываем каждую страницу ОТДЕЛЬНО, чтобы не превысить лимиты памяти iOS Safari
-        for (let i = 0; i < pagesHtml.length; i++) {
-            if (loaderText) loaderText.innerText = `Подготовка листа ${i + 1} из ${pagesHtml.length}...`;
-            
-            // Очищаем скрытый контейнер от старых листов (Освобождаем DOM)
-            hiddenDiv.innerHTML = '';
-            
-            const pageDiv = document.createElement('div');
-            pageDiv.className = 'pdf-print-root';
-            pageDiv.innerHTML = pagesHtml[i];
-            hiddenDiv.appendChild(pageDiv);
 
-            // Конвертируем фото именно на ЭТОЙ странице и ждем их отрисовки
-            await resolveLocalPhotosForPdf(pageDiv);
-            
-            // КРИТИЧНО ДЛЯ IOS: Заставляем браузер принудительно перерисовать блок перед скриншотом
-            hiddenDiv.style.display = 'none';
-            hiddenDiv.offsetHeight; // Trigger reflow
-            hiddenDiv.style.display = 'block';
-            await new Promise(r => setTimeout(r, 500)); // Даем видеокарте телефона полсекунды на рендер
+        if (pagesHtml.length > 1) {
+            let worker = html2pdf().set(opt);
+            for (let i = 0; i < pagesHtml.length; i++) {
+                if (loaderText) loaderText.innerText = `Лист ${i + 1}/${pagesHtml.length}…`;
 
-            // Добавляем страницу в PDF (правильная цепочка промисов)
-            if (i === 0) {
-                worker = worker.from(pageDiv).toPdf();
-            } else {
-                worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
+                Array.from(hiddenDiv.children).forEach(c => { if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c); });
+
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'pdf-print-root';
+                pageDiv.innerHTML = pagesHtml[i];
+                hiddenDiv.appendChild(pageDiv);
+
+                await resolveLocalPhotosForPdf(pageDiv);
+                //await waitForAllImages(pageDiv);   // ← ждём реальной готовности, без таймеров
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // ← лёгкая пауза для отрисовки
+                if (i === 0) {
+                    worker = worker.from(pageDiv).toPdf();
+                } else {
+                    worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
+                }
+                await worker;
             }
-            
-            // ОБЯЗАТЕЛЬНО дожидаемся завершения рендера текущей страницы перед переходом к следующей
-            await worker;
+            await worker.save();
+        } else {
+            const rootDiv = document.createElement('div');
+            rootDiv.className = 'pdf-print-root';
+            rootDiv.innerHTML = header + content;
+            hiddenDiv.appendChild(rootDiv);
+
+            await resolveLocalPhotosForPdf(rootDiv);
+            //await waitForAllImages(rootDiv);
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            await html2pdf().set(opt).from(rootDiv).save();
         }
 
-        if (loaderText) loaderText.innerText = "Сохранение файла PDF...";
-        await worker.save();
-        
         cleanup();
-        if (typeof showToast === 'function') showToast("✅ PDF высокого качества сохранён!");
+        if (typeof showToast === 'function') showToast("✅ PDF сохранён!");
     } catch (err) {
         console.error('[PDF Error]', err);
         cleanup();
         if (typeof showToast === 'function') showToast("❌ Ошибка генерации. Попробуйте режим Печати.");
     }
 }
+/**
+ * Принудительно дожидается загрузки и декодирования всех изображений в контейнере.
+ */
+async function waitForAllImages(container) {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (!images.length) return;
 
+    const loadPromises = images.map(img => {
+        // Уже загружено – просто декодируем
+        if (img.complete && img.naturalWidth > 0) {
+            return img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+        }
+        // Ждём загрузки, затем декодируем
+        return new Promise(resolve => {
+            const done = () => {
+                if (img.decode) {
+                    img.decode().then(resolve).catch(resolve);
+                } else {
+                    resolve();
+                }
+            };
+            img.onload = done;
+            img.onerror = done;
+            // Защита от зависших картинок (очень редко)
+            const fallback = setTimeout(() => resolve(), 15000);
+            const cleanup = () => {
+                clearTimeout(fallback);
+                img.onload = null;
+                img.onerror = null;
+            };
+            img.addEventListener('load', cleanup, { once: true });
+            img.addEventListener('error', cleanup, { once: true });
+        });
+    });
+
+    await Promise.all(loadPromises);
+    // Два кадра анимации, чтобы браузер отрисовал всё до пикселя
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}
 
 // ------------------------------------------------------------------
 // Экранирование HTML (безопасность)
