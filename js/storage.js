@@ -329,12 +329,11 @@ async function updateStorageInfo() {
  * ГЛОБАЛЬНЫЙ МЕНЕДЖЕР ФОТОГРАФИЙ И ФАЙЛОВ (Умный кэш и Офлайн)
  */
 const PhotoManager = {
-    cache: {},
-    reverseCache: {}, // <--- НОВОЕ: Реверс-кэш для спасения PDF
-    activeUrls: new Set(),
+    cache: {}, // Быстрый кэш для моментальной отрисовки (RAM)
+    activeUrls: new Set(), // Список созданных Blob URL для очистки памяти
 
     async init() {
-        console.log(`[PhotoManager] Инициализация (режим On-Demand)`);
+        console.log(`[PhotoManager] Инициализация`);
     },
 
     async saveLocal(base64Data, prefix = 'img') {
@@ -346,16 +345,15 @@ const PhotoManager = {
         const blob = arrayBufferToBlob(buffer, mimeType);
         const url = URL.createObjectURL(blob);
         this.cache[id] = url;
-        this.reverseCache[url] = id; // Запоминаем связь
         this.activeUrls.add(url);
         return id;
     },
 
     getSrc(url) {
         if (!url) return '';
-        if (url.startsWith('local://') || url.startsWith('cloud://')) return url;
-        if (this.cache[url]) return this.cache[url];
-        return url;
+        if (url.startsWith('local://') || url.startsWith('cloud://')) return url; 
+        if (this.cache[url]) return this.cache[url]; 
+        return url; 
     },
 
     async getAsyncUrl(localIdOrHttp) {
@@ -368,7 +366,6 @@ const PhotoManager = {
                 const blob = arrayBufferToBlob(record.data, record.mimeType);
                 const url = URL.createObjectURL(blob);
                 this.cache[localIdOrHttp] = url;
-                this.reverseCache[url] = localIdOrHttp; // Запоминаем связь
                 this.activeUrls.add(url);
                 return url;
             }
@@ -381,12 +378,11 @@ const PhotoManager = {
                     await dbPut(STORES.PHOTOS, { id: localIdOrHttp, data: buffer, mimeType: blob.type });
                     const localUrl = URL.createObjectURL(blob);
                     this.cache[localIdOrHttp] = localUrl;
-                    this.reverseCache[localUrl] = localIdOrHttp; // Запоминаем связь
                     this.activeUrls.add(localUrl);
                     return localUrl;
                 }
             }
-        } catch(e) { console.error("[PhotoManager] Ошибка", e); }
+        } catch(e) { console.error("Ошибка загрузки фото", e); }
         return localIdOrHttp;
     },
 
@@ -411,7 +407,6 @@ const PhotoManager = {
         this.activeUrls.forEach(url => URL.revokeObjectURL(url));
         this.activeUrls.clear();
         this.cache = {};
-        this.reverseCache = {}; // Очищаем связи
     },
 
     async linkCloudToLocal(oldLocalUrl, newCloudUrl) {
@@ -420,7 +415,6 @@ const PhotoManager = {
             await dbPut(STORES.PHOTOS, { id: newCloudUrl, data: record.data, mimeType: record.mimeType });
             await dbDelete(STORES.PHOTOS, oldLocalUrl);
             this.cache[newCloudUrl] = this.cache[oldLocalUrl];
-            this.reverseCache[this.cache[oldLocalUrl]] = newCloudUrl;
             delete this.cache[oldLocalUrl];
         }
     },
@@ -435,7 +429,6 @@ const PhotoManager = {
             await dbPut(STORES.PHOTOS, { id: url, data: buffer, mimeType: blob.type });
             const localUrl = URL.createObjectURL(blob);
             this.cache[url] = localUrl;
-            this.reverseCache[localUrl] = url;
             this.activeUrls.add(localUrl);
         } catch(e) {}
     }

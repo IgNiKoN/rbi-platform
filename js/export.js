@@ -2836,60 +2836,81 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
-// Интеллектуальный загрузчик фото для PDF (прямое чтение из базы)
+// Интеллектуальный загрузчик фото для PDF
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
     const promises = [];
 
     for (let img of images) {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src || src.startsWith('data:')) continue;
-
-        // 1. Находим, как файл записан в базе данных (по реверс-кэшу)
-        if (src.startsWith('blob:') && typeof PhotoManager !== 'undefined' && PhotoManager.reverseCache && PhotoManager.reverseCache[src]) {
-            src = PhotoManager.reverseCache[src];
-        }
+        if (!src || src.startsWith('data:')) continue; // Пропускаем, если уже Base64
 
         promises.push((async () => {
             try {
                 let base64 = null;
                 
-                // 2. Идеальный сценарий: извлекаем напрямую из БД телефона (МОМЕНТАЛЬНО)
-                if ((src.startsWith('local://') || src.startsWith('cloud://') || src.startsWith('http')) && typeof PhotoManager !== 'undefined') {
+                // Пробуем достать Base64 напрямую из базы
+                if ((src.startsWith('local://') || src.startsWith('cloud://')) && typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
                     base64 = await PhotoManager.getBase64(src);
-                }
-
-                // 3. Запасной план: если это всё еще неизвестный blob (из памяти)
-                if (!base64 && src.startsWith('blob:')) {
+                } 
+                // Пробуем скачать Blob из ОЗУ или интернета
+                else if (src.startsWith('blob:') || src.startsWith('http')) {
                     const response = await fetch(src);
                     const blob = await response.blob();
-                    base64 = await new Promise(r => {
+                    base64 = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
-                        reader.onloadend = () => r(reader.result);
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
                         reader.readAsDataURL(blob);
                     });
                 }
 
-                // Вставляем чистый код картинки
+                // Вставляем чистый код, только если получилось
                 if (base64 && base64.startsWith('data:')) {
                     img.src = base64;
                     img.removeAttribute('data-local-src');
-                } else {
-                    throw new Error("Не удалось получить base64");
                 }
             } catch(e) {
-                console.warn('[PDF] Фото пропущено:', src, e);
-                // Заглушка, чтобы программа не зависла навсегда
-                img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="%23f1f5f9"/></svg>';
+                console.warn('[PDF] Не удалось конвертировать фото. Оставляем оригинал.', src);
             }
         })());
     }
-
-    // Защита от бесконечного ожидания (максимум 15 секунд)
+    
+    // Ждем максимум 10 секунд на обработку всех фото
     await Promise.race([
         Promise.all(promises),
-        new Promise(resolve => setTimeout(resolve, 15000))
+        new Promise(resolve => setTimeout(resolve, 10000))
     ]);
+}
+
+// Ждет, пока браузер физически отрисует все картинки
+async function waitForPdfImages(container, maxMs = 5000) {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (images.length === 0) return;
+
+    const promises = images.map(img => {
+        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+        return new Promise((resolve) => {
+            // КРИТИЧНО ДЛЯ IOS: Принудительная раскодировка скрытых картинок
+            if (img.decode) {
+                img.decode().then(resolve).catch(() => {
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                });
+            } else {
+                img.onload = resolve;
+                img.onerror = resolve;
+            }
+        });
+    });
+
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(resolve => setTimeout(resolve, maxMs))
+    ]);
+    
+    // Даем процессору 300 мс на финальный рендер
+    await new Promise(r => setTimeout(r, 300));
 }
 
 // Ждет, пока браузер физически отрисует все картинки
