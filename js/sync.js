@@ -1539,7 +1539,7 @@ async function downloadAllActPhotosForOffline(act) {
     if (!window._lastBgDownloadTime || (now - window._lastBgDownloadTime) > 300000) {
         window._lastBgDownloadTime = now;
         setTimeout(() => {
-            window.downloadMissingCloudFiles();
+            window.downloadMissingCloudFiles(mode === 'manual' ? false : true);
         }, 5000);
     }
 }

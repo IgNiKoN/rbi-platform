@@ -394,11 +394,24 @@ const PhotoManager = {
                 return await arrayBufferToBase64(record.data, record.mimeType || 'image/webp');
             }
             if (localId.startsWith('http')) {
-                const res = await fetch(localId);
-                if (!res.ok) return null;
-                const blob = await res.blob();
-                return await blobToBase64(blob);
-            }
+    // Проверим, нет ли уже в IndexedDB
+    const cached = await dbGet(STORES.PHOTOS, localId);
+    if (cached && cached.data) {
+        return await arrayBufferToBase64(cached.data, cached.mimeType || 'image/jpeg');
+    }
+    // Если нет – загружаем и сохраняем
+    const res = await fetch(localId);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const buffer = await blobToArrayBuffer(blob);
+    // Кладём в IndexedDB, чтобы в следующий раз не качать
+    await dbPut(STORES.PHOTOS, {
+        id: localId,
+        data: buffer,
+        mimeType: blob.type || 'image/jpeg'
+    });
+    return await arrayBufferToBase64(buffer, blob.type || 'image/jpeg');
+}
         } catch(e) {}
         return null;
     },
@@ -515,21 +528,36 @@ window.downloadMissingCloudFiles = async function(silent = false) {
         });
     }
 
-    let downloadedCount = 0;
+        let downloadedCount = 0;
+    let alreadyCachedCount = 0;
     const total = urlsToDownload.size;
 
     for (const url of urlsToDownload) {
         // Уже в RAM‑кэше
-        if (PhotoManager.cache[url]) continue;
+        if (PhotoManager.cache[url]) {
+            alreadyCachedCount++;
+            continue;
+        }
 
         // Проверяем IndexedDB
         try {
             const alreadyInDb = await dbGet(STORES.PHOTOS, url);
-            if (alreadyInDb) continue;
-        } catch (e) { continue; }
+            if (alreadyInDb) {
+                alreadyCachedCount++;
+                continue;
+            }
+        } catch (e) {
+            // ошибка чтения базы — не считаем ни кэшем, ни загрузкой
+            continue;
+        }
+
+        // Для cloud:// без локального файла — просто пропускаем (не ошибка)
+        if (url.startsWith('cloud://')) {
+            continue;
+        }
 
         if (!silent && loaderText) {
-            loaderText.innerText = `Кэширование: ${downloadedCount + 1} из ${total}...`;
+            loaderText.innerText = `Кэширование: ${downloadedCount + 1} из ${total - alreadyCachedCount}…`;
         }
 
         try {
@@ -537,9 +565,11 @@ window.downloadMissingCloudFiles = async function(silent = false) {
             downloadedCount++;
         } catch (e) {
             console.warn('[Cache] Ошибка загрузки:', url.substring(0, 80), e.message);
+            // продолжаем, это не прерывает общий процесс
         }
     }
 
+    // Итоговое сообщение – только при ручном запуске
     if (!silent) {
         if (loader) {
             loader.classList.add('opacity-0');
@@ -547,11 +577,11 @@ window.downloadMissingCloudFiles = async function(silent = false) {
         }
         if (typeof showToast === 'function') {
             if (downloadedCount > 0) {
-                showToast(`📥 Офлайн-кэш обновлён! Скачано: ${downloadedCount}`);
-            } else if (total > 0) {
-                showToast(`⚠️ Не удалось загрузить файлы. Проверьте интернет.`);
+                showToast(`📥 Скачано: ${downloadedCount}`);
+            } else if (alreadyCachedCount === total) {
+                showToast(`✅ Все файлы уже сохранены на устройстве.`);
             } else {
-                showToast(`✅ Все файлы уже в памяти устройства.`);
+                showToast(`⚠️ Проверьте интернет.`);
             }
         }
     }
