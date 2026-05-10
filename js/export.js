@@ -2861,22 +2861,26 @@ async function resolveLocalPhotosForPdf(container) {
                     const tempImg = new Image();
                     tempImg.crossOrigin = "Anonymous";
                     tempImg.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = tempImg.width;
-                        canvas.height = tempImg.height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.fillStyle = '#FFFFFF'; 
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(tempImg, 0, 0);
-                        
-                        const jpegBase64 = canvas.toDataURL('image/jpeg', 0.95);
-                        
-                        // ВАЖНО ДЛЯ IPHONE: Ждем, пока <img> в HTML полностью "переварит" новый код
-                        img.onload = resolve;
-                        img.onerror = resolve;
-                        img.src = jpegBase64;
-                        img.removeAttribute('data-local-src');
-                    };
+    const canvas = document.createElement('canvas');
+    canvas.width = tempImg.width;
+    canvas.height = tempImg.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF'; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(tempImg, 0, 0);
+    const jpegBase64 = canvas.toDataURL('image/jpeg', 0.95);
+    
+    // Ждём загрузки + декодирования
+    img.onload = async () => {
+        if (img.decode) {
+            try { await img.decode(); } catch(e) {}
+        }
+        resolve();
+    };
+    img.onerror = resolve;
+    img.src = jpegBase64;
+    img.removeAttribute('data-local-src');
+};
                     tempImg.onerror = resolve;
                     tempImg.src = base64;
                 } else {
