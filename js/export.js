@@ -1715,7 +1715,11 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
         const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
 
-        if (pagesHtml.length > 1) {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) 
+                     || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+
+if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
             let worker = html2pdf().set(opt);
             for (let i = 0; i < pagesHtml.length; i++) {
                 if (loaderText) loaderText.innerText = `Лист ${i + 1}/${pagesHtml.length}…`;
@@ -2826,77 +2830,32 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 // Бронебойный конвертер: превращает всё в чистый JPEG Base64
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
-    const promises = [];
-
-    for (let img of images) {
+    for (const img of images) {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
         if (!src) continue;
 
-        promises.push(new Promise(async (resolve) => {
-            try {
-                let base64 = null;
-
-                if ((src.startsWith('local://') || src.startsWith('cloud://')) && typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
-                    base64 = await PhotoManager.getBase64(src);
-                } else if (src.startsWith('blob:') || src.startsWith('http')) {
-                    let realSrc = src;
-                    if (typeof PhotoManager !== 'undefined' && PhotoManager.reverseCache && PhotoManager.reverseCache[src]) {
-                        realSrc = PhotoManager.reverseCache[src];
-                        base64 = await PhotoManager.getBase64(realSrc);
-                    }
-                    if (!base64) {
-                        const res = await fetch(src);
-                        const blob = await res.blob();
-                        base64 = await new Promise(r => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => r(reader.result);
-                            reader.readAsDataURL(blob);
-                        });
-                    }
-                } else if (src.startsWith('data:')) {
-                    base64 = src;
-                }
-
-                if (base64) {
-                    const tempImg = new Image();
-                    tempImg.crossOrigin = "Anonymous";
-                    tempImg.onload = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = tempImg.width;
-    canvas.height = tempImg.height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF'; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(tempImg, 0, 0);
-    const jpegBase64 = canvas.toDataURL('image/jpeg', 0.95);
-    
-    // Ждём загрузки + декодирования
-    img.onload = async () => {
-        if (img.decode) {
-            try { await img.decode(); } catch(e) {}
+        // 1. Достаём оригинальное фото из IndexedDB (как есть, без перекодировок)
+        let finalSrc = src;
+        if (src.startsWith('local://') || src.startsWith('cloud://')) {
+            const base64 = await PhotoManager.getBase64(src);
+            if (base64) finalSrc = base64;
+            else continue;
         }
-        resolve();
-    };
-    img.onerror = resolve;
-    img.src = jpegBase64;
-    img.removeAttribute('data-local-src');
-};
-                    tempImg.onerror = resolve;
-                    tempImg.src = base64;
-                } else {
-                    resolve();
-                }
-            } catch(e) {
-                console.warn('[PDF] Фото пропущено:', src);
+
+        // 2. Вставляем готовый src (data: URL)
+        img.src = finalSrc;
+        img.removeAttribute('data-local-src');
+
+        // 3. Ждём реальную загрузку + декодирование
+        await new Promise((resolve) => {
+            if (img.complete && img.naturalWidth > 0) return resolve();
+            img.onload = async () => {
+                if (img.decode) await img.decode().catch(() => {});
                 resolve();
-            }
-        }));
+            };
+            img.onerror = resolve;
+            setTimeout(resolve, 10000); // страховка от зависших
+        });
     }
-    
-    // Ждем перерисовки всех фото на странице (максимум 10 секунд на 1 лист)
-    await Promise.race([
-        Promise.all(promises),
-        new Promise(r => setTimeout(r, 10000))
-    ]);
 }
 
