@@ -2840,51 +2840,51 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 // Интеллектуальный загрузчик фото для PDF (С ожиданием отрисовки)
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
-    const promises = [];
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    for (let img of images) {
+    const processImage = async (img) => {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src || src.startsWith('data:')) continue; // Уже готово
+        if (!src || src.startsWith('data:')) return;
 
-        promises.push(new Promise(async (resolve) => {
-            try {
-                let base64 = null;
-                
-                // Пробуем достать Base64
-                if ((src.startsWith('local://') || src.startsWith('cloud://')) && typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
-                    base64 = await PhotoManager.getBase64(src);
-                } 
-                else if (src.startsWith('blob:') || src.startsWith('http')) {
-                    const response = await fetch(src);
-                    const blob = await response.blob();
-                    base64 = await new Promise((res) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => res(reader.result);
-                        reader.readAsDataURL(blob);
-                    });
-                }
+        try {
+            let base64 = null;
 
-                // КРИТИЧНО ДЛЯ IPHONE: Ждем физической загрузки Base64 в тег <img>
-                if (base64 && base64.startsWith('data:')) {
-                    img.onload = resolve;
-                    img.onerror = resolve;
-                    img.src = base64;
-                    img.removeAttribute('data-local-src');
-                } else {
-                    resolve(); // Если не вышло, идем дальше
-                }
-            } catch(e) {
-                console.warn('[PDF] Не удалось конвертировать фото:', src);
-                resolve(); // Пропускаем сбойное фото
+            if ((src.startsWith('local://') || src.startsWith('cloud://')) &&
+                typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
+                base64 = await PhotoManager.getBase64(src);
+            } else if (src.startsWith('blob:') || src.startsWith('http')) {
+                const response = await fetch(src);
+                const blob = await response.blob();
+                base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
             }
-        }));
+
+            if (base64 && base64.startsWith('data:')) {
+                img.src = base64;
+                img.removeAttribute('data-local-src');
+            }
+        } catch(e) {
+            console.warn('[PDF] Фото не конвертировано:', src);
+        }
+    };
+
+    if (isMobile) {
+        // iOS: строго по одному — IndexedDB не любит параллельные запросы
+        for (const img of images) {
+            await processImage(img);
+        }
+    } else {
+        // ПК: параллельно, быстро
+        await Promise.race([
+            Promise.all(images.map(img => processImage(img))),
+            new Promise(resolve => setTimeout(resolve, 10000))
+        ]);
     }
-    
-    // Страховка от бесконечного зависания (максимум 15 секунд)
-    await Promise.race([
-        Promise.all(promises),
-        new Promise(r => setTimeout(r, 15000))
-    ]);
 }
 
 // Финальная проверка перед созданием PDF
