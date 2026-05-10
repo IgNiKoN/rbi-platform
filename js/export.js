@@ -2836,50 +2836,31 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
-// Бронебойный конвертер: превращает ЛЮБЫЕ ссылки в Base64 перед печатью
+// Интеллектуальный загрузчик фото для PDF (прямое чтение из базы)
 async function resolveLocalPhotosForPdf(container) {
-    const images = container.querySelectorAll('img');
+    const images = Array.from(container.querySelectorAll('img'));
     const promises = [];
 
     for (let img of images) {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src) continue;
+        if (!src || src.startsWith('data:')) continue;
+
+        // 1. Находим, как файл записан в базе данных (по реверс-кэшу)
+        if (src.startsWith('blob:') && typeof PhotoManager !== 'undefined' && PhotoManager.reverseCache && PhotoManager.reverseCache[src]) {
+            src = PhotoManager.reverseCache[src];
+        }
 
         promises.push((async () => {
             try {
                 let base64 = null;
                 
-                if (src.startsWith('data:')) {
-                    // Уже в нужном формате, пропускаем
-                    return; 
-                } else if (src.startsWith('blob:')) {
-                    // Если это оперативная память - скачиваем и конвертируем
-                    const response = await fetch(src);
-                    const blob = await response.blob();
-                    base64 = await new Promise(r => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => r(reader.result);
-                        reader.readAsDataURL(blob);
-                    });
-                } else if (src.startsWith('local://') || src.startsWith('cloud://')) {
-                    // Достаем из базы телефона
-                    if (typeof PhotoManager.getBase64 === 'function') {
-                        base64 = await PhotoManager.getBase64(src);
-                    } else {
-                        // Резервный вариант, если забыли обновить storage.js
-                        const blobUrl = await PhotoManager.getAsyncUrl(src);
-                        if (blobUrl) {
-                            const response = await fetch(blobUrl);
-                            const blob = await response.blob();
-                            base64 = await new Promise(r => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => r(reader.result);
-                                reader.readAsDataURL(blob);
-                            });
-                        }
-                    }
-                } else if (src.startsWith('http')) {
-                    // Если картинка из интернета - качаем и конвертируем
+                // 2. Идеальный сценарий: извлекаем напрямую из БД телефона (МОМЕНТАЛЬНО)
+                if ((src.startsWith('local://') || src.startsWith('cloud://') || src.startsWith('http')) && typeof PhotoManager !== 'undefined') {
+                    base64 = await PhotoManager.getBase64(src);
+                }
+
+                // 3. Запасной план: если это всё еще неизвестный blob (из памяти)
+                if (!base64 && src.startsWith('blob:')) {
                     const response = await fetch(src);
                     const blob = await response.blob();
                     base64 = await new Promise(r => {
@@ -2889,17 +2870,48 @@ async function resolveLocalPhotosForPdf(container) {
                     });
                 }
 
-                // Вставляем чистый код картинки в HTML
+                // Вставляем чистый код картинки
                 if (base64 && base64.startsWith('data:')) {
                     img.src = base64;
                     img.removeAttribute('data-local-src');
+                } else {
+                    throw new Error("Не удалось получить base64");
                 }
             } catch(e) {
-                console.warn('[PDF] Фото не конвертировано:', src, e);
+                console.warn('[PDF] Фото пропущено:', src, e);
+                // Заглушка, чтобы программа не зависла навсегда
+                img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="%23f1f5f9"/></svg>';
             }
         })());
     }
-    await Promise.all(promises);
+
+    // Защита от бесконечного ожидания (максимум 15 секунд)
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(resolve => setTimeout(resolve, 15000))
+    ]);
+}
+
+// Ждет, пока браузер физически отрисует все картинки
+async function waitForPdfImages(container, maxMs = 4000) {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (images.length === 0) return;
+
+    const promises = images.map(img => {
+        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+        return new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+        });
+    });
+
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(resolve => setTimeout(resolve, maxMs))
+    ]);
+    
+    // Даем процессору 300 мс на рендер
+    await new Promise(r => setTimeout(r, 300));
 }
 
 // Ждет, пока браузер физически отрисует все картинки
