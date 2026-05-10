@@ -79,7 +79,9 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
 
         // ДОСТАЕМ РЕАЛЬНУЮ КАРТИНКУ ИЗ БАЗЫ
         const rawSrc = p.src || p.photo;
-        const imgSrc = await PhotoManager.getBase64(rawSrc) || window.getPhotoSrc(rawSrc);
+        const base64Direct = await PhotoManager.getBase64(rawSrc);
+        const imgSrc = base64Direct || '';
+        const imgDataSrc = base64Direct ? '' : (rawSrc || '');
         let contrHtml = '';
         if (p.contr) contrHtml = `<div style="font-size: ${fontSizeContr}; color: #64748b; font-weight: bold; margin-top: 2px; white-space: nowrap; overflow: hidden;">👤 ${p.contr} ${p.count ? `(${p.count} шт)` : ''}</div>`;
 
@@ -87,7 +89,7 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
         <td style="width: ${colWidth}; ${paddingStyle}">
             <div style="border: 1px solid ${borderColor}; border-radius: 8px; background: white; overflow: hidden; height: ${cellHeight}; box-sizing: border-box; display: block;">
                 <div style="width: 100%; height: ${imgHeight}; background: #f1f5f9; text-align: center; border-bottom: 2px solid ${titleColor}; overflow: hidden;">
-                    <img src="${imgSrc}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                    <img src="${imgSrc}" ${imgDataSrc ? `data-local-src="${imgDataSrc}"` : ''} style="width: 100%; height: 100%; object-fit: cover; display: block;">
                 </div>
                 <div style="padding: 6px; font-size: ${fontSizeName}; font-weight: bold; color: #0f172a; line-height: 1.2; height: calc(${cellHeight} - ${imgHeight}); overflow: hidden; box-sizing: border-box;">
                     <div style="overflow: hidden; max-height: calc(1.2em * 2);">${p.name || 'Дефект'}</div>
