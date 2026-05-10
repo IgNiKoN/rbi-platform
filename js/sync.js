@@ -431,10 +431,12 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
     
     if (isDeleted) {
         // Мягкое удаление: мы не удаляем файлы физически, чтобы не сломать чужие кэши
-        // Мы просто ставим флаг в базе
     } else {
-        const storagePrefix = isShared ? `hashed_assets` : `${pCode}/${objectType}/${id}`;
-        uploadedData = await window.uploadObjectFilesToCloud(data, targetBucket, storagePrefix, objectType);
+        // ИСКЛЮЧАЕМ огромные массивы (Стройконтроль) из рекурсивного сканера фото, чтобы не повесить браузер!
+        if (objectType !== 'sk_data_bundle') {
+            const storagePrefix = isShared ? `hashed_assets` : `${pCode}/${objectType}/${id}`;
+            uploadedData = await window.uploadObjectFilesToCloud(data, targetBucket, storagePrefix, objectType);
+        }
     }
 
     const payload = {
@@ -862,7 +864,6 @@ window.rbiUploadAsset = async function(value, bucketName, pathPrefix, filePrefix
                     if (typeof restoreSession === 'function') {
                         setTimeout(() => {
                             restoreSession();
-                            safeToast("📥 Черновик подтянут из облака");
                         }, 500);
                     }
                 }
@@ -1001,6 +1002,10 @@ async function downloadAllActPhotosForOffline(act) {
                     if (obj.contractorMap) { window.skContractorMap = obj.contractorMap; await dbPut('app_settings', { key: 'sk_contractor_map', data: window.skContractorMap }); }
                 }
                 window.skRecords = Array.from(localMap.values()).filter(r => !r._deleted);
+                // Мгновенное обновление экрана, если мы прямо сейчас находимся во вкладке ПК СК
+                if (document.getElementById('tab-analytics')?.classList.contains('active') && typeof currentActiveAnalyticsTab !== 'undefined' && currentActiveAnalyticsTab === 'sub-sk') {
+                    if (typeof sk_renderMainTab === 'function') sk_renderMainTab();
+                }
             }
 
             // Справочники (TWI, Узлы, Документы, Чек-листы)
@@ -1463,18 +1468,22 @@ async function downloadAllActPhotosForOffline(act) {
                     if (typeof dbGetAll === 'function') {
                         const skRecs = await dbGetAll('sk_records') || [];
                         const newSkRecs = filterNew(skRecs);
+                        // Загружаем в облако, если есть новые записи, либо при ручной синхронизации
                         if (mode === 'manual' || newSkRecs.length > 0) {
                             const skVols = await dbGet('app_settings', 'sk_volumes');
                             const skCmap = await dbGet('app_settings', 'sk_contractor_map');
                             if (skRecs.length > 0 || (skVols && skVols.data)) {
                                 const skBundle = {
-                                    id: 'main_bundle',
+                                    id: 'sk_bundle_' + pCode, 
                                     records: skRecs,
                                     volumes: skVols ? skVols.data : {},
                                     contractorMap: skCmap ? skCmap.data : {},
                                     updatedAt: new Date().toISOString()
                                 };
+                                
+               
                                 await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                                
                             }
                         }
                     }

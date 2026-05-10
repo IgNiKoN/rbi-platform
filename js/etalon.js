@@ -232,16 +232,24 @@ window.saveEtalonAct = async function(printAfter = false) {
     }
 
     if (typeof gameLogAction === 'function') gameLogAction('etalon_accepted', etalonRecord.id);
-    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ ЭТАЛОНА
-    if (window.activeTaskId) {
-        const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
-        if (task) {
-            task.status = 'done';
-            task.resultComment = 'Эталон зафиксирован';
-            task.updatedAt = new Date().toISOString(); // <-- НОВОЕ
-            dbPut(STORES.TASKS, task);
+    // АВТОЗАКРЫТИЕ ЗАДАЧИ ЭТАЛОНА
+    if (typeof window.rbi_tasksData !== 'undefined') {
+        const etalTasks = window.rbi_tasksData.filter(t => 
+            (t.taskType === 'Эталон' || t.title.includes('Эталон')) && 
+            t.contractor === etalonRecord.contractorName && 
+            (t.templateKey === etalonRecord.templateKey || t.templateTitle === etalonRecord.templateTitle || t.workTitle === etalonRecord.templateTitle) &&
+            t.status === 'pending'
+        );
+        for (let t of etalTasks) {
+            t.status = 'done';
+            t.done = 1;
+            t.resultComment = 'Акт-Эталон сохранен';
+            t.updatedAt = new Date().toISOString();
+            if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
         }
-        window.activeTaskId = null;
+        if (etalTasks.length > 0 && typeof rbi_renderTasksList === 'function') {
+            rbi_renderTasksList();
+        }
     }
              showToast("✅ Акт-Эталон успешно сохранен!");
     localStorage.setItem('rbi_cloud_dirty', '1');

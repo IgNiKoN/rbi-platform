@@ -27,6 +27,9 @@ function updateSkRecordTimestamps(record) {
 }
 // === 1. ЗАГРУЗКА БАЗЫ ДАННЫХ ===
 window.sk_loadData = async function() {
+    // ВСТАВИТЬ ЭТУ СТРОЧКУ ДЛЯ ЗАЩИТЫ ДЕМО-РЕЖИМА:
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return; 
+
     try {
         const records = await dbGetAll(STORES.SK_RECORDS);
          if (records) window.skRecords = records.filter(r => !r._deleted);
@@ -621,6 +624,19 @@ window.sk_finalizeImport = async function() {
 
     // Геймификация: Начисляем очки за своевременную сверку!
     if (typeof gameLogAction === 'function') gameLogAction('sk_import_done', importLog.id);
+    // Закрываем задачу на загрузку ПК СК
+    if (typeof window.rbi_tasksData !== 'undefined') {
+        const skTask = window.rbi_tasksData.find(t => 
+            t.title === 'Загрузить выгрузку ПК СК' && t.status === 'pending'
+        );
+        if (skTask) {
+            skTask.status = 'done';
+            skTask.done = 1;
+            skTask.resultComment = 'Файл загружен';
+            skTask.updatedAt = new Date().toISOString();
+            if (typeof dbPut === 'function') dbPut(STORES.TASKS, skTask);
+        }
+    }
 
          showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
     
@@ -822,10 +838,27 @@ window.sk_renderDashboard = function() {
             if (cleanCat.trim() === '') cleanCat = 'Без категории';
 
             const matrixKey = `${c}_||_${cleanCat}`;
-            if (!matrixMap[matrixKey]) matrixMap[matrixKey] = { contractor: c, category: cleanCat, total: 0, open: 0 };
+            if (!matrixMap[matrixKey]) matrixMap[matrixKey] = { contractor: c, category: cleanCat, total: 0, open: 0, overdue: 0, closingDays: [] };
             
             matrixMap[matrixKey].total++;
             if (isOpen) matrixMap[matrixKey].open++;
+            // Расчет просрочек и времени для матрицы
+            const issued = r.date_issued ? new Date(r.date_issued) : null;
+            const deadline = r.deadline ? new Date(r.deadline) : null;
+            const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+            const now = new Date();
+
+            if (deadline) {
+                if (isOpen && now > deadline) {
+                    matrixMap[matrixKey].overdue++;
+                } else if (!isOpen && resolved && resolved > deadline) {
+                    matrixMap[matrixKey].overdue++;
+                }
+            }
+            if (!isOpen && issued && resolved) {
+                const daysToClose = Math.ceil((resolved - issued) / (1000 * 60 * 60 * 24));
+                if (daysToClose >= 0) matrixMap[matrixKey].closingDays.push(daysToClose);
+            }
         });
 
         if (!contrMap[c]) contrMap[c] = { total: 0, open: 0, overdueCount: 0, closingTimes: [], defects: {}, overdueDaysArr: [], closedCount: 0, closedOnTimeCount: 0 };
@@ -888,8 +921,9 @@ window.sk_renderDashboard = function() {
             </tr>
         `;
 
-        // Проверяем, связан ли подрядчик с базой RBI
-        const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) || Object.values(window.skContractorMap).includes(contrName);
+        // Проверяем, связан ли подрядчик с базой RBI (строгая нормализация)
+        const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) || 
+            Object.values(window.skContractorMap).map(v => v.toLowerCase().trim()).includes(contrName.toLowerCase().trim());
 
         matrixByContr[contrName].sort((a,b) => b.total - a.total).forEach(mData => {
             let isdHtml = '<span class="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">Объем не задан</span>';
@@ -901,14 +935,16 @@ window.sk_renderDashboard = function() {
                     // Если подрядчик не связан с RBI, расчет не производим
                     isdHtml = '<span class="text-[9px] text-slate-400 font-bold uppercase border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded bg-white dark:bg-slate-800">Нет базы RBI</span>';
                     statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Не связан</span>';
-                } else if (window.skVolumes && window.skVolumes[mData.category]) {
-                    // Если связан и есть объемы - считаем!
-                    const vol = window.skVolumes[mData.category].amount;
+                } else if (window.skVolumes) {
+                    const volKey = Object.keys(window.skVolumes).find(k => k.toLowerCase().trim() === mData.category.toLowerCase().trim());
+                    if (volKey) {
+                        // Если связан и есть объемы - считаем!
+                        const vol = window.skVolumes[volKey].amount;
                     const rbiRate = getRbiDefectRate(mData.contractor, mData.category); 
                     
                     let expected = Math.round(vol * rbiRate); 
                     if (expected < 1) expected = 1;
-                    
+                    }
                     expectedHtml = `<span class="text-slate-700 dark:text-slate-300 font-black">${expected}</span>`;
 
                     let isd = Math.round((mData.total / expected) * 100);
@@ -934,13 +970,22 @@ window.sk_renderDashboard = function() {
                 }
             }
 
+            // Вычисляем среднее время
+            const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a,b)=>a+b,0) / mData.closingDays.length) : 0;
+            const overColor = mData.overdue > 0 ? 'text-red-600' : 'text-slate-500';
+            const avgColor = avgClose > 14 ? 'text-orange-500' : 'text-slate-500';
+
             matrixRows += `
                 <tr class="border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
                     <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[120px]" title="${mData.category}">↳ ${mData.category}</td>
                     <td class="p-2.5 text-center text-[10px]"><span class="font-black text-indigo-600">${mData.total}</span> / ${expectedHtml}</td>
                     <td class="p-2.5 text-center align-middle">${isdHtml}</td>
                     <td class="p-2.5 text-center align-middle">${statusBadge}</td>
-                    <td class="p-2.5 text-center text-[10px] font-bold align-middle"><span class="text-red-600">${mData.open}</span> / ${mData.total}</td>
+                    <td class="p-2.5 text-center text-[10px] font-bold align-middle whitespace-nowrap">
+                        <span class="text-slate-500" title="Открыто">О: ${mData.open}</span> | 
+                        <span class="${overColor}" title="Просрочено">П: ${mData.overdue}</span> | 
+                        <span class="${avgColor}" title="Ср. дней на закрытие">С: ${avgClose}</span>
+                    </td>
                 </tr>
             `;
         });
@@ -1046,8 +1091,37 @@ window.sk_renderDashboard = function() {
             window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
         }
     }
-
+    // === АВТОЗАКРЫТИЕ ЗАДАЧИ "Анализ проблем ПК СК" (Если сигналов больше нет) ===
+    if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
+        if (typeof window.rbi_tasksData !== 'undefined') {
+            const staleTask = window.rbi_tasksData.find(t => 
+                t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
+            );
+            if (staleTask) {
+                staleTask.status = 'done';
+                staleTask.done = 1;
+                staleTask.resultComment = 'Показатели в норме';
+                staleTask.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, staleTask);
+            }
+        }
+    }
     // === КОНСОЛИДАЦИЯ ЗАДАЧ (СОЗДАНИЕ ОДНОЙ ЕДИНОЙ) ===
+    // Если сигналов нет — закрываем задачу если она висит
+    if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
+        if (typeof window.rbi_tasksData !== 'undefined') {
+            const staleTask = window.rbi_tasksData.find(t => 
+                t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
+            );
+            if (staleTask) {
+                staleTask.status = 'done';
+                staleTask.done = 1;
+                staleTask.resultComment = 'Показатели в норме';
+                staleTask.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, staleTask);
+            }
+        }
+    }
     if ((skIssues.isd.length > 0 || skIssues.open.length > 0 || skIssues.cmi.length > 0) && typeof window.rbi_tasksData !== 'undefined') {
         const taskTitle = 'Анализ проблем ПК СК';
         const exists = window.rbi_tasksData.find(x => x.title === taskTitle && x.status === 'pending');
@@ -1113,7 +1187,7 @@ window.sk_renderDashboard = function() {
                             <th class="p-2.5 text-center" title="Сколько выдали СК / Сколько ожидаем по статистике">Факт / Ожидание</th>
                             <th class="p-2.5 text-center">ИСД</th>
                             <th class="p-2.5 text-center">Вывод</th>
-                            <th class="p-2.5 text-center" title="Сколько сейчас открыто">Открыто / Выдано</th>
+                            <th class="p-2.5 text-center" title="О: Открыто | П: Просрочено | С: Ср.дней закрытия">Статус исполнения</th>
                         </tr>
                     </thead>
                     <tbody>${matrixRows}</tbody>
@@ -1161,22 +1235,50 @@ window.sk_renderDashboard = function() {
     setTimeout(() => {
         const ctxTrend = document.getElementById('sk-trend-chart');
         if (ctxTrend) {
-            const trendMap = {};
+            // 1. Собираем уникальные месяцы из date_issued
+            const monthsSet = new Set();
             activeRecords.forEach(r => {
                 if (r.date_issued) {
                     const d = new Date(r.date_issued);
-                    const monthKey = d.toLocaleString('ru-RU', { month: 'short', year: '2-digit' });
-                    if (!trendMap[monthKey]) trendMap[monthKey] = { total: 0, open: 0 };
-                    trendMap[monthKey].total++;
-                    if (r.status && r.status.toLowerCase().includes('не устран')) trendMap[monthKey].open++;
+                    const monthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                    monthsSet.add(monthKey);
                 }
             });
+            const sortedMonths = Array.from(monthsSet).sort();
 
-            const labels = []; const dataPoints = [];
-            Object.keys(trendMap).forEach(k => {
-                labels.push(k);
-                const perc = Math.round((trendMap[k].open / trendMap[k].total) * 100);
-                dataPoints.push(perc);
+            const labels = [];
+            const dataOpen = []; // Сколько висело открытых на конец месяца
+            const dataNew = [];  // Сколько было выдано за месяц
+
+            sortedMonths.forEach(mKey => {
+                // Конец месяца
+                const [year, month] = mKey.split('-');
+                const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+                const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0);
+                
+                // Красивый лейбл: "Янв '24"
+                labels.push(endOfMonth.toLocaleString('ru-RU', { month: 'short', year: '2-digit' }));
+
+                let openCount = 0;
+                let newCount = 0;
+
+                activeRecords.forEach(r => {
+                    if (!r.date_issued) return;
+                    const issued = new Date(r.date_issued);
+                    const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+
+                    // Новые за этот месяц
+                    if (issued >= startOfMonth && issued <= endOfMonth) newCount++;
+
+                    // Открытые на конец этого месяца
+                    // (Выданы до конца месяца И (Ещё не закрыты ИЛИ закрыты после конца месяца))
+                    if (issued <= endOfMonth && (!resolved || resolved > endOfMonth)) {
+                        openCount++;
+                    }
+                });
+
+                dataOpen.push(openCount);
+                dataNew.push(newCount);
             });
 
             if (window.skTrendChartInstance) window.skTrendChartInstance.destroy();
@@ -1184,14 +1286,28 @@ window.sk_renderDashboard = function() {
                 type: 'line',
                 data: { 
                     labels: labels, 
-                    datasets: [{ 
-                        label: '% Открытых',
-                        data: dataPoints, 
-                        borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-                        borderWidth: 2, pointRadius: 4, fill: true, tension: 0.3 
-                    }] 
+                    datasets: [
+                        { 
+                            label: 'Открыто на конец мес.',
+                            data: dataOpen, 
+                            borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                            borderWidth: 2, pointRadius: 4, fill: true, tension: 0.3 
+                        },
+                        { 
+                            label: 'Выдано новых',
+                            data: dataNew, 
+                            borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0)', 
+                            borderWidth: 2, borderDash: [5, 5], pointRadius: 3, fill: false, tension: 0.3 
+                        }
+                    ] 
                 },
-                options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
+                options: { 
+                    animation: false, 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: {size: 9} } } }, 
+                    scales: { y: { beginAtZero: true } } 
+                }
             });
         }
     }, 100);
@@ -1266,6 +1382,18 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
             </button>
         `;
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'sk_contractor_analysis');
+        // === АВТОЗАКРЫТИЕ ЗАДАЧИ ПРИ ФОРМИРОВАНИИ ПИСЬМА ===
+        if (typeof window.rbi_tasksData !== 'undefined') {
+            const skTask = window.rbi_tasksData.find(t => t.title === 'Анализ проблем ПК СК' && t.status === 'pending');
+            if (skTask) {
+                skTask.status = 'done';
+                skTask.done = 1;
+                skTask.resultComment = 'Письмо отправлено';
+                skTask.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, skTask);
+                if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+            }
+        }
     } catch(e) {
         resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
     } finally {

@@ -1692,8 +1692,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     // ============================================================================
     // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Постраничный рендер)
     // ============================================================================
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isWeakDevice = (navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isWeakDevice = isMobile || (navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
 
     const hiddenDiv = document.createElement('div');
     // Держим блок в координатах экрана с opacity: 0.01, чтобы агрессивный сборщик мусора iOS Safari не удалил его из оперативной памяти
@@ -1715,6 +1715,20 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         window._pdfGenerating = false;
         if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
+        
+        // ЗАКРЫВАЕМ ЗАДАЧУ ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ВЫГРУЗКИ PDF
+        if (window.activeTaskId) {
+            const task = window.rbi_tasksData?.find(t => t.id === window.activeTaskId);
+            // Закрываем, если это задача отчета (Плакат или One-Pager)
+            if (task && task.taskType === 'Отчет' && task.status === 'pending') {
+                task.status = 'done';
+                task.resultComment = 'Файл сгенерирован';
+                task.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
+                if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+            }
+            window.activeTaskId = null; // Сбрасываем
+        }
     };
 
     const opt = {
@@ -1758,7 +1772,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
                 // Ждем загрузки картинок ИМЕННО ЭТОЙ страницы
                 await resolveLocalPhotosForPdf(pageDiv);
-                await waitForPdfImages(pageDiv, 5000);
+                await waitForPdfImages(pageDiv, isMobile ? 8000 : 5000);
 
                 // Рендерим страницу и добавляем в PDF (API html2pdf.js)
                 if (i === 0) {
@@ -1771,7 +1785,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 
                 // На слабых устройствах даем сборщику мусора (GC) 800мс на очистку памяти от тяжелого канваса
                 if (isWeakDevice) {
-                    await new Promise(resolve => setTimeout(resolve, 400)); 
+                    await new Promise(resolve => setTimeout(resolve, 700)); 
                 }
             }
             await worker.save();
@@ -1783,7 +1797,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             hiddenDiv.appendChild(rootDiv);
             
             await resolveLocalPhotosForPdf(rootDiv);
-            await waitForPdfImages(rootDiv, 5000);
+            await waitForPdfImages(rootDiv, isMobile ? 8000 : 5000);
             
             await html2pdf().set(opt).from(rootDiv).save();
         }

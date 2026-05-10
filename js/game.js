@@ -510,14 +510,11 @@ window.gameUpdatePlanProgress = function () {
         }
     });
 
-    // ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ ПОЛЬЗОВАТЕЛЮ
+    // ТИХОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (БЕЗ НАДОЕДЛИВЫХ УВЕДОМЛЕНИЙ)
     if (newlyClosedTasks.length > 0) {
         setTimeout(() => {
-            // Убираем дубли имен, если закрылось несколько задач по одному подрядчику
-            const uniqueNames = [...new Set(newlyClosedTasks)];
-            showToast(`✅ Автозакрытие по истории: ${uniqueNames.join(', ')}`);
-            rbi_renderTasksList(); // Перерисовываем список, чтобы задачи улетели вниз
-        }, 1000);
+            rbi_renderTasksList(); // Перерисовываем список, чтобы задачи улетели вниз в архив
+        }, 300);
     }
     // --- УМНОЕ АВТОЗАКРЫТИЕ (СВЕРКА С БАЗОЙ ДАННЫХ) ---
     weeklyPlanData.tasks.forEach(task => {
@@ -548,13 +545,17 @@ window.gameUpdatePlanProgress = function () {
         }
         // 3. Проверяем Эталоны
         if (task.taskType === 'Эталон' || task.title.includes('Эталон')) {
+            task.target = 1; // Жестко фиксируем цель: Эталон всегда 1!
+            
             // Ищем в массиве Эталонов совпадение по подрядчику и виду работ
             const hasEtalonRecord = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
                 e.contractorName === task.contractor && 
                 (e.templateTitle === task.templateTitle || e.templateTitle === task.workTitle)
             );
             
-            if (hasEtalonRecord) {
+            task.done = hasEtalonRecord ? 1 : 0; // Жестко фиксируем прогресс
+
+            if (hasEtalonRecord && task.status === 'pending') {
                 task.status = 'done'; 
                 task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)'; 
                 task.updatedAt = new Date().toISOString();
@@ -2728,13 +2729,17 @@ window.rbi_saveFmea = async function(periodName) {
             fmeaTask.status = 'done';
             fmeaTask.resultComment = 'Отчет сохранен в базу';
             fmeaTask.updatedAt = new Date().toISOString();
-            await dbPut('rbi_tasks', fmeaTask);
+            await dbPut(STORES.TASKS, fmeaTask);
         }
     }
 
     showToast("💾 FMEA Отчет сохранен! Задача выполнена.");
     rbi_renderFmeaRegistry();
     if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    // Тихо пересчитываем план, чтобы проверить, появились ли новые системные дефекты
+    if (typeof gameGenerateWeeklyPlan === 'function') {
+        gameGenerateWeeklyPlan(false);
+    }
 };
 
 // 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)

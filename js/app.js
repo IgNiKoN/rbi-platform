@@ -34,10 +34,14 @@ let startX, startY, translateX = 0, translateY = 0;
 // Демо-режим
 // Демо-режим и резервные хранилища реальных данных
 let isDemoMode = false;
+// "Сейфы" для реальных данных
 let realState = {}, realDetails = {}, realPhotos = {}, realContractorArray = [], realTemplateKey = '';
 let real_rbi_tasksData = [], real_weeklyPlanData = {}, real_gameActionLogs = [];
 let real_rbi_meetingsData = [], real_rbi_interventionsData = [], real_rbi_practicesData = [];
 let realTwiCards = [], realCustomDocs = [], realCustomNodes = [];
+// Новые сейфы
+let real_skRecords = [], real_skVolumes = {}, real_skContractorMap = {};
+let real_rbi_fmeaRecords = [], real_rbi_scheduleData = [];
 
 // Настройки приложения (v16.0)
 let appSettings = {
@@ -5140,6 +5144,24 @@ async function saveTwiCard() {
         
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
+        // АВТОЗАКРЫТИЕ ЗАДАЧИ "МАГИЯ TWI"
+        if (typeof window.rbi_tasksData !== 'undefined' && typeof window.getMagicTwiCandidates === 'function') {
+            const remaining = window.getMagicTwiCandidates().length;
+            const magicTask = window.rbi_tasksData.find(t => t.taskType === 'Магия TWI' && t.status === 'pending');
+            if (magicTask) {
+                magicTask.done = (magicTask.done || 0) + 1;
+                if (remaining === 0) {
+                    magicTask.status = 'done';
+                    magicTask.resultComment = 'Все карточки созданы';
+                } else {
+                    magicTask.target = magicTask.done + remaining;
+                    magicTask.resultComment = `В процессе (${magicTask.done}/${magicTask.target})`;
+                }
+                magicTask.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') await dbPut(STORES.TASKS, magicTask);
+                if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+            }
+        }
     } catch (e) { showToast("❌ Ошибка при сохранении"); }
 }
 
@@ -6129,16 +6151,13 @@ function initHorizontalMouseScroll() {
     });
 }
 
-// ============================================================================
-// === БЛОК: СОВЕРШЕННЫЙ ДЕМО-РЕЖИМ (150+ ПРОВЕРОК + БОГАТАЯ БАЗА) ===
-// ============================================================================
 
 // ============================================================================
 // === БЛОК: СОВЕРШЕННЫЙ ДЕМО-РЕЖИМ (ПОЛНОЕ ПОКРЫТИЕ ФУНКЦИОНАЛА) ===
 // ============================================================================
 
 window.startDemoMode = function(silent = false) {
-    // 1. БЕЗОПАСНОСТЬ: СОХРАНЯЕМ РЕАЛЬНЫЕ ДАННЫЕ В ПАМЯТИ
+    // 1. БЕЗОПАСНОСТЬ: ПРЯЧЕМ РЕАЛЬНЫЕ ДАННЫЕ
     realState = JSON.parse(JSON.stringify(state));
     realDetails = JSON.parse(JSON.stringify(details));
     realPhotos = JSON.parse(JSON.stringify(photos));
@@ -6156,6 +6175,12 @@ window.startDemoMode = function(silent = false) {
     realCustomDocs = JSON.parse(JSON.stringify(customDocs || []));
     realCustomNodes = JSON.parse(JSON.stringify(customNodes || []));
 
+    real_skRecords = JSON.parse(JSON.stringify(window.skRecords || []));
+    real_skVolumes = JSON.parse(JSON.stringify(window.skVolumes || {}));
+    real_skContractorMap = JSON.parse(JSON.stringify(window.skContractorMap || {}));
+    real_rbi_fmeaRecords = JSON.parse(JSON.stringify(window.rbi_fmeaRecords || []));
+    real_rbi_scheduleData = JSON.parse(JSON.stringify(window.rbi_scheduleData || []));
+
     isDemoMode = true;
     document.body.classList.add('demo-mode');
     
@@ -6163,91 +6188,119 @@ window.startDemoMode = function(silent = false) {
     if(fabExit && !silent) { fabExit.classList.remove('hidden'); fabExit.style.display = 'flex'; }
     
     const now = new Date();
-    const todayStr = now.toISOString();
-
-    // 2. ГЕНЕРАЦИЯ БАЗЫ ПРОВЕРОК (150+ штук)
-    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
-    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
-
     const randomDay = (min, max) => {
         let d = new Date(); d.setDate(now.getDate() - (Math.floor(Math.random() * (max - min + 1)) + min));
         return d.toISOString();
     };
 
-    const metric = (f, b1, b2, b3) => ({ final: f, baseUrkPerc: f, checkedCount: 6, totalCount: 6, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0 });
-
-    contractorArray = [];
-    // Идеальный подрядчик
-    for(let i=0; i<45; i++) {
-        let hasDefect = (i % 10 === 0); 
-        contractorArray.push({ id: 100+i, date: randomDay(1, 120), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', section: `Корпус 1`, floor: `Этаж ${Math.floor(i/4)+1}`, room: `Оси ${i}`, location: `Корпус 1, Этаж ${Math.floor(i/4)+1}`, stageName: "Монтаж", isCompleted: true, state: {'108':'ok', '109':hasDefect?'fail':'ok'}, details: hasDefect ? {'109': {causeCode: 'C01', comment: 'Смещение'}} : {}, photos: hasDefect ? {'109': demoPhotoBad} : {'108': demoPhotoGood}, metrics: metric(hasDefect?80:100, 0, hasDefect?1:0, 0) });
-    }
-    // Проблемный подрядчик
-    for(let i=0; i<35; i++) {
-        let day = Math.floor(Math.random() * 100) + 1; let hasDefect = day < 30; 
-        contractorArray.push({ id: 200+i, date: randomDay(1, 100), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Окна-Про"', templateKey: 'sys_okna_pvh', templateTitle: 'Окна ПВХ', location: `Корпус 2, Этаж ${Math.floor(i/3)+1}`, stageName: "Монтаж окон", isCompleted: true, state: {'1610':hasDefect?'fail':'ok', '1615':'ok'}, details: hasDefect ? {'1610': {causeCode: 'C04', comment: 'Завал рамы'}} : {}, photos: hasDefect ? {'1610': demoPhotoBad} : {}, metrics: metric(hasDefect?75:100, 0, hasDefect?1:0, 0) });
-    }
-    // Аварийный подрядчик (B3)
-    for(let i=0; i<30; i++) {
-        let day = Math.floor(Math.random() * 110) + 1; let hasB3 = (day < 60 && i % 4 === 0); 
-        contractorArray.push({ id: 300+i, date: randomDay(1, 110), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ИП Петров (Бетон)', templateKey: 'sys_monolit', templateTitle: 'Монолитные работы', location: `Корпус 3, Этаж 1`, stageName: "Стены", isCompleted: true, state: {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, details: hasB3 ? {'1014': {causeCode: 'C01', comment: 'Арматура торчит'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, photos: hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, metrics: metric(hasB3?45:80, 0, 1, hasB3?1:0) });
-    }
-    contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
-    // БЛОКИРУЕМ ЗАПИСЬ ДЕМО-ДАННЫХ В РЕАЛЬНУЮ БАЗУ УСТРОЙСТВА!
-    // Все данные будут жить только в оперативной памяти (RAM)
+    // 2. БЛОКИРУЕМ БАЗУ ДАННЫХ (RAM-ONLY)
     window.originalDbPut = window.dbPut;
     window.originalDbDelete = window.dbDelete;
     window.originalDbClear = window.dbClear;
+    window.originalDbGet = window.dbGet;
+    window.originalDbGetAll = window.dbGetAll;
+    
     window.dbPut = async () => true; 
     window.dbDelete = async () => true;
     window.dbClear = async () => true;
-    // 3. ГЕНЕРАЦИЯ ЗАДАЧ (Всех типов)
+    window.dbGet = async () => null;      // Чтобы вкладки не тянули пустые данные из реальной БД
+    window.dbGetAll = async () => null;   // Чтобы вкладки не затирали наши демо-массивы
+
+    // 3. ФОТОГРАФИИ ДЛЯ ДЕМО
+    const demoPhotoGood = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23f0fdf4'/><path d='M250 300 L350 400 L550 200' stroke='%2322c55e' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23166534' text-anchor='middle'>ЭТАЛОН (ВЕРНО)</text></svg>";
+    const demoPhotoBad = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'><rect width='800' height='600' fill='%23fef2f2'/><path d='M250 200 L550 400 M250 400 L550 200' stroke='%23ef4444' stroke-width='40' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='520' font-family='Arial' font-size='36' font-weight='bold' fill='%23991b1b' text-anchor='middle'>БРАК (НАРУШЕНИЕ)</text></svg>";
+
+    const metric = (f, b1, b2, b3) => ({ final: f, baseUrkPerc: f, checkedCount: 6, totalCount: 6, n_B1_fail: b1, n_B2_fail: b2, n_B3_fail: b3, b3_found: b3>0, kc: b2>2?0.85:1.0, kcrit: b3>0?0.5:1.0, isDanger: b3>0 });
+
+    // 4. БАЗА ПРОВЕРОК (Большой массив данных)
+    contractorArray = [];
+    for(let i=0; i<45; i++) {
+        let hasDefect = (i % 10 === 0); 
+        contractorArray.push({ id: 100+i, date: randomDay(1, 60), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', section: `Корпус 1`, floor: `Этаж ${Math.floor(i/4)+1}`, room: `Оси ${i}`, location: `Корпус 1, Этаж ${Math.floor(i/4)+1}`, stageName: "Монтаж", isCompleted: true, state: {'108':'ok', '109':hasDefect?'fail':'ok'}, details: hasDefect ? {'109': {causeCode: 'C01', comment: 'Смещение'}} : {}, photos: hasDefect ? {'109': demoPhotoBad} : {'108': demoPhotoGood}, metrics: metric(hasDefect?80:100, 0, hasDefect?1:0, 0) });
+    }
+    for(let i=0; i<35; i++) {
+        let day = Math.floor(Math.random() * 60) + 1; let hasDefect = day < 30; 
+        contractorArray.push({ id: 200+i, date: randomDay(1, 60), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ООО "Окна-Про"', templateKey: 'sys_okna_pvh', templateTitle: 'Окна ПВХ', location: `Корпус 2, Этаж ${Math.floor(i/3)+1}`, stageName: "Монтаж окон", isCompleted: true, state: {'1610':hasDefect?'fail':'ok', '1615':'ok'}, details: hasDefect ? {'1610': {causeCode: 'C04', comment: 'Завал рамы'}} : {}, photos: hasDefect ? {'1610': demoPhotoBad} : {}, metrics: metric(hasDefect?75:100, 0, hasDefect?1:0, 0) });
+    }
+    for(let i=0; i<30; i++) {
+        let day = Math.floor(Math.random() * 60) + 1; let hasB3 = (day < 60 && i % 4 === 0); 
+        contractorArray.push({ id: 300+i, date: randomDay(1, 60), projectName: 'ЖК "Демонстрационный"', inspectorName: 'Иванов И.И.', contractorName: 'ИП Петров (Бетон)', templateKey: 'sys_monolit', templateTitle: 'Монолитные работы', location: `Корпус 3, Этаж 1`, stageName: "Стены", isCompleted: true, state: {'1011':'fail', '1014':hasB3?'fail_escalated':'ok'}, details: hasB3 ? {'1014': {causeCode: 'C01', comment: 'Арматура торчит'}} : {'1011': {causeCode: 'C01', comment: 'Смещение'}}, photos: hasB3 ? {'1014': demoPhotoBad} : {'1011': demoPhotoBad}, metrics: metric(hasB3?45:80, 0, 1, hasB3?1:0) });
+    }
+    contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 5. ДАТЫ ДЛЯ МОДУЛЕЙ
+    let dOld = new Date(now); dOld.setDate(now.getDate() - 10);
     let dOverdue = new Date(now); dOverdue.setDate(now.getDate() - 2);
     let dToday = new Date(now);
-    let dFuture = new Date(now); dFuture.setDate(now.getDate() + 2);
+    let dFuture = new Date(now); dFuture.setDate(now.getDate() + 5);
+    let dFarFuture = new Date(now); dFarFuture.setDate(now.getDate() + 20);
 
+    // 6. ЗАДАЧИ
     window.rbi_tasksData = [
-        // Просроченные
-        { id: 'dt1', type: 'auto', category: 'meeting', icon: 'Совещание', contractor: 'ИП Петров (Бетон)', project: 'ЖК "Демонстрационный"', templateKey: 'sys_monolit', workTitle: 'Монолитные работы', title: 'Совещание по дефектам', prompt: 'Зафиксировано 3 критических дефекта B3. Срочно проведите разбор с прорабом.', status: 'pending', priorityLvl: 4, date: dOverdue.toISOString(), done:0, target:1 },
-        { id: 'dt2', type: 'auto', category: 'method', icon: 'ППР', contractor: 'Системная', project: 'Все', templateKey: '', workTitle: 'Аналитика', title: 'Заполнить FMEA таблицу', prompt: 'ИИ собрал дефекты за неделю. Проанализируйте коренные причины.', status: 'pending', priorityLvl: 3, date: dOverdue.toISOString(), done:0, target:1 },
-        // Сегодня
-        { id: 'dt3', type: 'auto', category: 'control', icon: 'Эталон', contractor: 'ООО "НовичокСтрой"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_kirpich', workTitle: 'Кладка из кирпича', title: 'Приемка Эталона', prompt: 'Новый подрядчик. Перед массовым контролем проведите совместную приемку эталонного узла.', status: 'pending', priorityLvl: 4, date: dToday.toISOString(), done:0, target:1, needsEtalon: true },
-        { id: 'dt4', type: 'auto', category: 'control', icon: 'Контроль', contractor: 'ООО "Окна-Про"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_okna_pvh', workTitle: 'Окна ПВХ', title: 'Плановая Инспекция', prompt: 'Подрядчик в желтой зоне (системный брак).', status: 'pending', priorityLvl: 2, date: dToday.toISOString(), done:0, target:3 },
-        { id: 'dt5', type: 'manual', category: 'method', icon: 'ППР', contractor: 'ООО "Окна-Про"', project: 'ЖК "Демонстрационный"', templateKey: '', workTitle: 'Поручение', title: 'Заводской контроль', prompt: 'Выезд на завод изготовителя. Создано инженером вручную.', status: 'blocked', priorityLvl: 2, date: dToday.toISOString(), done:0, target:1, resultComment: 'Подрядчик не пустил на завод' },
-        // Будущие
-        { id: 'dt6', type: 'auto', category: 'report', icon: 'Отчет', contractor: 'Системная', project: 'Все', templateKey: '', workTitle: 'Отчетность', title: 'Ежемесячный One-Pager', prompt: 'Отправьте руководителю выгрузку Сводного статуса объекта.', status: 'pending', priorityLvl: 3, date: dFuture.toISOString(), done:0, target:1 }
+        { id: 'dt1', type: 'auto', category: 'meeting', icon: 'Совещание', contractor: 'ИП Петров (Бетон)', project: 'ЖК "Демонстрационный"', templateKey: 'sys_monolit', workTitle: 'Монолитные работы', taskType: 'Совещание', title: 'Разбор критического брака', prompt: 'Зафиксировано 3 критических дефекта B3. Срочно проведите разбор с прорабом.', status: 'pending', priorityLvl: 4, date: dOverdue.toISOString(), done:0, target:1 },
+        { id: 'dt2', type: 'auto', category: 'method', icon: 'ППР', contractor: 'Системная', project: 'Все', templateKey: '', workTitle: 'Аналитика СК', taskType: 'Отчет', title: 'Анализ проблем ПК СК', prompt: 'ИИ выявил аномалии в ПК Стройконтроль (высокий ИСД). Проведите сверку.', status: 'pending', priorityLvl: 3, date: dOverdue.toISOString(), done:0, target:1 },
+        { id: 'dt3', type: 'auto', category: 'control', icon: 'Эталон', contractor: 'ООО "НовичокСтрой"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_kirpich', workTitle: 'Кладка из кирпича', taskType: 'Эталон', title: 'Приемка Эталона', prompt: 'Новый подрядчик. Зафиксируйте эталон.', status: 'pending', priorityLvl: 4, date: dToday.toISOString(), done:0, target:1, needsEtalon: true },
+        { id: 'dt4', type: 'auto', category: 'control', icon: 'Контроль', contractor: 'ООО "Окна-Про"', project: 'ЖК "Демонстрационный"', templateKey: 'sys_okna_pvh', workTitle: 'Окна ПВХ', taskType: 'Аудит', title: 'Усиленный контроль', prompt: 'Подрядчик в желтой зоне. Требуется 3 проверки на неделе.', status: 'pending', priorityLvl: 3, date: dFuture.toISOString(), done:1, target:3 },
+        { id: 'dt5', type: 'auto', category: 'report', icon: 'Отчет', contractor: 'Системная', project: 'ЖК "Демонстрационный"', templateKey: '', workTitle: 'Отчетность', taskType: 'Отчет', title: 'Ежемесячный One-Pager', prompt: 'Отправьте руководителю выгрузку Сводного статуса.', status: 'pending', priorityLvl: 2, date: dFarFuture.toISOString(), done:0, target:1 }
     ];
 
-    // 4. ГЕНЕРАЦИЯ СОВЕЩАНИЙ, ИНТЕРВЕНЦИЙ, ПРАКТИК
-    window.rbi_meetingsData = [
-        { id: 'm1', date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'Совещание от ' + dOverdue.toLocaleDateString('ru-RU'), memoText: '**ПРОТОКОЛ СОВЕЩАНИЯ**\n\n1. ООО "Окна-Про":\n- Проблема: Завал рамы. Решение: Провести воркшоп с бригадой. Срок: Завтра.' }
-    ];
+    // 7. СОВЕЩАНИЯ (Протоколы)
+    window.rbi_meetingsData = [{ 
+        id: 'm1', date: dOld.toISOString(), author: 'Иванов И.И.', title: 'Совещание штаба от ' + dOld.toLocaleDateString('ru-RU'), 
+        qDayPhoto: demoPhotoBad,
+        agenda: [
+            { contr: 'ООО "Окна-Про"', defect: 'Завал оконной рамы более 15мм', isDone: true, date: dOld.toISOString(), resp: 'Смирнов', comment: 'Проведен мастер-класс, рамы переставлены.' },
+            { contr: 'ИП Петров (Бетон)', defect: 'Обнажение арматуры', isDone: false, date: dFuture.toISOString(), resp: 'Сидоров', comment: 'Ждем поставку ремсостава.' }
+        ],
+        notes: 'Подрядчикам строго соблюдать ППР. Усилить контроль за поставками.',
+        memoText: '**ПРОТОКОЛ**\n\n1. ООО "Окна-Про": Решено.\n2. ИП Петров: В работе до пятницы.' 
+    }];
 
+    // 8. ВОЗДЕЙСТВИЯ (Impact) И ПРАКТИКИ
     window.rbi_interventionsData = [
-        { id: 'int1', date: dOverdue.toISOString(), inspector: 'Иванов И.И.', contractor: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', typeText: 'Разбор с бригадой (TWI-сессия)', typeCoef: 1.5, comment: 'Показал карточку', baseUrk: 75, deltaUrk: 12 }
+        { id: 'int1', date: dOld.toISOString(), inspector: 'Иванов И.И.', contractor: 'ООО "Фасад-Мастер"', templateKey: 'sys_nvf_facade', templateTitle: 'Вент. фасад', typeText: 'Разбор с бригадой (TWI)', typeCoef: 1.5, comment: 'Проведен воркшоп с бригадой', baseUrk: 72, deltaUrk: 18 }
     ];
-
     window.rbi_practicesData = [
-        { id: 'p1', interventionId: 'int0', date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'Правильный крепеж кронштейнов', templateTitle: 'Вент. фасад', deltaUrk: 15, problem: 'Отклонения по осям', solution: 'Внедрен шаблон для разметки', photoBefore: demoPhotoBad, photoAfter: demoPhotoGood, isPublished: true }
+        { id: 'p1', interventionId: 'int1', date: dOld.toISOString(), author: 'Иванов И.И.', title: 'Правильный крепеж кронштейнов', templateTitle: 'Вент. фасад', deltaUrk: 18, problem: 'Смещение осей кронштейнов, срыв сроков', solution: 'Внедрен алюминиевый шаблон для разметки. Бригада обучена.', photoBefore: demoPhotoBad, photoAfter: demoPhotoGood, isPublished: true },
+        { id: 'p2', interventionId: null, date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'Защита пены от солнца', templateTitle: 'Окна ПВХ', deltaUrk: 0, problem: 'Пена разрушается на солнце', solution: 'Обязательное использование Смарт-скин мастики', photoBefore: demoPhotoBad, photoAfter: demoPhotoGood, isPublished: true }
     ];
 
-    // 5. БАЗА ЗНАНИЙ (TWI, УЗЛЫ, ДОКУМЕНТЫ)
-    customTwiCards = [
-        { id: "demo_twi_1", title: "Контроль установки кронштейнов", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "INSPECTOR", itemId: "109", whyImportant: "Превышение допуска приводит к обрушению.", howToCheck: "Замерять рулеткой.", photoGood: demoPhotoGood, photoBad: demoPhotoBad },
-        { id: "demo_twi_2", title: "Завал оконной рамы", checklistKey: "sys_okna_pvh", checklistName: "Окна ПВХ", type: "INSPECTOR", itemId: "1610", whyImportant: "Завал рамы ведет к заклиниванию.", howToCheck: "Лазерный уровень.", photoGood: demoPhotoGood, photoBad: demoPhotoBad },
-        { id: "demo_twi_3", title: "Регламент очистки", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "WORKER", itemId: "112", totalTime: 5, steps: [{ order: 1, text: "Продуть", time: 2, photo: null }, { order: 2, text: "Прочистить", time: 3, photo: demoPhotoGood }] }
+    // 9. FMEA МАТРИЦА РИСКОВ
+    window.rbi_fmeaRecords = [{ 
+        id: 'f1', date: dOverdue.toISOString(), author: 'Иванов И.И.', title: 'FMEA Анализ (Ноябрь)', periodName: 'Месяц', 
+        defects: [
+            { contractor: 'ИП Петров (Бетон)', workTitle: 'Монолитные работы', defectName: 'Обнажение арматуры', count: 8, stage: 'Ошибки СМР', cause: 'Спешка при заливке, экономия фиксаторов', effect: 'Коррозия арматуры, снижение несущей способности', fix: 'Зачеканить ремсоставом', prevent: 'Добавить пункт в акт скрытых работ по проверке 4 фиксаторов на м2', rpn: 720, photo: demoPhotoBad },
+            { contractor: 'ООО "Окна-Про"', workTitle: 'Окна ПВХ', defectName: 'Монтажный шов с пустотами', count: 5, stage: 'Материалы', cause: 'Бракованная партия пены', effect: 'Промерзание откосов', fix: 'Перепенить', prevent: 'Входной контроль пены', rpn: 350, photo: demoPhotoBad }
+        ] 
+    }];
+
+    // 10. ГРАФИК СМР
+    window.rbi_scheduleData = [
+        { id: 'sch1', workTitle: 'Монолит цоколя', contractor: 'ИП Петров (Бетон)', startDate: dOld.toISOString(), endDate: dToday.toISOString(), templateKey: 'sys_monolit', _deleted: false },
+        { id: 'sch2', workTitle: 'Кладка наружных стен', contractor: 'ООО "Фасад-Мастер"', startDate: dOverdue.toISOString(), endDate: dFarFuture.toISOString(), templateKey: 'sys_gazobeton', _deleted: false },
+        { id: 'sch3', workTitle: 'Монтаж Окон', contractor: 'ООО "Окна-Про"', startDate: dFuture.toISOString(), endDate: dFarFuture.toISOString(), templateKey: 'sys_okna_pvh', _deleted: false }
     ];
     
-    customDocs = [{ id: 'usr_doc_d1', type: 'ПРОЕКТ', code: 'РД-2024-ФАС', title: 'Монтаж вентилируемого фасада. Архитектурные решения (Том 2).', link: '', isSystem: false }];
-    customNodes = [{ id: 'demo_node_1', category: 'ОКНА', title: 'Узел гидроизоляции монтажного шва ПВХ', desc: 'Схема применения ПСУЛ-ленты.', img: demoPhotoGood, materials: [{ name: 'Лента ПСУЛ', qty: 'По периметру' }], linkedDoc: 'ГОСТ 30971-2012', linkedTwiChecklistKey: 'sys_okna_pvh' }];
+    // 11. ДАННЫЕ СТРОЙКОНТРОЛЯ (ПК СК)
+    window.skVolumes = { 'Вент. фасад': { amount: 5000, unit: 'м2' }, 'Окна ПВХ': { amount: 300, unit: 'шт' }, 'Монолитные работы': { amount: 1200, unit: 'м3' } };
+    window.skRecords = [
+        { id: 'sk1', number: '101', text: 'Завал оконной рамы на 15мм', category: 'Окна ПВХ', date_issued: dOld.toISOString(), contractor: 'ООО "Окна-Про"', deadline: dOverdue.toISOString(), status: 'Не устранено', inspector: 'Петров А.А.', structure: 'Секция 1' },
+        { id: 'sk2', number: '102', text: 'Отсутствует пароизоляция шва', category: 'Окна ПВХ', date_issued: dOld.toISOString(), contractor: 'ООО "Окна-Про"', deadline: dToday.toISOString(), status: 'Не устранено', inspector: 'Иванов И.И.', structure: 'Секция 2' },
+        { id: 'sk3', number: '103', text: 'Обнажение арматуры пилона', category: 'Монолитные работы', date_issued: dOld.toISOString(), contractor: 'ИП Петров (Бетон)', deadline: dOld.toISOString(), status: 'Устранено', date_resolved: dToday.toISOString(), inspector: 'Сидоров В.В.', structure: 'Паркинг' },
+        { id: 'sk4', number: '104', text: 'Мусор в котловане', category: 'Земляные работы', date_issued: dOverdue.toISOString(), contractor: 'СМУ-5', deadline: dFuture.toISOString(), status: 'Не устранено', inspector: 'Иванов И.И.', structure: 'Котлован' }
+    ];
 
-    // 6. HR МЕТРИКИ (ОПЫТ)
+    // 12. БАЗА ЗНАНИЙ (TWI)
+    customTwiCards = [
+        { id: "demo_twi_1", title: "Контроль установки кронштейнов", checklistKey: "sys_nvf_facade", checklistName: "Вент. фасад", type: "INSPECTOR", itemId: "109", whyImportant: "Риск обрушения фасада при ветровой нагрузке.", howToCheck: "Проверить динамометрическим ключом.", photoGood: demoPhotoGood, photoBad: demoPhotoBad },
+        { id: "demo_twi_2", title: "Монтаж пароизоляции окна", checklistKey: "sys_okna_pvh", checklistName: "Окна ПВХ", type: "WORKER", itemId: "1617", totalTime: 5, steps: [{ order: 1, text: "Очистить проем от пыли", time: 2, photo: null }, { order: 2, text: "Наклеить ленту с нахлестом 10см", time: 3, photo: demoPhotoGood }] }
+    ];
+
+    // 13. HR МЕТРИКИ И АЧИВКИ
     gameActionLogs = [];
-    for(let i=0; i<40; i++) {
-        gameActionLogs.push({ id: 'l'+i, date: randomDay(1, 30), inspector: 'Иванов И.И.', action: ['create_twi', 'ai_generate', 'comment_written', 'task_completed_on_time'][Math.floor(Math.random()*4)] });
-    }
+    for(let i=0; i<80; i++) gameActionLogs.push({ id: 'l'+i, date: randomDay(1, 30), inspector: 'Иванов И.И.', action: ['create_twi', 'ai_generate', 'comment_written', 'task_completed_on_time', 'practice_published', 'etalon_accepted'][Math.floor(Math.random()*6)] });
 
-    // 7. НАСТРОЙКИ ИНТЕРФЕЙСА ДЛЯ ДЕМО
+    // 14. НАСТРОЙКИ ИНТЕРФЕЙСА ДЛЯ ДЕМО
     document.getElementById('inp-project').value = 'ЖК "Демонстрационный"';
     document.getElementById('inp-inspector').value = 'Иванов И.И.';
     document.getElementById('inp-contractor').value = 'ООО "Фасад-Мастер"';
@@ -6265,10 +6318,12 @@ window.startDemoMode = function(silent = false) {
     document.getElementById('audit-items').style.display = 'block';
     document.getElementById('audit-actions').style.display = 'grid';
     
-    // 8. ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ВСЕГО
+    // 15. ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ВСЕГО
     updateDataSummary();
     if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
     render(); updateUI(); 
+    
+    // Заставляем все вкладки "проснуться" и отрисовать демо-массивы
     if (typeof renderHistoryTab === 'function') renderHistoryTab(); 
     if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab(); 
     if (typeof renderTwiList === 'function') renderTwiList();
@@ -6276,9 +6331,15 @@ window.startDemoMode = function(silent = false) {
     if (typeof renderNodesList === 'function') renderNodesList();
     if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
     if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
+    if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true);
+    if (typeof sk_renderMainTab === 'function') sk_renderMainTab();
+    if (typeof rbi_renderMeetingTab === 'function') rbi_renderMeetingTab();
+    if (typeof rbi_renderImpactTab === 'function') rbi_renderImpactTab();
+    if (typeof rbi_renderFmeaHistory === 'function') rbi_renderFmeaHistory();
+    if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab();
     
     if(!silent) {
-        showToast('🎮 Демо-режим: Загружено 150 проверок, Задачи, FMEA, TWI и Отчеты!');
+        showToast('🎮 Демо-режим загружен: СМР, FMEA, ПК СК и HR-аналитика!');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 };
@@ -6290,7 +6351,7 @@ window.exitDemoMode = function() {
     const fabExit = document.getElementById('fab-exit-demo');
     if(fabExit) { fabExit.classList.add('hidden'); fabExit.style.display = 'none'; }
     
-    // ЖЕСТКОЕ ВОССТАНОВЛЕНИЕ ВСЕХ ИСХОДНЫХ ДАННЫХ ИЗ ПАМЯТИ
+    // ВОССТАНАВЛИВАЕМ ВСЁ
     state = JSON.parse(JSON.stringify(realState));
     details = JSON.parse(JSON.stringify(realDetails));
     photos = JSON.parse(JSON.stringify(realPhotos));
@@ -6307,6 +6368,12 @@ window.exitDemoMode = function() {
     customTwiCards = JSON.parse(JSON.stringify(realTwiCards));
     customDocs = JSON.parse(JSON.stringify(realCustomDocs));
     customNodes = JSON.parse(JSON.stringify(realCustomNodes));
+
+    window.skRecords = JSON.parse(JSON.stringify(real_skRecords));
+    window.skVolumes = JSON.parse(JSON.stringify(real_skVolumes));
+    window.skContractorMap = JSON.parse(JSON.stringify(real_skContractorMap));
+    window.rbi_fmeaRecords = JSON.parse(JSON.stringify(real_rbi_fmeaRecords));
+    window.rbi_scheduleData = JSON.parse(JSON.stringify(real_rbi_scheduleData));
     
     ['inp-project', 'inp-inspector', 'inp-contractor', 'inp-section', 'inp-floor', 'inp-room', 'inp-location'].forEach(id => {
         if(document.getElementById(id)) {
@@ -6319,26 +6386,21 @@ window.exitDemoMode = function() {
     if(document.getElementById('lock-inp-inspector')) document.getElementById('lock-inp-inspector').classList.add('hidden');
     if(document.getElementById('lock-inp-project')) document.getElementById('lock-inp-project').classList.add('hidden');
     
-    restoreSession(); // Дополнительно тянем из БД, чтобы точно всё было как до демо
+    window.dbPut = window.originalDbPut;
+    window.dbDelete = window.originalDbDelete;
+    window.dbClear = window.originalDbClear;
+    window.dbGet = window.originalDbGet;
+    window.dbGetAll = window.originalDbGetAll;
+    
+    restoreSession();
     switchTab('tab-audit');
     changeTemplate('HOME');
     
-    updateDataSummary(); 
-    if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
-    if (typeof renderHistoryTab === 'function') renderHistoryTab(); 
-    if (typeof renderTwiList === 'function') renderTwiList();
-    if (typeof renderDocsList === 'function') renderDocsList();
-    if (typeof renderNodesList === 'function') renderNodesList();
-    if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
-    if (typeof gameRenderDashboard === 'function') gameRenderDashboard();
-     if (typeof window.originalDbPut !== 'undefined') window.dbPut = window.originalDbPut;
-    if (typeof window.originalDbDelete !== 'undefined') window.dbDelete = window.originalDbDelete;
-    if (typeof window.originalDbClear !== 'undefined') window.dbClear = window.originalDbClear;
-    showToast('Возврат к реальным данным');
+    showToast('🔄 Возврат к реальным данным (БД разблокирована)');
 };
 
 // ============================================================================
-// === БЛОК: ИНТЕРАКТИВНЫЙ 25-ШАГОВЫЙ ТУТОРИАЛ (АБСОЛЮТНО ВСЕ ФУНКЦИИ) ===
+// === БЛОК: ИНТЕРАКТИВНЫЙ 28-ШАГОВЫЙ ТУТОРИАЛ (АБСОЛЮТНО ВСЕ ФУНКЦИИ) ===
 // ============================================================================
 let currentTutStep = 0;
 let tutOverlay, tutHighlightBox, tutTooltip, tutText, tutStepNum, tutNextBtn;
@@ -6346,7 +6408,7 @@ let tutOverlay, tutHighlightBox, tutTooltip, tutText, tutStepNum, tutNextBtn;
 const tutorialSteps = [
     {
         title: "1. Старт",
-        text: "Добро пожаловать в <b>RBI Quality 16.5!</b> 👋<br><br>Я загрузил базу <b>Демо-данных (150 проверок)</b>. Наш первый шаг на стройке — выбрать <b>вид работ</b>. Это делается в шапке.",
+        text: "Добро пожаловать в <b>RBI Quality 17.0!</b> 👋<br><br>Я загрузил базу <b>Демо-данных (150 проверок)</b>. Наш первый шаг на стройке — выбрать <b>вид работ</b>. Это делается в шапке.",
         targetSelector: ".header-top-row .relative.flex", 
         action: () => { switchTab('tab-audit'); window.scrollTo({top: 0, behavior: 'smooth'}); }
     },
@@ -6403,55 +6465,112 @@ const tutorialSteps = [
     },
     {
         title: "9. Offline-сохранение",
-        text: "Нажимаем <b>Сохранить</b>. Акт зашифрованно улетает в базу устройства (Интернет не нужен).<br><br>Переходим во вкладку <b>История</b>.",
-        targetSelector: ".bottom-nav .nav-item[data-tab='tab-history']",
-        action: () => { switchTab('tab-history'); }
+        text: "Нажимаем <b>Сохранить</b>. Акт зашифрованно улетает в базу устройства (Интернет не нужен).<br><br>Теперь перейдем во вкладку <b>Инженер</b>.",
+        targetSelector: ".bottom-nav .nav-item[data-tab='tab-engineer']",
+        action: () => { 
+            switchTab('tab-engineer'); 
+            setTimeout(() => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if(btns[0]) rbi_switchEngineerSubTab('eng-sub-badges', btns[0]); }, 100); 
+        }
     },
     {
-        title: "10. История и Группировка",
-        text: "В Истории лежат все 150 демо-проверок. Они умным образом сгруппированы по <b>Подрядчикам и Объектам</b>. Внутри работает пагинация.",
-        targetSelector: ".font-black.text-slate-700.text-\\[11px\\].uppercase", // Цепляемся за первый заголовок группы
+        title: "10. Профиль Инженера (HR)",
+        text: "Здесь ваш личный <b>HR-дашборд</b>. Система начисляет вам Опыт (XP) за качественные проверки, выдает грейды и бейджи (ачивки). Также здесь можно запустить <b>AI-Наставника</b>.",
+        targetId: "game-dashboard-container",
         action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); }
     },
     {
-        title: "11. Мульти-фильтры",
-        text: "Нажмите на фильтры. В выпадающем окне можно массово выбрать нужные объекты, подрядчиков или период. А иконка справа сверху выгрузит выбранное в <b>Excel (CSV)</b>.",
-        targetId: "hist-sticky-panel",
-        action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); }
+        title: "11. Планировщик Задач",
+        text: "Переключитесь на <b>Задачи</b>. Планировщик сам анализирует историю и график СМР, выставляя задачи на неделю: Аудиты, Совещания, Отчеты и запросы Эталонов.",
+        targetSelector: "button[onclick*='eng-sub-tasks']",
+        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if(btns[1]) rbi_switchEngineerSubTab('eng-sub-tasks', btns[1]); }
     },
     {
-        title: "12. Переход в Аналитику",
-        text: "Переходим в сердце системы — <b>Аналитику</b>. Здесь нейросеть обрабатывает сырые проверки, строит графики и пишет управленческие выводы.",
+        title: "12. Совещания и Протоколы",
+        text: "В подвкладке <b>Совещания</b> ИИ (DeepSeek) помогает провести планерку. Он собирает все дефекты по подрядчикам и генерирует готовый текстовый Мемо для отправки в WhatsApp.",
+        targetSelector: "button[onclick*='eng-sub-meetings']",
+        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if(btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]); }
+    },
+    {
+        title: "13. Impact Score",
+        text: "Вкладка <b>Impact</b>. Как оценить вашу полезность? Система замеряет качество подрядчика ДО и ПОСЛЕ вашего вмешательства. Здесь видно, улучшили вы ситуацию или нет.",
+        targetSelector: "button[onclick*='eng-sub-impact']",
+        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if(btns[3]) rbi_switchEngineerSubTab('eng-sub-impact', btns[3]); }
+    },
+    {
+        title: "14. FMEA Анализ",
+        text: "Вкладка <b>FMEA</b>. Автоматический сбор самых частых системных дефектов в единую матрицу Рисков. Нажмите «Автозаполнение» и ИИ сам найдет коренные причины брака.",
+        targetSelector: "button[onclick*='eng-sub-fmea']",
+        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if(btns[4]) rbi_switchEngineerSubTab('eng-sub-fmea', btns[4]); }
+    },
+    {
+        title: "15. Аналитика (Дашборды)",
+        text: "Переходим в сердце системы — <b>Аналитику</b>. Здесь сырые проверки превращаются в графики, а ИИ пишет управленческие решения.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-analytics']",
-        action: () => { switchTab('tab-analytics'); }
+        action: () => { switchTab('tab-analytics'); setTimeout(() => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if(btns[0]) switchAnalyticsSubTab('sub-contractors', btns[0]); }, 100); }
     },
     {
-        title: "13. Магия TWI ✨",
-        text: "Система заметила, что в базе есть и фото Эталона, и фото Брака для одного узла. Она сама предлагает в 1 клик сгенерировать обучающую инструкцию! За это дают <b>Бонус XP</b>.",
-        targetId: "twi-magic-block",
-        action: () => { 
-            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
-            if(btns[0]) switchAnalyticsSubTab('sub-contractors', btns[0]);
-            window.scrollTo({top: 0, behavior: 'smooth'}); 
-            const magicBlock = document.getElementById('twi-magic-block');
-            if (magicBlock && magicBlock.classList.contains('magic-collapsed')) magicBlock.classList.remove('magic-collapsed');
-        }
+        title: "16. Сводка (One-Pager)",
+        text: "Раздел <b>Сводка</b>. Это компактный одностраничный отчет для руководства с Индексом Риска (ИКО), Тепловой картой этапов и ТОП-5 самых частых дефектов.",
+        targetSelector: "button[onclick*='sub-onepager']",
+        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if(btns[1]) switchAnalyticsSubTab('sub-onepager', btns[1]); }
     },
     {
-        title: "14. Детализация",
-        text: "Нажмите на карточку любого подрядчика в списке ниже. Откроется <b>Детализация</b>: там будут графики трендов, диаграммы Парето и текст экспертного ИИ-заключения.",
-        targetId: "contractors-list-container",
-        action: () => { 
-            const magicBlock = document.getElementById('twi-magic-block');
-            if (magicBlock) magicBlock.classList.add('magic-collapsed');
-            // Убеждаемся, что мы на нужной вкладке для открытия меню PDF
-            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
-            if(btns[0]) switchAnalyticsSubTab('sub-contractors', btns[0]);
-        }
+        title: "17. График СМР",
+        text: "Вкладка <b>График</b>. Здесь можно загрузить Excel с графиком производства работ. На его основе система сама запланирует вам задачи: проверка ППР, Инструктаж, Финал.",
+        targetSelector: "button[onclick*='sub-schedule']",
+        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if(btns[2]) switchAnalyticsSubTab('sub-schedule', btns[2]); }
     },
     {
-        title: "15. Меню Выгрузки PDF",
-        text: "Любой дашборд можно в 1 клик превратить в отчет. Нажмите на <b>плавающую кнопку</b> справа внизу, чтобы открыть меню экспорта.",
+        title: "18. Интеграция с ПК СК",
+        text: "Вкладка <b>ПК СК</b>. Загружайте выгрузки из Стройконтроля! Система сопоставит их с вашей историей RBI и найдет подрядчиков, которые «скрывают» брак (Индекс ИСД).",
+        targetSelector: "button[onclick*='sub-sk']",
+        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if(btns[3]) switchAnalyticsSubTab('sub-sk', btns[3]); }
+    },
+    {
+        title: "19. История проверок",
+        text: "Вкладка <b>История</b>. Журнал всех 150 демо-проверок с удобной группировкой, поиском и массовой выгрузкой в Excel (CSV).",
+        targetSelector: "button[onclick*='sub-history']",
+        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if(btns[4]) switchAnalyticsSubTab('sub-history', btns[4]); }
+    },
+    {
+        title: "20. База Знаний (Справочник)",
+        text: "Переходим в <b>Справочник</b>. Здесь находится вся документация: Чек-листы, ГОСТы, TWI-инструкции, Практики и Технические Узлы.",
+        targetSelector: ".bottom-nav .nav-item[data-tab='tab-reference']",
+        action: () => { switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if(btns[0]) switchReferenceSubTab('ref-sub-checklists', btns[0]); }, 100); }
+    },
+    {
+        title: "21. Конструктор Чек-листов",
+        text: "Здесь вы можете собирать свои шаблоны. А если у вас есть таблица Excel — нажмите <b>Загрузить Excel</b>, и система сама превратит её в работающий чек-лист!",
+        targetId: "ref-filters-block",
+        action: () => { window.scrollTo({top: 0, behavior: 'smooth'}); const manageBody = document.getElementById('ref-manage-body'); if (manageBody && manageBody.style.maxHeight === '0px') toggleManagePanel(); }
+    },
+    {
+        title: "22. AI-Чат по нормативам",
+        text: "Вкладка <b>НД</b>. Забыли допуск? Нажмите «Спросить ИИ», и нейросеть мгновенно найдет нужный ГОСТ или СП прямо в базе приложения.",
+        targetSelector: "button[onclick*='ref-sub-docs']", 
+        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if(btns[1]) switchReferenceSubTab('ref-sub-docs', btns[1]); }
+    },
+    {
+        title: "23. База TWI-карт",
+        text: "Вкладка <b>TWI</b>. Важные визуальные стандарты. Есть 3 типа: Технадзор (Было/Стало), Пошаговая инструкция для рабочего и Внешний PDF-регламент.",
+        targetSelector: "button[onclick*='ref-sub-twi']", 
+        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if(btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); }
+    },
+    {
+        title: "24. Технические Узлы",
+        text: "Вкладка <b>Узлы</b>. Библиотека строительных узлов с чертежами и спецификацией материалов. Прямо отсюда можно открыть нужный ГОСТ.",
+        targetSelector: "button[onclick*='ref-sub-nodes']", 
+        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if(btns[3]) switchReferenceSubTab('ref-sub-nodes', btns[3]); }
+    },
+    {
+        title: "25. Библиотека Практик",
+        text: "Вкладка <b>Практики</b>. Если ваше воздействие (Impact) подняло качество подрядчика на +10%, система сама предложит кристаллизовать этот опыт в виде карточки Лучшей Практики.",
+        targetSelector: "button[onclick*='ref-sub-practices']", 
+        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if(btns[4]) switchReferenceSubTab('ref-sub-practices', btns[4]); }
+    },
+    {
+        title: "26. Выгрузка отчетов (PDF)",
+        text: "На любой вкладке аналитики нажмите на <b>плавающую кнопку</b> справа внизу, чтобы открыть меню выгрузки. Вы можете скачать PDF (А3/А4) или сразу отправить его на принтер.",
         targetId: "fab-download-btn",
         action: () => {
             const fab = document.getElementById('fab-download-btn');
@@ -6459,117 +6578,14 @@ const tutorialSteps = [
         }
     },
     {
-        title: "16. Отчет для совещаний",
-        text: "<b>Отчет по объекту (А3)</b> — идеален для еженедельных планерок. Система сгенерирует сводку и детальные Паспорта Качества на каждого активного подрядчика с фотографиями его лучшей и худшей работы.",
-        targetSelector: "button[onclick*='full_report']", 
-        action: () => {
-            // Программно открываем меню, чтобы рамка смогла подсветить кнопку внутри него
-            if (typeof handleFabDownload === 'function') handleFabDownload();
-        }
-    },
-    {
-        title: "17. Плакат на стройку",
-        text: "<b>Плакат качества (А3)</b> — распечатайте и повесьте в штабе стройки! Здесь крупно выведены лидеры, аутсайдеры и фото-коллажи 'Было/Стало' для мотивации рабочих.",
-        targetSelector: "button[onclick*='poster']",
-        action: () => { }
-    },
-    {
-        title: "18. Отчет One-Pager",
-        text: "Закроем меню и перейдем в <b>Сводку (One-Pager)</b>. Это компактный одностраничный отчет для высшего руководства с Индексом Риска (ИКО) и ТОП-5 самых частых дефектов.",
-        targetSelector: "button[onclick=\"switchAnalyticsSubTab('sub-onepager', this)\"]",
-        action: () => { 
-            if (typeof closeFabExportMenu === 'function') closeFabExportMenu(); // Закрываем меню выгрузки
-            setTimeout(() => {
-                const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
-                if(btns[1]) switchAnalyticsSubTab('sub-onepager', btns[1]);
-            }, 300);
-        }
-    },
-    {
-        title: "19. Инженеры (HR)",
-        text: "Перейдем в скрытый раздел <b>Инженеры</b>. Это модуль вашей личной эффективности. Система начисляет вам Опыт (XP) за качественные проверки, выдает грейды и бейджи.",
-        targetSelector: "button[onclick=\"switchAnalyticsSubTab('sub-engineer-rating', this)\"]",
-        action: () => { 
-            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
-            if(btns[2]) switchAnalyticsSubTab('sub-engineer-rating', btns[2]);
-        }
-    },
-    {
-        title: "20. Риск-ориентированный План",
-        text: "Переключитесь на вкладку <b>Задачи</b>. Система сама сформировала вам план на неделю! Она проанализировала историю и вывела наверх самых проблемных подрядчиков.",
-        targetSelector: "button[onclick=\"switchGameTab('tasks')\"]",
-        action: () => { 
-            if(typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true);
-            if(typeof gameRenderDashboard === 'function') gameRenderDashboard();
-            if(typeof switchGameTab === 'function') switchGameTab('tasks'); 
-        }
-    },
-    {
-        title: "21. Запрос Эталона",
-        text: "Если у подрядчика меньше 3 проверок (он новый), планировщик <b>заблокирует</b> обычную инспекцию и потребует составить <b>Акт-Эталон</b> (Синий бейджик).",
-        targetSelector: "#game-tab-tasks .bg-blue-100", 
-        action: () => { }
-    },
-    {
-        title: "22. Модуль Данных",
-        text: "Перейдем в <b>Базу</b>. Здесь хранится реестр всех выгрузок. Вы можете скачать Инкрементальный бэкап (только новые проверки) и отправить его руководителю.",
-        targetSelector: "button[onclick=\"switchAnalyticsSubTab('sub-data', this)\"]",
-        action: () => { 
-            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
-            if(btns[3]) switchAnalyticsSubTab('sub-data', btns[3]);
-        }
-    },
-    {
-        title: "23. Справочник",
-        text: "В <b>Справочнике</b> находится вся База Знаний: чек-листы, ГОСТы и TWI-инструкции.",
-        targetSelector: ".bottom-nav .nav-item[data-tab='tab-reference']",
-        action: () => { 
-            const fab = document.getElementById('fab-download-btn');
-            if(fab) fab.classList.remove('fab-visible');
-            switchTab('tab-reference'); 
-        }
-    },
-    {
-        title: "24. Конструктор Чек-листов",
-        text: "Здесь вы можете собирать свои шаблоны. А если у вас есть таблица Excel (4 столбца) — нажмите <b>Загрузить Excel</b> в управлении, и система сама превратит её в чек-лист!",
-        targetId: "ref-filters-block",
-        action: () => { 
-            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
-            if(btns[0]) switchReferenceSubTab('ref-sub-checklists', btns[0]); 
-            window.scrollTo({top: 0, behavior: 'smooth'});
-            const manageBody = document.getElementById('ref-manage-body');
-            if (manageBody && manageBody.style.maxHeight === '0px') toggleManagePanel();
-        }
-    },
-    {
-        title: "25. База TWI-карт",
-        text: "Перейдем в раздел <b>TWI</b>. Здесь хранятся все ваши визуальные стандарты и регламенты. Давайте нажмем «Создать», чтобы открыть конструктор.",
-        targetSelector: "button[onclick=\"openTwiConstructor()\"]", 
-        action: () => { 
-            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
-            if(btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); 
-        }
-    },
-    {
-        title: "26. Три типа TWI",
-        text: "В системе есть 3 типа карт:<br>1️⃣ <b>Технадзор</b>: фото Эталона и Брака.<br>2️⃣ <b>Инструкция</b>: пошаговый алгоритм для рабочего.<br>3️⃣ <b>PDF-файл</b>: загрузка готового проекта (работает без интернета).",
-        targetSelector: "#twi-type-btn-worker", 
-        action: () => { 
-            if (typeof openTwiConstructor === 'function') openTwiConstructor(); 
-        }
-    },
-    {
-        title: "27. Настройки",
-        text: "В <b>Настройках</b> можно включить темную тему и автоматическое расписание (например, отправлять бэкап руководителю каждую пятницу).",
+        title: "27. Настройки и Синхронизация",
+        text: "В <b>Настройках</b> можно включить темную тему, авто-отправку бэкапов руководителю и привязать ваш ключ DeepSeek. Здесь же включается синхронизация с Командой через облако.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-settings']",
-        action: () => { 
-            if (typeof closeTwiConstructor === 'function') closeTwiConstructor(); // Закрываем конструктор
-            switchTab('tab-settings'); 
-        }
+        action: () => { if (typeof closeFabExportMenu === 'function') closeFabExportMenu(); switchTab('tab-settings'); }
     },
     {
         title: "28. Финал",
-        text: "Если забудете логику работы или формулы ИКО — откройте вкладку <b>FAQ</b> в Справочнике. Там расписана вся методология.<br><br>🚀 <b>Обучение завершено! Можете продолжить изучать демо-режим.</b>",
+        text: "Если забудете логику работы или формулы (ИКО, ИСД, CMI) — откройте вкладку <b>FAQ</b> в Справочнике.<br><br>🚀 <b>Обучение завершено! Можете продолжить изучать демо-режим.</b>",
         targetSelector: "button[onclick=\"showAboutApp()\"]", 
         action: () => { },
         isEnd: true
@@ -7057,72 +7073,100 @@ function findTemplateKey(titleStr) {
 window.rbi_generateAutoTasks = async function() {
     showToast("🧠 Нейросеть формирует цепочки задач...");
     
-    // Мягко чистим старые АВТО задачи, которые еще не выполнены
+    // 1. Получаем все текущие задачи из базы
     let existingTasks = await dbGetAll(STORES.TASKS) || [];
-    let tasksToKeep = existingTasks.filter(t => t.type === 'manual' || t.status === 'done');
-    await dbClear(STORES.TASKS);
     
+    // 2. МЯГКАЯ ОЧИСТКА: Удаляем только НЕВЫПОЛНЕННЫЕ задачи, созданные графиком
+    let tasksToKeep = existingTasks.filter(t => {
+        if (t.status === 'done') return true; 
+        if (t.source === 'schedule') return false; 
+        return true; 
+    });
+    
+    await dbClear(STORES.TASKS);
     window.rbi_tasksData = [...tasksToKeep];
-    for (let t of tasksToKeep) { await dbPut(STORES.TASKS, t); }
 
     let generatedCount = 0;
 
     window.rbi_scheduleData.forEach(stage => {
+        if (stage._deleted) return; 
+
         const startD = new Date(stage.startDate);
         const endD = new Date(stage.endDate);
+        const now = new Date();
+        now.setHours(0,0,0,0);
         
-        const addTask = (daysOffset, typeName, title, desc) => {
+        const addTask = (daysOffset, typeName, title, desc, iconName, catName) => {
             const tDate = new Date(startD);
             tDate.setDate(tDate.getDate() + daysOffset);
             
-            // Защита от задач в далеком прошлом
-            const now = new Date();
-            now.setHours(0,0,0,0);
-            if (tDate < now && typeName !== 'Финал' && typeName !== 'Плановая') return; // Пропускаем старые этапы подготовки
+            // Пропускаем старые этапы подготовки (если они уже прошли), Финал оставляем всегда
+            if (tDate < now && typeName !== 'Финал') return; 
+
+            // --- ЖЁСТКАЯ ПРОВЕРКА НА ДУБЛИКАТЫ (Синхронизация с Риск-матрицей и Архивом) ---
+            // 1. Проверяем, нет ли уже такой задачи в системе (ДАЖЕ ЕСЛИ ОНА ВЫПОЛНЕНА!)
+            const isDuplicateTask = window.rbi_tasksData.some(t => 
+                t.contractor === stage.contractor && 
+                t.templateKey === stage.templateKey && 
+                t.taskType === typeName
+            );
+            
+            if (isDuplicateTask) return; // Задача уже есть, пропускаем
+
+            // 2. Если это Эталон — дополнительно проверяем базу реальных Актов-Эталонов
+            if (typeName === 'Эталон') {
+                const hasEtalonInDb = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
+                    e.contractorName === stage.contractor && 
+                    e.templateKey === stage.templateKey
+                );
+                if (hasEtalonInDb) return; // Эталон уже снят, пропускаем
+            }
+            // -------------------------------------------------------------------
 
             const task = {
-                id: 'tsk_' + Date.now().toString(36) + Math.floor(Math.random()*1000),
+                id: 'tsk_sch_' + Date.now().toString(36) + Math.floor(Math.random()*1000),
+                source: 'schedule',     
                 type: 'auto',
+                category: catName,      
+                icon: iconName,         
                 taskType: typeName,
                 title: title,
-                desc: desc,
+                prompt: desc,
                 workTitle: stage.workTitle,
                 templateKey: stage.templateKey,
                 contractor: stage.contractor,
                 date: tDate.toISOString(),
-                status: 'pending' // pending | done | rescheduled
+                status: 'pending',
+                priorityLvl: 3,         
+                target: 1,
+                done: 0,
+                carryOverCount: 0,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             };
             window.rbi_tasksData.push(task);
-            dbPut(STORES.TASKS, task);
             generatedCount++;
         };
 
-        // Логика цепочки:
-        addTask(-14, 'ППР', 'Проверить ППР и ТК', 'Проверить наличие и утверждение технологической карты до выхода подрядчика.');
-        addTask(-7, 'Инструктаж', 'Вводный инструктаж', 'Собрать бригадиров, провести инструктаж по допускам и качеству.');
-        addTask(-3, 'Эталон', 'Приемка Эталона', 'Зафиксировать эталонный участок работ с фотофиксацией.');
-        addTask(0, 'Старт', 'Контроль старта работ', 'Первая проверка на объекте в день начала этапа.');
+        // СОЗДАЕМ ТОЛЬКО РАЗОВЫЕ ВЕХИ (Цикличные проверки берет на себя Риск-матрица)
+        addTask(-14, 'ППР', 'Проверить ППР и ТК', 'Проверить наличие и утверждение технологической карты до выхода подрядчика.', 'ППР', 'method');
+        addTask(-7, 'Инструктаж', 'Вводный инструктаж', 'Собрать бригадиров, провести инструктаж по допускам и качеству.', 'Инструктаж', 'method');
+        addTask(-3, 'Эталон', 'Приемка Эталона', 'Зафиксировать эталонный участок работ с фотофиксацией.', 'Эталон', 'control');
+        addTask(0, 'Старт', 'Контроль старта работ', 'Первая проверка на объекте в день начала этапа.', 'Контроль', 'control');
         
-        // Плановые проверки (каждые 7 дней)
-        let currDate = new Date(startD);
-        currDate.setDate(currDate.getDate() + 7);
-        while (currDate < endD) {
-            // Копируем дату, чтобы не сбилась по ссылке
-            const pDate = new Date(currDate);
-            const diffDays = Math.round((pDate - startD) / (1000 * 60 * 60 * 24));
-            addTask(diffDays, 'Плановая', 'Плановая проверка', 'Регулярный аудит процесса работ.');
-            currDate.setDate(currDate.getDate() + 7);
-        }
-
-        // Финал (за 3 дня до конца)
+        // Финал (за 3 дня до конца по графику)
         const finalDiff = Math.round((endD - startD) / (1000 * 60 * 60 * 24)) - 3;
         if (finalDiff > 0) {
-            addTask(finalDiff, 'Финал', 'Финальная приемка', 'Итоговая проверка перед подписанием КС.');
+            addTask(finalDiff, 'Финал', 'Финальная приемка', 'Итоговая проверка перед подписанием КС.', 'Отчет', 'report');
         }
     });
 
-    setTimeout(() => showToast(`✅ Сгенерировано задач: ${generatedCount}`), 1500);
-    rbi_renderTasksList();
+    for (let t of window.rbi_tasksData) { await dbPut(STORES.TASKS, t); }
+
+    setTimeout(() => {
+        showToast(`✅ Запланировано вех по графику: ${generatedCount}`);
+        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    }, 1000);
 };
 
 
@@ -7134,11 +7178,9 @@ function rbi_safeDateISO(val) {
     if (val === undefined || val === null || val === '') return new Date().toISOString();
     let d = null;
     if (typeof val === 'number') {
-        // Логика дат Excel (дней с 1900 года)
         d = new Date((val - 25569) * 86400 * 1000);
     } else if (typeof val === 'string') {
         const parts = val.trim().split(/[.,/ -]/);
-        // Если дата вида DD.MM.YYYY
         if (parts.length === 3) {
             let day = parts[0].padStart(2, '0');
             let month = parts[1].padStart(2, '0');
@@ -7149,14 +7191,10 @@ function rbi_safeDateISO(val) {
             d = new Date(val);
         }
     }
-    // Если дата получилась нормальная - возвращаем, иначе отдаем текущую
-    if (d instanceof Date && !isNaN(d.getTime())) {
-        return d.toISOString();
-    }
+    if (d instanceof Date && !isNaN(d.getTime())) return d.toISOString();
     return new Date().toISOString(); 
 }
 
-// Умный поиск ключа чек-листа по русскому названию
 function rbi_findTemplateKey(titleStr) {
     if (!titleStr) return '';
     const search = titleStr.toLowerCase();
@@ -7171,29 +7209,28 @@ function rbi_findTemplateKey(titleStr) {
     return '';
 }
 
-// Главный рендер графика (с параметром skipLoad, чтобы не затирать несохраненные строки)
+// Главный рендер графика (С визуализацией Ганта и задачами)
 window.rbi_renderScheduleTab = async function(skipLoad = false) {
     const container = document.getElementById('schedule-container');
     if (!container) return;
 
-    if (!skipLoad) {
+    if (!skipLoad && !(typeof isDemoMode !== 'undefined' && isDemoMode)) {
         await rbi_loadData();
     }
     if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
 
-    // 1. Собираем все чек-листы для выпадающего списка
+    // 1. Собираем чек-листы для селектора
     let clOptions = '<option value="">-- Не привязан --</option>';
     const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort((a,b) => SYSTEM_TEMPLATES[a].title.localeCompare(SYSTEM_TEMPLATES[b].title));
-    sysKeys.forEach(key => { clOptions += `<option value="sys_${key}">[Сист] ${SYSTEM_TEMPLATES[key].title}</option>`; });
+    sysKeys.forEach(key => { clOptions += `<option value="sys_${key}">[СИС] ${SYSTEM_TEMPLATES[key].title}</option>`; });
     
     if (typeof userTemplates !== 'undefined') {
         const userKeys = Object.keys(userTemplates).sort((a,b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
-        userKeys.forEach(key => { clOptions += `<option value="user_${key}">[Мой] ${userTemplates[key].title}</option>`; });
+        userKeys.forEach(key => { clOptions += `<option value="user_${key}">[МОЙ] ${userTemplates[key].title}</option>`; });
     }
 
-    // 2. Генерируем строки (исключая те, что помечены как удаленные)
+    // 2. Генерируем строки редактора (таблицы)
     let activeData = window.rbi_scheduleData.filter(s => !s._deleted);
-    
     let rowsHtml = activeData.sort((a,b) => new Date(a.startDate || 0) - new Date(b.startDate || 0)).map(s => {
         const d1 = s.startDate ? new Date(s.startDate).toISOString().split('T')[0] : '';
         const d2 = s.endDate ? new Date(s.endDate).toISOString().split('T')[0] : '';
@@ -7207,40 +7244,169 @@ window.rbi_renderScheduleTab = async function(skipLoad = false) {
                 <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-end" value="${d2}"></td>
                 <td class="p-1"><select class="input-base !py-1.5 text-[10px] w-full sched-tmpl">${currentSelect}</select></td>
                 <td class="p-1 text-center">
-                    <button onclick="rbi_deleteScheduleRow('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90 flex items-center justify-center mx-auto transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
+                    <button onclick="rbi_deleteScheduleRow('${s.id}')" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90 flex items-center justify-center mx-auto transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                 </td>
             </tr>`;
     }).join('');
 
     if (activeData.length === 0) {
-        rowsHtml = `<tr><td colspan="6" class="text-center py-6 text-slate-500 text-[11px] font-bold uppercase tracking-widest border-b border-dashed border-slate-300">График пуст. Нажмите "Добавить этап" ниже.</td></tr>`;
+        rowsHtml = `<tr><td colspan="6" class="text-center py-6 text-slate-500 text-[11px] font-bold uppercase tracking-widest border-b border-dashed border-slate-300">В графике нет этапов.</td></tr>`;
     }
 
+    // 3. ГЕНЕРИРУЕМ ВИЗУАЛЬНЫЙ ТАЙМЛАЙН (ИОС-КАРТОЧКИ)
+    let ganttHtml = '';
+    if (activeData.length > 0) {
+        // Находим крайние точки всего проекта, чтобы рассчитать масштаб линии
+        let minDate = new Date(Math.min(...activeData.map(s => new Date(s.startDate).getTime())));
+        let maxDate = new Date(Math.max(...activeData.map(s => new Date(s.endDate).getTime())));
+        let totalDuration = maxDate.getTime() - minDate.getTime();
+        if (totalDuration === 0) totalDuration = 1;
+
+        ganttHtml = `<div class="space-y-4 mt-4">`;
+
+        activeData.forEach(s => {
+            const sStart = new Date(s.startDate).getTime();
+            const sEnd = new Date(s.endDate).getTime();
+            const stageDurationDays = Math.max(1, Math.round((sEnd - sStart) / (1000 * 60 * 60 * 24)));
+            
+            // Расчет позиции синей заливки (относительно всего проекта)
+            let leftPerc = ((sStart - minDate.getTime()) / totalDuration) * 100;
+            let widthPerc = ((sEnd - sStart) / totalDuration) * 100;
+            if (leftPerc < 0) leftPerc = 0;
+            if (widthPerc < 5) widthPerc = 5; // Минимальная ширина визуала
+
+            // Ищем привязанные задачи к этому этапу
+            const linkedTasks = (window.rbi_tasksData || []).filter(t => 
+                t.source === 'schedule' && 
+                t.contractor === s.contractor && 
+                t.templateKey === s.templateKey &&
+                !t._deleted
+            );
+
+            // Отрисовка кружочков-задач
+            let tasksDots = linkedTasks.map(t => {
+                const tDate = new Date(t.date).getTime();
+                
+                // Вычисляем процент положения точки на глобальной линии проекта
+                let tLeft = ((tDate - minDate.getTime()) / totalDuration) * 100;
+                if (tLeft < 0) tLeft = 0; if (tLeft > 100) tLeft = 100;
+                
+                const isDone = t.status === 'done';
+                
+                // Строгий iOS стиль
+                const nodeClass = isDone 
+                    ? 'bg-green-500 border-2 border-white dark:border-slate-800 shadow-md z-20' 
+                    : 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-500 shadow-sm z-10';
+                
+                const iconSvg = isDone 
+                    ? `<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`
+                    : `<div class="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-500 rounded-full"></div>`;
+
+                return `
+                    <div class="absolute top-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer" style="left: ${tLeft}%; transform: translateX(-50%);">
+                        <!-- Всплывающая подсказка (Tooltip) -->
+                        <div class="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap z-30 text-center">
+                            ${t.taskType}<br>
+                            <span class="${isDone ? 'text-green-400' : 'text-slate-300'}">${new Date(t.date).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        <!-- Сам кружок -->
+                        <div class="w-5 h-5 rounded-full flex items-center justify-center transition-transform group-hover:scale-125 ${nodeClass}">
+                            ${iconSvg}
+                        </div>
+                        <!-- Подпись снизу -->
+                        <div class="absolute top-full mt-1.5 text-[8px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap bg-white/80 dark:bg-slate-800/80 px-1 rounded backdrop-blur-sm">
+                            ${t.taskType}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            ganttHtml += `
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-2xl shadow-sm relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase tracking-tight leading-tight">${s.workTitle}</div>
+                            <div class="text-[10px] font-bold text-[var(--text-muted)] mt-1 flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                                ${s.contractor}
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <div class="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">${stageDurationDays} дн.</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Таймлайн линия -->
+                    <div class="relative pt-6 pb-6">
+                        <!-- Серая подложка (весь проект) -->
+                        <div class="absolute left-0 right-0 h-2 bg-slate-100 dark:bg-slate-700 rounded-full top-1/2 -translate-y-1/2"></div>
+                        <!-- Синяя заливка (длительность текущего этапа) -->
+                        <div class="absolute h-2 bg-indigo-500 rounded-full top-1/2 -translate-y-1/2 shadow-[0_0_8px_rgba(99,102,241,0.4)]" style="left: ${leftPerc}%; width: ${widthPerc}%;"></div>
+                        <!-- Узлы задач -->
+                        ${tasksDots}
+                    </div>
+
+                    <!-- Даты -->
+                    <div class="flex justify-between items-center mt-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            Нач: ${new Date(s.startDate).toLocaleDateString('ru-RU')}
+                        </div>
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            Оконч: ${new Date(s.endDate).toLocaleDateString('ru-RU')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        ganttHtml += `</div>`;
+    } else {
+        ganttHtml = `<div class="text-center py-8 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-2xl border border-dashed border-[var(--card-border)] mt-4">График пуст</div>`;
+    }
+
+    // 4. СБОРКА ИТОГОВОГО HTML (Кнопки + Свернутый редактор + Визуал)
     let html = `
-        <div class="flex justify-between items-center mb-3 px-1">
-            <div class="text-[11px] font-bold uppercase text-slate-700 dark:text-slate-300 tracking-widest">Редактор Графика СМР</div>
-            <div class="flex gap-2">
-                <button onclick="rbi_clearSchedule()" class="bg-red-50 text-red-600 border border-red-200 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-transform flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Очистить всё
-                </button>
-                <button onclick="rbi_saveSchedule()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить
+        <div class="flex gap-2 mb-4 px-1">
+            <button onclick="rbi_importScheduleExcel()" class="flex-1 bg-white dark:bg-slate-800 border border-green-200 dark:border-green-800 py-3.5 rounded-xl font-black text-[10px] text-green-700 dark:text-green-500 uppercase tracking-widest active:scale-95 shadow-sm transition-transform flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Загрузить Excel
+            </button>
+            <button onclick="window.rbi_generateAutoTasks()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сгенерировать задачи
+            </button>
+        </div>
+
+        <!-- РЕДАКТОР ГРАФИКА (СВЕРНУТ ПО УМОЛЧАНИЮ) -->
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm mb-6 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                <span class="font-black text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg> Редактор (Ручной ввод)</span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
+            </summary>
+            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl">
+                <div class="flex justify-end gap-2 mb-3">
+                    <button onclick="rbi_clearSchedule()" class="bg-white dark:bg-slate-800 text-red-600 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-[9px] font-bold uppercase shadow-sm active:scale-95 transition-transform flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Очистить всё</button>
+                    <button onclick="rbi_saveSchedule()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[9px] font-bold uppercase shadow-md active:scale-95 transition-transform flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить правки</button>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar bg-white dark:bg-slate-800 rounded-xl border border-[var(--card-border)] shadow-sm mb-3">
+                    <table class="w-full text-left text-[10px] whitespace-nowrap min-w-[800px]">
+                        <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider font-bold">
+                            <tr><th class="p-2 pl-3 w-1/4">Вид работ</th><th class="p-2 w-1/5">Подрядчик</th><th class="p-2 w-32">Начало</th><th class="p-2 w-32">Окончание</th><th class="p-2 w-1/4">Чек-лист (Привязка)</th><th class="p-2 w-10 text-center">Удал.</th></tr>
+                        </thead>
+                        <tbody id="sched-tbody" class="divide-y divide-[var(--card-border)]">${rowsHtml}</tbody>
+                    </table>
+                </div>
+                <button onclick="rbi_addScheduleRow()" class="w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-600 text-[10px] font-bold uppercase active:scale-95 transition-colors flex items-center justify-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить строку
                 </button>
             </div>
+        </details>
+
+        <!-- ВИЗУАЛЬНЫЙ ТАЙМЛАЙН -->
+        <div class="px-1">
+            <h3 class="text-[12px] font-black uppercase text-slate-800 dark:text-white flex items-center gap-1.5 tracking-tight"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg> Визуализация задач</h3>
+            <div class="text-[9px] text-slate-500 font-bold mt-1 mb-2">Наведите мышку (или нажмите) на круглые узлы, чтобы увидеть запланированные задачи.</div>
+            ${ganttHtml}
         </div>
-        <div class="overflow-x-auto custom-scrollbar bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] shadow-sm mb-3">
-            <table class="w-full text-left text-[10px] whitespace-nowrap min-w-[800px]">
-                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] border-b border-[var(--card-border)] uppercase tracking-wider font-bold">
-                    <tr><th class="p-2 pl-3 w-1/4">Вид работ</th><th class="p-2 w-1/5">Подрядчик</th><th class="p-2 w-32">Начало</th><th class="p-2 w-32">Окончание</th><th class="p-2 w-1/4">Чек-лист (Привязка)</th><th class="p-2 w-10 text-center">Удал.</th></tr>
-                </thead>
-                <tbody id="sched-tbody" class="divide-y divide-[var(--card-border)]">${rowsHtml}</tbody>
-            </table>
-        </div>
-        <button onclick="rbi_addScheduleRow()" class="w-full bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 py-3.5 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-600 text-[10px] font-bold uppercase active:scale-95 transition-colors mb-4 flex items-center justify-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить этап (строку)
-        </button>
     `;
     container.innerHTML = html;
 };
@@ -7351,6 +7517,9 @@ window.rbi_saveSchedule = async function() {
 
     showToast("✅ График СМР успешно сохранен!");
     rbi_renderScheduleTab(true);
+    
+    // ВЫЗЫВАЕМ ГЕНЕРАТОР ЗАДАЧ ПОСЛЕ СОХРАНЕНИЯ ГРАФИКА
+    await window.rbi_generateAutoTasks();
 };
 
 // Загрузка графика из Excel
@@ -7405,6 +7574,9 @@ window.rbi_handleScheduleImport = async function(event) {
 
             showToast(`✅ Загружено этапов: ${added}`);
             rbi_renderScheduleTab(true);
+            
+            // ВЫЗЫВАЕМ ГЕНЕРАТОР ЗАДАЧ ПОСЛЕ ИМПОРТА EXCEL
+            await window.rbi_generateAutoTasks();
 
         } catch (err) {
             console.error(err);
@@ -8254,16 +8426,31 @@ window.rbi_saveMeetingMemo = async function() {
     if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
     if (typeof triggerSync === 'function') triggerSync('silent');
     
-    // ЗАКРЫТИЕ ПРИВЯЗАННОЙ ЗАДАЧИ СОВЕЩАНИЯ
-    if (window.activeTaskId) {
-        const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
-        if (task) {
-            task.status = 'done';
-            task.resultComment = 'Протокол сформирован';
-            task.updatedAt = new Date().toISOString();
-            dbPut(STORES.TASKS, task);
+    // ЗАКРЫТИЕ ПРИВЯЗАННЫХ ЗАДАЧ СОВЕЩАНИЯ
+    if (typeof window.rbi_tasksData !== 'undefined') {
+        // 1. Закрываем по activeTaskId, если перешли по кнопке из задачи (например, разбор критического брака)
+        if (window.activeTaskId) {
+            const task = window.rbi_tasksData.find(t => t.id === window.activeTaskId);
+            if (task) {
+                task.status = 'done';
+                task.resultComment = 'Протокол сформирован';
+                task.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+            }
+            window.activeTaskId = null;
         }
-        window.activeTaskId = null;
+
+        // 2. Дополнительно: закрываем Еженедельное совещание или Анализ СК независимо от пути входа
+        const autoTasks = window.rbi_tasksData.filter(t => 
+            t.status === 'pending' && 
+            (t.title === 'Еженедельный разбор качества' || t.taskType === 'Аналитика СК')
+        );
+        for (let t of autoTasks) {
+            t.status = 'done';
+            t.resultComment = 'Протокол сформирован';
+            t.updatedAt = new Date().toISOString();
+            if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
+        }
     }
     showToast("💾 Протокол сохранен в архив!");
     rbi_renderMeetingTab();

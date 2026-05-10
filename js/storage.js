@@ -268,6 +268,9 @@ async function getStorageStats() {
 /**
  * ОТОБРАЖЕНИЕ СТАТИСТИКИ ХРАНИЛИЩА (Для вкладки Настройки)
  */
+/**
+ * ОТОБРАЖЕНИЕ СТАТИСТИКИ ХРАНИЛИЩА (Для вкладки Настройки)
+ */
 async function updateStorageInfo() {
     const sUsed = document.getElementById('storage-used');
     const sFree = document.getElementById('storage-free');
@@ -278,11 +281,34 @@ async function updateStorageInfo() {
 
     try {
         const estimate = await navigator.storage.estimate();
-        const usedMB = (estimate.usage / 1024 / 1024).toFixed(1);
-        const freeMB = ((estimate.quota - estimate.usage) / 1024 / 1024).toFixed(1);
-        const percentUsed = ((estimate.usage / estimate.quota) * 100).toFixed(1);
+        
+        // Считаем РЕАЛЬНЫЙ физический вес фотографий в базе данных (в байтах)
+        let realBytes = 0;
+        try {
+            const photos = await dbGetAll(STORES.PHOTOS);
+            if (photos) {
+                photos.forEach(p => {
+                    if (p.data && p.data.byteLength) realBytes += p.data.byteLength;
+                });
+            }
+        } catch(e) {}
 
-        sUsed.innerText = usedMB;
+        // Базовая квота диска, выделенная браузером
+        const quotaMB = estimate.quota / 1024 / 1024;
+        
+        // Оценка браузера (Включает кэш приложения, шрифты, системный мусор SQLite)
+        const browserUsedMB = estimate.usage / 1024 / 1024;
+        
+        // Используем реальный вес фоток (так как они занимают 99% базы)
+        let actualUsedMB = realBytes / 1024 / 1024;
+        // Если фотки весят меньше мегабайта (пусто), берем вес каркаса приложения из кэша
+        if (actualUsedMB < 1) actualUsedMB = browserUsedMB;
+        
+        const usedStr = actualUsedMB.toFixed(1);
+        const freeMB = (quotaMB - actualUsedMB).toFixed(1);
+        const percentUsed = ((actualUsedMB / quotaMB) * 100).toFixed(1);
+
+        sUsed.innerText = usedStr;
         sFree.innerText = freeMB;
         sPercent.innerText = `${percentUsed}%`;
         sBar.style.width = `${percentUsed}%`;
@@ -378,7 +404,23 @@ const PhotoManager = {
         // Фолбэк на оригинальный URL, если что-то пошло не так
         return localIdOrHttp;
     },
-
+    // 3.1.5. ПРЯМАЯ ВЫДАЧА BASE64 ДЛЯ PDF
+    async getBase64(localId) {
+        if (!localId) return null;
+        try {
+            const record = await dbGet(STORES.PHOTOS, localId);
+            if (record && record.data) {
+                return await arrayBufferToBase64(record.data, record.mimeType || 'image/webp');
+            }
+            if (localId.startsWith('http')) {
+                const res = await fetch(localId);
+                if (!res.ok) return null;
+                const blob = await res.blob();
+                return await blobToBase64(blob);
+            }
+        } catch(e) { console.warn('[PhotoManager.getBase64]', localId, e); }
+        return null;
+    },
     // 3.2. ОЧИСТКА ПАМЯТИ (Вызывается при переключении вкладок)
     clearMemory() {
         this.activeUrls.forEach(url => URL.revokeObjectURL(url));
@@ -518,81 +560,92 @@ window.downloadMissingCloudFiles = async function() {
 };
 
 // Окончательное удаление файлов из корзины (Hard Delete)
+// Глубокая очистка устройства (Удаление скрытых записей и осиротевших файлов)
 window.emptyTrashBin = async function() {
-    if(!confirm("Безвозвратно удалить все скрытые записи из базы? Они больше не будут восстанавливаться при синхронизации.")) return;
+    if(!confirm("Выполнить глубокую очистку памяти устройства?\n\nБудут окончательно удалены все скрытые записи и «осиротевшие» системные файлы (фото, PDF), которые больше нигде не используются.")) return;
     
-    let deletedCount = 0;
+    showToast("⏳ Начинаем глубокое сканирование памяти...");
+    
+    let deletedRecords = 0;
+    let deletedFiles = 0;
+    let freedBytes = 0;
 
-    // Вспомогательная функция для удаления фото (локально + облако)
-    const deletePhotos = async (photosObj, bucketName = 'inspection-photos') => {
-        if (!photosObj) return;
-        const pathsToRemove = [];
+    try {
+        // 1. ОЧИСТКА МЯГКО УДАЛЕННЫХ ЗАПИСЕЙ ВО ВСЕХ БАЗАХ
+        const storesToClean = [
+            STORES.HISTORY, STORES.ETALON_ACTS, STORES.TASKS, STORES.MEETINGS,
+            STORES.PRACTICES, STORES.INTERVENTIONS, STORES.FMEA, STORES.SK_RECORDS,
+            STORES.TEMPLATES
+        ];
 
-        for (let k in photosObj) {
-            const url = photosObj[k];
-            if (url) {
-                // 1. Готовим удаление из облака (если это публичная ссылка Supabase)
-                if (url.startsWith('http') && url.includes(`/public/${bucketName}/`)) {
-                    const marker = `/public/${bucketName}/`;
-                    pathsToRemove.push(decodeURIComponent(url.slice(url.indexOf(marker) + marker.length)));
-                }
-
-                // 2. Локальное удаление
-                await dbDelete(STORES.PHOTOS, url);
-                if (PhotoManager.cache[url]) {
-                    if (PhotoManager.cache[url].startsWith('blob:')) URL.revokeObjectURL(PhotoManager.cache[url]);
-                    delete PhotoManager.cache[url];
-                }
-            }
-        }
-
-        // 3. Выполняем удаление из облака
-        if (pathsToRemove.length > 0 && window.supabaseClient && window.isSyncEnabled()) {
-            const { error } = await window.supabaseClient.storage.from(bucketName).remove(pathsToRemove);
-            if (error) console.warn("[Trash] Ошибка очистки облака:", error);
-        }
-    };
-
-    // 1. Чистим Историю
-    const hist = await dbGetAll(STORES.HISTORY);
-    if (hist) {
-        for (let item of hist) {
-            if (item._deleted) {
-                await deletePhotos(item.photos);
-                await dbDelete(STORES.HISTORY, item.id);
-                deletedCount++;
-            }
-        }
-    }
-
-    // 2. Чистим Эталоны
-    const etalons = await dbGetAll(STORES.ETALON_ACTS);
-    if (etalons) {
-        for (let item of etalons) {
-            if (item._deleted) {
-                if (item.details && item.details.elements) {
-                    for (let el of item.details.elements) {
-                        if (el.photo) await deletePhotos({ p: el.photo });
+        for (let store of storesToClean) {
+            const items = await dbGetAll(store);
+            if (items) {
+                for (let item of items) {
+                    const isDel = item._deleted || (item.data && item.data._deleted);
+                    if (isDel) {
+                        const key = item.id || item.slug;
+                        if (key) {
+                            await dbDelete(store, key);
+                            deletedRecords++;
+                        }
                     }
                 }
-                await dbDelete(STORES.ETALON_ACTS, item.id);
-                deletedCount++;
             }
         }
-    }
 
-    // 3. Чистим Задачи
-    const tasks = await dbGetAll(STORES.TASKS);
-    if (tasks) {
-        for (let task of tasks) {
-            if (task._deleted) {
-                if (task.completionPhoto) await deletePhotos({ p: task.completionPhoto });
-                await dbDelete(STORES.TASKS, task.id);
-                deletedCount++;
+        // 2. СБОР ВСЕХ ЖИВЫХ (ИСПОЛЬЗУЕМЫХ) ССЫЛОК НА ФАЙЛЫ
+        const usedFiles = new Set();
+        
+        // Рекурсивный сканер: лезет вглубь любого объекта и ищет ссылки
+        const extractFiles = (obj) => {
+            if (!obj) return;
+            if (typeof obj === 'string') {
+                if (obj.startsWith('local://') || obj.startsWith('http')) usedFiles.add(obj);
+            } else if (typeof obj === 'object') {
+                Object.values(obj).forEach(extractFiles);
+            }
+        };
+
+        // Сканируем все живые записи в базе
+        const allStores = [STORES.HISTORY, STORES.ETALON_ACTS, STORES.TASKS, STORES.MEETINGS, STORES.PRACTICES, STORES.FMEA];
+        for (let store of allStores) {
+            const items = await dbGetAll(store);
+            if (items) items.forEach(extractFiles);
+        }
+
+        // Сканируем системные справочники из памяти (TWI, Узлы, Нормативы)
+        if (typeof customTwiCards !== 'undefined') extractFiles(customTwiCards);
+        if (typeof customNodes !== 'undefined') extractFiles(customNodes);
+        if (typeof customDocs !== 'undefined') extractFiles(customDocs);
+
+        // 3. УДАЛЕНИЕ МУСОРНЫХ ФАЙЛОВ ИЗ ХРАНИЛИЩА ФОТО/PDF
+        const allPhotos = await dbGetAll(STORES.PHOTOS);
+        if (allPhotos) {
+            for (let p of allPhotos) {
+                // Если файл лежит в базе, но ссылка на него не найдена ни в одной карточке
+                if (!usedFiles.has(p.id)) {
+                    if (p.data && p.data.byteLength) freedBytes += p.data.byteLength;
+                    await dbDelete(STORES.PHOTOS, p.id);
+                    
+                    // Выгружаем из кэша браузера, если он там застрял
+                    if (PhotoManager.cache && PhotoManager.cache[p.id]) {
+                        URL.revokeObjectURL(PhotoManager.cache[p.id]);
+                        delete PhotoManager.cache[p.id];
+                    }
+                    deletedFiles++;
+                }
             }
         }
+
+        // 4. ИТОГИ
+        const freedMB = (freedBytes / 1024 / 1024).toFixed(1);
+        showToast(`✅ Готово! Очищено записей: ${deletedRecords}. Удалено мусорных файлов: ${deletedFiles}. Освобождено: ${freedMB} МБ.`);
+        
+        if (typeof updateStorageInfo === 'function') updateStorageInfo();
+
+    } catch (e) {
+        console.error("Ошибка при очистке мусора:", e);
+        showToast("❌ Ошибка при очистке памяти");
     }
-    
-    showToast(`🗑️ Корзина очищена. Уничтожено записей: ${deletedCount} шт.`);
-    if (typeof updateStorageInfo === 'function') updateStorageInfo();
-}
+};
