@@ -456,84 +456,106 @@ async function runPhotoMigration(historyArray) {
 }
 
 
-// === ФОНОВЫЙ ЗАГРУЗЧИК ФАЙЛОВ ДЛЯ ОФЛАЙНА ===
-window.downloadMissingCloudFiles = async function() {
+window.downloadMissingCloudFiles = async function(silent = false) {
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
-    if (loader && loaderText) {
+
+    if (!silent && loader && loaderText) {
         loaderText.innerText = "Поиск файлов в облаке...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
-    console.log("[Sync] Поиск новых файлов для скачивания в офлайн...");
+    console.log("[Cache] Проверка облачных файлов...");
     const urlsToDownload = new Set();
 
-    // 1. Ищем фото в истории проверок
+    // 1. Фото в истории проверок
     if (typeof contractorArray !== 'undefined') {
         contractorArray.forEach(check => {
             if (check.photos) {
                 Object.values(check.photos).forEach(url => {
-                    if (url && url.startsWith('http')) urlsToDownload.add(url);
+                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
                 });
             }
         });
     }
 
-    // 2. Ищем фото и PDF в TWI картах
+    // 2. TWI‑карты (фото и PDF)
     if (typeof customTwiCards !== 'undefined') {
         customTwiCards.forEach(twi => {
-            if (twi.photoGood && twi.photoGood.startsWith('http')) urlsToDownload.add(twi.photoGood);
-            if (twi.photoBad && twi.photoBad.startsWith('http')) urlsToDownload.add(twi.photoBad);
-            if (twi.pdfData && twi.pdfData.startsWith('http')) urlsToDownload.add(twi.pdfData);
+            [twi.photoGood, twi.photoBad, twi.pdfData].forEach(url => {
+                if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+            });
             if (twi.steps) {
                 twi.steps.forEach(step => {
-                    if (step.photo && step.photo.startsWith('http')) urlsToDownload.add(step.photo);
+                    if (step.photo && (step.photo.startsWith('http') || step.photo.startsWith('cloud://'))) urlsToDownload.add(step.photo);
                 });
             }
         });
     }
 
-    // 3. Ищем схемы в Узлах
+    // 3. Узлы
     if (typeof customNodes !== 'undefined') {
         customNodes.forEach(node => {
-            if (node.img && node.img.startsWith('http')) urlsToDownload.add(node.img);
+            if (node.img && (node.img.startsWith('http') || node.img.startsWith('cloud://'))) urlsToDownload.add(node.img);
         });
     }
-    
-    // 4. Ищем фото в Совещаниях и Практиках
+
+    // 4. Совещания и практики
     if (typeof window.rbi_meetingsData !== 'undefined') {
         window.rbi_meetingsData.forEach(m => {
-            if (m.qDayPhoto && m.qDayPhoto.startsWith('http')) urlsToDownload.add(m.qDayPhoto);
+            if (m.qDayPhoto && (m.qDayPhoto.startsWith('http') || m.qDayPhoto.startsWith('cloud://'))) urlsToDownload.add(m.qDayPhoto);
         });
     }
     if (typeof window.rbi_practicesData !== 'undefined') {
         window.rbi_practicesData.forEach(p => {
-            if (p.photoBefore && p.photoBefore.startsWith('http')) urlsToDownload.add(p.photoBefore);
-            if (p.photoAfter && p.photoAfter.startsWith('http')) urlsToDownload.add(p.photoAfter);
+            [p.photoBefore, p.photoAfter].forEach(url => {
+                if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+            });
         });
     }
 
-    // 5. Запускаем скачивание с индикацией
-    let count = 0;
-    let total = urlsToDownload.size;
-    
-    for (let url of urlsToDownload) {
-        if (!PhotoManager.cache[url]) { 
-            if (loaderText) loaderText.innerText = `Кэширование: ${count + 1} из ${total}...`;
-            await PhotoManager.downloadForOffline(url);
-            count++;
+    let downloadedCount = 0;
+    const total = urlsToDownload.size;
+
+    for (const url of urlsToDownload) {
+        // Уже в RAM‑кэше
+        if (PhotoManager.cache[url]) continue;
+
+        // Проверяем IndexedDB
+        try {
+            const alreadyInDb = await dbGet(STORES.PHOTOS, url);
+            if (alreadyInDb) continue;
+        } catch (e) { continue; }
+
+        if (!silent && loaderText) {
+            loaderText.innerText = `Кэширование: ${downloadedCount + 1} из ${total}...`;
+        }
+
+        try {
+            await PhotoManager.getBase64(url);
+            downloadedCount++;
+        } catch (e) {
+            console.warn('[Cache] Ошибка загрузки:', url.substring(0, 80), e.message);
         }
     }
-    
-    if (loader) {
-        loader.classList.add('opacity-0');
-        setTimeout(() => loader.style.display = 'none', 300);
+
+    if (!silent) {
+        if (loader) {
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.style.display = 'none', 300);
+        }
+        if (typeof showToast === 'function') {
+            if (downloadedCount > 0) {
+                showToast(`📥 Офлайн-кэш обновлён! Скачано: ${downloadedCount}`);
+            } else if (total > 0) {
+                showToast(`⚠️ Не удалось загрузить файлы. Проверьте интернет.`);
+            } else {
+                showToast(`✅ Все файлы уже в памяти устройства.`);
+            }
+        }
     }
-    
-    if (typeof showToast === 'function') {
-        showToast(count > 0 ? `📥 Офлайн-кэш обновлен! Скачано файлов: ${count}` : `✅ Все файлы уже сохранены на устройстве.`);
-    }
+
     if (typeof updateStorageInfo === 'function') updateStorageInfo();
 };
 

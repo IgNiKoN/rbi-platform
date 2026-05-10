@@ -57,6 +57,7 @@ let appSettings = {
     soundEnabled: true,
     autoSave: true,
     aiEnabled: false,
+    autoCacheCloudFiles: true, // автоматически сохранять облачные файлы в офлайн-кэш после синхронизации
     usePersonalKey: false,
     aiCorpPwd: '',    
     aiAuto: false,      
@@ -875,6 +876,8 @@ function renderSettingsTab() {
         }
     }
     // 4. НОВЫЕ БЛОКИ: Автоматизация бэкапов
+    // Авто‑кэш облака
+    if(document.getElementById('set-autocache')) document.getElementById('set-autocache').checked = appSettings.autoCacheCloudFiles;
     if(document.getElementById('set-autobackup')) document.getElementById('set-autobackup').checked = appSettings.autoBackupEnabled;
     if(document.getElementById('set-autobackup-day')) document.getElementById('set-autobackup-day').value = appSettings.autoBackupDay || '5';
     if(document.getElementById('set-autobackup-share')) document.getElementById('set-autobackup-share').checked = appSettings.autoBackupShare;
@@ -893,7 +896,7 @@ function resetSettingsToDefault() {
     appSettings = {
         theme: 'auto', engineerName: '', defaultProject: '', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
         autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
-        soundEnabled: true, autoSave: true, aiEnabled: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
+        soundEnabled: true, autoSave: true, aiEnabled: false, autoCacheCloudFiles: true, aiAuto: false, apiKey: '', dashboardMode: 'compact',
         anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
         autoBackupEnabled: true, autoBackupDay: '5', autoBackupShare: true, autoManagerEnabled: true, autoManagerDay: '5'
     };

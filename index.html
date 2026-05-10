@@ -2501,6 +2501,7 @@
                     <div>
                         <!-- Память устройства -->
                         <div class="p-4 border-b border-[var(--card-border)]">
+                               
                             <div class="flex justify-between items-center mb-3">
                                 <div class="font-bold text-sm">Хранилище (IndexedDB)</div>
                                 <div class="text-xs font-black text-indigo-600" id="storage-percent">--%</div>
@@ -2513,6 +2514,13 @@
                                 <span>Исп: <span id="storage-used">--</span> МБ</span>
                                 <span>Свободно: <span id="storage-free">--</span> МБ</span>
                             </div>
+                            <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)]">
+    <div>
+        <div class="font-bold text-sm">Авто‑кэш облачных файлов</div>
+        <div class="text-[10px] text-[var(--text-muted)] mt-1">Сохранять фото и PDF в память устройства после синхронизации</div>
+    </div>
+    <label class="toggle-switch"><input type="checkbox" id="set-autocache" onchange="toggleSetting('autoCacheCloudFiles', this)"><span class="toggle-slider"></span></label>
+</div>
                             <div class="grid grid-cols-2 gap-2 mb-2">
                                 <button onclick="clearPdfCache()"
                                     class="bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-2.5 rounded-lg font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Очистить

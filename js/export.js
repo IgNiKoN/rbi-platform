@@ -1673,9 +1673,9 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     }
 
         // ============================================================================
-    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (ИСПРАВЛЕНО ДЛЯ iOS)
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ)
     // ============================================================================
-        const hiddenDiv = document.createElement('div');
+    const hiddenDiv = document.createElement('div');
     hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 50}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
     hiddenDiv.setAttribute('data-no-observe', 'true');
     document.body.appendChild(hiddenDiv);
@@ -1709,21 +1709,33 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
+    // --- ПРЕДВАРИТЕЛЬНАЯ ЗАГРУЗКА ОБЛАЧНЫХ ФОТО (без тостов, если нет интернета – пропускаем) ---
+    if (navigator.onLine) {
+        const fullMarkup = header + content;
+        const cloudUrls = new Set(fullMarkup.match(/cloud:\/\/[^"\s]+/g) || []);
+        let i = 0;
+        for (const url of cloudUrls) {
+            if (loaderText) loaderText.innerText = `Кэширование фото ${++i}/${cloudUrls.size}…`;
+            try { await PhotoManager.getBase64(url); } catch (e) {}
+        }
+    }
+
     try {
         if (loaderText) loaderText.innerText = "Создание PDF…";
         await new Promise(r => requestAnimationFrame(r));
 
         const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
 
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) 
-                     || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+        const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) 
+                             || (navigator.deviceMemory && navigator.deviceMemory <= 2);
 
-if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
+        if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
+            // Постраничный рендер (слабые устройства или несколько страниц)
             let worker = html2pdf().set(opt);
             for (let i = 0; i < pagesHtml.length; i++) {
                 if (loaderText) loaderText.innerText = `Лист ${i + 1}/${pagesHtml.length}…`;
 
+                // Очищаем предыдущую страницу
                 Array.from(hiddenDiv.children).forEach(c => { if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c); });
 
                 const pageDiv = document.createElement('div');
@@ -1731,26 +1743,31 @@ if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
                 pageDiv.innerHTML = pagesHtml[i];
                 hiddenDiv.appendChild(pageDiv);
 
+                // Конвертируем и дожидаемся фото (последовательно, без перекодировок)
                 await resolveLocalPhotosForPdf(pageDiv);
-                //await waitForAllImages(pageDiv);   // ← ждём реальной готовности, без таймеров
-                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // ← лёгкая пауза для отрисовки
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
                 if (i === 0) {
                     worker = worker.from(pageDiv).toPdf();
                 } else {
                     worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
                 }
                 await worker;
+
+                // Чуть помогаем сборщику мусора на слабых устройствах
+                if (isWeakDevice) await new Promise(r => setTimeout(r, 300));
             }
             await worker.save();
         } else {
+            // Одна страница, быстро
             const rootDiv = document.createElement('div');
             rootDiv.className = 'pdf-print-root';
             rootDiv.innerHTML = header + content;
             hiddenDiv.appendChild(rootDiv);
 
             await resolveLocalPhotosForPdf(rootDiv);
-            //await waitForAllImages(rootDiv);
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
             await html2pdf().set(opt).from(rootDiv).save();
         }
 
@@ -2827,35 +2844,34 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
-// Бронебойный конвертер: превращает всё в чистый JPEG Base64
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
     for (const img of images) {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src) continue;
+        if (!src || src.startsWith('data:')) continue;
 
-        // 1. Достаём оригинальное фото из IndexedDB (как есть, без перекодировок)
-        let finalSrc = src;
-        if (src.startsWith('local://') || src.startsWith('cloud://')) {
-            const base64 = await PhotoManager.getBase64(src);
-            if (base64) finalSrc = base64;
-            else continue;
+        let base64 = null;
+        if (src.startsWith('local://') || src.startsWith('cloud://') || src.startsWith('http')) {
+            base64 = await PhotoManager.getBase64(src);
         }
+        if (!base64) continue;
 
-        // 2. Вставляем готовый src (data: URL)
-        img.src = finalSrc;
+        img.src = base64;
         img.removeAttribute('data-local-src');
 
-        // 3. Ждём реальную загрузку + декодирование
         await new Promise((resolve) => {
-            if (img.complete && img.naturalWidth > 0) return resolve();
-            img.onload = async () => {
-                if (img.decode) await img.decode().catch(() => {});
-                resolve();
-            };
-            img.onerror = resolve;
-            setTimeout(resolve, 10000); // страховка от зависших
+            if (img.complete && img.naturalWidth > 0) {
+                if (img.decode) img.decode().then(resolve).catch(resolve);
+                else resolve();
+            } else {
+                img.onload = () => {
+                    if (img.decode) img.decode().then(resolve).catch(resolve);
+                    else resolve();
+                };
+                img.onerror = resolve;
+                setTimeout(resolve, 12000);
+            }
         });
     }
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
-

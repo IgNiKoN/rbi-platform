@@ -1533,6 +1533,16 @@ async function downloadAllActPhotosForOffline(act) {
         localStorage.setItem('rbi_sync_last_pull_at', doneAt);
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
         localStorage.setItem('rbi_cloud_dirty', '0');
+         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
+    if (typeof window.downloadMissingCloudFiles === 'function' && appSettings.autoCacheCloudFiles) {
+    const now = Date.now();
+    if (!window._lastBgDownloadTime || (now - window._lastBgDownloadTime) > 300000) {
+        window._lastBgDownloadTime = now;
+        setTimeout(() => {
+            window.downloadMissingCloudFiles();
+        }, 5000);
+    }
+}
 
         // ИСПРАВЛЕНИЕ: Честный подсчет реально отправленных и полученных объектов
         const pulledChecks = cloudInspections ? cloudInspections.length : 0;
