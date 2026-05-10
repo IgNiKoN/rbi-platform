@@ -79,9 +79,7 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
 
         // ДОСТАЕМ РЕАЛЬНУЮ КАРТИНКУ ИЗ БАЗЫ
         const rawSrc = p.src || p.photo;
-        const base64Direct = await PhotoManager.getBase64(rawSrc);
-        const imgSrc = base64Direct || '';
-        const imgDataSrc = base64Direct ? '' : (rawSrc || '');
+        const imgSrc = await PhotoManager.getBase64(rawSrc) || rawSrc || '';
         let contrHtml = '';
         if (p.contr) contrHtml = `<div style="font-size: ${fontSizeContr}; color: #64748b; font-weight: bold; margin-top: 2px; white-space: nowrap; overflow: hidden;">👤 ${p.contr} ${p.count ? `(${p.count} шт)` : ''}</div>`;
 
@@ -89,7 +87,7 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
         <td style="width: ${colWidth}; ${paddingStyle}">
             <div style="border: 1px solid ${borderColor}; border-radius: 8px; background: white; overflow: hidden; height: ${cellHeight}; box-sizing: border-box; display: block;">
                 <div style="width: 100%; height: ${imgHeight}; background: #f1f5f9; text-align: center; border-bottom: 2px solid ${titleColor}; overflow: hidden;">
-                    <img src="${imgSrc}" ${imgDataSrc ? `data-local-src="${imgDataSrc}"` : ''} style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                    <img src="${imgSrc}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
                 </div>
                 <div style="padding: 6px; font-size: ${fontSizeName}; font-weight: bold; color: #0f172a; line-height: 1.2; height: calc(${cellHeight} - ${imgHeight}); overflow: hidden; box-sizing: border-box;">
                     <div style="overflow: hidden; max-height: calc(1.2em * 2);">${p.name || 'Дефект'}</div>
@@ -2579,9 +2577,9 @@ window.exportPersonalContractorReport = async function(contractorName) {
                 </div>
             </td>
             <td style="width: 60%; vertical-align: top; padding: 0;">
-                ${buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
-                ${buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
-                ${buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
+                 ${await buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
+                ${await buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
+                ${await buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
             </td>
         </tr>
     </table>
@@ -2894,11 +2892,18 @@ async function waitForPdfImages(container, maxMs = 5000) {
     const images = Array.from(container.querySelectorAll('img'));
     if (images.length === 0) return;
 
-    const promises = images.map(img => {
-        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+   const promises = images.map(img => {
+        if (img.complete && img.naturalHeight !== 0) {
+            // Картинка помечена как загруженная, но iOS может ещё не раскодировать её
+            return img.decode ? img.decode().catch(() => Promise.resolve()) : Promise.resolve();
+        }
         return new Promise((resolve) => {
-            img.onload = resolve;
-            img.onerror = resolve;
+            if (img.decode) {
+                img.decode().then(resolve).catch(resolve);
+            } else {
+                img.onload = resolve;
+                img.onerror = resolve;
+            }
         });
     });
 
