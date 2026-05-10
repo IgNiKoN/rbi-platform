@@ -78,8 +78,7 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
         }
 
         // ДОСТАЕМ РЕАЛЬНУЮ КАРТИНКУ ИЗ БАЗЫ
-        const rawSrc = p.src || p.photo;
-        const imgSrc = await PhotoManager.getBase64(rawSrc) || rawSrc || '';
+        const imgSrc = await PhotoManager.getAsyncUrl(p.src || p.photo) || window.getPhotoSrc(p.src || p.photo);
         let contrHtml = '';
         if (p.contr) contrHtml = `<div style="font-size: ${fontSizeContr}; color: #64748b; font-weight: bold; margin-top: 2px; white-space: nowrap; overflow: hidden;">👤 ${p.contr} ${p.count ? `(${p.count} шт)` : ''}</div>`;
 
@@ -1645,24 +1644,12 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     if (mode === 'browser') {
         const printContainer = document.getElementById('print-content');
         printContainer.setAttribute('data-no-observe', 'true');
-        if (!printContainer) {
-            console.error('Контейнер #print-content не найден!');
-            return;
-        }
+        if (!printContainer) return;
 
-        // В Print-режиме задаем размеры страницы через @page, а контенту отдаем 100% ширины
         printContainer.innerHTML = `
             <style>
-                @page { 
-                    size: ${formatSize} ${orientation}; 
-                    margin: 15mm 10mm; 
-                }
-                #print-wrapper { 
-                    width: 100%; 
-                    margin: 0 auto; 
-                    font-family: Arial, sans-serif; 
-                    font-size: 10pt; /* Используем pt для печати */
-                }
+                @page { size: ${formatSize} ${orientation}; margin: 15mm 10mm; }
+                #print-wrapper { width: 100%; margin: 0 auto; font-family: Arial, sans-serif; font-size: 10pt; }
                 #print-wrapper img { max-width: 100%; display: block; }
                 #print-wrapper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
             </style>
@@ -1672,32 +1659,23 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             </div>
         `;
         
-        // Дожидаемся загрузки всех картинок перед вызовом диалога печати
-       // 1. Превращаем local:// в blob:
         await resolveLocalPhotosForPdf(printContainer);
-        // 2. Ждем физической отрисовки
-        await waitForPdfImages(printContainer, 5000);
         
         setTimeout(() => {
             window._pdfGenerating = false;
             window.print();
-            // Очищаем DOM и убираем лоадер после закрытия окна печати
             setTimeout(() => {
                 printContainer.innerHTML = '';
                 if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
             }, 1000);
-        }, 500); // 500ms пауза критична для iOS Safari
+        }, 300);
         return;
     }
 
     // ============================================================================
-    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (Постраничный рендер)
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF
     // ============================================================================
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isWeakDevice = isMobile || (navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
-
     const hiddenDiv = document.createElement('div');
-    // Держим блок в координатах экрана с opacity: 0.01, чтобы агрессивный сборщик мусора iOS Safari не удалил его из оперативной памяти
     hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 100}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
     hiddenDiv.setAttribute('data-no-observe', 'true');
     document.body.appendChild(hiddenDiv);
@@ -1717,10 +1695,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
         
-        // ЗАКРЫВАЕМ ЗАДАЧУ ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ВЫГРУЗКИ PDF
         if (window.activeTaskId) {
             const task = window.rbi_tasksData?.find(t => t.id === window.activeTaskId);
-            // Закрываем, если это задача отчета (Плакат или One-Pager)
             if (task && task.taskType === 'Отчет' && task.status === 'pending') {
                 task.status = 'done';
                 task.resultComment = 'Файл сгенерирован';
@@ -1728,7 +1704,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
                 if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
             }
-            window.activeTaskId = null; // Сбрасываем
+            window.activeTaskId = null;
         }
     };
 
@@ -1737,71 +1713,30 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },   
         html2canvas: {
-            scale: HIGH_QUALITY_SCALE, // Качество сохраняем максимальным (2.5)  
-            useCORS: true,
-            letterRendering: true,
-            width: widthPx,
-            windowWidth: widthPx,
-            x: 0, y: 0, scrollX: 0, scrollY: 0,
-            logging: false, allowTaint: true, backgroundColor: '#ffffff'
+            scale: HIGH_QUALITY_SCALE, // Оставляем честные 2.5
+            useCORS: true, letterRendering: true, width: widthPx, windowWidth: widthPx,
+            x: 0, y: 0, scrollX: 0, scrollY: 0, logging: false, allowTaint: true, backgroundColor: '#ffffff'
         },
         jsPDF: { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation, compress: true },
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
     try {
-        if (loaderText) loaderText.innerText = "Создание PDF (Высокое качество)...";
-         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (loaderText) loaderText.innerText = "Сборка данных...";
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-        // Разделяем контент на отдельные страницы по маркеру разрыва
-        const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
+        const rootDiv = document.createElement('div');
+        rootDiv.className = 'pdf-print-root';
+        rootDiv.innerHTML = header + content;
+        hiddenDiv.appendChild(rootDiv);
+
+        // Магия: переводим ВСЕ фото в железобетонный JPEG перед тем, как отдать генератору
+        if (loaderText) loaderText.innerText = "Подготовка фотографий...";
+        await resolveLocalPhotosForPdf(rootDiv);
         
-        // Если устройство слабое ИЛИ страниц несколько - рендерим постранично с очисткой RAM!
-        if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
-            let worker = html2pdf().set(opt);
-            
-            for (let i = 0; i < pagesHtml.length; i++) {
-                if (loaderText) loaderText.innerText = `Обработка листа ${i + 1} из ${pagesHtml.length}...`;
-                
-                const pageDiv = document.createElement('div');
-                pageDiv.className = 'pdf-print-root';
-                pageDiv.innerHTML = pagesHtml[i];
-                
-                // Очищаем скрытый контейнер от предыдущей страницы (Освобождаем DOM)
-                Array.from(hiddenDiv.children).forEach(c => { if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c); });
-                hiddenDiv.appendChild(pageDiv);
-
-                // Ждем загрузки картинок ИМЕННО ЭТОЙ страницы
-                await resolveLocalPhotosForPdf(pageDiv);
-                await waitForPdfImages(pageDiv, isMobile ? 8000 : 5000);
-
-                // Рендерим страницу и добавляем в PDF (API html2pdf.js)
-                if (i === 0) {
-                    worker = worker.from(pageDiv).toPdf();
-                } else {
-                    worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
-                }
-                
-                await worker; // Ждем окончания рендера канваса
-                
-                // На слабых устройствах даем сборщику мусора (GC) 800мс на очистку памяти от тяжелого канваса
-                if (isWeakDevice) {
-                    await new Promise(resolve => setTimeout(resolve, 700)); 
-                }
-            }
-            await worker.save();
-        } else {
-            // Обычный рендер одним куском (если страница всего одна и устройство мощное)
-            const rootDiv = document.createElement('div');
-            rootDiv.className = 'pdf-print-root';
-            rootDiv.innerHTML = header + content;
-            hiddenDiv.appendChild(rootDiv);
-            
-            await resolveLocalPhotosForPdf(rootDiv);
-            await waitForPdfImages(rootDiv, isMobile ? 8000 : 5000);
-            
-            await html2pdf().set(opt).from(rootDiv).save();
-        }
+        if (loaderText) loaderText.innerText = "Генерация файла PDF...";
+        // Никаких циклов. Отдаем весь корень, html2pdf сам порежет на страницы по CSS-маркерам
+        await html2pdf().set(opt).from(rootDiv).save();
         
         cleanup();
         if (typeof showToast === 'function') showToast("✅ PDF высокого качества сохранён!");
@@ -1811,6 +1746,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         if (typeof showToast === 'function') showToast("❌ Ошибка генерации. Попробуйте режим Печати.");
     }
 }
+
 
 // ------------------------------------------------------------------
 // Экранирование HTML (безопасность)
@@ -2577,9 +2513,9 @@ window.exportPersonalContractorReport = async function(contractorName) {
                 </div>
             </td>
             <td style="width: 60%; vertical-align: top; padding: 0;">
-                 ${await buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
-                ${await buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
-                ${await buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
+                ${buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
+                ${buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
+                ${buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
             </td>
         </tr>
     </table>
@@ -2837,54 +2773,79 @@ window.rbi_generateQualityDayReport = async function(taskId) {
 
 // --- НОВЫЙ БЛОК: Безопасная загрузка фото перед печатью ---
 
-// Интеллектуальный загрузчик фото для PDF (С ожиданием отрисовки)
+// Бронебойный конвертер: превращает всё в чистый JPEG Base64
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
-                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const promises = [];
 
-    const processImage = async (img) => {
+    for (let img of images) {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src || src.startsWith('data:')) return;
+        if (!src) continue;
 
-        try {
-            let base64 = null;
+        promises.push(new Promise(async (resolve) => {
+            try {
+                let base64 = null;
 
-            if ((src.startsWith('local://') || src.startsWith('cloud://')) &&
-                typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
-                base64 = await PhotoManager.getBase64(src);
-            } else if (src.startsWith('blob:') || src.startsWith('http')) {
-                const response = await fetch(src);
-                const blob = await response.blob();
-                base64 = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
+                // 1. Достаем сырые данные (в любом формате, хоть WebP, хоть PNG)
+                if ((src.startsWith('local://') || src.startsWith('cloud://')) && typeof PhotoManager !== 'undefined' && PhotoManager.getBase64) {
+                    base64 = await PhotoManager.getBase64(src);
+                } else if (src.startsWith('blob:') || src.startsWith('http')) {
+                    
+                    // Если это blob, восстанавливаем оригинальный ID через reverseCache
+                    let realSrc = src;
+                    if (typeof PhotoManager !== 'undefined' && PhotoManager.reverseCache && PhotoManager.reverseCache[src]) {
+                        realSrc = PhotoManager.reverseCache[src];
+                        base64 = await PhotoManager.getBase64(realSrc);
+                    }
+
+                    if (!base64) {
+                        const res = await fetch(src);
+                        const blob = await res.blob();
+                        base64 = await new Promise(r => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => r(reader.result);
+                            reader.readAsDataURL(blob);
+                        });
+                    }
+                } else if (src.startsWith('data:')) {
+                    base64 = src;
+                }
+
+                // 2. СЕКРЕТНОЕ ОРУЖИЕ: Перерисовываем ВСЁ в чистый JPEG
+                // html2canvas не подавится, потому что это будет 100% валидный JPEG код
+                if (base64) {
+                    const tempImg = new Image();
+                    tempImg.crossOrigin = "Anonymous";
+                    tempImg.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = tempImg.width;
+                        canvas.height = tempImg.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#FFFFFF'; // Белый фон (спасает прозрачные PNG от черноты)
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(tempImg, 0, 0);
+                        
+                        img.src = canvas.toDataURL('image/jpeg', 0.95);
+                        img.removeAttribute('data-local-src');
+                        resolve();
+                    };
+                    tempImg.onerror = resolve; // Пропускаем при ошибке отрисовки
+                    tempImg.src = base64;
+                } else {
+                    resolve();
+                }
+            } catch(e) {
+                console.warn('[PDF] Фото пропущено:', src);
+                resolve();
             }
-
-            if (base64 && base64.startsWith('data:')) {
-                img.src = base64;
-                img.removeAttribute('data-local-src');
-            }
-        } catch(e) {
-            console.warn('[PDF] Фото не конвертировано:', src);
-        }
-    };
-
-    if (isMobile) {
-        // iOS: строго по одному — IndexedDB не любит параллельные запросы
-        for (const img of images) {
-            await processImage(img);
-        }
-    } else {
-        // ПК: параллельно, быстро
-        await Promise.race([
-            Promise.all(images.map(img => processImage(img))),
-            new Promise(resolve => setTimeout(resolve, 10000))
-        ]);
+        }));
     }
+    
+    // Ждем перерисовки всех фото (максимум 15 секунд)
+    await Promise.race([
+        Promise.all(promises),
+        new Promise(r => setTimeout(r, 15000))
+    ]);
 }
 
 // Финальная проверка перед созданием PDF
@@ -2892,18 +2853,11 @@ async function waitForPdfImages(container, maxMs = 5000) {
     const images = Array.from(container.querySelectorAll('img'));
     if (images.length === 0) return;
 
-   const promises = images.map(img => {
-        if (img.complete && img.naturalHeight !== 0) {
-            // Картинка помечена как загруженная, но iOS может ещё не раскодировать её
-            return img.decode ? img.decode().catch(() => Promise.resolve()) : Promise.resolve();
-        }
+    const promises = images.map(img => {
+        if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
         return new Promise((resolve) => {
-            if (img.decode) {
-                img.decode().then(resolve).catch(resolve);
-            } else {
-                img.onload = resolve;
-                img.onerror = resolve;
-            }
+            img.onload = resolve;
+            img.onerror = resolve;
         });
     });
 

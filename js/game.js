@@ -2261,7 +2261,7 @@ window.rbi_viewFmea = async function(fmeaId) {
 
         let photoHtml = `<div class="text-[9px] text-slate-400 italic border border-dashed border-slate-300 p-2 rounded text-center">Нет фото</div>`;
         if (d.photo) {
-            const realSrc = await PhotoManager.getBase64(d.photo) || window.getPhotoSrc(d.photo);
+            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
             photoHtml = `<img src="${realSrc}" class="w-14 h-14 object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${d.photo}')">`;
         }
 
@@ -2761,7 +2761,7 @@ window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
 
         let photoTd = `<div style="font-size:9px; color:#94a3b8; font-style:italic; border:1px dashed #cbd5e1; padding:10px; border-radius:4px;">Нет фото</div>`;
         if (d.photo) {
-            const realSrc = await PhotoManager.getBase64(d.photo) || window.getPhotoSrc(d.photo);
+            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
             photoTd = `<img src="${realSrc}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border: 1px solid #cbd5e1; display:block; margin:0 auto;">`;
         }
 
