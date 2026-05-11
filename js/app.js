@@ -39,6 +39,8 @@ let realState = {}, realDetails = {}, realPhotos = {}, realContractorArray = [],
 let real_rbi_tasksData = [], real_weeklyPlanData = {}, real_gameActionLogs = [];
 let real_rbi_meetingsData = [], real_rbi_interventionsData = [], real_rbi_practicesData = [];
 let realTwiCards = [], realCustomDocs = [], realCustomNodes = [];
+window.rbi_feedbackData = [];
+let realFeedbackData = [];
 // Новые сейфы
 let real_skRecords = [], real_skVolumes = {}, real_skContractorMap = {};
 let real_rbi_fmeaRecords = [], real_rbi_scheduleData = [];
@@ -121,6 +123,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         renderSelector();
         await restoreSession();
+        // Загрузка фидбека
+        const storedFb = await dbGet(STORES.SETTINGS, 'feedback_list');
+        if (storedFb && storedFb.data) window.rbi_feedbackData = storedFb.data;
+        if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
 
         if(!currentTemplateKey) {
             document.getElementById('empty-checklist-state').style.display = 'block';
@@ -1401,10 +1407,17 @@ function closeTwiViewer() {
     const overlay = document.getElementById('twi-viewer-overlay');
     const content = document.getElementById('viewer-twi-content');
     
-    if (content.dataset.blobUrl) {
-        URL.revokeObjectURL(content.dataset.blobUrl);
-        content.dataset.blobUrl = '';
-    }
+    function closeTwiViewer() {
+    const overlay = document.getElementById('twi-viewer-overlay');
+    const content = document.getElementById('viewer-twi-content');
+
+    overlay.classList.add('opacity-0');
+    setTimeout(() => {
+        overlay.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        content.innerHTML = ''; 
+    }, 300);
+}
 
     overlay.classList.add('opacity-0');
     setTimeout(() => {
@@ -4182,9 +4195,11 @@ function renderDocsList() {
     const searchInput = document.getElementById('doc-search-input')?.value.toLowerCase() || '';
     if (!container) return;
 
-    // ОБНОВЛЯЕМ ШАПКУ (С iOS-тумблером)
+    // ОБНОВЛЯЕМ ШАПКУ (Возвращаем все кнопки и фильтры)
     const filtersBlock = document.getElementById('ref-docs-filters');
-    if (filtersBlock) {
+    // Добавили проверку !filtersBlock.dataset.initialized, чтобы шапка не перерисовывалась при каждой букве
+    if (filtersBlock && !filtersBlock.dataset.initialized) {
+        filtersBlock.dataset.initialized = 'true';
         filtersBlock.innerHTML = `
             <div class="flex justify-between items-center mb-3">
                 <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
@@ -4198,14 +4213,25 @@ function renderDocsList() {
                     <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
                 </button>
             </div>
-            <div class="flex justify-between items-center">
+            
+            <div class="flex justify-between items-center mb-2">
                 <div class="relative flex-1 mr-2">
                     <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
                     <input type="text" id="doc-search-input" class="input-base pl-9 text-[11px]" placeholder="Поиск ГОСТ, СП..." oninput="renderDocsList()" value="${searchInput}">
                 </div>
+                <button onclick="openAiDocChat()" class="bg-indigo-100 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400 px-3 py-2 rounded-lg shadow-sm active:scale-95 text-[10px] font-black uppercase whitespace-nowrap mr-2 flex items-center gap-1">
+                    🤖 Спросить ИИ
+                </button>
                 <button onclick="openAddDocModal()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Свой НД
                 </button>
+            </div>
+            
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1 border-t border-[var(--card-border)] pt-2" id="doc-filters-container">
+                <button onclick="filterDocs('ALL', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter === 'ALL' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} active:scale-95 whitespace-nowrap border">Все</button>
+                <button onclick="filterDocs('СП', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter === 'СП' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} active:scale-95 whitespace-nowrap border">СП</button>
+                <button onclick="filterDocs('ГОСТ', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter === 'ГОСТ' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} active:scale-95 whitespace-nowrap border">ГОСТ</button>
+                <button onclick="filterDocs('ПРОЕКТ', this)" class="doc-filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold ${currentDocFilter === 'ПРОЕКТ' ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'} active:scale-95 whitespace-nowrap border">Проект / РД</button>
             </div>
         `;
     }
@@ -4325,7 +4351,7 @@ function closeAddDocModal() {
 window.handleDocPdfUpload = function(event) {
     const file = event.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 5 МБ."); }
+    if (file.size > 20 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 5 МБ."); }
     
     showToast("⚙️ Сохранение PDF в локальную базу...");
     const reader = new FileReader();
@@ -4378,6 +4404,31 @@ async function saveCustomDoc() {
         newDoc.pdfData = pdfData;
         newDoc.pdfName = document.getElementById('doc-pdf-name').innerText;
         newDoc.pdfSize = document.getElementById('doc-pdf-size').innerText;
+        
+        // Фоновая задача: извлечь текст из PDF для умного поиска
+        setTimeout(async () => {
+            showToast("📄 Индексация текста документа для ИИ...");
+            const realUrl = await PhotoManager.getAsyncUrl(pdfData) || pdfData;
+            const extracted = await window.extractTextFromPdf(realUrl);
+            if (extracted) {
+                // Достаем свежую базу, чтобы избежать перезаписи
+                const storedDocs = await dbGet(STORES.SETTINGS, 'custom_docs');
+                const freshDocs = storedDocs ? storedDocs.data : customDocs;
+                const idx = freshDocs.findIndex(d => d.id === newDoc.id);
+                if (idx !== -1) {
+                    freshDocs[idx].extractedText = extracted;
+                    freshDocs[idx].updatedAt = new Date().toISOString();
+                    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: freshDocs });
+                    customDocs = freshDocs.filter(d => !d._deleted); // обновляем экран
+                    showToast("✨ Текст документа успешно проиндексирован ИИ!");
+                    
+                    localStorage.setItem('rbi_cloud_dirty', '1');
+                    if (typeof triggerSync === 'function') triggerSync('silent');
+                }
+            } else {
+                showToast("⚠️ Текст из PDF извлечь не удалось.");
+            }
+        }, 2000);
     }
 
     customDocs.unshift(newDoc);
@@ -4447,6 +4498,23 @@ window.openDocViewer = function(docId) {
     openTwiViewer(doc.id);
     // Сразу убираем, чтобы не засорять TWI-базу
     customTwiCards.pop();
+    // Ленивая индексация: если документ загружен давно и текста нет — читаем его сейчас
+    if (!doc.extractedText && doc.pdfData && appSettings.aiEnabled) {
+        setTimeout(async () => {
+            const realUrl = await PhotoManager.getAsyncUrl(doc.pdfData) || doc.pdfData;
+            const extracted = await window.extractTextFromPdf(realUrl);
+            if (extracted) {
+                doc.extractedText = extracted;
+                doc.updatedAt = new Date().toISOString(); // <-- ИСПРАВЛЕНИЕ: Облако увидит, что файл обновился
+                await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
+                console.log("[AI] Текст старого документа проиндексирован:", doc.code);
+                
+                // ДОБАВЛЕНО: Отправляем старый документ, но уже с текстом, обратно в облако
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                if (typeof triggerSync === 'function') triggerSync('silent');
+            }
+        }, 2000);
+    }
 };
 
 // ==========================================
@@ -5071,7 +5139,8 @@ async function saveTwiCard() {
     const checklistKey = select.value;
     const checklistName = select.options[select.selectedIndex]?.text || 'Без привязки';
 
-    if (!title || !checklistKey) return showToast("⚠️ Укажите название и привязку к чек-листу!");
+    if (!title) return showToast("⚠️ Укажите название!");
+    if (currentTwiType !== 'PDF' && !checklistKey) return showToast("⚠️ Укажите привязку к чек-листу!");
 
     let cardData = {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
@@ -5996,114 +6065,7 @@ function closeNodeViewer() {
     }, 300);
 }
 
-// === ПЕЧАТЬ TWI КАРТЫ ДЛЯ РАБОЧИХ ===
-window.printCurrentTwi = async function(mode = 'browser') {
-    const twiId = document.getElementById('twi-viewer-overlay').dataset.currentTwiId;
-    if (!twiId) return;
-    const card = customTwiCards.find(c => c.id === twiId);
-    if (!card) return;
 
-    let content = '';
-
-    const fsTitle = mode === 'browser' ? '12pt' : '16px';
-    const fsText = mode === 'browser' ? '9pt' : '12px';
-    const imgHeight = mode === 'browser' ? '40mm' : '180px';
-
-    // ВАЖНО: Асинхронно достаем картинки из БД
-    let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
-    let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
-
-    if (card.type === 'INSPECTOR') {
-        let compliance = "", prep = "";
-        if (card.howToCheck) {
-            if (card.howToCheck.includes('[Как подготовить]')) {
-                const parts = card.howToCheck.split('[Как подготовить]\n');
-                prep = parts[1] || '';
-                compliance = parts[0].replace('[Что соблюсти]\n', '').trim();
-            } else {
-                compliance = card.howToCheck.replace('[Что соблюсти]\n', '').trim();
-            }
-        }
-
-        content = `
-            <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
-                <tr>
-                    <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
-                        <div style="color: #166534; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">ЭТАЛОН (ПРАВИЛЬНО)</div>
-                        ${resolvedGood ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedGood}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #166534;">Нет фото</div>`}
-                    </td>
-                    <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
-                        <div style="color: #991b1b; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">БРАК (НАРУШЕНИЕ)</div>
-                        ${resolvedBad ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedBad}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #991b1b;">Нет фото</div>`}
-                    </td>
-                </tr>
-            </table>
-            
-            <table class="no-break" style="width: 100%; border-collapse: separate; border-spacing: 15px 0; table-layout: fixed; margin-left: -15px;">
-                <tr>
-                    <td style="width: 50%; vertical-align: top;">
-                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
-                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📌 Как подготовить:</h3>
-                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${prep || 'Не указано'}</p>
-                        </div>
-                    </td>
-                    <td style="width: 50%; vertical-align: top;">
-                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
-                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📏 Что соблюсти (Критерии):</h3>
-                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${compliance || 'Не указано'}</p>
-                        </div>
-                    </td>
-                </tr>
-            </table>
-
-            <div class="no-break" style="background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fecaca; margin-top: 15px;">
-                <h3 style="color: #991b1b; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">🚨 Риски нарушения:</h3>
-                <p style="font-size: ${fsText}; color: #7f1d1d; margin: 0;">${card.whyImportant || 'Не указано'}</p>
-            </div>
-        `;
-    } else if (card.type === 'WORKER') {
-        content = `
-            <table class="no-break" style="width: 100%; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; border-collapse: collapse;">
-                <tr>
-                    <td style="vertical-align: middle;">
-                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Время операции</div>
-                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">~${card.totalTime} мин</div>
-                    </td>
-                    <td style="text-align: right; vertical-align: middle;">
-                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Количество шагов</div>
-                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">${card.steps.length}</div>
-                    </td>
-                </tr>
-            </table>
-        `;
-        
-        // ВАЖНО: Используем for...of вместо forEach, чтобы await работал
-        for (let step of card.steps) {
-            let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
-            
-            content += `
-                <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
-                    <tr>
-                        <td style="padding: 15px; vertical-align: top;">
-                            <h3 style="color: #047857; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color: #64748b; font-size: ${mode === 'browser' ? '9pt' : '11px'};">(⏱ ${step.time} мин)</span>` : ''}</h3>
-                            <p style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: bold; color: #1e293b; white-space: pre-wrap; margin: 0;">${step.text}</p>
-                        </td>
-                        ${stepPhoto ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: middle; text-align: center;">
-                            <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center;">
-                                <img src="${stepPhoto}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
-                            </div>
-                        </td>` : ''}
-                    </tr>
-                </table>
-            `;
-        }
-    } else {
-        return showToast('Печать PDF-файлов осуществляется внешними средствами.');
-    }
-
-    const orientation = card.type === 'INSPECTOR' ? 'landscape' : 'portrait';
-    printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode);
-};
 
 // === ГОРИЗОНТАЛЬНЫЙ СКРОЛЛ МЫШКОЙ (ДЛЯ ПК) ===
 function initHorizontalMouseScroll() {
@@ -6819,128 +6781,6 @@ function goToFAQ() {
     openFaqModal();
 }
 
-// ============================================================================
-// === AI ЧАТ ПО НОРМАТИВАМ (RAG: Поиск контекста + DeepSeek) ===
-// ============================================================================
-
-window.openAiDocChat = function() {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
-    document.getElementById('ai-chat-modal').style.display = 'flex';
-    document.body.classList.add('modal-open');
-};
-
-window.closeAiDocChat = function() {
-    document.getElementById('ai-chat-modal').style.display = 'none';
-    document.body.classList.remove('modal-open');
-};
-
-window.askAiDocQuestion = async function() {
-    const inputEl = document.getElementById('ai-chat-input');
-    const chatHistory = document.getElementById('ai-chat-history');
-    const btn = document.getElementById('ai-chat-send-btn');
-    
-    const question = inputEl.value.trim();
-    if (!question) return;
-
-    // 1. Отображаем вопрос пользователя в чате
-    const userMsgHtml = `
-        <div class="flex gap-2 w-full max-w-[85%] ml-auto justify-end">
-            <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-[12px] shadow-sm">${escapeHtml(question)}</div>
-        </div>`;
-    chatHistory.insertAdjacentHTML('beforeend', userMsgHtml);
-    inputFieldReset();
-
-    // 2. Отображаем индикатор "Печатает..."
-    const loaderId = 'loader_' + Date.now();
-    const loaderHtml = `
-        <div id="${loaderId}" class="flex gap-2 w-full max-w-[85%]">
-            <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-500 shadow-sm animate-pulse">
-                Ищу норматив и формулирую ответ...
-            </div>
-        </div>`;
-    chatHistory.insertAdjacentHTML('beforeend', loaderHtml);
-    chatHistory.scrollTop = chatHistory.scrollHeight;
-    
-    // 3. УМНЫЙ ЛОКАЛЬНЫЙ ПОИСК КОНТЕКСТА (RAG)
-    // Собираем все документы и пункты чек-листов, чтобы скормить нейросети "шпаргалку"
-    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
-    
-    // Разбиваем вопрос пользователя на слова для простого поиска совпадений
-    const keywords = question.toLowerCase().replace(/[.,?!]/g, '').split(' ').filter(w => w.length > 3);
-    
-    // Ищем в документах
-    let contextArr = [];
-    allDocs.forEach(doc => {
-        const text = `${doc.code} ${doc.title}`.toLowerCase();
-        let matches = keywords.filter(kw => text.includes(kw)).length;
-        if (matches > 0) contextArr.push({ type: 'Документ', title: doc.code, text: doc.title, score: matches });
-    });
-
-    // Ищем прямо в чек-листах (в текстах нормативов)
-    const flatList = getFlatList(currentChecklist);
-    flatList.forEach(item => {
-        const text = `${item.n} ${item.t}`.toLowerCase();
-        let matches = keywords.filter(kw => text.includes(kw)).length;
-        if (matches > 0) {
-            // Очищаем от HTML тегов
-            const cleanNorm = item.t ? item.t.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ") : "Нет норматива";
-            contextArr.push({ type: 'Пункт проверки', title: item.n, text: cleanNorm, score: matches });
-        }
-    });
-
-    // Берем ТОП-10 самых подходящих кусков текста
-    contextArr.sort((a,b) => b.score - a.score);
-    const topContext = contextArr.slice(0, 10).map(c => `[${c.type}] ${c.title}: ${c.text}`).join('\n');
-
-    // 4. ФОРМИРУЕМ ПРОМПТ ДЛЯ DEEPSEEK
-    const promptSystem = `Ты — эксперт строительного контроля. Ответь на вопрос инженера максимально точно и КОРОТКО. 
-    Используй ТОЛЬКО информацию из предоставленной базы знаний ниже. Если ответа в базе нет, скажи, что точного норматива не найдено, но дай общестроительный совет. Обязательно указывай ГОСТ или СП, если ссылаешься на них.
-    
-    БАЗА ЗНАНИЙ ПРИЛОЖЕНИЯ:
-    ${topContext || 'База пуста'}`;
-
-    try {
-        btn.disabled = true; btn.style.opacity = '0.5';
-        
-        // ВЫЗЫВАЕМ ИИ
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: question }
-        ], { temperature: 0.2, max_tokens: 500 }); // Температуру ставим низкую, чтобы не фантазировал, а отвечал строго по ГОСТ
-
-        // 5. Выводим результат
-        document.getElementById(loaderId).remove();
-        
-        const aiMsgHtml = `
-            <div class="flex gap-2 w-full max-w-[90%]">
-                <div class="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
-                <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-2xl rounded-tl-none text-[12px] text-indigo-900 dark:text-indigo-200 shadow-sm leading-relaxed whitespace-pre-wrap font-medium">
-                    ${response}
-                </div>
-            </div>`;
-        chatHistory.insertAdjacentHTML('beforeend', aiMsgHtml);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-
-    } catch (e) {
-        document.getElementById(loaderId).remove();
-        const errorHtml = `
-            <div class="flex gap-2 w-full max-w-[85%]">
-                <div class="w-6 h-6 bg-red-200 rounded-full flex items-center justify-center text-[10px] shrink-0">❌</div>
-                <div class="bg-red-50 text-red-600 border border-red-200 p-3 rounded-2xl rounded-tl-none text-[12px] shadow-sm">
-                    Ошибка связи с нейросетью: ${e.message}
-                </div>
-            </div>`;
-        chatHistory.insertAdjacentHTML('beforeend', errorHtml);
-    } finally {
-        btn.disabled = false; btn.style.opacity = '1';
-    }
-
-    function inputFieldReset() {
-        inputEl.value = '';
-        inputEl.focus();
-    }
-};
 
 // === ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА AI ===
 window.changeAiMode = function(isPersonal) {
@@ -7072,104 +6912,147 @@ function findTemplateKey(titleStr) {
     return null;
 }
 
-// --- ГЕНЕРАТОР АВТОЗАДАЧ НА ОСНОВЕ ГРАФИКА ---
-window.rbi_generateAutoTasks = async function() {
-    showToast("🧠 Нейросеть формирует цепочки задач...");
-    
-    // 1. Получаем все текущие задачи из базы
-    let existingTasks = await dbGetAll(STORES.TASKS) || [];
-    
-    // 2. МЯГКАЯ ОЧИСТКА: Удаляем только НЕВЫПОЛНЕННЫЕ задачи, созданные графиком
-    let tasksToKeep = existingTasks.filter(t => {
-        if (t.status === 'done') return true; 
-        if (t.source === 'schedule') return false; 
-        return true; 
-    });
-    
-    await dbClear(STORES.TASKS);
-    window.rbi_tasksData = [...tasksToKeep];
+// --- ГЕНЕРАТОР АВТОЗАДАЧ НА ОСНОВЕ ГРАФИКА (SMART SYNC) ---
+window.rbi_generateAutoTasks = async function(silent = false) {
+    if (!silent) showToast("🧠 Синхронизация задач с графиком...");
 
     let generatedCount = 0;
+    let updatedCount = 0;
+    let deletedCount = 0;
 
+    const now = new Date();
+    now.setHours(0,0,0,0);
+
+    // 1. Создаем список существующих задач, созданных графиком
+    const scheduleTasks = window.rbi_tasksData.filter(t => t.source === 'schedule' && !t._deleted);
+
+    // 2. Проходимся по актуальному графику
     window.rbi_scheduleData.forEach(stage => {
-        if (stage._deleted) return; 
+        if (stage._deleted) return;
 
         const startD = new Date(stage.startDate);
         const endD = new Date(stage.endDate);
-        const now = new Date();
-        now.setHours(0,0,0,0);
-        
-        const addTask = (daysOffset, typeName, title, desc, iconName, catName) => {
+
+        const addTaskOrUpdate = (daysOffset, typeName, title, desc, iconName, catName) => {
             const tDate = new Date(startD);
             tDate.setDate(tDate.getDate() + daysOffset);
-            
-            // Пропускаем старые этапы подготовки (если они уже прошли), Финал оставляем всегда
-            if (tDate < now && typeName !== 'Финал') return; 
 
-            // --- ЖЁСТКАЯ ПРОВЕРКА НА ДУБЛИКАТЫ (Синхронизация с Риск-матрицей и Архивом) ---
-            // 1. Проверяем, нет ли уже такой задачи в системе (ДАЖЕ ЕСЛИ ОНА ВЫПОЛНЕНА!)
-            const isDuplicateTask = window.rbi_tasksData.some(t => 
-                t.contractor === stage.contractor && 
-                t.templateKey === stage.templateKey && 
-                t.taskType === typeName
-            );
-            
-            if (isDuplicateTask) return; // Задача уже есть, пропускаем
+            // Если дата задачи в далеком прошлом (и это не Финал), не создаем новую
+            if (tDate < now && typeName !== 'Финал') return;
 
-            // 2. Если это Эталон — дополнительно проверяем базу реальных Актов-Эталонов
-            if (typeName === 'Эталон') {
-                const hasEtalonInDb = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
-                    e.contractorName === stage.contractor && 
-                    e.templateKey === stage.templateKey
+            // ИЩЕМ ЗАДАЧУ ПО ЖЕСТКОЙ ПРИВЯЗКЕ (ID Этапа + Тип задачи)
+            let existingTask = scheduleTasks.find(t => t.stageId === stage.id && t.taskType === typeName);
+
+            // Защита от дублей, если старые задачи создавались без stageId (находим по имени)
+            if (!existingTask) {
+                existingTask = scheduleTasks.find(t => 
+                    t.contractor === stage.contractor && 
+                    t.templateKey === stage.templateKey && 
+                    t.taskType === typeName
                 );
-                if (hasEtalonInDb) return; // Эталон уже снят, пропускаем
             }
-            // -------------------------------------------------------------------
 
-            const task = {
-                id: 'tsk_sch_' + Date.now().toString(36) + Math.floor(Math.random()*1000),
-                source: 'schedule',     
-                type: 'auto',
-                category: catName,      
-                icon: iconName,         
-                taskType: typeName,
-                title: title,
-                prompt: desc,
-                workTitle: stage.workTitle,
-                templateKey: stage.templateKey,
-                contractor: stage.contractor,
-                date: tDate.toISOString(),
-                status: 'pending',
-                priorityLvl: 3,         
-                target: 1,
-                done: 0,
-                carryOverCount: 0,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-            window.rbi_tasksData.push(task);
-            generatedCount++;
+            if (existingTask) {
+                // ПРИВЯЗЫВАЕМ СТАРУЮ ЗАДАЧУ К НОВОМУ ID (если она была без него)
+                existingTask.stageId = stage.id;
+
+                // ОБНОВЛЯЕМ ДАТУ, ЕСЛИ ГРАФИК СДВИНУЛСЯ (Только если задача еще не закрыта)
+                if (existingTask.status === 'pending' || existingTask.status === 'paused') {
+                    const oldDate = new Date(existingTask.date).getTime();
+                    if (oldDate !== tDate.getTime()) {
+                        existingTask.date = tDate.toISOString();
+                        existingTask.updatedAt = new Date().toISOString();
+                        updatedCount++;
+                    }
+                }
+            } else {
+                // СОЗДАЕМ НОВУЮ ЗАДАЧУ
+                // Проверка на Эталон: не запрашивать, если Акт-Эталон уже снят в базе
+                if (typeName === 'Эталон') {
+                    const hasEtalonInDb = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
+                        e.contractorName === stage.contractor && e.templateKey === stage.templateKey
+                    );
+                    if (hasEtalonInDb) return; // Эталон уже есть, пропускаем
+                }
+
+                const task = {
+                    id: 'tsk_sch_' + Date.now().toString(36) + Math.floor(Math.random()*1000),
+                    source: 'schedule',
+                    stageId: stage.id, // ЖЕСТКАЯ ПРИВЯЗКА К ГРАФИКУ
+                    type: 'auto',
+                    category: catName,
+                    icon: iconName,
+                    taskType: typeName,
+                    title: title,
+                    prompt: desc,
+                    workTitle: stage.workTitle,
+                    templateKey: stage.templateKey,
+                    contractor: stage.contractor,
+                    date: tDate.toISOString(),
+                    status: 'pending',
+                    priorityLvl: 3,
+                    target: 1,
+                    done: 0,
+                    carryOverCount: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                window.rbi_tasksData.push(task);
+                generatedCount++;
+            }
         };
 
-        // СОЗДАЕМ ТОЛЬКО РАЗОВЫЕ ВЕХИ (Цикличные проверки берет на себя Риск-матрица)
-        addTask(-14, 'ППР', 'Проверить ППР и ТК', 'Проверить наличие и утверждение технологической карты до выхода подрядчика.', 'ППР', 'method');
-        addTask(-7, 'Инструктаж', 'Вводный инструктаж', 'Собрать бригадиров, провести инструктаж по допускам и качеству.', 'Инструктаж', 'method');
-        addTask(-3, 'Эталон', 'Приемка Эталона', 'Зафиксировать эталонный участок работ с фотофиксацией.', 'Эталон', 'control');
-        addTask(0, 'Старт', 'Контроль старта работ', 'Первая проверка на объекте в день начала этапа.', 'Контроль', 'control');
-        
-        // Финал (за 3 дня до конца по графику)
+        // ВЕХИ ГРАФИКА
+        addTaskOrUpdate(-14, 'ППР', 'Проверить ППР и ТК', 'Проверить наличие и утверждение технологической карты до выхода подрядчика.', 'ППР', 'method');
+        addTaskOrUpdate(-7, 'Инструктаж', 'Вводный инструктаж', 'Собрать бригадиров, провести инструктаж по допускам и качеству.', 'Инструктаж', 'method');
+        addTaskOrUpdate(-3, 'Эталон', 'Приемка Эталона', 'Зафиксировать эталонный участок работ с фотофиксацией.', 'Эталон', 'control');
+        addTaskOrUpdate(0, 'Старт', 'Контроль старта работ', 'Первая проверка на объекте в день начала этапа.', 'Контроль', 'control');
+
         const finalDiff = Math.round((endD - startD) / (1000 * 60 * 60 * 24)) - 3;
         if (finalDiff > 0) {
-            addTask(finalDiff, 'Финал', 'Финальная приемка', 'Итоговая проверка перед подписанием КС.', 'Отчет', 'report');
+            addTaskOrUpdate(finalDiff, 'Финал', 'Финальная приемка', 'Итоговая проверка перед подписанием КС.', 'Отчет', 'report');
         }
     });
 
-    for (let t of window.rbi_tasksData) { await dbPut(STORES.TASKS, t); }
+    // 3. ЧИСТИМ ОСИРОТЕВШИЕ ЗАДАЧИ (Удалили строку в Excel -> Задача исчезла)
+    const activeStageIds = window.rbi_scheduleData.filter(s => !s._deleted).map(s => s.id);
+    
+    window.rbi_tasksData.forEach(t => {
+        if (t.source === 'schedule' && t.stageId && !t._deleted) {
+            if (!activeStageIds.includes(t.stageId)) {
+                // Разрешаем удалять задачу ТОЛЬКО если она еще не выполнена
+                if (t.status === 'pending' || t.status === 'paused') {
+                    t._deleted = true;
+                    t.updatedAt = new Date().toISOString();
+                    deletedCount++;
+                }
+            }
+        }
+    });
+
+    // 4. СОХРАНЯЕМ В БАЗУ ТЕЛЕФОНА
+    for (let t of window.rbi_tasksData) {
+        if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
+    }
+
+    // 5. ДАЕМ КОМАНДУ ОБЛАКУ НА СИНХРОНИЗАЦИЮ
+    if (generatedCount > 0 || updatedCount > 0 || deletedCount > 0) {
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
 
     setTimeout(() => {
-        showToast(`✅ Запланировано вех по графику: ${generatedCount}`);
+        if (!silent && (generatedCount > 0 || updatedCount > 0 || deletedCount > 0)) {
+            showToast(`✅ Задачи обновлены! Новых: ${generatedCount}, Сдвинуто: ${updatedCount}, Удалено: ${deletedCount}`);
+            // <-- НОВОЕ: Перерисовываем таймлайн Графика, чтобы сразу увидеть кружочки!
+            if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true); 
+        } else if (!silent) {
+            showToast(`✅ Задачи синхронизированы с графиком`);
+            if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true); 
+        }
+        // Перерисовываем список задач во вкладке Инженера
         if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
-    }, 1000);
+    }, 500);
 };
 
 
@@ -7256,117 +7139,127 @@ window.rbi_renderScheduleTab = async function(skipLoad = false) {
         rowsHtml = `<tr><td colspan="6" class="text-center py-6 text-slate-500 text-[11px] font-bold uppercase tracking-widest border-b border-dashed border-slate-300">В графике нет этапов.</td></tr>`;
     }
 
-    // 3. ГЕНЕРИРУЕМ ВИЗУАЛЬНЫЙ ТАЙМЛАЙН (ИОС-КАРТОЧКИ)
+    // 3. ГЕНЕРИРУЕМ ВИЗУАЛЬНЫЙ ТАЙМЛАЙН (СТРОГИЙ, КОМПАКТНЫЙ СТИЛЬ)
     let ganttHtml = '';
     if (activeData.length > 0) {
-        // Находим крайние точки всего проекта, чтобы рассчитать масштаб линии
-        let minDate = new Date(Math.min(...activeData.map(s => new Date(s.startDate).getTime())));
-        let maxDate = new Date(Math.max(...activeData.map(s => new Date(s.endDate).getTime())));
-        let totalDuration = maxDate.getTime() - minDate.getTime();
+        // Находим крайние точки проекта для масштаба (+5% отступы по краям)
+        let minDateMs = Math.min(...activeData.map(s => new Date(s.startDate).getTime()));
+        let maxDateMs = Math.max(...activeData.map(s => new Date(s.endDate).getTime()));
+        const paddingTime = (maxDateMs - minDateMs) * 0.05;
+        
+        const globalStart = minDateMs - paddingTime;
+        const globalEnd = maxDateMs + paddingTime;
+        let totalDuration = globalEnd - globalStart;
         if (totalDuration === 0) totalDuration = 1;
 
-        ganttHtml = `<div class="space-y-4 mt-4">`;
+        // Положение линии "СЕГОДНЯ"
+        const nowTime = new Date().getTime();
+        let todayPerc = ((nowTime - globalStart) / totalDuration) * 100;
+        todayPerc = Math.max(0, Math.min(100, todayPerc));
+
+        let rowsHtml = '';
 
         activeData.forEach(s => {
             const sStart = new Date(s.startDate).getTime();
             const sEnd = new Date(s.endDate).getTime();
-            const stageDurationDays = Math.max(1, Math.round((sEnd - sStart) / (1000 * 60 * 60 * 24)));
             
-            // Расчет позиции синей заливки (относительно всего проекта)
-            let leftPerc = ((sStart - minDate.getTime()) / totalDuration) * 100;
+            let leftPerc = ((sStart - globalStart) / totalDuration) * 100;
             let widthPerc = ((sEnd - sStart) / totalDuration) * 100;
-            if (leftPerc < 0) leftPerc = 0;
-            if (widthPerc < 5) widthPerc = 5; // Минимальная ширина визуала
+            if (widthPerc < 1) widthPerc = 1; 
 
             // Ищем привязанные задачи к этому этапу
             const linkedTasks = (window.rbi_tasksData || []).filter(t => 
-                t.source === 'schedule' && 
-                t.contractor === s.contractor && 
-                t.templateKey === s.templateKey &&
-                !t._deleted
+                t.source === 'schedule' && t.stageId === s.id && !t._deleted
             );
 
-            // Отрисовка кружочков-задач
+            // Отрисовка кружочков-задач (вех)
             let tasksDots = linkedTasks.map(t => {
                 const tDate = new Date(t.date).getTime();
-                
-                // Вычисляем процент положения точки на глобальной линии проекта
-                let tLeft = ((tDate - minDate.getTime()) / totalDuration) * 100;
+                let tLeft = ((tDate - sStart) / (sEnd - sStart)) * 100; // Позиция внутри самой полоски
                 if (tLeft < 0) tLeft = 0; if (tLeft > 100) tLeft = 100;
                 
                 const isDone = t.status === 'done';
-                
-                // Строгий iOS стиль
-                const nodeClass = isDone 
-                    ? 'bg-green-500 border-2 border-white dark:border-slate-800 shadow-md z-20' 
-                    : 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-500 shadow-sm z-10';
-                
-                const iconSvg = isDone 
-                    ? `<svg class="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>`
-                    : `<div class="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-500 rounded-full"></div>`;
+                const dotClass = isDone ? 'bg-green-500 border-green-700 z-20' : 'bg-white dark:bg-slate-700 border-indigo-500 z-10';
+                // Берем первую букву из типа задачи
+                const initial = t.taskType ? t.taskType.charAt(0).toUpperCase() : '';
 
                 return `
-                    <div class="absolute top-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer" style="left: ${tLeft}%; transform: translateX(-50%);">
-                        <!-- Всплывающая подсказка (Tooltip) -->
-                        <div class="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap z-30 text-center">
-                            ${t.taskType}<br>
-                            <span class="${isDone ? 'text-green-400' : 'text-slate-300'}">${new Date(t.date).toLocaleDateString('ru-RU')}</span>
-                        </div>
-                        <!-- Сам кружок -->
-                        <div class="w-5 h-5 rounded-full flex items-center justify-center transition-transform group-hover:scale-125 ${nodeClass}">
-                            ${iconSvg}
-                        </div>
-                        <!-- Подпись снизу -->
-                        <div class="absolute top-full mt-1.5 text-[8px] font-black text-slate-500 uppercase tracking-widest whitespace-nowrap bg-white/80 dark:bg-slate-800/80 px-1 rounded backdrop-blur-sm">
-                            ${t.taskType}
+                    <div class="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 ${dotClass} cursor-pointer group hover:scale-150 transition-transform flex items-center justify-center text-[7px] font-black" style="left: ${tLeft}%; transform: translate(-50%, -50%);">
+                        ${isDone ? '✓' : initial}
+                        <div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap z-30 font-normal">
+                            ${t.taskType}<br><span class="${isDone ? 'text-green-400' : 'text-slate-300'}">${new Date(t.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'})}</span>
                         </div>
                     </div>
                 `;
+                
             }).join('');
 
-            ganttHtml += `
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-2xl shadow-sm relative overflow-hidden">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase tracking-tight leading-tight">${s.workTitle}</div>
-                            <div class="text-[10px] font-bold text-[var(--text-muted)] mt-1 flex items-center gap-1.5">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                                ${s.contractor}
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <div class="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">${stageDurationDays} дн.</div>
-                        </div>
+            rowsHtml += `
+                <div class="relative py-2 border-b border-slate-100 dark:border-slate-700/50 last:border-0 flex items-center group">
+                    <div class="w-1/3 pr-2 shrink-0">
+                        <div class="text-[10px] font-black text-slate-800 dark:text-white truncate" title="${s.workTitle}">${s.workTitle}</div>
+                        <div class="text-[8px] font-bold text-slate-500 truncate" title="${s.contractor}">${s.contractor}</div>
                     </div>
-                    
-                    <!-- Таймлайн линия -->
-                    <div class="relative pt-6 pb-6">
-                        <!-- Серая подложка (весь проект) -->
-                        <div class="absolute left-0 right-0 h-2 bg-slate-100 dark:bg-slate-700 rounded-full top-1/2 -translate-y-1/2"></div>
-                        <!-- Синяя заливка (длительность текущего этапа) -->
-                        <div class="absolute h-2 bg-indigo-500 rounded-full top-1/2 -translate-y-1/2 shadow-[0_0_8px_rgba(99,102,241,0.4)]" style="left: ${leftPerc}%; width: ${widthPerc}%;"></div>
-                        <!-- Узлы задач -->
-                        ${tasksDots}
-                    </div>
-
-                    <!-- Даты -->
-                    <div class="flex justify-between items-center mt-2 pt-3 border-t border-slate-100 dark:border-slate-700">
-                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            Нач: ${new Date(s.startDate).toLocaleDateString('ru-RU')}
-                        </div>
-                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            Оконч: ${new Date(s.endDate).toLocaleDateString('ru-RU')}
+                    <div class="w-2/3 h-5 relative shrink-0 border-l border-slate-200 dark:border-slate-700 pl-2">
+                        <!-- Фон полосы -->
+                        <div class="absolute h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full top-1/2 -translate-y-1/2 left-2 right-2"></div>
+                        <!-- Активная заливка этапа -->
+                        <div class="absolute h-1.5 bg-indigo-500 rounded-full top-1/2 -translate-y-1/2" style="left: calc(8px + ${leftPerc}% * 0.95); width: calc(${widthPerc}% * 0.95);">
+                            ${tasksDots}
                         </div>
                     </div>
                 </div>
             `;
         });
-        ganttHtml += `</div>`;
+
+        const todayStr = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+
+        ganttHtml = `
+            <!-- Легенда и правила генерации задач (Аккордеон) -->
+            <details class="mb-3 group bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Логика автоматических вех (Справка)
+                    </span>
+                    <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                    </span>
+                </summary>
+                <div class="p-3 border-t border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[10px] leading-relaxed space-y-1.5 font-medium bg-white dark:bg-slate-800">
+                    <div class="flex items-start gap-2"><span class="w-4 h-4 bg-slate-100 dark:bg-slate-700 border border-indigo-300 dark:border-indigo-600 rounded-full shrink-0 flex items-center justify-center text-[7px] font-black text-indigo-600 dark:text-indigo-400">П</span> <span><b>ППР (-14 дн):</b> Задача на проверку и утверждение технологических карт до начала работ.</span></div>
+                    <div class="flex items-start gap-2"><span class="w-4 h-4 bg-slate-100 dark:bg-slate-700 border border-indigo-300 dark:border-indigo-600 rounded-full shrink-0 flex items-center justify-center text-[7px] font-black text-indigo-600 dark:text-indigo-400">И</span> <span><b>Инструктаж (-7 дн):</b> Сбор бригадиров, выдача TWI-инструкций и допусков.</span></div>
+                    <div class="flex items-start gap-2"><span class="w-4 h-4 bg-slate-100 dark:bg-slate-700 border border-indigo-300 dark:border-indigo-600 rounded-full shrink-0 flex items-center justify-center text-[7px] font-black text-indigo-600 dark:text-indigo-400">Э</span> <span><b>Эталон (-3 дн):</b> Комиссионная приемка первого образца работы.</span></div>
+                    <div class="flex items-start gap-2"><span class="w-4 h-4 bg-slate-100 dark:bg-slate-700 border border-indigo-300 dark:border-indigo-600 rounded-full shrink-0 flex items-center justify-center text-[7px] font-black text-indigo-600 dark:text-indigo-400">С</span> <span><b>Старт (0 дн):</b> Первая проверка выполненной работы на объекте в день старта этапа.</span></div>
+                    <div class="flex items-start gap-2"><span class="w-4 h-4 bg-slate-100 dark:bg-slate-700 border border-indigo-300 dark:border-indigo-600 rounded-full shrink-0 flex items-center justify-center text-[7px] font-black text-indigo-600 dark:text-indigo-400">Ф</span> <span><b>Финал (-3 дн от конца):</b> Итоговая инспекция перед закрытием объемов (КС-2), передачей фронта работ и подписания итогового акта.</span></div>
+                </div>
+            </details>
+
+            <!-- Диаграмма Ганта -->
+
+            <!-- Диаграмма Ганта -->
+            <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-3 shadow-sm relative overflow-hidden">
+                <!-- Вертикальная линия "СЕГОДНЯ" -->
+                <div class="absolute top-0 bottom-0 w-px bg-red-500/50 z-0 pointer-events-none" style="left: calc(33.333% + 8px + ${todayPerc}% * 0.63);"></div>
+                <div class="absolute top-0 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-b z-10 uppercase tracking-wide" style="left: calc(33.333% + 8px + ${todayPerc}% * 0.63); transform: translateX(-50%);">${todayStr}</div>
+                
+                <div class="mt-4 relative z-10">
+                    ${rowsHtml}
+                </div>
+                
+                <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 flex justify-between text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                    <span>${new Date(minDateMs).toLocaleDateString('ru-RU')}</span>
+                    <span>${new Date(maxDateMs).toLocaleDateString('ru-RU')}</span>
+                </div>
+            </div>
+
+            
+        `;
     } else {
         ganttHtml = `<div class="text-center py-8 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-2xl border border-dashed border-[var(--card-border)] mt-4">График пуст</div>`;
     }
+
+    // 4. СБОРКА ИТОГОВОГО HTML
 
     // 4. СБОРКА ИТОГОВОГО HTML (Кнопки + Свернутый редактор + Визуал)
     let html = `
@@ -7415,20 +7308,40 @@ window.rbi_renderScheduleTab = async function(skipLoad = false) {
 };
 
 // Добавление строки
+// Добавление строки без перерисовки всей страницы
 window.rbi_addScheduleRow = function() {
     if (!window.rbi_scheduleData) window.rbi_scheduleData = [];
-    const newRow = { 
-        id: 'sch_' + Date.now().toString(36), 
-        workTitle: '', 
-        contractor: '', 
-        startDate: new Date().toISOString(), 
-        endDate: new Date().toISOString(), 
-        templateKey: '',
-        _deleted: false
-    };
-    window.rbi_scheduleData.push(newRow);
-    // Передаем true, чтобы перерисовать таблицу без перезагрузки данных из базы!
-    rbi_renderScheduleTab(true); 
+    const newId = 'sch_' + Date.now().toString(36);
+    
+    // Получаем список чек-листов для выпадающего списка
+    let clOptions = '<option value="">-- Не привязан --</option>';
+    const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort((a,b) => SYSTEM_TEMPLATES[a].title.localeCompare(SYSTEM_TEMPLATES[b].title));
+    sysKeys.forEach(key => { clOptions += `<option value="sys_${key}">[СИС] ${SYSTEM_TEMPLATES[key].title}</option>`; });
+    if (typeof userTemplates !== 'undefined') {
+        const userKeys = Object.keys(userTemplates).sort((a,b) => userTemplates[a].title.localeCompare(userTemplates[b].title));
+        userKeys.forEach(key => { clOptions += `<option value="user_${key}">[МОЙ] ${userTemplates[key].title}</option>`; });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const tbody = document.getElementById('sched-tbody');
+    
+    if (tbody) {
+        // Убираем заглушку "Нет этапов", если она есть
+        if (tbody.innerHTML.includes('В графике нет этапов')) tbody.innerHTML = '';
+        
+        const tr = `
+            <tr class="sched-row hover:bg-[var(--hover-bg)] transition-colors" data-id="${newId}">
+                <td class="p-1"><input type="text" class="input-base !py-1.5 text-[10px] w-full sched-work font-bold" value="" placeholder="Вид работ"></td>
+                <td class="p-1"><input type="text" class="input-base !py-1.5 text-[10px] w-full sched-contr" value="" placeholder="Подрядчик"></td>
+                <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-start" value="${today}"></td>
+                <td class="p-1"><input type="date" class="input-base !py-1.5 text-[10px] w-full sched-end" value="${today}"></td>
+                <td class="p-1"><select class="input-base !py-1.5 text-[10px] w-full sched-tmpl">${clOptions}</select></td>
+                <td class="p-1 text-center">
+                    <button onclick="this.closest('tr').remove()" class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg border border-red-200 active:scale-90 flex items-center justify-center mx-auto transition-colors"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                </td>
+            </tr>`;
+        tbody.insertAdjacentHTML('beforeend', tr);
+    }
 };
 
 // Мягкое удаление одной строки
@@ -7459,13 +7372,13 @@ window.rbi_clearSchedule = async function() {
     showToast("🗑️ График полностью очищен");
 };
 
-// Сохранение графика
+// Сохранение графика (Только при реальных изменениях)
 window.rbi_saveSchedule = async function() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
 
     const rows = document.querySelectorAll('.sched-row');
     const validIds = new Set();
-    let changed = false;
+    let hasRealChanges = false;
 
     rows.forEach(row => {
         const id = row.dataset.id;
@@ -7478,51 +7391,67 @@ window.rbi_saveSchedule = async function() {
         if (wTitle || contr) {
             validIds.add(id);
             let existing = window.rbi_scheduleData.find(s => s.id === id);
+            
+            const newStartISO = dStart ? new Date(dStart).toISOString() : new Date().toISOString();
+            const newEndISO = dEnd ? new Date(dEnd).toISOString() : new Date().toISOString();
+
             if (existing) {
-                existing.workTitle = wTitle;
-                existing.contractor = contr;
-                existing.startDate = dStart ? new Date(dStart).toISOString() : new Date().toISOString();
-                existing.endDate = dEnd ? new Date(dEnd).toISOString() : new Date().toISOString();
-                existing.templateKey = tKey;
-                existing.updatedAt = new Date().toISOString();
-                existing._deleted = false;
+                // Сверяем значения. Если хоть одно отличается - значит были правки
+                if (existing.workTitle !== wTitle || existing.contractor !== contr || 
+                    existing.startDate.split('T')[0] !== newStartISO.split('T')[0] || 
+                    existing.endDate.split('T')[0] !== newEndISO.split('T')[0] || 
+                    existing.templateKey !== tKey || existing._deleted) {
+                    
+                    existing.workTitle = wTitle;
+                    existing.contractor = contr;
+                    existing.startDate = newStartISO;
+                    existing.endDate = newEndISO;
+                    existing.templateKey = tKey;
+                    existing.updatedAt = new Date().toISOString();
+                    existing._deleted = false;
+                    hasRealChanges = true;
+                }
             } else {
+                // Это новая строка
                 window.rbi_scheduleData.push({
                     id: id, workTitle: wTitle, contractor: contr,
-                    startDate: dStart ? new Date(dStart).toISOString() : new Date().toISOString(),
-                    endDate: dEnd ? new Date(dEnd).toISOString() : new Date().toISOString(),
-                    templateKey: tKey,
-                    updatedAt: new Date().toISOString(),
-                    _deleted: false
+                    startDate: newStartISO, endDate: newEndISO,
+                    templateKey: tKey, updatedAt: new Date().toISOString(), _deleted: false
                 });
+                hasRealChanges = true;
             }
-            changed = true;
         }
     });
 
-    // Удаляем пустые (брошенные без сохранения) строки
+    // Помечаем удаленными те, что исчезли из DOM
     window.rbi_scheduleData.forEach(s => {
         if (!validIds.has(s.id) && !s._deleted) {
             s._deleted = true;
             s.updatedAt = new Date().toISOString();
-            changed = true;
+            hasRealChanges = true;
         }
     });
 
+    if (!hasRealChanges) {
+        return showToast("Нет изменений для сохранения.");
+    }
+
+    // Сохраняем в БД
     for(let s of window.rbi_scheduleData) { 
         if (typeof dbPut === 'function') await dbPut(STORES.SCHEDULE, s); 
     }
     
-    if (changed) {
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
-    }
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
 
-    showToast("✅ График СМР успешно сохранен!");
-    rbi_renderScheduleTab(true);
+    showToast("✅ График СМР обновлен!");
     
-    // ВЫЗЫВАЕМ ГЕНЕРАТОР ЗАДАЧ ПОСЛЕ СОХРАНЕНИЯ ГРАФИКА
-    await window.rbi_generateAutoTasks();
+    // СНАЧАЛА пересчитываем задачи, А ПОТОМ перерисовываем график (чтобы задачи уже встали на новые места)
+    if (typeof window.rbi_generateAutoTasks === 'function') {
+        await window.rbi_generateAutoTasks(true); // Передаем true, чтобы скрыть лишние тосты генератора
+    }
+    
+    rbi_renderScheduleTab(true); 
 };
 
 // Загрузка графика из Excel
@@ -7602,7 +7531,7 @@ window.rbi_renderMeetingTab = function() {
     // ОБНОВЛЯЕМ ШАПКУ И КНОПКУ "СОЗДАТЬ" (Без эмодзи, в стиле iOS)
     const titleContainer = container.previousElementSibling;
     if (titleContainer) {
-        titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40";
+        titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40";
         titleContainer.innerHTML = `
             <div class="flex justify-between items-center">
                 <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
@@ -7771,91 +7700,7 @@ window.rbi_saveEditedMeeting = async function() {
     showToast("✅ Правки протокола сохранены");
 };
 
-// Функция печати Мемо в PDF (Расширенный красивый шаблон А4)
-window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
-    const meet = window.rbi_meetingsData.find(m => m.id === id);
-    if (!meet) return;
 
-    showToast("⏳ Формируем протокол...");
-
-    let photoHtml = '';
-    if (meet.qDayPhoto) {
-        const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
-        photoHtml = `
-            <div style="height: 250px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
-                <img src="${realSrc}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
-            </div>
-        `;
-    }
-
-    let agendaHtml = '';
-    if (meet.agenda && meet.agenda.length > 0) {
-        agendaHtml = meet.agenda.map((a, idx) => `
-            <tr style="border-bottom: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; page-break-inside: avoid;">
-                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 35%;">
-                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
-                    <div style="font-size: 11px; color: #b91c1c; font-weight: bold;">${a.defect}</div>
-                </td>
-                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 45%;">
-                    <div style="font-size: 11px; color: #334155; margin-bottom: 4px;">${a.comment || 'Решение не зафиксировано'}</div>
-                    ${a.resp ? `<div style="font-size: 9px; color: #64748b; font-weight: bold;">Отв: ${a.resp}</div>` : ''}
-                </td>
-                <td style="padding: 10px; vertical-align: top; width: 20%; text-align: center;">
-                    <div style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 4px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'}; display: inline-block; margin-bottom: 4px;">${a.isDone ? 'Решено' : 'В работе'}</div>
-                    ${a.date ? `<div style="font-size: 9px; color: #475569; font-weight: bold;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</div>` : ''}
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    // Собираем всё в красивый шаблон
-    const content = `
-        <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="font-size: 22px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
-            <div style="font-size: 12px; color: #4f46e5; font-weight: bold; margin-top: 5px;">ДАТА: ${new Date(meet.date).toLocaleDateString('ru-RU')} | АВТОР: ${meet.author}</div>
-        </div>
-
-        ${photoHtml}
-
-        <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
-            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ ИТОГОВОЕ РЕШЕНИЕ (МЕМО)</h3>
-            <div style="font-size: 12px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${meet.memoText || 'Текст протокола отсутствует.'}</div>
-        </div>
-
-        ${meet.notes ? `
-        <div style="background: #fffbeb; border: 1px solid #fde047; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
-            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #b45309; border-bottom: 2px solid #fef08a; padding-bottom: 6px; margin-bottom: 10px;">📌 Дополнительные тезисы</h3>
-            <div style="font-size: 11px; line-height: 1.5; color: #713f12; white-space: pre-wrap;">${meet.notes}</div>
-        </div>` : ''}
-
-        <h3 style="font-size: 14px; text-transform: uppercase; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 15px;">📋 Детальная повестка и разбор дефектов</h3>
-        
-        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #cbd5e1;">
-            <thead style="background: #e2e8f0; text-transform: uppercase; font-size: 10px; color: #475569;">
-                <tr>
-                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Подрядчик и Проблема</th>
-                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Решение и Ответственный</th>
-                    <th style="padding: 10px; text-align: center;">Статус и Срок</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${agendaHtml || `<tr><td colspan="3" style="text-align: center; padding: 15px; font-size: 11px; color: #64748b;">Повестка не заполнена</td></tr>`}
-            </tbody>
-        </table>
-
-        <div style="margin-top: 40px; page-break-inside: avoid;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                <tr>
-                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">${meet.author}</td>
-                    <td style="width: 20%;"></td>
-                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Подпись участников (Ознакомлен)</td>
-                </tr>
-            </table>
-        </div>
-    `;
-
-    if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "portrait", mode);
-};
 
 window.rbi_deleteMeeting = async function(id) {
     if(!confirm("Удалить этот протокол?")) return;
@@ -8302,86 +8147,6 @@ window.rbi_handleMeetingPhotoUpload = function(event) {
     });
 };
 
-
-// ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
-window.rbi_generateMeetingMemo = async function() {
-    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
-    // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ С ЖЕСТКОЙ ГРУППИРОВКОЙ
-    let agendaMap = {};
-    let totalItems = 0;
-    const rows = document.querySelectorAll('.meeting-agenda-row');
-    
-    rows.forEach(row => {
-        const contr = row.querySelector('.agenda-meta-contr').value;
-        const defect = row.querySelector('.agenda-meta-defect').value;
-        const isDone = row.querySelector('.agenda-done-cb').checked;
-        const date = row.querySelector('.agenda-date').value;
-        const resp = row.querySelector('.agenda-resp').value.trim();
-        const comment = row.querySelector('.agenda-comment').value.trim();
-
-        if (isDone || date || resp || comment) {
-            if (!agendaMap[contr]) agendaMap[contr] = [];
-            agendaMap[contr].push(`- Проблема: ${defect}. Статус: ${isDone ? 'Решено' : 'В работе'}. Срок: ${date || 'Не указан'}. Отв: ${resp || 'Не назначен'}. Решение: ${comment || 'Не указано'}.`);
-            totalItems++;
-        }
-    });
-
-    let agendaContextString = "";
-    for (let c in agendaMap) {
-        agendaContextString += `ПОДРЯДЧИК: ${c}\n${agendaMap[c].join('\n')}\n\n`;
-    }
-
-    const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
-    
-    if (totalItems === 0 && !extraNotes) {
-        return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
-    }
-
-    const btn = document.getElementById('btn-gen-memo');
-    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть пишет протокол...</span>`;
-    btn.disabled = true;
-
-    const promptSystem = `Ты — секретарь-инженер. Составь итоговый протокол строительного совещания (Мемо).
-    Я передам тебе уже сгруппированные по подрядчикам данные. Твоя задача — превратить это в красивый деловой текст без лишней воды.
-    Формат ответа СТРОГО:
-    **ПРОТОКОЛ СОВЕЩАНИЯ ПО КАЧЕСТВУ**
-    
-    [ИМЯ ПОДРЯДЧИКА 1]
-    - [Кратко суть проблемы]. Решение: [Что делать]. Отв: [...]. Срок: [...].
-    - [Следующая проблема]...
-    
-    [ИМЯ ПОДРЯДЧИКА 2]...
-    `;
-
-    const promptUser = `ДАННЫЕ ДЛЯ ПРОТОКОЛА:\n\n${agendaContextString}\nДОП. ВОПРОСЫ: ${extraNotes}`;
-
-    try {
-        const response = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: promptUser }
-        ], { temperature: 0.2, max_tokens: 800 });
-
-        // Вставляем результат и увеличиваем текстовое поле для удобства чтения
-        const textArea = document.getElementById('rbi-meeting-memo-text');
-        textArea.value = response;
-        textArea.classList.remove('h-32');
-        textArea.classList.add('h-64');
-        
-        // Скроллим вниз, чтобы юзер увидел результат
-        setTimeout(() => {
-            textArea.scrollIntoView({ behavior: "smooth", block: "end" });
-        }, 100);
-        
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
-        showToast("✨ Протокол успешно сформирован!");
-    } catch (e) {
-        showToast("❌ Ошибка ИИ: " + e.message);
-    } finally {
-        btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сформировать протокол (ИИ)`;
-        btn.disabled = false;
-    }
-};
 
 
 // СОХРАНЕНИЕ ПРОТОКОЛА В ИСТОРИЮ (С ПОЛНОЙ ПОВЕСТКОЙ)
@@ -8971,21 +8736,7 @@ window.rbi_handlePracticePhoto = function(event, type) {
     });
 };
 
-window.rbi_generatePracticeTitleAi = async function() {
-    if (!appSettings.aiEnabled) return showToast("Включите AI в настройках!");
-    
-    const prob = document.getElementById('rbi-prac-problem').value;
-    const sol = document.getElementById('rbi-prac-solution').value;
-    
-    showToast("⏳ Нейросеть генерирует заголовок...");
-    try {
-        const res = await window.callAI([
-            { role: 'system', content: 'Ты редактор бизнес-кейсов. Сделай ОДИН короткий емкий заголовок (до 6 слов) описывающий суть улучшения. Без кавычек.' },
-            { role: 'user', content: `Проблема: ${prob}. Решение: ${sol}` }
-        ], { temperature: 0.4, max_tokens: 30 });
-        document.getElementById('rbi-prac-title').value = res;
-    } catch(e) { showToast("Ошибка AI"); }
-};
+
 
 window.rbi_savePractice = async function() {
     const title = document.getElementById('rbi-prac-title').value.trim();
@@ -9097,37 +8848,7 @@ window.rbi_handleManualPracticePhoto = function(event, type) {
     });
 };
 
-window.rbi_beautifyPracticeAi = async function() {
-    if (!appSettings.aiEnabled) return showToast("Включите AI в настройках!");
-    
-    const probEl = document.getElementById('man-prac-problem');
-    const solEl = document.getElementById('man-prac-solution');
-    const prob = probEl.value.trim();
-    const sol = solEl.value.trim();
-    
-    if (!prob && !sol) return showToast("Опишите хотя бы что-то, чтобы ИИ мог помочь!");
 
-    showToast("⏳ Нейросеть формулирует текст...");
-    
-    const promptSystem = `Ты — эксперт-инженер. Твоя задача — красиво, технически грамотно и лаконично переписать текст пользователя для базы 'Лучших практик' компании.
-    Верни ответ СТРОГО в таком формате:
-    СУТЬ (ПРОБЛЕМА): [грамотное описание проблемы]
-    РЕШЕНИЕ (РЕЗУЛЬТАТ): [грамотное описание решения]`;
-
-    try {
-        const res = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: `Исходник.\nЧто делали/Проблема: ${prob}\nРешение/Результат: ${sol}` }
-        ], { temperature: 0.3, max_tokens: 300 });
-
-        const pMatch = res.match(/СУТЬ \(ПРОБЛЕМА\):\s*(.*?)(?=РЕШЕНИЕ \(РЕЗУЛЬТАТ\):|$)/is);
-        const sMatch = res.match(/РЕШЕНИЕ \(РЕЗУЛЬТАТ\):\s*(.*?)$/is);
-
-        if (pMatch) probEl.value = pMatch[1].trim();
-        if (sMatch) solEl.value = sMatch[1].trim();
-        showToast("✨ Текст улучшен!");
-    } catch(e) { showToast("Ошибка AI: " + e.message); }
-};
 
 window.rbi_saveManualPractice = async function() {
     const title = document.getElementById('man-prac-title').value.trim();
@@ -9164,68 +8885,7 @@ window.rbi_saveManualPractice = async function() {
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
 };
-// === ПЕЧАТЬ ПРАКТИКИ В PDF (А3 АЛЬБОМ, БЕЗ ЭМОДЗИ) ===
-window.rbi_printPracticePdf = async function(id, mode = 'browser') {
-    const p = window.rbi_practicesData.find(x => x.id === id);
-    if (!p) return;
 
-    let imgBeforeHtml = '';
-    let imgAfterHtml = '';
-
-    // Определяем заголовки блоков в зависимости от типа (авто или ручная)
-    const block1Title = p.deltaUrk > 0 ? "СУТЬ ПРОБЛЕМЫ (БЫЛО)" : "ОПИСАНИЕ ИСХОДНОЙ СИТУАЦИИ";
-    const block2Title = p.deltaUrk > 0 ? "ПРИНЯТОЕ РЕШЕНИЕ (СТАЛО)" : "ПРИНЯТОЕ РЕШЕНИЕ И РЕЗУЛЬТАТ";
-
-    if (p.photoBefore) {
-        const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
-        imgBeforeHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realBefore}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
-    } else {
-        imgBeforeHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
-    }
-
-    if (p.photoAfter) {
-        const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
-        imgAfterHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realAfter}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
-    } else {
-        imgAfterHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
-    }
-
-    const efficiencyHtml = p.deltaUrk > 0 
-        ? `<div style="font-size: 16px; color: #16a34a; font-weight: bold; margin-top: 10px;">Доказанная эффективность: Качество подрядчика выросло на +${p.deltaUrk}% УрК</div>`
-        : `<div style="font-size: 16px; color: #4f46e5; font-weight: bold; margin-top: 10px;">Практический опыт, подтвержденный на строительной площадке</div>`;
-
-    const content = `
-        <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">БИБЛИОТЕКА ЛУЧШИХ ПРАКТИК</h1>
-            <div style="font-size: 16px; color: #64748b; font-weight: bold; margin-top: 10px; text-transform: uppercase;">ВИД РАБОТ: ${p.templateTitle} | АВТОР: ${p.author} | ДАТА: ${new Date(p.date).toLocaleDateString('ru-RU')}</div>
-        </div>
-
-        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 30px;">
-            <h2 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">${p.title}</h2>
-            ${efficiencyHtml}
-        </div>
-
-        <table class="no-break" style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
-            <tr>
-                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #ffffff; border: 2px solid #e2e8f0; vertical-align: top;">
-                    <h2 style="color: #334155; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #cbd5e1; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block1Title}</h2>
-                    <p style="font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.problem}</p>
-                    ${imgBeforeHtml}
-                </td>
-                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #f0fdf4; border: 2px solid #bbf7d0; vertical-align: top;">
-                    <h2 style="color: #166534; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block2Title}</h2>
-                    <p style="font-size: 16px; color: #14532d; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.solution}</p>
-                    ${imgAfterHtml}
-                </td>
-            </tr>
-        </table>
-    `;
-
-    if (typeof printPdfShell === 'function') {
-        // Формат А3, Альбомная (landscape)
-        printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode);
-    }
-};
 
 // ============================================================================
 // ЭКСПОРТ ВСЕЙ БИБЛИОТЕКИ СПРАВОЧНИКОВ В КОД (ДЛЯ ВШИВАНИЯ В PWA)
@@ -9546,6 +9206,402 @@ window.rbi_openPracticeViewer = async function(id) {
     `;
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+};
+
+// ============================================================================
+// МОДУЛЬ ОБРАТНОЙ СВЯЗИ (ФИДБЕК И ИДЕИ)
+// ============================================================================
+
+const STATUS_MAP = {
+    'new': { text: 'Новое', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+    'in_progress': { text: 'В работе', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
+    'done': { text: 'Готово', color: 'bg-green-100 text-green-700 border-green-200' },
+    'rejected': { text: 'Отклонено', color: 'bg-slate-100 text-slate-500 border-slate-300' }
+};
+
+window.rbi_renderFeedbackTab = function() {
+    const container = document.getElementById('feedback-list-container');
+    if (!container) return;
+
+    if (!window.rbi_feedbackData || window.rbi_feedbackData.length === 0) {
+        container.innerHTML = `<div class="text-center py-6 text-slate-400 text-[10px] font-bold uppercase tracking-widest border border-dashed border-slate-300 rounded-xl">Информации пока нет</div>`;
+        return;
+    }
+
+    const currentEng = appSettings.engineerName || 'Инженер';
+    const allActive = [...window.rbi_feedbackData].filter(f => !f._deleted);
+
+    // Разделяем на Планы разработчика и Фидбек пользователей
+    const roadmaps = allActive.filter(f => f.is_roadmap).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const feedback = allActive.filter(f => !f.is_roadmap).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    let html = '';
+
+    // --- БЛОК: ПЛАНЫ РАЗРАБОТЧИКА ---
+    if (roadmaps.length > 0) {
+        html += `<div class="mb-4">
+            <div class="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-2 flex items-center gap-1.5 border-b border-indigo-100 pb-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Планы разработчика (Roadmap)
+            </div>
+            <div class="space-y-2">`;
+        
+        roadmaps.forEach(rm => {
+            const likesCount = rm.likes ? rm.likes.length : 0;
+            const iLiked = rm.likes && rm.likes.includes(currentEng);
+            
+            html += `
+                <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 shadow-sm">
+                    <div class="text-[12px] font-bold text-indigo-900 leading-tight mb-2">${rm.text}</div>
+                    <button onclick="rbi_toggleFeedbackLike('${rm.id}')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${iLiked ? 'bg-indigo-600 border-indigo-700 text-white shadow-md' : 'bg-white border-indigo-200 text-indigo-600'} active:scale-95 transition-colors text-[10px] font-black w-fit">
+                        <svg class="w-3.5 h-3.5" fill="${iLiked ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path></svg>
+                        Жду эту функцию! (${likesCount})
+                    </button>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+    }
+
+    // --- БЛОК: ИДЕИ ПОЛЬЗОВАТЕЛЕЙ ---
+    if (feedback.length > 0) {
+        html += `<div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2 border-b border-slate-200 pb-1">Идеи и баги от команды</div>
+                 <div class="space-y-3">`;
+        
+        feedback.forEach(f => {
+            const st = STATUS_MAP[f.status] || STATUS_MAP['new'];
+            const likesCount = f.likes ? f.likes.length : 0;
+            const iLiked = f.likes && f.likes.includes(currentEng);
+            const isOwner = f.author === currentEng;
+
+            let contentHtml = f.normalized_text 
+                ? `<div class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 mb-2">${f.normalized_text.replace(/\n/g, '<br>')}</div>`
+                : `<div class="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 mb-2 italic">«${f.text}»</div>`;
+
+            let notesHtml = f.developer_notes ? `<div class="mt-2 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 p-2 rounded-lg text-[10px] text-emerald-800 dark:text-emerald-400"><b>Кондратьев И. Н.</b> ${f.developer_notes}</div>` : '';
+
+            html += `
+            <div class="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm transition-colors">
+                <div class="flex justify-between items-start mb-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+                    <div>
+                        <div class="text-[10px] font-black text-slate-800 dark:text-white uppercase">${f.author}</div>
+                        <div class="text-[8px] text-slate-400 font-bold">${new Date(f.createdAt).toLocaleDateString('ru-RU')}</div>
+                    </div>
+                    <div class="text-[9px] font-black px-2 py-0.5 rounded border ${st.color} uppercase tracking-widest">${st.text}</div>
+                </div>
+                ${contentHtml}
+                ${notesHtml}
+                <div class="mt-2 flex justify-between items-center pt-2">
+                    <button onclick="rbi_toggleFeedbackLike('${f.id}')" class="flex items-center gap-1.5 px-2 py-1 rounded-lg border ${iLiked ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500'} active:scale-95 transition-colors text-[10px] font-bold">
+                        <svg class="w-3.5 h-3.5" fill="${iLiked ? 'currentColor' : 'none'}" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path></svg>
+                        Поддерживаю (${likesCount})
+                    </button>
+                    ${isOwner ? `
+                    <div class="flex gap-1.5">
+                        <button onclick="rbi_editFeedback('${f.id}')" class="text-[10px] font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 active:scale-95 shadow-sm transition-colors">Изменить</button>
+                        <button onclick="rbi_deleteFeedback('${f.id}')" class="text-[10px] font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 active:scale-95 shadow-sm transition-colors">Удалить</button>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    container.innerHTML = html;
+};
+
+window.rbi_submitFeedback = async function() {
+    const inputEl = document.getElementById('feedback-input-text');
+    const btn = document.getElementById('feedback-submit-btn');
+    const text = inputEl.value.trim();
+    if (!text) return showToast("⚠️ Напишите предложение!");
+
+    btn.innerHTML = `<span class="animate-pulse">⏳ ИИ нормализует текст...</span>`;
+    btn.disabled = true;
+
+    let normalizedText = null;
+    if (appSettings.aiEnabled) {
+        normalizedText = await window.rbi_normalizeFeedbackAi(text);
+    }
+
+    const currentEng = appSettings.engineerName || 'Инженер';
+    
+    const fb = {
+        id: 'fb_' + Date.now().toString(36),
+        text: text,
+        normalized_text: normalizedText,
+        author: currentEng,
+        owner: currentEng, // Для RLS политик Supabase
+        status: 'new',
+        developer_notes: '',
+        likes: [currentEng], // Автоматически лайкаем свою идею
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        _deleted: false
+    };
+
+    window.rbi_feedbackData.unshift(fb);
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    inputEl.value = '';
+    btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg> Отправить разработчику`;
+    btn.disabled = false;
+    
+    showToast("✅ Предложение отправлено!");
+    rbi_renderFeedbackTab();
+};
+
+window.rbi_toggleFeedbackLike = async function(id) {
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+    
+    const currentEng = appSettings.engineerName || 'Инженер';
+    let likes = window.rbi_feedbackData[idx].likes || [];
+    
+    if (likes.includes(currentEng)) {
+        likes = likes.filter(l => l !== currentEng);
+    } else {
+        likes.push(currentEng);
+    }
+    
+    window.rbi_feedbackData[idx].likes = likes;
+    window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    rbi_renderFeedbackTab();
+};
+
+window.rbi_deleteFeedback = async function(id) {
+    if (!confirm("Вы уверены, что хотите удалить свое предложение?")) return;
+    
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+
+    // Стандартная логика мягкого удаления (Soft Delete)
+    window.rbi_feedbackData[idx]._deleted = true;
+    window.rbi_feedbackData[idx]._deletedAt = new Date().toISOString();
+    window.rbi_feedbackData[idx].updatedAt = window.rbi_feedbackData[idx]._deletedAt;
+    
+    // Сохраняем в локальную базу устройства
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    
+    // Даем команду облаку на синхронизацию
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    showToast("🗑️ Предложение удалено");
+    
+    // Перерисовываем список, чтобы карточка исчезла с экрана
+    rbi_renderFeedbackTab();
+};
+
+// Открытие модального окна для редактирования своего предложения
+window.rbi_editFeedback = function(id) {
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+    const f = window.rbi_feedbackData[idx];
+    
+    // Берем нормализованный текст, если он есть, иначе берем оригинал
+    const currentText = f.normalized_text || f.text;
+
+    // Создаем окошко "на лету"
+    const modalHtml = `
+    <div id="feedback-edit-modal" class="fixed inset-0 bg-slate-900/80 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col animate-fadeIn">
+            <div class="font-black text-[13px] uppercase tracking-tight mb-4 text-slate-800 dark:text-white flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3">
+                <span class="flex items-center gap-2">✏️ Редактировать текст</span>
+                <button onclick="document.getElementById('feedback-edit-modal').remove()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
+            </div>
+            <textarea id="feedback-edit-input" class="input-base text-[12px] h-48 resize-none mb-4 p-3 leading-relaxed shadow-inner">${currentText}</textarea>
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('feedback-edit-modal').remove()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 border border-slate-200 dark:border-slate-700 transition-colors">Отмена</button>
+                <button onclick="rbi_saveEditedFeedback('${id}')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform">💾 Сохранить</button>
+            </div>
+        </div>
+    </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+// Сохранение исправленного текста
+window.rbi_saveEditedFeedback = async function(id) {
+    const newText = document.getElementById('feedback-edit-input').value.trim();
+    if (!newText) return showToast("⚠️ Текст не может быть пустым!");
+
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+
+    // Перезаписываем именно нормализованный текст (так как он выводится на экран)
+    window.rbi_feedbackData[idx].normalized_text = newText;
+    window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    
+    // Сохраняем локально
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    
+    // Команда на синхронизацию с облаком
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    // Удаляем окошко и перерисовываем список
+    document.getElementById('feedback-edit-modal').remove();
+    showToast("✅ Текст успешно обновлен!");
+    rbi_renderFeedbackTab();
+};
+
+// --- ПАНЕЛЬ РАЗРАБОТЧИКА ---
+window.rbi_renderDevFeedbackTab = function() {
+    const listContainer = document.getElementById('manager-dev-list');
+    const roadmapContainer = document.getElementById('manager-roadmap-list');
+    if (!listContainer || !roadmapContainer) return;
+
+    const allData = (window.rbi_feedbackData || []).filter(f => !f._deleted);
+
+    // 1. Отрисовка планов (Roadmap)
+    const roadmaps = allData.filter(f => f.is_roadmap);
+    if (roadmaps.length === 0) {
+        roadmapContainer.innerHTML = `<div class="text-[10px] text-slate-400 italic text-center">Опубликованных планов нет</div>`;
+    } else {
+        roadmapContainer.innerHTML = roadmaps.map(rm => `
+            <div class="bg-indigo-50 border border-indigo-200 p-3 rounded-xl flex justify-between items-center shadow-sm">
+                <div class="flex-1 min-w-0 pr-3">
+                    <div class="text-[12px] font-bold text-indigo-900 leading-tight">${rm.text}</div>
+                    <div class="text-[9px] font-black text-indigo-500 uppercase mt-1">❤️ Лайков от команды: ${rm.likes?.length || 0}</div>
+                </div>
+                <button onclick="rbi_deleteRoadmapItem('${rm.id}')" class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-red-500 font-black shadow-sm active:scale-90 border border-indigo-100 shrink-0">✕</button>
+            </div>
+        `).join('');
+    }
+
+    // 2. Отрисовка обычного фидбека (Бэклог команды)
+    const feedback = allData.filter(f => !f.is_roadmap).sort((a, b) => {
+        const order = { 'new': 1, 'in_progress': 2, 'done': 3, 'rejected': 4 };
+        if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+        return (b.likes?.length || 0) - (a.likes?.length || 0); 
+    });
+
+    if (feedback.length === 0) {
+        listContainer.innerHTML = `<div class="text-center py-6 text-slate-400 text-[10px] font-bold uppercase tracking-widest border border-dashed border-slate-300 rounded-xl bg-white">Бэклог пуст</div>`;
+        return;
+    }
+
+    listContainer.innerHTML = feedback.map(f => {
+        const textDisplay = f.normalized_text 
+            ? `<div class="text-[11px] bg-slate-50 border border-slate-200 p-2 rounded mb-2 font-medium">${f.normalized_text.replace(/\n/g, '<br>')}</div><details><summary class="text-[9px] text-slate-400 cursor-pointer">Оригинал</summary><div class="text-[10px] italic text-slate-500 mt-1">${f.text}</div></details>`
+            : `<div class="text-[11px] bg-slate-50 border border-slate-200 p-2 rounded mb-2 italic">«${f.text}»</div>`;
+
+        return `
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-3">
+            <div class="flex justify-between items-center mb-2 border-b border-slate-100 pb-2">
+                <div class="text-[11px] font-black uppercase text-slate-800">${f.author} <span class="text-[9px] font-normal text-slate-400 normal-case ml-2">${new Date(f.createdAt).toLocaleDateString('ru-RU')}</span></div>
+                <div class="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">❤️ ${f.likes?.length || 0}</div>
+            </div>
+            ${textDisplay}
+            
+            <div class="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Управление статусом</label>
+                    <select class="input-base text-[11px] !py-1.5" onchange="rbi_updateFeedbackStatus('${f.id}', this.value)">
+                        <option value="new" ${f.status === 'new' ? 'selected' : ''}>🔵 Новое</option>
+                        <option value="in_progress" ${f.status === 'in_progress' ? 'selected' : ''}>🟡 В работе</option>
+                        <option value="done" ${f.status === 'done' ? 'selected' : ''}>🟢 Готово</option>
+                        <option value="rejected" ${f.status === 'rejected' ? 'selected' : ''}>⚪ Отклонено</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Ответ разработчика</label>
+                    <div class="flex gap-1">
+                        <input type="text" id="dev-note-${f.id}" class="input-base text-[11px] !py-1.5" placeholder="Напишите ответ..." value="${f.developer_notes || ''}">
+                        <button onclick="rbi_updateFeedbackNotes('${f.id}')" class="bg-emerald-600 text-white px-3 rounded-lg text-[10px] font-bold active:scale-95 shadow-sm">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+};
+
+window.rbi_updateFeedbackStatus = async function(id, newStatus) {
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+    window.rbi_feedbackData[idx].status = newStatus;
+    window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    showToast("Статус обновлен");
+};
+
+window.rbi_updateFeedbackNotes = async function(id) {
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx === -1) return;
+    const note = document.getElementById(`dev-note-${id}`).value.trim();
+    window.rbi_feedbackData[idx].developer_notes = note;
+    window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    showToast("Ответ сохранен");
+    
+    // <-- НОВОЕ: Мгновенно обновляем интерфейс, чтобы увидеть ответ
+    rbi_renderDevFeedbackTab(); 
+    if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
+};
+
+window.rbi_exportFeedbackJson = function() {
+    const dataStr = JSON.stringify(window.rbi_feedbackData.filter(f => !f._deleted), null, 4);
+    downloadFile(dataStr, `RBI_Feedback_${new Date().toLocaleDateString('ru-RU')}.json`, 'application/json');
+    showToast("JSON выгружен");
+};
+
+// === ЛОГИКА ДОБАВЛЕНИЯ ПЛАНОВ РАЗРАБОТЧИКОМ ===
+window.rbi_addRoadmapItem = async function() {
+    const inputEl = document.getElementById('dev-roadmap-input');
+    const text = inputEl.value.trim();
+    if (!text) return showToast("⚠️ Введите текст плана!");
+
+    const rb = {
+        id: 'rm_' + Date.now().toString(36),
+        text: text,
+        normalized_text: text, // У планов разработчика текст выводится как есть
+        author: 'Разработчик',
+        owner: 'Разработчик',
+        status: 'roadmap', // Уникальный статус для планов
+        is_roadmap: true,  // Флаг, чтобы отличать от обычного фидбека
+        likes: [], // Сюда будут падать лайки от пользователей
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        _deleted: false
+    };
+
+    window.rbi_feedbackData.unshift(rb);
+    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    inputEl.value = '';
+    showToast("✅ План опубликован для команды!");
+    rbi_renderDevFeedbackTab(); // Перерисовываем панель разработчика
+    if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab(); // <-- НОВОЕ: Перерисовываем вкладку настроек у юзера
+};
+
+window.rbi_deleteRoadmapItem = async function(id) {
+    if (!confirm("Удалить этот пункт из планов?")) return;
+    const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
+    if (idx > -1) {
+        window.rbi_feedbackData[idx]._deleted = true;
+        window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+        await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        rbi_renderDevFeedbackTab();
+    }
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

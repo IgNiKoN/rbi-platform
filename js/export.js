@@ -2875,3 +2875,558 @@ async function resolveLocalPhotosForPdf(container) {
     }
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
+
+// === ПЕЧАТЬ TWI КАРТЫ ДЛЯ РАБОЧИХ ===
+window.printCurrentTwi = async function(mode = 'browser') {
+    const twiId = document.getElementById('twi-viewer-overlay').dataset.currentTwiId;
+    if (!twiId) return;
+    const card = customTwiCards.find(c => c.id === twiId);
+    if (!card) return;
+
+    let content = '';
+
+    const fsTitle = mode === 'browser' ? '12pt' : '16px';
+    const fsText = mode === 'browser' ? '9pt' : '12px';
+    const imgHeight = mode === 'browser' ? '40mm' : '180px';
+
+    // ВАЖНО: Асинхронно достаем картинки из БД
+    let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
+    let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
+
+    if (card.type === 'INSPECTOR') {
+        let compliance = "", prep = "";
+        if (card.howToCheck) {
+            if (card.howToCheck.includes('[Как подготовить]')) {
+                const parts = card.howToCheck.split('[Как подготовить]\n');
+                prep = parts[1] || '';
+                compliance = parts[0].replace('[Что соблюсти]\n', '').trim();
+            } else {
+                compliance = card.howToCheck.replace('[Что соблюсти]\n', '').trim();
+            }
+        }
+
+        content = `
+            <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+                <tr>
+                    <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
+                        <div style="color: #166534; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">ЭТАЛОН (ПРАВИЛЬНО)</div>
+                        ${resolvedGood ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedGood}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #166534;">Нет фото</div>`}
+                    </td>
+                    <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
+                        <div style="color: #991b1b; margin: 0 0 10px 0; font-size: ${fsTitle}; font-weight: 900; text-transform: uppercase;">БРАК (НАРУШЕНИЕ)</div>
+                        ${resolvedBad ? `<div style="height: ${imgHeight}; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: white;"><img src="${resolvedBad}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;"></div>` : `<div style="height: ${imgHeight}; line-height: ${imgHeight}; color: #991b1b;">Нет фото</div>`}
+                    </td>
+                </tr>
+            </table>
+            
+            <table class="no-break" style="width: 100%; border-collapse: separate; border-spacing: 15px 0; table-layout: fixed; margin-left: -15px;">
+                <tr>
+                    <td style="width: 50%; vertical-align: top;">
+                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
+                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📌 Как подготовить:</h3>
+                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${prep || 'Не указано'}</p>
+                        </div>
+                    </td>
+                    <td style="width: 50%; vertical-align: top;">
+                        <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; height: 100%; box-sizing: border-box;">
+                            <h3 style="color: #0f172a; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">📏 Что соблюсти (Критерии):</h3>
+                            <p style="font-size: ${fsText}; color: #334155; white-space: pre-wrap; margin: 0;">${compliance || 'Не указано'}</p>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="no-break" style="background: #fef2f2; padding: 15px; border-radius: 12px; border: 1px solid #fecaca; margin-top: 15px;">
+                <h3 style="color: #991b1b; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">🚨 Риски нарушения:</h3>
+                <p style="font-size: ${fsText}; color: #7f1d1d; margin: 0;">${card.whyImportant || 'Не указано'}</p>
+            </div>
+        `;
+    } else if (card.type === 'WORKER') {
+        content = `
+            <table class="no-break" style="width: 100%; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; border-collapse: collapse;">
+                <tr>
+                    <td style="vertical-align: middle;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Время операции</div>
+                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">~${card.totalTime} мин</div>
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; font-weight: bold; text-transform: uppercase;">Количество шагов</div>
+                        <div style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; font-weight: 900; color: #0f172a;">${card.steps.length}</div>
+                    </td>
+                </tr>
+            </table>
+        `;
+        
+        // ВАЖНО: Используем for...of вместо forEach, чтобы await работал
+        for (let step of card.steps) {
+            let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
+            
+            content += `
+                <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
+                    <tr>
+                        <td style="padding: 15px; vertical-align: top;">
+                            <h3 style="color: #047857; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color: #64748b; font-size: ${mode === 'browser' ? '9pt' : '11px'};">(⏱ ${step.time} мин)</span>` : ''}</h3>
+                            <p style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: bold; color: #1e293b; white-space: pre-wrap; margin: 0;">${step.text}</p>
+                        </td>
+                        ${stepPhoto ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: middle; text-align: center;">
+                            <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center;">
+                                <img src="${stepPhoto}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
+                            </div>
+                        </td>` : ''}
+                    </tr>
+                </table>
+            `;
+        }
+    } else {
+        return showToast('Печать PDF-файлов осуществляется внешними средствами.');
+    }
+
+    const orientation = card.type === 'INSPECTOR' ? 'landscape' : 'portrait';
+    printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode);
+};
+
+// Функция печати Мемо в PDF (Расширенный красивый шаблон А4)
+window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
+    const meet = window.rbi_meetingsData.find(m => m.id === id);
+    if (!meet) return;
+
+    showToast("⏳ Формируем протокол...");
+
+    let photoHtml = '';
+    if (meet.qDayPhoto) {
+        const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
+        photoHtml = `
+            <div style="height: 250px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
+                <img src="${realSrc}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
+            </div>
+        `;
+    }
+
+    let agendaHtml = '';
+    if (meet.agenda && meet.agenda.length > 0) {
+        agendaHtml = meet.agenda.map((a, idx) => `
+            <tr style="border-bottom: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; page-break-inside: avoid;">
+                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 35%;">
+                    <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
+                    <div style="font-size: 11px; color: #b91c1c; font-weight: bold;">${a.defect}</div>
+                </td>
+                <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 45%;">
+                    <div style="font-size: 11px; color: #334155; margin-bottom: 4px;">${a.comment || 'Решение не зафиксировано'}</div>
+                    ${a.resp ? `<div style="font-size: 9px; color: #64748b; font-weight: bold;">Отв: ${a.resp}</div>` : ''}
+                </td>
+                <td style="padding: 10px; vertical-align: top; width: 20%; text-align: center;">
+                    <div style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 4px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'}; display: inline-block; margin-bottom: 4px;">${a.isDone ? 'Решено' : 'В работе'}</div>
+                    ${a.date ? `<div style="font-size: 9px; color: #475569; font-weight: bold;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</div>` : ''}
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // Собираем всё в красивый шаблон
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 22px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
+            <div style="font-size: 12px; color: #4f46e5; font-weight: bold; margin-top: 5px;">ДАТА: ${new Date(meet.date).toLocaleDateString('ru-RU')} | АВТОР: ${meet.author}</div>
+        </div>
+
+        ${photoHtml}
+
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
+            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ ИТОГОВОЕ РЕШЕНИЕ (МЕМО)</h3>
+            <div style="font-size: 12px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${meet.memoText || 'Текст протокола отсутствует.'}</div>
+        </div>
+
+        ${meet.notes ? `
+        <div style="background: #fffbeb; border: 1px solid #fde047; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
+            <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #b45309; border-bottom: 2px solid #fef08a; padding-bottom: 6px; margin-bottom: 10px;">📌 Дополнительные тезисы</h3>
+            <div style="font-size: 11px; line-height: 1.5; color: #713f12; white-space: pre-wrap;">${meet.notes}</div>
+        </div>` : ''}
+
+        <h3 style="font-size: 14px; text-transform: uppercase; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 15px;">📋 Детальная повестка и разбор дефектов</h3>
+        
+        <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #cbd5e1;">
+            <thead style="background: #e2e8f0; text-transform: uppercase; font-size: 10px; color: #475569;">
+                <tr>
+                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Подрядчик и Проблема</th>
+                    <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Решение и Ответственный</th>
+                    <th style="padding: 10px; text-align: center;">Статус и Срок</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${agendaHtml || `<tr><td colspan="3" style="text-align: center; padding: 15px; font-size: 11px; color: #64748b;">Повестка не заполнена</td></tr>`}
+            </tbody>
+        </table>
+
+        <div style="margin-top: 40px; page-break-inside: avoid;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <tr>
+                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">${meet.author}</td>
+                    <td style="width: 20%;"></td>
+                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Подпись участников (Ознакомлен)</td>
+                </tr>
+            </table>
+        </div>
+    `;
+
+    if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "portrait", mode);
+};
+
+// === ПЕЧАТЬ ПРАКТИКИ В PDF (А3 АЛЬБОМ, БЕЗ ЭМОДЗИ) ===
+window.rbi_printPracticePdf = async function(id, mode = 'browser') {
+    const p = window.rbi_practicesData.find(x => x.id === id);
+    if (!p) return;
+
+    let imgBeforeHtml = '';
+    let imgAfterHtml = '';
+
+    // Определяем заголовки блоков в зависимости от типа (авто или ручная)
+    const block1Title = p.deltaUrk > 0 ? "СУТЬ ПРОБЛЕМЫ (БЫЛО)" : "ОПИСАНИЕ ИСХОДНОЙ СИТУАЦИИ";
+    const block2Title = p.deltaUrk > 0 ? "ПРИНЯТОЕ РЕШЕНИЕ (СТАЛО)" : "ПРИНЯТОЕ РЕШЕНИЕ И РЕЗУЛЬТАТ";
+
+    if (p.photoBefore) {
+        const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
+        imgBeforeHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realBefore}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
+    } else {
+        imgBeforeHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
+    }
+
+    if (p.photoAfter) {
+        const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
+        imgAfterHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realAfter}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
+    } else {
+        imgAfterHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
+    }
+
+    const efficiencyHtml = p.deltaUrk > 0 
+        ? `<div style="font-size: 16px; color: #16a34a; font-weight: bold; margin-top: 10px;">Доказанная эффективность: Качество подрядчика выросло на +${p.deltaUrk}% УрК</div>`
+        : `<div style="font-size: 16px; color: #4f46e5; font-weight: bold; margin-top: 10px;">Практический опыт, подтвержденный на строительной площадке</div>`;
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">БИБЛИОТЕКА ЛУЧШИХ ПРАКТИК</h1>
+            <div style="font-size: 16px; color: #64748b; font-weight: bold; margin-top: 10px; text-transform: uppercase;">ВИД РАБОТ: ${p.templateTitle} | АВТОР: ${p.author} | ДАТА: ${new Date(p.date).toLocaleDateString('ru-RU')}</div>
+        </div>
+
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 30px;">
+            <h2 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">${p.title}</h2>
+            ${efficiencyHtml}
+        </div>
+
+        <table class="no-break" style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
+            <tr>
+                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #ffffff; border: 2px solid #e2e8f0; vertical-align: top;">
+                    <h2 style="color: #334155; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #cbd5e1; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block1Title}</h2>
+                    <p style="font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.problem}</p>
+                    ${imgBeforeHtml}
+                </td>
+                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #f0fdf4; border: 2px solid #bbf7d0; vertical-align: top;">
+                    <h2 style="color: #166534; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block2Title}</h2>
+                    <p style="font-size: 16px; color: #14532d; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.solution}</p>
+                    ${imgAfterHtml}
+                </td>
+            </tr>
+        </table>
+    `;
+
+    if (typeof printPdfShell === 'function') {
+        // Формат А3, Альбомная (landscape)
+        printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode);
+    }
+};
+
+// 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)
+window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
+    const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
+    if (!record) return showToast("Запись не найдена");
+
+    showToast("⏳ Формируем документ...");
+
+    // Сортируем по RPN (Самые опасные сверху)
+    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
+
+    let rowsHtml = '';
+    // Используем цикл for...of, чтобы дождаться распаковки ВСЕХ фотографий из БД
+    for (let d of sortedDefects) {
+        let rpnColor = '#16a34a'; // Зеленый
+        if (d.rpn >= 300) rpnColor = '#d97706'; // Оранжевый
+        if (d.rpn >= 600) rpnColor = '#dc2626'; // Красный
+
+        let photoTd = `<div style="font-size:9px; color:#94a3b8; font-style:italic; border:1px dashed #cbd5e1; padding:10px; border-radius:4px;">Нет фото</div>`;
+        if (d.photo) {
+            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
+            photoTd = `<img src="${realSrc}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border: 1px solid #cbd5e1; display:block; margin:0 auto;">`;
+        }
+
+        rowsHtml += `
+        <tr style="border-bottom: 1px solid #cbd5e1; background: white; page-break-inside: avoid;">
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: center; vertical-align: middle;">
+                ${photoTd}
+            </td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top;">
+                <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${d.workTitle}</div>
+                <div style="font-size: 12px; font-weight: 900; color: #0f172a; margin-top: 2px;">${d.contractor}</div>
+                <div style="font-size: 11px; color: #b91c1c; font-weight: bold; margin-top: 4px;">${d.defectName} (Повторов: ${d.count})</div>
+            </td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">
+                <div style="font-size: 9px; background: #e2e8f0; display: inline-block; padding: 2px 4px; border-radius: 4px; margin-bottom: 4px; font-weight:bold;">${d.stage}</div>
+                <div>${d.cause || '-'}</div>
+            </td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">${d.effect || '-'}</td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1d4ed8; background: #eff6ff;">${d.fix || '-'}</td>
+            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #166534; background: #f0fdf4;">${d.prevent || '-'}</td>
+            <td style="padding: 10px; vertical-align: top; text-align: center;">
+                <div style="font-size: 20px; font-weight: 900; color: ${rpnColor};">${d.rpn || 0}</div>
+            </td>
+        </tr>`;
+    }
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">Анализ видов и последствий отказов (FMEA)</h1>
+            <div style="font-size: 14px; color: #64748b; font-weight: bold; margin-top: 5px;">Отчет: ${record.title} | Период: ${record.periodName} | Инженер: ${record.author}</div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1; table-layout: fixed;">
+            <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 10px; color: #475569;">
+                <tr>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 10%; text-align: center;">ФОТО</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">1. Проблема / Подрядчик</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">2. Коренная причина</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">3. Риски и последствия</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left; color: #1d4ed8;">4. Устранение</th>
+                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left; color: #166534;">5. Предотвращение</th>
+                    <th style="padding: 12px 10px; border-bottom: 2px solid #cbd5e1; width: 6%; text-align: center; color: #7e22ce;">RPN</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 15px; font-size: 10px; color: #94a3b8; text-align: right;">
+            *RPN (Risk Priority Number) — приоритетное число риска. Чем выше RPN, тем опаснее дефект.
+        </div>
+    `;
+
+    if (typeof printPdfShell === 'function') {
+        printPdfShell(`FMEA Анализ`, content, "A3", "landscape", mode);
+    }
+};
+
+window.rbi_printWorkshop = async function(taskId, mode = 'browser') {
+    const task = window.rbi_tasksData.find(t => t.id === taskId);
+    const scenario = document.getElementById('workshop-ai-scenario')?.value;
+    if (!scenario || scenario.includes('⏳')) return showToast("Сгенерируйте сценарий!");
+    
+    const relatedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.find(c => c.checklistKey === task.templateKey) : null;
+
+    let content = `
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <h2 style="color: #4f46e5; margin: 0 0 10px 0; font-size: 16px; text-transform: uppercase;">Сценарий планерки (Toolbox Talk)</h2>
+            <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">Подрядчик: ${task.contractor} | Вид работ: ${task.templateTitle}</div>
+            <div style="font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;">${scenario.replace(/\n/g, '<br>')}</div>
+        </div>
+    `;
+
+    if (relatedTwi && relatedTwi.type === 'INSPECTOR') {
+        // ВАЖНО: Асинхронно достаем картинки
+        let resolvedGood = relatedTwi.photoGood ? await PhotoManager.getAsyncUrl(relatedTwi.photoGood) || window.getPhotoSrc(relatedTwi.photoGood) : null;
+        let resolvedBad = relatedTwi.photoBad ? await PhotoManager.getAsyncUrl(relatedTwi.photoBad) || window.getPhotoSrc(relatedTwi.photoBad) : null;
+
+        content += `
+            <div style="page-break-before: always; margin-top: 20px;">
+                <h2 style="font-size: 18px; text-align: center; text-transform: uppercase; color: #0f172a; margin-bottom: 20px;">ВИЗУАЛЬНЫЙ СТАНДАРТ: ${relatedTwi.title}</h2>
+                <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+                    <tr>
+                        <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
+                            <h2 style="color: #166534; font-size: 14px; text-transform: uppercase;">✅ ЭТАЛОН</h2>
+                            ${resolvedGood ? `<img src="${resolvedGood}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
+                        </td>
+                        <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
+                            <h2 style="color: #991b1b; font-size: 14px; text-transform: uppercase;">❌ БРАК</h2>
+                            ${resolvedBad ? `<img src="${resolvedBad}" style="width: 100%; height: 250px; object-fit: contain;">` : `Нет фото`}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `;
+    }
+    if (typeof printPdfShell === 'function') printPdfShell(`Воркшоп: ${task.contractor}`, content, "A4", "portrait", mode);
+};
+
+window.rbi_printIntroBriefing = async function(taskId, mode = 'browser') {
+    const task = window.rbi_tasksData.find(t => t.id === taskId);
+    if (!task || !task.aiData) return showToast("Сначала сгенерируйте данные!");
+
+    const tableRows = task.aiData.checklist.map((item, idx) => `
+        <tr>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center;">${idx + 1}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight:bold;">${item.n}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; color:#475569;">${item.t.replace(/<br>/g, ' ')}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center; font-weight:bold; color:${item.w===3?'#dc2626':'#0f172a'}">B${item.w}</td>
+        </tr>
+    `).join('');
+
+    const linkedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => c.checklistKey === task.templateKey && c.type === 'INSPECTOR') : [];
+    
+    let twiHtml = '';
+    // ВАЖНО: Используем for...of, чтобы дождаться картинок
+    for (let card of linkedTwi) {
+        let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
+        let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
+        
+        twiHtml += `
+            <div style="page-break-before: always; margin-top: 20px;">
+                <h2 style="font-size: 16px; text-align: center; text-transform: uppercase; color: #0f172a; margin-bottom: 20px;">ВИЗУАЛЬНЫЙ СТАНДАРТ: ${card.title}</h2>
+                <table class="no-break" style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;">
+                    <tr>
+                        <td style="width: 50%; border: 3px solid #22c55e; padding: 10px; border-radius: 12px; text-align: center; background: #f0fdf4; vertical-align: top;">
+                            <h2 style="color: #166534; font-size: 14px; text-transform: uppercase;">✅ ЭТАЛОН</h2>
+                            ${resolvedGood ? `<div style="height: 200px; background: white;"><img src="${resolvedGood}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
+                        </td>
+                        <td style="width: 50%; border: 3px solid #ef4444; padding: 10px; border-radius: 12px; text-align: center; background: #fef2f2; vertical-align: top;">
+                            <h2 style="color: #991b1b; font-size: 14px; text-transform: uppercase;">❌ БРАК</h2>
+                            ${resolvedBad ? `<div style="height: 200px; background: white;"><img src="${resolvedBad}" style="width: 100%; height: 100%; object-fit: contain;"></div>` : `Нет фото`}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `;
+    }
+
+    const content = `
+        <div style="text-align:center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Памятка Подрядчика</h1>
+            <div style="font-size: 14px; color: #4f46e5; font-weight: bold; margin-top: 5px;">${task.contractor} | ${task.templateTitle}</div>
+        </div>
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <h3 style="margin-top: 0; color: #0f172a;">Вводный инструктаж инженера</h3>
+            <div style="font-size: 12px; line-height: 1.6;">${task.aiData.speech.replace(/\n/g, '<br>')}</div>
+        </div>
+        <h3 style="color: #0f172a; text-transform: uppercase;">Требования к качеству и допуски</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 20px;">
+            <thead style="background-color: #e2e8f0;">
+                <tr>
+                    <th style="border: 1px solid #cbd5e1; padding: 8px; width: 5%;">#</th>
+                    <th style="border: 1px solid #cbd5e1; padding: 8px; width: 35%;">Параметр контроля</th>
+                    <th style="border: 1px solid #cbd5e1; padding: 8px; width: 50%;">Допуск / Норматив</th>
+                    <th style="border: 1px solid #cbd5e1; padding: 8px; width: 10%;">Риск</th>
+                </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+        </table>
+        ${twiHtml}
+    `;
+
+    if (typeof printPdfShell === 'function') printPdfShell(`Инструктаж ${task.contractor}`, content, "A4", "portrait", mode);
+};
+
+window.rbi_printFinalAcceptance = function(taskId) {
+    const task = window.rbi_tasksData.find(t => t.id === taskId);
+    const text = document.getElementById('final-ai-text').value;
+    
+    const content = `
+        <div style="text-align:center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Справка о качестве СМР (для КС-2)</h1>
+            <div style="font-size: 14px; color: #4f46e5; font-weight: bold; margin-top: 5px;">${task.contractor} | ${task.templateTitle}</div>
+        </div>
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px;">
+            <h3 style="margin-top: 0; color: #0f172a;">Резолюция Инженера Технадзора</h3>
+            <div style="font-size: 12px; line-height: 1.6; white-space: pre-wrap;">${text}</div>
+        </div>
+        <div style="margin-top: 50px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <tr>
+                    <td style="width: 50%; text-align: center; border-top: 1px solid #000; padding-top: 5px; margin-right:20px;">Подпись инженера</td>
+                    <td style="width: 10%;"></td>
+                    <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Дата</td>
+                </tr>
+            </table>
+        </div>
+    `;
+
+    if (typeof printPdfShell === 'function') printPdfShell(`КС-2: ${task.contractor}`, content, "A4", "portrait", "browser");
+};
+
+window.printEtalonAct = async function(historyId, mode = 'script') {
+    const record = etalonActsArray.find(c => c.id === historyId);
+    if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
+
+    const d = record.details;
+
+    // АСИНХРОННОЕ ИЗВЛЕЧЕНИЕ ФОТО: Дожидаемся, пока все фотки выгрузятся из БД в оперативную память
+    let elementsHtml = '';
+    for (let i = 0; i < d.elements.length; i++) {
+        const el = d.elements[i];
+        let realPhotoSrc = '';
+        if (el.photo) {
+            // Если фото лежит в БД, достаем его физический URL
+            realPhotoSrc = await PhotoManager.getAsyncUrl(el.photo) || window.getPhotoSrc(el.photo) || el.photo;
+        }
+
+        elementsHtml += `
+            <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #4f46e5; border-radius: 10px; background: white; margin-bottom: 20px; border-collapse: collapse; table-layout: fixed;">
+                <tr>
+                    <!-- Колонка для текста: 40% ширины -->
+                    <td style="padding: 15px; vertical-align: top; width: 40%;">
+                        <h3 style="color: #312e81; margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase;">${i + 1}. ${el.name}</h3>
+                        <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0; line-height: 1.5;">${el.desc || 'Описание отсутствует'}</p>
+                    </td>
+                    <!-- Колонка для фото: 60% ширины, высота 300px -->
+                    ${realPhotoSrc ? `<td style="padding: 15px; vertical-align: top; width: 60%; text-align: center;">
+                        <div style="width: 100%; height: 300px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden;">
+                            <img src="${realPhotoSrc}" style="width: 100%; height: 100%; object-fit: contain; display: block; margin: 0 auto;">
+                        </div>
+                    </td>` : ''}
+                </tr>
+            </table>
+        `;
+    }
+
+    const content = `
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">АКТ ПРИЕМКИ ЭТАЛОННОГО ОБРАЗЦА</h1>
+            <div style="font-size: 14px; color: #4f46e5; font-weight: bold; margin-top: 5px; text-transform:uppercase;">От ${new Date(record.date).toLocaleDateString('ru-RU')}</div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; color: #0f172a;">
+            <tr>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold; width: 30%;">Подрядная организация:</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1;">${record.contractorName}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold;">Вид работ:</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1;">${record.templateTitle}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold;">Участок (Локация):</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1;">${record.location}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; background: #f8fafc; font-weight: bold;">Участники приемки:</td>
+                <td style="padding: 10px; border: 1px solid #cbd5e1; white-space: pre-wrap;">${d.participants}</td>
+            </tr>
+        </table>
+
+        <div style="background: ${d.deviations !== 'Отклонений не выявлено' ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${d.deviations !== 'Отклонений не выявлено' ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 5px 0; font-size: 12px; color: ${d.deviations !== 'Отклонений не выявлено' ? '#b45309' : '#166534'}; text-transform: uppercase;">Отклонения и допущения:</h3>
+            <p style="font-size: 12px; color: #1e293b; margin: 0; font-weight: bold; white-space: pre-wrap;">${d.deviations}</p>
+        </div>
+
+        <h2 style="font-size: 16px; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 15px;">Зафиксированные узлы и элементы</h2>
+        
+        ${elementsHtml}
+
+        <div style="margin-top: 40px; page-break-inside: avoid;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <tr>
+                    <td style="width: 33%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Представитель Подрядчика</td>
+                    <td style="width: 33%;"></td>
+                    <td style="width: 33%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Инженер строительного контроля</td>
+                </tr>
+            </table>
+        </div>
+    `;
+
+    printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode);
+};

@@ -636,7 +636,7 @@ body.nav-pos-bottom .sticky-subnav {
 #ref-filters-block,
 #ref-docs-filters,
 #twi-filters-block,
-#node-filters-block
+#node-filters-block,
 .sticky-top-panel  {
     position: -webkit-sticky !important; /* Защита для старых iOS */
     position: sticky !important;
@@ -659,7 +659,7 @@ body.nav-pos-auto #analytics-filters-block,
 body.nav-pos-auto #ref-filters-block,
 body.nav-pos-auto #ref-docs-filters,
 body.nav-pos-auto #twi-filters-block,
-body.nav-pos-auto #node-filters-block 
+body.nav-pos-auto #node-filters-block,
 body.nav-pos-auto .sticky-top-panel {
     top: 10px !important; 
     margin-top: 0 !important; 
@@ -671,9 +671,9 @@ body.nav-pos-top #analytics-filters-block,
 body.nav-pos-top #ref-filters-block,
 body.nav-pos-top #ref-docs-filters,
 body.nav-pos-top #twi-filters-block,
-body.nav-pos-top #node-filters-block
+body.nav-pos-top #node-filters-block,
 body.nav-pos-top .sticky-top-panel {
-    top: 135px !important; /* 70px (Подвкладки) + ~45px (Их высота) + 10px (Зазор) + 10px = 135px */
+    top: 135px !important; 
     margin-top: 0 !important; 
 }
 
@@ -683,13 +683,22 @@ body.nav-pos-top .sticky-top-panel {
     body.nav-pos-auto #ref-filters-block,
     body.nav-pos-auto #ref-docs-filters,
     body.nav-pos-auto #twi-filters-block,
-    body.nav-pos-auto #node-filters-block 
+    body.nav-pos-auto #node-filters-block,
     body.nav-pos-auto .sticky-top-panel {
         top: 135px !important; 
         margin-top: 0 !important;
     }
 }
+/* ИСКЛЮЧЕНИЕ ДЛЯ НАСТРОЕК: Так как там нет подвкладок, прилипаем сразу под главным меню */
+body.nav-pos-top #tab-settings .sticky-top-panel {
+    top: 70px !important;
+}
 
+@media (min-width: 768px) {
+    body.nav-pos-auto #tab-settings .sticky-top-panel {
+        top: 70px !important;
+    }
+}
 /* 4. ПОДВКЛАДКИ */
 #analytics-subtabs-block,
 #engineer-subtabs-block,
@@ -775,7 +784,7 @@ body.nav-pos-bottom #analytics-filters-block,
 body.nav-pos-bottom #ref-filters-block,
 body.nav-pos-bottom #ref-docs-filters,
 body.nav-pos-bottom #twi-filters-block,
-body.nav-pos-bottom #node-filters-block 
+body.nav-pos-bottom #node-filters-block, 
 body.nav-pos-bottom .sticky-top-panel {
     top: 10px !important; /* Эти панели всегда липнут к верху, даже если меню внизу */
     position: sticky !important;
@@ -1018,3 +1027,5 @@ input[list]::-webkit-calendar-picker-indicator {
         display: none !important;
     }
 }
+
+

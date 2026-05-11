@@ -418,6 +418,7 @@ window.pushCloudObject = async function(objectType, id, data, bucketName = 'cust
         case 'custom_doc': tableName = 'shared_docs'; isShared = true; targetBucket = 'library-docs'; break;
         case 'user_template': tableName = 'shared_checklists'; isShared = true; targetBucket = 'library-checklists'; break;
         case 'practice': tableName = 'shared_practices'; isShared = true; targetBucket = 'library-practices'; break;
+        case 'feedback': tableName = 'shared_feedback'; isShared = true; break;
         case 'etalon': tableName = 'shared_etalons'; isShared = true; targetBucket = 'library-etalons'; break;
         case 'meeting': tableName = 'project_meetings'; targetBucket = 'inspection-photos'; break;
         case 'intervention': tableName = 'project_interventions'; targetBucket = 'inspection-photos'; break;
@@ -1009,11 +1010,14 @@ async function downloadAllActPhotosForOffline(act) {
             }
 
             // Справочники (TWI, Узлы, Документы, Чек-листы)
+           // Справочники (TWI, Узлы, Документы, Чек-листы, Фидбек)
             const refTypes = [
                 { type: 'custom_doc', memory: 'customDocs', storeKey: 'custom_docs' },
                 { type: 'custom_node', memory: 'customNodes', storeKey: 'custom_nodes' },
                 { type: 'custom_twi_card', memory: 'customTwiCards', storeKey: 'custom_twi_cards' },
-                { type: 'user_template', memory: 'userTemplates', storeKey: 'user_templates', isDict: true }
+                { type: 'user_template', memory: 'userTemplates', storeKey: 'user_templates', isDict: true },
+                // <-- НОВОЕ: Научили телефон скачивать фидбек и ответы разработчика из облака
+                { type: 'feedback', memory: 'rbi_feedbackData', storeKey: 'feedback_list' } 
             ];
 
             for (const rType of refTypes) {
@@ -1489,19 +1493,30 @@ async function downloadAllActPhotosForOffline(act) {
                     }
 
                     // 2. Вспомогательная функция для Библиотеки Справочников (TWI, Узлы, НД)
+                    // 2. Вспомогательная функция для Библиотеки Справочников (TWI, Узлы, НД)
                     const syncSettingsData = async (memoryArray, storeKey, objectType, bucket) => {
-                        if (typeof memoryArray !== 'undefined' && Array.isArray(memoryArray)) {
-                            let changed = false;
-                            for (const obj of filterNew(memoryArray.filter(x => x && x.id && !String(x.id).startsWith('sys_')))) {
-                                const updated = await window.pushCloudObject(objectType, obj.id, obj, bucket);
-                                if (updated) {
-                                    const idx = memoryArray.findIndex(x => String(x.id) === String(updated.id));
-                                    if (idx !== -1) memoryArray[idx] = updated;
-                                    changed = true;
-                                }
+                        if (typeof dbGet !== 'function') return;
+                        
+                        // ИСПРАВЛЕНИЕ: Берем данные СТРОГО из базы телефона (включая удаленные)
+                        const dbRecord = await dbGet('app_settings', storeKey);
+                        const dbArray = dbRecord && dbRecord.data ? dbRecord.data : [];
+                        
+                        let changed = false;
+                        for (const obj of filterNew(dbArray.filter(x => x && x.id && !String(x.id).startsWith('sys_')))) {
+                            const updated = await window.pushCloudObject(objectType, obj.id, obj, bucket);
+                            if (updated) {
+                                // Если файл жив - обновляем его в базе
+                                const idx = dbArray.findIndex(x => String(x.id) === String(updated.id));
+                                if (idx !== -1) dbArray[idx] = updated;
+                                changed = true;
                             }
-                            if (changed && typeof dbPut === 'function') {
-                                await dbPut('app_settings', { key: storeKey, data: memoryArray.filter(c => !String(c.id).startsWith('sys_')) });
+                        }
+                        if (changed) {
+                            await dbPut('app_settings', { key: storeKey, data: dbArray.filter(c => !String(c.id).startsWith('sys_')) });
+                            // Тихо обновляем оперативную память (для экрана) без удаленных
+                            if (typeof memoryArray !== 'undefined' && Array.isArray(memoryArray)) {
+                                memoryArray.length = 0; // Очищаем массив, не теряя ссылку
+                                dbArray.filter(i => !i._deleted).forEach(i => memoryArray.push(i));
                             }
                         }
                     };
@@ -1509,6 +1524,7 @@ async function downloadAllActPhotosForOffline(act) {
                     await syncSettingsData(customDocs, 'custom_docs', 'custom_doc', 'custom-assets');
                     await syncSettingsData(customNodes, 'custom_nodes', 'custom_node', 'custom-assets');
                     await syncSettingsData(customTwiCards, 'custom_twi_cards', 'custom_twi_card', 'twi-pdfs');
+                    await syncSettingsData(window.rbi_feedbackData, 'feedback_list', 'feedback', 'custom-assets');
 
                     // ОТДЕЛЬНЫЙ PUSH ДЛЯ ЧЕК-ЛИСТОВ (т.к. это Объект, а не массив)
                     if (typeof userTemplates !== 'undefined') {
@@ -1560,8 +1576,13 @@ async function downloadAllActPhotosForOffline(act) {
         window.syncDirtyFlags.session = true;
         window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
 
-        // === АВТОГЕНЕРАЦИЯ ПЛАНА НА НОВОМ УСТРОЙСТВЕ ===
-        // Если синхронизация прошла, а задач всё еще 0 (новый телефон/браузер) - генерируем план
+        // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
+        // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
+        if (typeof window.rbi_generateAutoTasks === 'function') {
+            await window.rbi_generateAutoTasks(true); // true = silent (без тостов)
+        }
+
+        // 2. Если синхронизация прошла, а рутинных задач всё еще 0 (новый телефон) - генерируем план
         if (typeof gameGenerateWeeklyPlan === 'function') {
             if (typeof window.rbi_tasksData !== 'undefined' && window.rbi_tasksData.length === 0) {
                 await gameGenerateWeeklyPlan(true);

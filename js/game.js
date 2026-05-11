@@ -1103,11 +1103,18 @@ function gameInjectManagerModals() {
                 </button>
             </div>
             <div class="flex bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0 shadow-sm">
-                <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors">Эффективность (HR)</button>
-                <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors">Аудит Инженеров</button>
+                <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors">HR Аналитика</button>
+                <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors">Перепроверки</button>
+                <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-emerald-500 hover:text-emerald-700 transition-colors">Разработчик</button>
             </div>
+            
             <div class="flex-1 overflow-y-auto p-2 sm:p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900 relative">
-                <div id="manager-tab-hr" class="block"><div id="manager-panel-content"></div></div>
+                <!-- Вкладка 1: HR -->
+                <div id="manager-tab-hr" class="block">
+                    <div id="manager-panel-content"></div>
+                </div>
+                
+                <!-- Вкладка 2: АУДИТ -->
                 <div id="manager-tab-audit" class="hidden">
                     <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                         <div>
@@ -1116,8 +1123,34 @@ function gameInjectManagerModals() {
                         </div>
                         <button onclick="gameGenerateAuditPlan()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 shrink-0 whitespace-nowrap">Сформировать План</button>
                     </div>
-                    <div id="manager-audit-list"><div class="text-center py-10 text-slate-400 font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать План"</div></div>
+                    <div id="manager-audit-list">
+                        <div class="text-center py-10 text-slate-400 font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать План"</div>
+                    </div>
                 </div>
+
+                <!-- Вкладка 3: РАЗРАБОТЧИК -->
+                <div id="manager-tab-dev" class="hidden">
+                    <!-- НОВЫЙ БЛОК: ПЛАНЫ РАЗРАБОТЧИКА -->
+                    <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl shadow-sm mb-4">
+                        <h2 class="text-[12px] font-black uppercase text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Опубликовать планы (Roadmap)</h2>
+                        <div class="flex gap-2">
+                            <input type="text" id="dev-roadmap-input" class="input-base text-[11px] !py-2.5 flex-1" placeholder="Напр: Добавить темную тему в PDF отчеты...">
+                            <button onclick="rbi_addRoadmapItem()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold uppercase active:scale-95 shadow-sm">Опубликовать</button>
+                        </div>
+                    </div>
+                    <div id="manager-roadmap-list" class="space-y-2 mb-6"></div>
+
+                    <!-- СТАРЫЙ БЛОК: ОБРАТНАЯ СВЯЗЬ ОТ ЮЗЕРОВ -->
+                    <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <div>
+                            <h2 class="text-[13px] font-black uppercase text-emerald-600 mb-1">Бэклог доработок (Идеи команды)</h2>
+                            <p class="text-[10px] text-slate-500 font-bold">Управление обратной связью.</p>
+                        </div>
+                        <button onclick="rbi_exportFeedbackJson()" class="bg-slate-100 text-slate-600 border border-slate-300 px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95">↓ JSON</button>
+                    </div>
+                    <div id="manager-dev-list" class="space-y-3 pb-8"></div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -1146,17 +1179,28 @@ window.gameVerifyManagerPin = function () {
 window.switchManagerTab = function (tab) {
     const btnHr = document.getElementById('btn-man-hr');
     const btnAudit = document.getElementById('btn-man-audit');
+    const btnDev = document.getElementById('btn-man-dev');
+    
     const tabHr = document.getElementById('manager-tab-hr');
     const tabAudit = document.getElementById('manager-tab-audit');
+    const tabDev = document.getElementById('manager-tab-dev');
+
+    const actClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-colors ";
+    const inactClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors";
+
+    btnHr.className = inactClass; btnAudit.className = inactClass; btnDev.className = inactClass;
+    tabHr.classList.add('hidden'); tabAudit.classList.add('hidden'); tabDev.classList.add('hidden');
 
     if (tab === 'hr') {
-        btnHr.className = "flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors";
-        btnAudit.className = "flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors";
-        tabHr.classList.remove('hidden'); tabAudit.classList.add('hidden');
-    } else {
-        btnAudit.className = "flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors";
-        btnHr.className = "flex-1 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors";
-        tabAudit.classList.remove('hidden'); tabHr.classList.add('hidden');
+        btnHr.className = actClass + "border-indigo-600 text-indigo-600 bg-indigo-50/50";
+        tabHr.classList.remove('hidden');
+    } else if (tab === 'audit') {
+        btnAudit.className = actClass + "border-indigo-600 text-indigo-600 bg-indigo-50/50";
+        tabAudit.classList.remove('hidden');
+    } else if (tab === 'dev') {
+        btnDev.className = actClass + "border-emerald-600 text-emerald-600 bg-emerald-50/50";
+        tabDev.classList.remove('hidden');
+        rbi_renderDevFeedbackTab(); // Рендерим панель разраба
     }
 }
 
@@ -2142,7 +2186,7 @@ window.rbi_renderFmeaHistory = function () {
 
     // Кнопки управления и фильтры
     let headerHtml = `
-        <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40">
+        <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 w-full">
             <div class="flex justify-between items-center mb-3 border-b border-[var(--card-border)] pb-2">
                 <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
                     <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -2349,7 +2393,7 @@ window.rbi_loadFmeaToWorkspace = function(id) {
             </div>`;
         }
         return `
-        <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
+        <tr class="fmea-row bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" data-idx="${idx}">
             <input type="hidden" class="f-contr" value="${def.contractor}">
             <input type="hidden" class="f-work" value="${def.workTitle}">
             <input type="hidden" class="f-defect" value="${def.defectName}">
@@ -2364,30 +2408,30 @@ window.rbi_loadFmeaToWorkspace = function(id) {
                 </div>
                 ${photoHtml}
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[120px]">
-                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50">
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[120px]">
+                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50 dark:bg-slate-900 dark:text-slate-200">
                     <option value="Ошибки СМР" ${def.stage === 'Ошибки СМР' ? 'selected' : ''}>Ошибки СМР</option>
                     <option value="Проект" ${def.stage === 'Проект' ? 'selected' : ''}>Проектная ошибка</option>
                     <option value="Материалы" ${def.stage === 'Материалы' ? 'selected' : ''}>Материалы / Завод</option>
                     <option value="Условия" ${def.stage === 'Условия' ? 'selected' : ''}>Внешние условия</option>
                 </select>
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
-                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2" placeholder="Коренная причина...">${def.cause || ''}</textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2 dark:bg-slate-900 dark:text-slate-200" placeholder="Коренная причина...">${def.cause || ''}</textarea>
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
-                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2" placeholder="Последствия (Риски)...">${def.effect || ''}</textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2 dark:bg-slate-900 dark:text-slate-200" placeholder="Последствия (Риски)...">${def.effect || ''}</textarea>
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
-                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 bg-blue-50" placeholder="Как устранить сейчас...">${def.fix || ''}</textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-200" placeholder="Как устранить сейчас...">${def.fix || ''}</textarea>
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[180px]">
-                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 bg-green-50" placeholder="Системное предотвращение...">${def.prevent || ''}</textarea>
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
+                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 bg-green-50 dark:bg-green-900/20 dark:text-green-200" placeholder="Системное предотвращение...">${def.prevent || ''}</textarea>
             </td>
-            <td class="p-2 border border-slate-200 align-top min-w-[80px]">
+            <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[80px]">
                 <div class="text-center">
                     <div class="text-[8px] font-bold text-slate-400 mb-1">RPN</div>
-                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 !py-2" placeholder="0" value="${def.rpn || 0}">
+                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 dark:text-purple-400 !py-2 dark:bg-slate-900" placeholder="0" value="${def.rpn || 0}">
                 </div>
             </td>
         </tr>`;
@@ -2524,7 +2568,7 @@ window.rbi_generateFmeaTable = function () {
         const repeatedTag = def.isRepeated ? `<div class="text-[8px] bg-red-600 text-white px-1 py-0.5 rounded uppercase font-black w-fit mt-1 animate-pulse">Повторный</div>` : '';
         
         return `
-        <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
+        <tr class="fmea-row bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" data-idx="${idx}">
             <input type="hidden" class="f-contr" value="${def.contractor}">
             <input type="hidden" class="f-work" value="${def.workTitle}">
             <input type="hidden" class="f-defect" value="${def.defectName}">
@@ -2535,36 +2579,35 @@ window.rbi_generateFmeaTable = function () {
                 <div class="text-[9px] font-bold text-slate-400 uppercase leading-tight mb-0.5">${def.workTitle}</div>
                 <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight mb-1">${def.contractor}</div>
                 <div class="text-[10px] text-slate-600 dark:text-slate-300 font-medium leading-snug">
-                    ${def.isB3 ? '<span class="bg-red-600 text-white px-1 rounded mr-1 font-bold">B3</span>' : ''}
                     <b>${def.defectName}</b> (${def.count} раз)
                 </div>
                 ${repeatedTag}
                 ${photoHtml}
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[120px]">
-                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50">
-                    <option value="Ошибки СМР">Ошибки СМР</option>
-                    <option value="Проект">Проектная ошибка</option>
-                    <option value="Материалы">Материалы / Завод</option>
-                    <option value="Условия">Внешние условия</option>
+                <select class="f-stage input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50 dark:bg-slate-900 dark:text-slate-200">
+                    <option value="Ошибки СМР" ${def.stage === 'Ошибки СМР' ? 'selected' : ''}>Ошибки СМР</option>
+                    <option value="Проект" ${def.stage === 'Проект' ? 'selected' : ''}>Проектная ошибка</option>
+                    <option value="Материалы" ${def.stage === 'Материалы' ? 'selected' : ''}>Материалы / Завод</option>
+                    <option value="Условия" ${def.stage === 'Условия' ? 'selected' : ''}>Внешние условия</option>
                 </select>
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
-                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Коренная причина..."></textarea>
+                <textarea class="f-cause input-base w-full h-20 resize-none text-[10px] p-2 dark:bg-slate-900 dark:text-slate-200" placeholder="Коренная причина...">${def.cause || ''}</textarea>
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
-                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed" placeholder="Последствия (Риски)..."></textarea>
+                <textarea class="f-effect input-base w-full h-20 resize-none text-[10px] p-2 dark:bg-slate-900 dark:text-slate-200" placeholder="Последствия (Риски)...">${def.effect || ''}</textarea>
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
-                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-blue-50" placeholder="Как устранить сейчас..."></textarea>
+                <textarea class="f-fix input-base w-full h-20 resize-none text-[10px] p-2 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-200" placeholder="Как устранить сейчас...">${def.fix || ''}</textarea>
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[180px]">
-                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 leading-relaxed bg-green-50" placeholder="Системное предотвращение..."></textarea>
+                <textarea class="f-prevent input-base w-full h-20 resize-none text-[10px] p-2 bg-green-50 dark:bg-green-900/20 dark:text-green-200" placeholder="Системное предотвращение...">${def.prevent || ''}</textarea>
             </td>
             <td class="p-2 border border-slate-200 dark:border-slate-700 align-top min-w-[80px]">
                 <div class="text-center">
-                    <div class="text-[8px] font-bold text-slate-400 mb-1">RPN (1-1000)</div>
-                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 !py-2" placeholder="0" min="1" max="1000">
+                    <div class="text-[8px] font-bold text-slate-400 mb-1">RPN</div>
+                    <input type="number" class="f-rpn input-base text-center font-black text-lg text-purple-700 dark:text-purple-400 !py-2 dark:bg-slate-900" placeholder="0" value="${def.rpn || 0}">
                 </div>
             </td>
         </tr>
@@ -2610,69 +2653,7 @@ window.rbi_generateFmeaTable = function () {
     `;
 };
 
-// 3. АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
-window.rbi_fillFmeaWithAi = async function () {
-    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
 
-    const rows = document.querySelectorAll('.fmea-row');
-    if (rows.length === 0) return;
-
-    const btn = document.getElementById('btn-fmea-ai');
-    btn.innerHTML = `<span class="animate-pulse">⏳ Нейросеть думает...</span>`;
-    btn.disabled = true;
-
-    let defectsContext = [];
-    rows.forEach((row, idx) => {
-        const contr = row.querySelector('.f-contr').value;
-        const work = row.querySelector('.f-work').value;
-        const defect = row.querySelector('.f-defect').value;
-        defectsContext.push(`ID ${idx}: Подрядчик [${contr}], Работа [${work}], Дефект [${defect}].`);
-    });
-
-    const promptSystem = `Ты — Главный Инженер Качества. Проведи FMEA-анализ (Анализ видов и последствий отказов) списка частых дефектов.
-    Твоя задача — вернуть строго JSON-массив. Для каждого дефекта (по его ID) сформируй объект с ключами:
-    "stage" - этап возникновения (выбери одно: "Ошибки СМР", "Проект", "Материалы", "Условия").
-    "cause" - коренная причина дефекта (почему рабочие так делают? 1 предложение).
-    "effect" - последствия дефекта для здания (1 предложение).
-    "fix" - предложение по устранению уже допущенного брака (1 предложение).
-    "prevent" - системная мера по предотвращению в будущем (1 предложение).
-    "rpn" - число Risk Priority Number от 1 до 1000 (Severity * Occurrence * Detection). Чем опаснее дефект, тем выше RPN.`;
-
-    try {
-        const responseText = await window.callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: `Анализируй эти дефекты и верни массив JSON (порядок как в списке):\n${defectsContext.join('\n')}` }
-        ], { temperature: 0.3, max_tokens: 2000 });
-
-        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error("Нейросеть не вернула JSON");
-
-        const aiData = JSON.parse(jsonMatch[0]);
-
-        rows.forEach((row, idx) => {
-            if (aiData[idx]) {
-                const data = aiData[idx];
-                const stageSel = row.querySelector('.f-stage');
-                if (Array.from(stageSel.options).some(opt => opt.value === data.stage)) {
-                    stageSel.value = data.stage;
-                }
-                row.querySelector('.f-cause').value = data.cause || '';
-                row.querySelector('.f-effect').value = data.effect || '';
-                row.querySelector('.f-fix').value = data.fix || '';
-                row.querySelector('.f-prevent').value = data.prevent || '';
-                row.querySelector('.f-rpn').value = data.rpn || 0;
-            }
-        });
-
-        if (typeof gameLogAction === 'function') gameLogAction('fmea_master', 'ai_table');
-        showToast("✨ Мега-таблица FMEA заполнена нейросетью!");
-    } catch (e) {
-        showToast("❌ Ошибка ИИ (попробуйте еще раз): " + e.message);
-    } finally {
-        btn.innerHTML = `🤖 Автозаполнение (ИИ)`;
-        btn.disabled = false;
-    }
-};
 
 // 4. СОХРАНЕНИЕ FMEA В БАЗУ
 window.rbi_saveFmea = async function(periodName) {
@@ -2742,84 +2723,7 @@ window.rbi_saveFmea = async function(periodName) {
     }
 };
 
-// 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)
-window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
-    const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
-    if (!record) return showToast("Запись не найдена");
 
-    showToast("⏳ Формируем документ...");
-
-    // Сортируем по RPN (Самые опасные сверху)
-    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
-
-    let rowsHtml = '';
-    // Используем цикл for...of, чтобы дождаться распаковки ВСЕХ фотографий из БД
-    for (let d of sortedDefects) {
-        let rpnColor = '#16a34a'; // Зеленый
-        if (d.rpn >= 300) rpnColor = '#d97706'; // Оранжевый
-        if (d.rpn >= 600) rpnColor = '#dc2626'; // Красный
-
-        let photoTd = `<div style="font-size:9px; color:#94a3b8; font-style:italic; border:1px dashed #cbd5e1; padding:10px; border-radius:4px;">Нет фото</div>`;
-        if (d.photo) {
-            const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
-            photoTd = `<img src="${realSrc}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border: 1px solid #cbd5e1; display:block; margin:0 auto;">`;
-        }
-
-        rowsHtml += `
-        <tr style="border-bottom: 1px solid #cbd5e1; background: white; page-break-inside: avoid;">
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: center; vertical-align: middle;">
-                ${photoTd}
-            </td>
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top;">
-                <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">${d.workTitle}</div>
-                <div style="font-size: 12px; font-weight: 900; color: #0f172a; margin-top: 2px;">${d.contractor}</div>
-                <div style="font-size: 11px; color: #b91c1c; font-weight: bold; margin-top: 4px;">${d.defectName} (Повторов: ${d.count})</div>
-            </td>
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">
-                <div style="font-size: 9px; background: #e2e8f0; display: inline-block; padding: 2px 4px; border-radius: 4px; margin-bottom: 4px; font-weight:bold;">${d.stage}</div>
-                <div>${d.cause || '-'}</div>
-            </td>
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1e293b;">${d.effect || '-'}</td>
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #1d4ed8; background: #eff6ff;">${d.fix || '-'}</td>
-            <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; font-size: 11px; color: #166534; background: #f0fdf4;">${d.prevent || '-'}</td>
-            <td style="padding: 10px; vertical-align: top; text-align: center;">
-                <div style="font-size: 20px; font-weight: 900; color: ${rpnColor};">${d.rpn || 0}</div>
-            </td>
-        </tr>`;
-    }
-
-    const content = `
-        <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="font-size: 24px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">Анализ видов и последствий отказов (FMEA)</h1>
-            <div style="font-size: 14px; color: #64748b; font-weight: bold; margin-top: 5px;">Отчет: ${record.title} | Период: ${record.periodName} | Инженер: ${record.author}</div>
-        </div>
-
-        <table style="width: 100%; border-collapse: collapse; border: 2px solid #cbd5e1; table-layout: fixed;">
-            <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 10px; color: #475569;">
-                <tr>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 10%; text-align: center;">ФОТО</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left;">1. Проблема / Подрядчик</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">2. Коренная причина</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left;">3. Риски и последствия</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 16%; text-align: left; color: #1d4ed8;">4. Устранение</th>
-                    <th style="padding: 12px 10px; border-right: 1px solid #cbd5e1; border-bottom: 2px solid #cbd5e1; width: 18%; text-align: left; color: #166534;">5. Предотвращение</th>
-                    <th style="padding: 12px 10px; border-bottom: 2px solid #cbd5e1; width: 6%; text-align: center; color: #7e22ce;">RPN</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${rowsHtml}
-            </tbody>
-        </table>
-        
-        <div style="margin-top: 15px; font-size: 10px; color: #94a3b8; text-align: right;">
-            *RPN (Risk Priority Number) — приоритетное число риска. Чем выше RPN, тем опаснее дефект.
-        </div>
-    `;
-
-    if (typeof printPdfShell === 'function') {
-        printPdfShell(`FMEA Анализ`, content, "A3", "landscape", mode);
-    }
-};
 
 // === ОБРАБОТКА РУЧНОГО ФОТО В FMEA ===
 window.rbi_handleFmeaPhotoUpload = function(event) {

@@ -319,39 +319,7 @@ window.sk_showMappingModal = function(fileHeaders, sampleRow) {
     modal.style.display = 'flex';
 };
 
-// === 7. AI-МАППИНГ КОЛОНОК ===
-window.sk_aiMapColumns = async function() {
-    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
-    const btn = document.getElementById('btn-ai-mapping');
-    btn.innerHTML = `<span class="animate-pulse">⏳ ИИ думает...</span>`;
-    btn.disabled = true;
 
-    const headersList = window.skTempRawHeaders.map((h, i) => `${i}: "${h}"`).join(', ');
-    
-    const promptSystem = `Ты помощник интеграции данных. Тебе даны заголовки Excel-файла (с их индексами). Твоя задача — сопоставить их с системными полями: number, text, category, date_issued, contractor, deadline, status, date_resolved, structure.
-    Верни СТРОГО JSON-объект, где ключ - это системное поле, а значение - индекс (число) колонки из Excel. Если колонки нет, верни -1. Без лишнего текста и комментариев.`;
-    
-    try {
-        // Используем глобальную функцию callAI (которая у нас уже есть в ai.js)
-        const res = await window.callAI([{role: 'system', content: promptSystem}, {role: 'user', content: headersList}], {temperature: 0.1, max_tokens: 300});
-        
-        const jsonMatch = res.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            const aiMap = JSON.parse(jsonMatch[0]);
-            Object.keys(aiMap).forEach(key => {
-                const select = document.querySelector(`.sk-mapping-select[data-field="${key}"]`);
-                if (select) select.value = aiMap[key];
-            });
-            showToast("✨ ИИ успешно распознал колонки!");
-        }
-    } catch(e) {
-        showToast("❌ Ошибка ИИ: " + e.message);
-    } finally {
-        btn.innerHTML = `🤖 Угадать через ИИ (DeepSeek)`;
-        btn.disabled = false;
-    }
-};
 
 // === 8. ПАРСЕР ДАТ ИЗ EXCEL (ИСПРАВЛЕНИЕ БАГА С ПРОСРОЧКАМИ) ===
 // === 8. ПАРСЕР ДАТ ИЗ EXCEL (С ПОДДЕРЖКОЙ DD.MM.YYYY) ===
@@ -665,89 +633,7 @@ window.sk_finalizeImport = async function() {
 
 };
 
-// === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
-window.sk_autoMapCategories = async function(silent = false) {
-    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
-        if (!silent) showToast("⚠️ Включите AI для авто-распределения категорий!");
-        return 0;
-    }
 
-    if (!silent && !skAiRunning) showToast("🤖 ИИ в фоне обрабатывает категории...");
-
-    const allowedCleanCats = [];
-    if (typeof SYSTEM_TEMPLATES !== 'undefined') {
-        Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
-    }
-    if (typeof userTemplates !== 'undefined') {
-        Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
-    }
-    if (allowedCleanCats.length === 0) allowedCleanCats.push("Общестроительные работы");
-
-    const recordsToFix = window.skRecords.filter(r => 
-        !r.category || 
-        r.category === 'Без категории' || 
-        r.category.trim() === '' || 
-        /^\d+$/.test(r.category)
-    );
-    
-    const uniqueTexts = [...new Set(recordsToFix.map(r => r.text).filter(t => t && t.length > 5))];
-    
-    if (uniqueTexts.length === 0) {
-        if (!silent) showToast("✅ Все замечания уже распределены по категориям.");
-        return 0;
-    }
-
-    const BATCH_SIZE = 50;
-    let totalUpdated = 0;
-    let currentIndex = 0;
-    const totalBatches = Math.ceil(uniqueTexts.length / BATCH_SIZE);
-
-    for (let batchNum = 1; batchNum <= totalBatches; batchNum++) {
-        const batch = uniqueTexts.slice(currentIndex, currentIndex + BATCH_SIZE);
-        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 200)}"`).join('\n');
-        
-        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты дефектов.
-Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length-1}), значение - один из видов работ: [${allowedCleanCats.join(', ')}].
-Если не уверен, верни "Без категории". Без пояснений.`;
-
-        try {
-            const res = await window.callAI([
-                { role: 'system', content: promptSystem },
-                { role: 'user', content: batchStr }
-            ], { temperature: 0.1, max_tokens: 2000 });
-            
-            const jsonMatch = res.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const aiMap = JSON.parse(jsonMatch[0]);
-                let updatedInBatch = 0;
-                for (let i = 0; i < batch.length; i++) {
-                    const cleanVal = aiMap[i] || aiMap[String(i)];
-                    if (cleanVal && cleanVal !== 'Без категории' && allowedCleanCats.includes(cleanVal)) {
-                        const targetRecords = window.skRecords.filter(r => r.text === batch[i]);
-                        for (let rec of targetRecords) {
-                            rec.category = cleanVal;
-                            rec._updatedAt = new Date().toISOString();
-                            await dbPut(STORES.SK_RECORDS, rec);
-                            updatedInBatch++;
-                        }
-                    }
-                }
-                totalUpdated += updatedInBatch;
-            }
-        } catch (e) {
-            console.warn("Ошибка ИИ в пакете", batchNum, e);
-            if (!silent) showToast(`⚠️ Ошибка в пакете ${batchNum}`);
-        }
-        
-        currentIndex += BATCH_SIZE;
-        if (currentIndex < uniqueTexts.length) await new Promise(r => setTimeout(r, 500));
-    }
-
-    if (!silent && totalUpdated > 0) {
-        showToast(`✨ ИИ обработал ${totalUpdated} записей (в фоне)`);
-    }
-    return totalUpdated;
-};
 
 
 // === 6. РЕНДЕР ДАШБОРДА (СМАРТ-МАТРИЦА ИСД И ЕДИНАЯ ЗАДАЧА) ===
@@ -1313,94 +1199,7 @@ window.sk_renderDashboard = function() {
     }, 100);
 };
 
-// === 7. AI-СВЯЗКА ДЕФЕКТОВ EXCEL С ЧЕК-ЛИСТАМИ RBI И ГЕНЕРАЦИЯ ПИСЬМА ===
-window.sk_generateContractorAiSummary = async function(cName, safeId) {
-    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
 
-    const btn = document.getElementById(`btn-sk-ai-${safeId}`);
-    const resBox = document.getElementById(`sk-ai-res-${safeId}`);
-    
-    btn.innerHTML = `<span class="animate-pulse">⏳ DeepSeek анализирует дефекты...</span>`;
-    btn.disabled = true;
-    resBox.classList.remove('hidden');
-    resBox.innerHTML = `<div class="text-center text-indigo-500 font-bold animate-pulse">ИИ сопоставляет замечания с чек-листами RBI...</div>`;
-
-    let total = 0, open = 0, overdue = 0;
-    const defectsFreq = {};
-    window.skRecords.filter(r => r.contractor === cName).forEach(r => {
-        total++;
-        const isOpen = r.status && r.status.toLowerCase().includes('не устран');
-        if (isOpen) open++;
-        const deadline = r.deadline ? new Date(r.deadline) : null;
-        if (deadline && isOpen && new Date() > deadline) overdue++;
-        if (r.text) {
-            const cleanText = r.text.trim().replace(/\s+/g, ' ').substring(0, 100);
-            defectsFreq[cleanText] = (defectsFreq[cleanText] || 0) + 1;
-        }
-    });
-
-    const topDefects = Object.keys(defectsFreq).sort((a,b) => defectsFreq[b] - defectsFreq[a]).slice(0, 5);
-    const defectListStr = topDefects.map(d => `- ${d} (${defectsFreq[d]} раз)`).join('\n');
-
-    const availableChecklists = [];
-    if (typeof SYSTEM_TEMPLATES !== 'undefined') {
-        Object.keys(SYSTEM_TEMPLATES).forEach(k => availableChecklists.push(SYSTEM_TEMPLATES[k].title));
-    }
-    const checklistsStr = availableChecklists.join(', ');
-
-    const promptSystem = `Ты — Главный эксперт по качеству. Проанализируй открытые замечания подрядчика из системы "Стройконтроль".
-    Верни ответ СТРОГО в формате:
-    
-    [ОЦЕНКА ФОРМУЛИРОВОК (KPI)]
-    Оценка качества описания дефектов инженерами СК: [X/10]. 
-    Комментарий: [Укажи 1 предложением, чего не хватает инженерам при выдаче предписаний: осей, конкретики, ссылок на ГОСТ].
-
-    [ПРОГНОЗ РИСКА ПРОСРОЧКИ]
-    [Выбери 1 самый сложный дефект из списка и оцени риск его просрочки: Высокий / Средний / Низкий. Объясни почему (технологическая сложность, поставка материалов и т.д.)].
-
-    [СВЯЗЬ С ЧЕК-ЛИСТАМИ RBI]
-    Рекомендуемые чек-листы для проверок: [Выбери 1-2 из: ${checklistsStr}].
-
-    [СООБЩЕНИЕ ПРОРАБУ В WHATSAPP]
-    [Короткое жесткое письмо прорабу. Укажи статистику просрочек и дефекты, которые нужно закрыть]`;
-
-    const promptUser = `Подрядчик: ${cName}. Всего: ${total}. Открыто: ${open}. Просрочено: ${overdue}. Тексты дефектов:\n${defectListStr}`;
-
-    try {
-        const response = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.2, max_tokens: 800 });
-        
-        const formattedResponse = response
-            .replace(/\[ОЦЕНКА ФОРМУЛИРОВОК \(KPI\)\]/g, '<div class="text-[12px] font-black text-purple-700 uppercase mb-1 border-b border-purple-100 pb-1">📝 Качество работы инженеров СК</div>')
-            .replace(/\[ПРОГНОЗ РИСКА ПРОСРОЧКИ\]/g, '<div class="text-[12px] font-black text-red-700 uppercase mt-3 mb-1 border-b border-red-100 pb-1">🔮 AI-Прогноз рисков</div>')
-            .replace(/\[СВЯЗЬ С ЧЕК-ЛИСТАМИ RBI\]/g, '<div class="text-[12px] font-black text-indigo-700 uppercase mt-3 mb-1 border-b border-indigo-100 pb-1">🔗 Фокус для RBI Аудита</div>')
-            .replace(/\[СООБЩЕНИЕ ПРОРАБУ В WHATSAPP\]/g, '<div class="text-[12px] font-black text-green-700 uppercase mt-3 mb-1 border-b border-green-100 pb-1">💬 Сообщение прорабу (Копировать)</div>');
-
-        resBox.innerHTML = `
-            ${formattedResponse}
-            <button onclick="navigator.clipboard.writeText(this.parentElement.innerText); showToast('Текст скопирован!');" class="mt-3 w-full bg-slate-100 text-slate-600 border border-slate-300 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 shadow-sm">
-                📋 Скопировать весь текст
-            </button>
-        `;
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'sk_contractor_analysis');
-        // === АВТОЗАКРЫТИЕ ЗАДАЧИ ПРИ ФОРМИРОВАНИИ ПИСЬМА ===
-        if (typeof window.rbi_tasksData !== 'undefined') {
-            const skTask = window.rbi_tasksData.find(t => t.title === 'Анализ проблем ПК СК' && t.status === 'pending');
-            if (skTask) {
-                skTask.status = 'done';
-                skTask.done = 1;
-                skTask.resultComment = 'Письмо отправлено';
-                skTask.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, skTask);
-                if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
-            }
-        }
-    } catch(e) {
-        resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
-    } finally {
-        btn.innerHTML = `🤖 AI-Анализ и Письмо прорабу`;
-        btn.disabled = false;
-    }
-};
 
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
