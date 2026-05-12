@@ -47,6 +47,8 @@ let real_rbi_fmeaRecords = [], real_rbi_scheduleData = [];
 
 // Настройки приложения (v16.0)
 let appSettings = {
+    userRole: 'guest', // <-- ДОБАВЛЕНО: Роль по умолчанию
+    assignedProjects: [], // <-- ДОБАВЛЕНО: Закрепленные объекты
     theme: 'auto',
     engineerName: '',
     defaultProject: '',
@@ -91,6 +93,14 @@ let __saveSessionTimer = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
     try {
+        // --- НОВОЕ: Автоматическая синхронизация при появлении интернета ---
+        window.addEventListener('online', () => {
+            if (window.syncConfig && window.syncConfig.enabled) {
+                if (typeof showToast === 'function') showToast("🌐 Интернет восстановлен. Синхронизируем...");
+                if (typeof triggerSync === 'function') triggerSync('silent');
+            }
+        });
+        // -------------------------------------------------------------------
         // Запускаем облако до загрузки остальных настроек
         if (typeof initSync === 'function') await initSync();
         
@@ -123,9 +133,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         
         renderSelector();
         await restoreSession();
-        // Загрузка фидбека
-        const storedFb = await dbGet(STORES.SETTINGS, 'feedback_list');
-        if (storedFb && storedFb.data) window.rbi_feedbackData = storedFb.data;
+        // Загрузка фидбека из новой таблицы
+        const storedFb = await dbGetAll(STORES.FEEDBACK_LIST);
+        if (storedFb) window.rbi_feedbackData = storedFb.filter(f => !f._deleted);
         if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
 
         if(!currentTemplateKey) {
@@ -900,6 +910,7 @@ function resetSettingsToDefault() {
     
     // 1. Сбрасываем объект
     appSettings = {
+        userRole: 'guest', assignedProjects: [], // <-- ДОБАВЛЕНО
         theme: 'auto', engineerName: '', defaultProject: '', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
         autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
         soundEnabled: true, autoSave: true, aiEnabled: false, autoCacheCloudFiles: true, aiAuto: false, apiKey: '', dashboardMode: 'compact',
@@ -983,7 +994,13 @@ function applySettingsToUI() {
         if (appSettings.usePersonalKey) personalKeyBlock.classList.remove('hidden');
         else personalKeyBlock.classList.add('hidden');
     }
+// ДОБАВЛЕНО: Применяем ролевые ограничения интерфейса
+    if (typeof RbiRoles !== 'undefined') RbiRoles.applyUIConstraints();
+    // ДОБАВЛЕНО: Инициализируем выпадающий список объектов
+    if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
+
 }
+
 
 
 // Вывод списка пользовательских шаблонов для управления (Удаления)
@@ -1554,6 +1571,20 @@ function getSelectedHistoryIds() {
 async function deleteSelectedHistory() {
     const ids = getSelectedHistoryIds();
     if (ids.length === 0) return showToast('Сначала выберите элементы галочками');
+
+    // ДОБАВЛЕНО: Проверяем права на удаление для каждой выбранной проверки
+    let canDeleteAll = true;
+    for (let id of ids) {
+        let item = contractorArray.find(i => String(i.id) === String(id));
+        if (item && !RbiRoles.canDelete(item.inspectorName)) {
+            canDeleteAll = false;
+            break;
+        }
+    }
+    if (!canDeleteAll) {
+        return showToast('⚠️ Вы не можете удалить чужие проверки. Снимите галочки с чужих актов.');
+    }
+
     if (!confirm(`Удалить выбранные проверки (${ids.length} шт)?`)) return;
 
     // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
@@ -2571,7 +2602,7 @@ async function clearHistory() {
     // Очищаем логи геймификации HR
     if (typeof gameActionLogs !== 'undefined') {
         gameActionLogs = [];
-        await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: [] });
+        await dbPut(STORES.GAME_LOGS, { id: 'main', data: [] });
     }
 
     // Принудительно обновляем все связанные экраны
@@ -4184,8 +4215,8 @@ window.exportDocsJsCode = function() {
 };
 document.addEventListener("DOMContentLoaded", async () => {
     try {
-        const storedDocs = await dbGet(STORES.SETTINGS, 'custom_docs');
-        if (storedDocs && storedDocs.data) customDocs = storedDocs.data;
+        const storedDocs = await dbGetAll(STORES.CUSTOM_DOCS);
+        if (storedDocs && storedDocs.length > 0) customDocs = storedDocs.filter(d => !d._deleted);
     } catch (e) { console.error("Ошибка загрузки пользовательских НД", e); }
 });
 
@@ -4412,13 +4443,12 @@ async function saveCustomDoc() {
             const extracted = await window.extractTextFromPdf(realUrl);
             if (extracted) {
                 // Достаем свежую базу, чтобы избежать перезаписи
-                const storedDocs = await dbGet(STORES.SETTINGS, 'custom_docs');
-                const freshDocs = storedDocs ? storedDocs.data : customDocs;
+               const freshDocs = await dbGetAll(STORES.CUSTOM_DOCS) || customDocs;
                 const idx = freshDocs.findIndex(d => d.id === newDoc.id);
                 if (idx !== -1) {
                     freshDocs[idx].extractedText = extracted;
                     freshDocs[idx].updatedAt = new Date().toISOString();
-                    await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: freshDocs });
+                    await dbPut(STORES.CUSTOM_DOCS, freshDocs[idx]);
                     customDocs = freshDocs.filter(d => !d._deleted); // обновляем экран
                     showToast("✨ Текст документа успешно проиндексирован ИИ!");
                     
@@ -4434,7 +4464,7 @@ async function saveCustomDoc() {
     customDocs.unshift(newDoc);
     
     try {
-        await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
+        await dbPut(STORES.CUSTOM_DOCS, newDoc); // <-- НОВОЕ: Сохраняем только 1 запись
         showToast('✅ Норматив успешно добавлен!');
         closeAddDocModal();
         renderDocsList();
@@ -4448,7 +4478,10 @@ async function saveCustomDoc() {
 }
 
 // Удаление
+// Удаление
 async function deleteCustomDoc(id) {
+    const doc = customDocs.find(d => d.id === id);
+    if (doc && !RbiRoles.canDelete(doc.owner)) return showToast("⚠️ У вас нет прав на удаление чужого документа!");
     if (!confirm('Удалить этот документ из базы?')) return;
     
     const docIndex = customDocs.findIndex(d => d.id === id);
@@ -4460,7 +4493,7 @@ async function deleteCustomDoc(id) {
     }
 
     try {
-        await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
+        await dbPut(STORES.CUSTOM_DOCS, customDocs[docIndex]); // <-- НОВОЕ: Обновляем только 1 запись с флагом _deleted
         showToast('🗑️ Документ удален');
         // Очищаем массив в памяти от удаленных для рендера
         customDocs = customDocs.filter(d => !d._deleted);
@@ -4535,34 +4568,25 @@ let currentTwiType = 'INSPECTOR';
 // Сюда ты можешь вставлять код карт, выгруженных через кнопку "В код (Экспорт)"
 
 // Глобальная функция для перезагрузки данных справочника из базы в оперативную память
+// Глобальная функция для перезагрузки данных справочника из базы в оперативную память
 window.rbi_reloadReferenceMemory = async function() {
     try {
-        // 1. TWI КАРТЫ (ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЕ)
-        let loadedTwi = [];
-        const storedTwi = await dbGet(STORES.SETTINGS, 'custom_twi_cards');
-        if (storedTwi && storedTwi.data) loadedTwi = storedTwi.data;
-        
+        // 1. TWI КАРТЫ
+        const loadedTwi = await dbGetAll(STORES.TWI_CARDS) || [];
         const sysTwiIds = (typeof SYSTEM_TWI_CARDS !== 'undefined' ? SYSTEM_TWI_CARDS : []).map(c => String(c.id));
-        // Очищаем от системных и удаленных
         customTwiCards = loadedTwi.filter(c => !sysTwiIds.includes(String(c.id)) && !c._deleted);
 
-        // 2. ТЕХНИЧЕСКИЕ УЗЛЫ (ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЕ)
-        let loadedNodes = [];
-        const storedNodes = await dbGet(STORES.SETTINGS, 'custom_nodes');
-        if (storedNodes && storedNodes.data) loadedNodes = storedNodes.data;
-        
+        // 2. ТЕХНИЧЕСКИЕ УЗЛЫ
+        const loadedNodes = await dbGetAll(STORES.CUSTOM_NODES) || [];
         const sysNodeIds = (typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []).map(c => String(c.id));
         customNodes = loadedNodes.filter(c => !sysNodeIds.includes(String(c.id)) && !c._deleted);
 
-        // 3. НОРМАТИВНЫЕ ДОКУМЕНТЫ (ТОЛЬКО ПОЛЬЗОВАТЕЛЬСКИЕ)
-        let loadedDocs = [];
-        const storedDocs = await dbGet(STORES.SETTINGS, 'custom_docs');
-        if (storedDocs && storedDocs.data) loadedDocs = storedDocs.data;
-        
+        // 3. НОРМАТИВНЫЕ ДОКУМЕНТЫ
+        const loadedDocs = await dbGetAll(STORES.CUSTOM_DOCS) || [];
         const sysDocIds = (typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []).map(c => String(c.id));
         customDocs = loadedDocs.filter(c => !sysDocIds.includes(String(c.id)) && !c._deleted);
 
-        // 4. ПОЛЬЗОВАТЕЛЬСКИЕ ЧЕК-ЛИСТЫ
+        // 4. ПОЛЬЗОВАТЕЛЬСКИЕ ЧЕК-ЛИСТЫ (Они уже были в отдельной базе)
         const storedTmpls = await dbGetAll(STORES.TEMPLATES);
         if (storedTmpls && storedTmpls.length > 0) {
             userTemplates = {};
@@ -4626,13 +4650,10 @@ function processTwiImport(event) {
                 // Если карты с таким ID еще нет, добавляем
                 if(!customTwiCards.find(x => x.id === item.id)) {
                     customTwiCards.push(item);
+                    await dbPut(STORES.TWI_CARDS, item); // <-- НОВОЕ: Сохраняем сразу в цикле
                     addedCount++;
                 }
             }
-            
-            // Сохраняем в базу (опять же, только пользовательские)
-            const userCardsToSave = customTwiCards.filter(c => !c.id.startsWith('sys_'));
-            await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
             
             showToast(`✅ Импорт завершен! Добавлено карт: ${addedCount}`);
             renderTwiList();
@@ -4904,8 +4925,7 @@ async function duplicateTwiCard(id) {
     customTwiCards.push(newCard);
     
     try {
-        const userCardsToSave = customTwiCards.filter(c => !c.id.startsWith('sys_'));
-        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
+        await dbPut(STORES.TWI_CARDS, newCard); // <-- НОВОЕ: Сохраняем новую карту
         showToast("✅ Карта дублирована");
         renderTwiList();
     } catch (e) { showToast("❌ Ошибка при дублировании"); }
@@ -5209,8 +5229,7 @@ async function saveTwiCard() {
     }
 
     try {
-        const userCardsToSave = customTwiCards.filter(c => !c.id.startsWith('sys_'));
-        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
+        await dbPut(STORES.TWI_CARDS, cardData); // <-- НОВОЕ: Сохраняем только 1 карту
         showToast("✅ Инструкция успешно сохранена!");
         closeTwiConstructor();
         
@@ -5485,6 +5504,9 @@ async function deleteTwiCard(id) {
     if (id.startsWith('sys_')) {
         return showToast("⚠️ Системные инструкции удалить нельзя!");
     }
+    const card = customTwiCards.find(c => c.id === id);
+    if (card && !RbiRoles.canDelete(card.owner)) return showToast("⚠️ У вас нет прав на удаление чужой инструкции!");
+    
     if (!confirm('Удалить эту инструкцию безвозвратно?')) return;
     
     const cardIndex = customTwiCards.findIndex(c => c.id === id);
@@ -5495,8 +5517,7 @@ async function deleteTwiCard(id) {
     }
 
     try {
-        const userCardsToSave = customTwiCards.filter(c => !c.id.startsWith('sys_'));
-        await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: userCardsToSave });
+        await dbPut(STORES.TWI_CARDS, customTwiCards[cardIndex]); // <-- НОВОЕ: Обновляем статус удаления 1 карты
         showToast("🗑️ Инструкция удалена");
         
         customTwiCards = customTwiCards.filter(c => !c._deleted);
@@ -5582,8 +5603,8 @@ let customNodes = [];
 // Загрузка пользовательских узлов при старте
 document.addEventListener("DOMContentLoaded", async () => {
     try {
-        const storedNodes = await dbGet(STORES.SETTINGS, 'custom_nodes');
-        if (storedNodes && storedNodes.data) customNodes = storedNodes.data;
+        const storedNodes = await dbGetAll(STORES.CUSTOM_NODES);
+        if (storedNodes && storedNodes.length > 0) customNodes = storedNodes.filter(n => !n._deleted);
     } catch (e) { console.error("Ошибка загрузки узлов", e); }
 });
 
@@ -5940,7 +5961,7 @@ async function saveNodeCard() {
 
     customNodes.push(newNode);
     try {
-        await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: customNodes });
+        await dbPut(STORES.CUSTOM_NODES, newNode); // <-- НОВОЕ: Сохраняем только 1 запись
         showToast('✅ Узел сохранен!');
         closeNodeConstructor();
         
@@ -5952,7 +5973,10 @@ async function saveNodeCard() {
 }
 
 async function deleteNode(id) {
+    const node = customNodes.find(n => n.id === id);
+    if (node && !RbiRoles.canDelete(node.owner)) return showToast("⚠️ У вас нет прав на удаление чужого узла!");
     if (!confirm('Удалить этот узел навсегда?')) return;
+
     
     const nodeIndex = customNodes.findIndex(n => n.id === id);
     if (nodeIndex !== -1) {
@@ -5962,7 +5986,7 @@ async function deleteNode(id) {
     }
     
     try {
-        await dbPut(STORES.SETTINGS, { key: 'custom_nodes', data: customNodes });
+        await dbPut(STORES.CUSTOM_NODES, customNodes[nodeIndex]); // <-- НОВОЕ: Обновляем 1 запись
         showToast('🗑️ Узел удален');
         
         customNodes = customNodes.filter(n => !n._deleted);
@@ -6739,7 +6763,8 @@ function applySmartLocks() {
         document.getElementById('lock-inp-inspector')?.classList.remove('hidden');
     }
     
-    if (projInput && appSettings.defaultProject) {
+    // Блокируем объект ТОЛЬКО если это текстовый input. Если это select (выпадающий список) - не трогаем.
+    if (projInput && appSettings.defaultProject && projInput.tagName.toLowerCase() === 'input') {
         projInput.value = appSettings.defaultProject;
         projInput.setAttribute('readonly', 'true');
         projInput.classList.add('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed');
@@ -6806,7 +6831,7 @@ window.rbi_renderBackupRegistry = async function() {
 
     let logs = [];
     try {
-        const logsObj = await dbGet(STORES.SETTINGS, 'backup_logs');
+        const logsObj = await dbGet(STORES.BACKUP_LOGS, 'main');
         if (logsObj && logsObj.data) logs = logsObj.data;
     } catch(e) {}
 
@@ -7703,9 +7728,10 @@ window.rbi_saveEditedMeeting = async function() {
 
 
 window.rbi_deleteMeeting = async function(id) {
-    if(!confirm("Удалить этот протокол?")) return;
-    
     const meetIndex = window.rbi_meetingsData.findIndex(m => m.id === id);
+    if (meetIndex !== -1 && !RbiRoles.canDelete(window.rbi_meetingsData[meetIndex].author)) return showToast("⚠️ Нет прав на удаление чужого протокола!");
+
+    if(!confirm("Удалить этот протокол?")) return;
     if (meetIndex !== -1) {
         window.rbi_meetingsData[meetIndex]._deleted = true;
         window.rbi_meetingsData[meetIndex]._deletedAt = new Date().toISOString();
@@ -7944,8 +7970,10 @@ window.rbi_createMeeting = function(customData = null) {
                 if (existing) {
                     existing.count++;
                 } else {
+                    // Явно помечаем для генератора ИИ
+                    const explicitName = `[Официальное предписание СК] ${defectName}`; 
                     contrDefects[targetContr].push({
-                        name: defectName, count: 1, isB3: false, isSk: true, deadline: r.deadline
+                        name: explicitName, count: 1, isB3: false, isSk: true, deadline: r.deadline
                     });
                 }
             }
@@ -8800,9 +8828,10 @@ window.rbi_publishPractice = async function(id) {
 };
 
 window.rbi_deletePractice = async function(id) {
-    if (!confirm("Вы уверены, что хотите удалить эту практику? Она удалится у всей команды.")) return;
-    
     const pIndex = window.rbi_practicesData.findIndex(p => p.id === id);
+    if (pIndex !== -1 && !RbiRoles.canDelete(window.rbi_practicesData[pIndex].author)) return showToast("⚠️ Нет прав на удаление чужой практики!");
+
+    if (!confirm("Вы уверены, что хотите удалить эту практику? Она удалится у всей команды.")) return;
     if (pIndex === -1) return;
 
     // Мягкое удаление
@@ -9341,7 +9370,7 @@ window.rbi_submitFeedback = async function() {
     };
 
     window.rbi_feedbackData.unshift(fb);
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, fb);
 
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
@@ -9370,7 +9399,7 @@ window.rbi_toggleFeedbackLike = async function(id) {
     window.rbi_feedbackData[idx].likes = likes;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
     
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     
@@ -9389,7 +9418,7 @@ window.rbi_deleteFeedback = async function(id) {
     window.rbi_feedbackData[idx].updatedAt = window.rbi_feedbackData[idx]._deletedAt;
     
     // Сохраняем в локальную базу устройства
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     
     // Даем команду облаку на синхронизацию
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -9442,7 +9471,7 @@ window.rbi_saveEditedFeedback = async function(id) {
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
     
     // Сохраняем локально
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     
     // Команда на синхронизацию с облаком
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -9531,7 +9560,7 @@ window.rbi_updateFeedbackStatus = async function(id, newStatus) {
     window.rbi_feedbackData[idx].status = newStatus;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
     
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     showToast("Статус обновлен");
@@ -9544,7 +9573,7 @@ window.rbi_updateFeedbackNotes = async function(id) {
     window.rbi_feedbackData[idx].developer_notes = note;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
     
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     showToast("Ответ сохранен");
@@ -9581,7 +9610,7 @@ window.rbi_addRoadmapItem = async function() {
     };
 
     window.rbi_feedbackData.unshift(rb);
-    await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+    await dbPut(STORES.FEEDBACK_LIST, rb); // <-- Исправлена переменная, из-за которой функция могла падать
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
 
@@ -9597,7 +9626,7 @@ window.rbi_deleteRoadmapItem = async function(id) {
     if (idx > -1) {
         window.rbi_feedbackData[idx]._deleted = true;
         window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
-        await dbPut(STORES.SETTINGS, { key: 'feedback_list', data: window.rbi_feedbackData });
+        await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
         rbi_renderDevFeedbackTab();

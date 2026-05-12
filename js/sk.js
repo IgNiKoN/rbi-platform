@@ -34,16 +34,16 @@ window.sk_loadData = async function() {
         const records = await dbGetAll(STORES.SK_RECORDS);
          if (records) window.skRecords = records.filter(r => !r._deleted);
 
-        const volumes = await dbGet(STORES.SETTINGS, 'sk_volumes');
+        const volumes = await dbGet(STORES.SK_VOLUMES, 'main');
         if (volumes && volumes.data) window.skVolumes = volumes.data;
 
-        const mapping = await dbGet(STORES.SETTINGS, 'sk_mapping');
+        const mapping = await dbGet(STORES.SK_MAPPING, 'main');
         if (mapping && mapping.data) window.skMapping = mapping.data;
 
-        const cmap = await dbGet(STORES.SETTINGS, 'sk_contractor_map');
+        const cmap = await dbGet(STORES.SK_CONTRACTOR_MAP, 'main');
         if (cmap && cmap.data) window.skContractorMap = cmap.data;
 
-        const catMap = await dbGet(STORES.SETTINGS, 'sk_category_map');
+        const catMap = await dbGet(STORES.SK_CATEGORY_MAP, 'main');
         if (catMap && catMap.data) window.skCategoryMap = catMap.data;
     } catch (e) { console.error("Ошибка загрузки данных ПК СК", e); }
 };
@@ -67,7 +67,14 @@ window.sk_renderMainTab = async function() {
     });
     const periodStr = (minD && maxD) ? `с ${minD.toLocaleDateString('ru-RU')} по ${maxD.toLocaleDateString('ru-RU')}` : 'Не определен';
 
+    // --- ПРОВЕРКА ПРАВ ДЛЯ ВКЛАДКИ HR ---
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const isManagement = ['project_manager', 'deputy_manager', 'director', 'manager'].includes(role);
+    
+    const hrBtnHtml = isManagement ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
+
     let html = `
+        <!-- ... Шапка дашборда СК (оставляем как есть, меняем только кнопки) ... -->
         <div class="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-sm mb-4">
             <div class="flex justify-between items-start mb-3">
                 <div>
@@ -101,7 +108,7 @@ window.sk_renderMainTab = async function() {
         <div class="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar pb-1">
             <button onclick="sk_switchView('dashboard')" id="sk-btn-dashboard" class="shrink-0 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Дашборд</button>
             <button onclick="sk_switchView('volumes')" id="sk-btn-volumes" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Объемы</button>
-            <button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>
+            ${hrBtnHtml}
         </div>
 
         <div id="sk-view-dashboard" class="block"></div>
@@ -199,7 +206,7 @@ window.sk_addVolume = async function() {
     if (!unit) return showToast("⚠️ Укажите единицу измерения!");
 
     window.skVolumes[name] = { amount, unit };
-    await dbPut(STORES.SETTINGS, { key: 'sk_volumes', data: window.skVolumes });
+    await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes });
     
     // Очищаем поля после успешного добавления
     nameInput.value = ''; amountInput.value = ''; unitInput.value = '';
@@ -211,7 +218,7 @@ window.sk_addVolume = async function() {
 
 window.sk_deleteVolume = async function(name) {
     delete window.skVolumes[name];
-    await dbPut(STORES.SETTINGS, { key: 'sk_volumes', data: window.skVolumes });
+    await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes });
     sk_renderVolumes();
     sk_renderDashboard();
 };
@@ -364,6 +371,39 @@ function sk_cleanContractorName(name) {
     return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
+// === ПАРСЕР ПРОСТРАНСТВЕННОГО РАСПОЛОЖЕНИЯ ===
+async function sk_parseLocation(rawStr) {
+    if (!rawStr) return { canonical_key: 'unknown', display_name: 'Не указан', block: 'Неизвестно', floor: '?' };
+    
+    // Разбиваем строку по слешам (стандарт выгрузки ПК СК)
+    const parts = rawStr.split('/').map(s => s.trim());
+    
+    if (parts.length < 2) return { canonical_key: 'unknown', display_name: rawStr, block: 'Общее', floor: '?' };
+
+    // Сегмент 2: Название объекта
+    const rawProject = parts.length > 1 ? parts[1] : parts[0];
+    let normalizedProject = rawProject;
+    let canonical = 'unknown';
+
+    if (typeof ObjectDirectory !== 'undefined') {
+        normalizedProject = await ObjectDirectory.normalizeProjectName(rawProject);
+        canonical = ObjectDirectory.cleanString(normalizedProject);
+    }
+    
+    // Сегмент 3: Корпус/Секция
+    const block = parts.length > 2 ? parts[2] : 'Общее';
+    
+    // Сегмент 4: Этаж (вытягиваем только цифры, включая минусовые паркинги)
+    let floor = '?';
+    if (parts.length > 3) {
+        const floorMatch = parts[3].match(/-?\d+/);
+        if (floorMatch) floor = floorMatch[0];
+        else floor = parts[3];
+    }
+
+    return { canonical_key: canonical, display_name: normalizedProject, block: block, floor: floor };
+}
+
 // Алгоритм нечеткого сравнения строк (Расстояние Левенштейна)
 function sk_similarity(s1, s2) {
     if (!s1 || !s2) return 0;
@@ -392,7 +432,7 @@ window.sk_executeImport = async function() {
         currentMapping[select.dataset.field] = parseInt(select.value);
     });
     window.skMapping = currentMapping;
-    await dbPut(STORES.SETTINGS, { key: 'sk_mapping', data: currentMapping });
+    await dbPut(STORES.SK_MAPPING, { id: 'main', data: currentMapping });
 
     const rows = window.skTempRawRows;
     const contrIdx = currentMapping['contractor'];
@@ -523,7 +563,7 @@ window.sk_resolvePair = function(idx, isMatch) {
 window.sk_finalizeImport = async function() {
     showToast("⏳ Сохраняем данные в базу...");
     
-    await dbPut(STORES.SETTINGS, { key: 'sk_contractor_map', data: window.skContractorMap });
+    await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap });
 
     const rows = window.skTempRawRows;
     let newRecordsCount = 0;
@@ -548,10 +588,17 @@ window.sk_finalizeImport = async function() {
         const rawContractor = getVal('contractor') ? String(getVal('contractor')).trim() : 'Неизвестно';
         const cleanContractor = window.skTempContractorMatches[rawContractor] || rawContractor;
 
+        const rawLoc = getVal('structure') ? String(getVal('structure')).trim() : '';
+        const parsedLoc = await sk_parseLocation(rawLoc);
+
+        // ИЗВЛЕЧЕНИЕ НОРМАТИВОВ
+        const rawText = getVal('text') ? String(getVal('text')).trim() : '';
+        const extractedStandards = sk_extractStandards(rawText);
+
         const record = {
             id: 'sk_' + number,
             number: number,
-            text: getVal('text') ? String(getVal('text')).trim() : '',
+            text: rawText,
             category: getVal('category') ? String(getVal('category')).trim() : 'Без категории',
             date_issued: sk_parseExcelDate(getVal('date_issued')),
             contractor: cleanContractor,
@@ -560,9 +607,18 @@ window.sk_finalizeImport = async function() {
             deadline: sk_parseExcelDate(getVal('deadline')),
             status: getVal('status') ? String(getVal('status')).trim() : '',
             date_resolved: sk_parseExcelDate(getVal('date_resolved')),
-            structure: getVal('structure') ? String(getVal('structure')).trim() : '',
+            
+            standards: extractedStandards, 
+            
+            // Новые поля для пространственного анализа
+            structure: rawLoc,
+            raw_location: rawLoc,
+            canonical_key: parsedLoc.canonical_key,
+            display_name: parsedLoc.display_name,
+            block: parsedLoc.block,
+            floor: parsedLoc.floor,
+            
             updated_at: new Date().toISOString(),
-            // НОВЫЕ ПОЛЯ ДЛЯ ВЕРСИОНИРОВАНИЯ
             _updatedAt: new Date().toISOString(),
             _deleted: false
         };
@@ -696,7 +752,7 @@ window.sk_renderDashboard = function() {
     const matrixMap = {}; 
     let totalIssues = 0;
     let totalOpen = 0;
-    
+    let standardsMap = {}; // Для подсчета частых ГОСТов
     // Сюда будем собирать проблемы ТОЛЬКО для связанных подрядчиков
     let skIssues = { isd: [], open: [], cmi: [] };
 
@@ -711,13 +767,21 @@ window.sk_renderDashboard = function() {
     };
 
     activeRecords.forEach(r => {
+        // Подсчет нормативов
+        if (r.standards && Array.isArray(r.standards)) {
+            r.standards.forEach(std => {
+                standardsMap[std] = (standardsMap[std] || 0) + 1;
+            });
+        }
         const c = r.contractor;
         totalIssues++;
         
         const isOpen = isIssueOpen(r);
         if (isOpen) totalOpen++;
 
-        const rawCats = r.category ? r.category.split(',').map(s => s.trim()).filter(Boolean) : ['Без категории'];
+        // Если ИИ исправил категорию, доверяем ему больше
+        const effectiveCategory = r.category_corrected && r.ai_category ? r.ai_category : r.category;
+        const rawCats = effectiveCategory ? effectiveCategory.split(',').map(s => s.trim()).filter(Boolean) : ['Без категории'];
         rawCats.forEach(raw => {
             let strippedRaw = raw.replace(/^\d+[\.,]\s*/, '').trim();
             let cleanCat = window.skCategoryMap[strippedRaw] || strippedRaw;
@@ -860,10 +924,18 @@ window.sk_renderDashboard = function() {
             const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a,b)=>a+b,0) / mData.closingDays.length) : 0;
             const overColor = mData.overdue > 0 ? 'text-red-600' : 'text-slate-500';
             const avgColor = avgClose > 14 ? 'text-orange-500' : 'text-slate-500';
-
+            // Ищем наихудший прогноз ИИ для этой группы
+            const groupRecords = activeRecords.filter(r => r.contractor === mData.contractor && r.category === mData.category && r.predicted_risk);
+            let aiBadge = '';
+            if (groupRecords.length > 0) {
+                const hasHigh = groupRecords.some(r => r.predicted_risk === 'High');
+                const hasMed = groupRecords.some(r => r.predicted_risk === 'Medium');
+                if (hasHigh) aiBadge = `<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1" title="ИИ прогнозирует срыв сроков">🔮 Риск</span>`;
+                else if (hasMed) aiBadge = `<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1">🔮 Внимание</span>`;
+            }
             matrixRows += `
                 <tr class="border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                    <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[120px]" title="${mData.category}">↳ ${mData.category}</td>
+                    <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[120px]" title="${mData.category}">↳ ${mData.category} ${aiBadge}</td>
                     <td class="p-2.5 text-center text-[10px]"><span class="font-black text-indigo-600">${mData.total}</span> / ${expectedHtml}</td>
                     <td class="p-2.5 text-center align-middle">${isdHtml}</td>
                     <td class="p-2.5 text-center align-middle">${statusBadge}</td>
@@ -911,7 +983,14 @@ window.sk_renderDashboard = function() {
 
         const topDefects = Object.keys(data.defects).map(text => ({ text, count: data.defects[text] })).sort((a,b) => b.count - a.count).slice(0, 3);
         let topDefectsHtml = topDefects.length > 0 && topDefects[0].count > 1 
-            ? topDefects.filter(d => d.count > 1).map(d => `<div class="flex items-start gap-2 mb-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5"><span class="bg-orange-100 text-orange-700 px-1.5 rounded text-[9px] font-black shrink-0 mt-0.5">${d.count} раз</span><span class="text-[10px] text-slate-700 dark:text-slate-300 leading-snug">${d.text}</span></div>`).join('')
+            ? topDefects.filter(d => d.count > 1).map(d => {
+                // Ищем норматив для этого текста в исходных записях
+                const recMatch = activeRecords.find(r => r.contractor === cName && r.text && r.text.toLowerCase().includes(d.text.replace('...', '').toLowerCase()));
+                const stdBadge = (recMatch && recMatch.standards && recMatch.standards.length > 0) 
+                    ? `<div class="text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-1 py-0.5 rounded w-fit mt-1">${recMatch.standards.join(', ')}</div>` 
+                    : '';
+                return `<div class="flex items-start gap-2 mb-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5"><span class="bg-orange-100 text-orange-700 px-1.5 rounded text-[9px] font-black shrink-0 mt-0.5">${d.count} раз</span><div class="flex-1 min-w-0"><span class="text-[10px] text-slate-700 dark:text-slate-300 leading-snug">${d.text}</span>${stdBadge}</div></div>`;
+            }).join('')
             : '<div class="text-[10px] text-slate-400 font-bold">Явно выраженных повторений нет</div>';
 
         const safeId = cName.replace(/[^a-zA-Zа-яА-Я0-9]/g, '');
@@ -1010,7 +1089,17 @@ window.sk_renderDashboard = function() {
     }
     if ((skIssues.isd.length > 0 || skIssues.open.length > 0 || skIssues.cmi.length > 0) && typeof window.rbi_tasksData !== 'undefined') {
         const taskTitle = 'Анализ проблем ПК СК';
-        const exists = window.rbi_tasksData.find(x => x.title === taskTitle && x.status === 'pending');
+        // --- УДАЛЯЕМ СТАРЫЕ АКТИВНЫЕ ЗАДАЧИ ЭТОГО ТИПА ПЕРЕД СОЗДАНИЕМ НОВОЙ ---
+        window.rbi_tasksData.forEach(t => {
+            if (t.title === taskTitle && t.status === 'pending') {
+                t._deleted = true;
+                t.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') dbPut('rbi_tasks', t);
+            }
+        });
+        window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
+        // -----------------------------------------------------------------------
+        
         
         let promptLines = [];
         if (skIssues.isd.length > 0) promptLines.push(`🚨 Низкий ИСД (скрывают брак):\n- ${[...new Set(skIssues.isd)].join('\n- ')}`);
@@ -1019,33 +1108,83 @@ window.sk_renderDashboard = function() {
         
         const fullPrompt = "Выявлены проблемы по СВЯЗАННЫМ подрядчикам в Стройконтроле:\n\n" + promptLines.join('\n\n');
 
-        if (!exists) {
-            const newTask = {
-                id: 'tsk_sk_cons_' + Date.now().toString(36),
-                type: 'auto', category: 'meeting',
-                icon: 'Совещание', taskType: 'Аналитика СК',
-                contractor: 'Служебная', project: document.getElementById('inp-project')?.value || "Все",
-                templateKey: '', workTitle: 'Аналитика СК',
-                title: taskTitle, prompt: fullPrompt,
-                status: 'pending', priorityLvl: 3, date: new Date().toISOString(),
-                target: 1, done: 0, carryOverCount: 0,
-                history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана модулем ПК СК.`],
-                updatedAt: new Date().toISOString()
-            };
-            window.rbi_tasksData.push(newTask);
-            if (typeof dbPut === 'function') dbPut(STORES.TASKS, newTask);
-            
-            localStorage.setItem('rbi_cloud_dirty', '1');
-            if (typeof triggerSync === 'function') triggerSync('silent');
-        } else {
-            if (exists.prompt !== fullPrompt) {
-                exists.prompt = fullPrompt;
-                exists.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, exists);
-            }
-        }
+        const newTask = {
+            id: 'tsk_sk_cons_' + Date.now().toString(36),
+            type: 'auto', category: 'meeting',
+            icon: 'Совещание', taskType: 'Аналитика СК',
+            contractor: 'Служебная', project: document.getElementById('inp-project')?.value || "Все",
+            templateKey: '', workTitle: 'Аналитика СК',
+            title: taskTitle, prompt: fullPrompt,
+            status: 'pending', priorityLvl: 3, date: new Date().toISOString(),
+            target: 1, done: 0, carryOverCount: 0,
+            history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана модулем ПК СК.`],
+            updatedAt: new Date().toISOString()
+        };
+        window.rbi_tasksData.push(newTask);
+        if (typeof dbPut === 'function') dbPut('rbi_tasks', newTask);
+        
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
     }
+    // --- ПРОСТРАНСТВЕННЫЙ АНАЛИЗ (ПО ЭТАЖАМ И СЕКЦИЯМ) ---
+    const spatialMap = {};
+    activeRecords.forEach(r => {
+        if (!r.block || !r.floor || r.canonical_key === 'unknown') return; // Игнорируем нераспарсенные
+        
+        const objKey = r.display_name;
+        if (!spatialMap[objKey]) spatialMap[objKey] = {};
+        if (!spatialMap[objKey][r.block]) spatialMap[objKey][r.block] = {};
+        if (!spatialMap[objKey][r.block][r.floor]) spatialMap[objKey][r.block][r.floor] = { total: 0, open: 0, overdue: 0 };
+        
+        const cell = spatialMap[objKey][r.block][r.floor];
+        cell.total++;
+        if (isIssueOpen(r)) cell.open++;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        if (deadline && isIssueOpen(r) && new Date() > deadline) cell.overdue++;
+    });
 
+    let spatialHtml = '';
+    Object.keys(spatialMap).forEach(objKey => {
+        spatialHtml += `<div class="text-[11px] font-black uppercase text-slate-800 dark:text-white mt-4 mb-2 border-b border-[var(--card-border)] pb-1">🏢 Объект: ${objKey}</div>`;
+        
+        Object.keys(spatialMap[objKey]).sort().forEach(blockName => {
+            const blockData = spatialMap[objKey][blockName];
+            
+            // Собираем этажи и сортируем как числа (учитывая минусовые)
+            const floors = Object.keys(blockData).sort((a, b) => {
+                const numA = parseInt(a); const numB = parseInt(b);
+                if (!isNaN(numA) && !isNaN(numB)) return numB - numA; // Сверху вниз
+                return a.localeCompare(b);
+            });
+
+            let tableRows = '';
+            floors.forEach(floor => {
+                const cell = blockData[floor];
+                let bgColor = 'bg-green-50 text-green-700'; // Мало замечаний
+                if (cell.total > 15) bgColor = 'bg-red-100 text-red-800 font-black'; // Много
+                else if (cell.total > 5) bgColor = 'bg-yellow-50 text-yellow-700 font-bold'; // Средне
+                
+                tableRows += `
+                <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-[var(--hover-bg)]">
+                    <td class="p-2 text-[10px] font-bold text-slate-600 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800 text-center w-16">Эт. ${floor}</td>
+                    <td class="p-2 text-center text-[11px] ${bgColor}">${cell.total}</td>
+                    <td class="p-2 text-center text-[10px] font-bold text-slate-500">О: ${cell.open} | <span class="${cell.overdue > 0 ? 'text-red-500' : 'text-slate-400'}">П: ${cell.overdue}</span></td>
+                </tr>`;
+            });
+
+            spatialHtml += `
+            <div class="mb-3 bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl shadow-sm overflow-hidden">
+                <div class="bg-[var(--hover-bg)] p-2 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 border-b border-[var(--card-border)]">${blockName}</div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left whitespace-nowrap">
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        });
+    });
+
+    if (!spatialHtml) spatialHtml = '<div class="text-center py-4 text-slate-400 text-[10px] font-bold uppercase">Данные о расположении отсутствуют. При импорте убедитесь, что колонка "Элемент структуры" связана корректно.</div>';
     container.innerHTML = `
         <div class="grid grid-cols-2 gap-2 mb-4">
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm text-center">
@@ -1057,7 +1196,20 @@ window.sk_renderDashboard = function() {
                 <div class="text-2xl font-black text-red-600 dark:text-red-400">${totalOpen}</div>
             </div>
         </div>
-
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 p-4">
+            <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> Самые нарушаемые нормативы</h3>
+            <div class="flex flex-wrap gap-2">
+                ${Object.keys(standardsMap).length > 0 
+                    ? Object.keys(standardsMap).sort((a,b) => standardsMap[b] - standardsMap[a]).slice(0, 8).map(std => `
+                        <div class="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded-lg cursor-pointer active:scale-95 transition-transform" onclick="switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('.sub-tab-btn'); if (btns[1]) switchReferenceSubTab('ref-sub-docs', btns[1]); const s = document.getElementById('doc-search-input'); if(s) {s.value='${std}'; renderDocsList();} }, 300);">
+                            <span class="text-[11px] font-black text-blue-700 dark:text-blue-400">${std}</span>
+                            <span class="text-[9px] font-bold bg-white dark:bg-slate-800 text-slate-500 px-1.5 rounded-md shadow-sm border border-blue-100 dark:border-blue-900">${standardsMap[std]}</span>
+                        </div>
+                    `).join('')
+                    : '<div class="text-[10px] font-bold text-slate-400">В текстах замечаний нет ссылок на ГОСТ/СП.</div>'
+                }
+            </div>
+        </div>
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
                 <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Матрица Рисков (ИСД) <button onclick="event.stopPropagation(); sk_showInfoModal('isd')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-transform ml-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></span>
@@ -1080,7 +1232,18 @@ window.sk_renderDashboard = function() {
                 </table>
             </div>
         </details>
-
+        
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
+                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg> Пространственный анализ (Этажи)</span>
+                <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                </span>
+            </summary>
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/50 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                ${spatialHtml}
+            </div>
+        </details>
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
                 <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Тренд открытых замечаний</span>
@@ -1199,32 +1362,50 @@ window.sk_renderDashboard = function() {
     }, 100);
 };
 
-
+// === ИЗВЛЕЧЕНИЕ НОРМАТИВОВ (ГОСТ, СП, СНиП) ===
+function sk_extractStandards(text) {
+    if (!text) return [];
+    // Ищем паттерны: СП 70.13330, ГОСТ Р 12345-2000, СНиП 3.03.01-87
+    const regex = /(СП\s*\d+(\.\d+)*|ГОСТ\s*[Р]?\s*\d+(-\d+)?|СНиП\s*\d+(\.\d+)*(-\d+)?)/gi;
+    const matches = text.match(regex);
+    if (!matches) return [];
+    
+    // Очищаем от лишних пробелов и уникализируем
+    const unique = [...new Set(matches.map(m => m.replace(/\s+/g, ' ').toUpperCase()))];
+    return unique;
+}
 
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 window.sk_renderHrTab = function() {
     const container = document.getElementById('sk-view-hr');
     if (!container) return;
+    // --- ПРОВЕРКА РОЛИ ---
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const isManagement = ['project_manager', 'deputy_manager', 'director', 'manager'].includes(role);
+    if (!isManagement) {
+        container.innerHTML = `<div class="text-center py-6 text-red-500 text-[11px] font-bold uppercase border border-red-200 bg-red-50 rounded-xl">Доступно только руководству</div>`;
+        return;
+    }
 
     if (window.skRecords.length === 0) {
         container.innerHTML = `<div class="text-center py-6 text-slate-400 text-[10px] font-bold uppercase border border-dashed border-[var(--card-border)] rounded-xl">Нет данных</div>`;
         return;
     }
 
-    // Собираем статистику по инженерам
+    // Собираем статистику по инженерам СК
     const engMap = {};
     window.skRecords.forEach(r => {
         let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан в выгрузке';
-        // ЖЕСТКО приписываем (Технадзор), если этого слова еще нет в имени
         const engName = baseName.toLowerCase().includes('технадзор') ? baseName : `${baseName} (Технадзор)`;
 
         if (!engMap[engName]) {
-            engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, closingTimes: [] };
+            engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, closingTimes: [], contractors: new Set() };
         }
         
         const data = engMap[engName];
         data.total++;
+        if (r.contractor) data.contractors.add(r.contractor);
         
         const isOpen = r.status && r.status.toLowerCase().includes('не устран');
         if (isOpen) data.open++;
@@ -1247,15 +1428,34 @@ window.sk_renderHrTab = function() {
         }
     });
 
+    // Расчет корреляции с RBI (выявляем проблемных подрядчиков из RBI)
+    const rbiBadContractors = new Set();
+    const groupedRBI = {};
+    contractorArray.forEach(c => { groupedRBI[c.contractorName] = groupedRBI[c.contractorName] || []; groupedRBI[c.contractorName].push(c); });
+    
+    for (let cName in groupedRBI) {
+        const m = getContractorMetrics(groupedRBI[cName], typeof userTemplates !== 'undefined' ? userTemplates : {});
+        if (m && (m.finalC < 85 || m.n_изделий_с_B3 > 0)) {
+            rbiBadContractors.add(cName.toLowerCase()); // Подрядчик в желтой или красной зоне
+        }
+    }
+
     const engArray = Object.keys(engMap).map(name => {
         const d = engMap[name];
         const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a,b)=>a+b,0)/d.closingTimes.length) : 0;
         const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
         const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
         
-        // Оценка полноты работы инженера (KPI)
+        // Корреляция с RBI (сколько выданных замечаний приходится на проблемных подрядчиков)
+        let rbiHits = 0;
+        d.contractors.forEach(c => {
+            const linkedName = window.skContractorMap[c] || c;
+            if (rbiBadContractors.has(linkedName.toLowerCase())) rbiHits++;
+        });
+        const correlation = d.contractors.size > 0 ? Math.round((rbiHits / d.contractors.size) * 100) : 0;
+
         let kpi = Math.max(0, 100 - overduePerc + (catPerc === 100 ? 10 : 0));
-        return { name, total: d.total, open: d.open, overduePerc, catPerc, avgTime, kpi };
+        return { name, total: d.total, open: d.open, overduePerc, catPerc, avgTime, kpi, correlation };
     });
 
     engArray.sort((a,b) => b.kpi - a.kpi);
@@ -1271,7 +1471,7 @@ window.sk_renderHrTab = function() {
             <td class="p-2 text-center text-[11px] font-black text-indigo-600">${e.total}</td>
             <td class="p-2 text-center text-[11px] font-bold ${e.overduePerc > 20 ? 'text-red-600' : 'text-green-600'}">${e.overduePerc}%</td>
             <td class="p-2 text-center text-[11px] font-bold text-slate-600">${e.avgTime} дн.</td>
-            <td class="p-2 text-center text-[11px] font-bold ${e.catPerc < 80 ? 'text-orange-500' : 'text-slate-600'}">${e.catPerc}%</td>
+            <td class="p-2 text-center text-[11px] font-bold ${e.correlation >= 70 ? 'text-green-600' : (e.correlation >= 40 ? 'text-orange-500' : 'text-red-500')}">${e.correlation}%</td>
             <td class="p-2 text-center text-[12px] font-black ${e.kpi >= 80 ? 'text-green-600' : 'text-red-500'}">${e.kpi}</td>
         </tr>`;
     }).join('');
@@ -1280,8 +1480,8 @@ window.sk_renderHrTab = function() {
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4">
             <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex items-center justify-between">
                 <div>
-                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI) <button onclick="sk_showInfoModal('hr')" class="text-indigo-500 hover:scale-110 active:scale-95 transition-transform text-lg ml-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></div>
-                    <div class="text-[9px] text-slate-500 mt-1">Учитывает просрочки по выданным замечаниям и заполняемость категорий.</div>
+                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI)</div>
+                    <div class="text-[9px] text-slate-500 mt-1">Оценивается работа инженеров Стройконтроля на основе выгрузки Excel.</div>
                 </div>
             </div>
             <div class="overflow-x-auto custom-scrollbar">
@@ -1292,7 +1492,7 @@ window.sk_renderHrTab = function() {
                             <th class="p-2.5 text-center">Выдал</th>
                             <th class="p-2.5 text-center">Просрочка</th>
                             <th class="p-2.5 text-center">Ср. Время</th>
-                            <th class="p-2.5 text-center">С категорией</th>
+                            <th class="p-2.5 text-center" title="Насколько совпадает фокус инженера СК с риск-зонами, которые выявила система RBI">Связь с RBI</th>
                             <th class="p-2.5 text-center text-indigo-600">Оценка KPI</th>
                         </tr>
                     </thead>
@@ -1379,8 +1579,11 @@ window.sk_showInfoModal = function(type) {
 };
 
 window.sk_deleteRecord = async function(recordId) {
-    if (!confirm("Удалить это замечание? Оно исчезнет у всех членов команды после синхронизации.")) return;
     const record = window.skRecords.find(r => r.id === recordId);
+    if (!record) return;
+    if (!RbiRoles.canDelete(record.inspector)) return showToast("⚠️ Нет прав на удаление чужого замечания!");
+
+    if (!confirm("Удалить это замечание? Оно исчезнет у всех членов команды после синхронизации.")) return;
     if (!record) return;
     record._deleted = true;
     record._updatedAt = new Date().toISOString();

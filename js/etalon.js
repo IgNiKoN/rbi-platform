@@ -371,8 +371,11 @@ if (el.photo) {
 };
 
 window.deleteEtalonAct = async function(id) {
-    if(!confirm("Удалить этот Акт-Эталон?")) return;
     const record = etalonActsArray.find(c => String(c.id) === String(id));
+    // Проверяем права по owner или по inspectorName
+    if (record && !RbiRoles.canDelete(record.owner || record.inspectorName)) return showToast("⚠️ Нет прав на удаление чужого эталона!");
+
+    if(!confirm("Удалить этот Акт-Эталон?")) return;
     if (record) {
         record._deleted = true;
         record.updatedAt = new Date().toISOString();

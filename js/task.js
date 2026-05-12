@@ -1007,6 +1007,11 @@ window.rbi_pauseTask = async function(taskId) {
 window.rbi_cancelTask = async function(taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
+    // --- НОВОЕ: ЗАЩИТА ПРАВ НА ОТМЕНУ ЗАДАЧИ ---
+    if (!window.RbiRoles.canDelete(task.engineerName || task.inspectorName || '')) {
+        return showToast("⚠️ Нет прав на отмену чужой задачи!");
+    }
+    // -------------------------------------------
     const reason = prompt("Укажите причину отмены задачи:");
     if (reason === null) return; 
     if (reason.trim() === "") return showToast("⚠️ Причина обязательна!");

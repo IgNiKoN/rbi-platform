@@ -1192,16 +1192,24 @@ window.sk_autoMapCategories = async function(silent = false) {
                 { role: 'user', content: batchStr }
             ], { temperature: 0.1, max_tokens: 2000 });
             
-            const jsonMatch = res.match(/\{[\s\S]*\}/);
+             const jsonMatch = res.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const aiMap = JSON.parse(jsonMatch[0]);
                 let updatedInBatch = 0;
                 for (let i = 0; i < batch.length; i++) {
                     const cleanVal = aiMap[i] || aiMap[String(i)];
-                    if (cleanVal && cleanVal !== 'Без категории' && allowedCleanCats.includes(cleanVal)) {
+                    if (cleanVal && allowedCleanCats.includes(cleanVal)) {
                         const targetRecords = window.skRecords.filter(r => r.text === batch[i]);
                         for (let rec of targetRecords) {
-                            rec.category = cleanVal;
+                            
+                            // Сохраняем в AI категорию
+                            rec.ai_category = cleanVal;
+                            
+                            // Если ИИ исправил "Без категории" или откровенную дичь, ставим флаг
+                            if (rec.category !== cleanVal) {
+                                rec.category_corrected = true;
+                            }
+
                             rec._updatedAt = new Date().toISOString();
                             await dbPut(STORES.SK_RECORDS, rec);
                             updatedInBatch++;
@@ -1311,6 +1319,82 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
     } finally {
         btn.innerHTML = `🤖 AI-Анализ и Письмо прорабу`;
         btn.disabled = false;
+    }
+};
+
+// === ПРЕДИКТИВНЫЙ ИИ: ПРОГНОЗ СРЫВА СРОКОВ ===
+window.sk_predictRisksAi = async function(silent = false) {
+    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
+        if (!silent) showToast("⚠️ Включите AI-ассистента в Настройках!");
+        return;
+    }
+
+    // Ищем только открытые замечания, у которых еще нет прогноза
+    const openRecords = window.skRecords.filter(r => {
+        const isResolved = !!r.date_resolved;
+        const statusStr = r.status ? r.status.toLowerCase() : '';
+        const isOpen = !isResolved && (!statusStr || statusStr.includes('не устран'));
+        return isOpen && !r.predicted_risk;
+    });
+
+    if (openRecords.length === 0) {
+        if (!silent) showToast("✅ Нет новых открытых замечаний для прогноза!");
+        return;
+    }
+
+    if (!silent) showToast(`🔮 ИИ анализирует риски по ${openRecords.length} замечаниям...`);
+
+    const BATCH_SIZE = 10; // Отправляем пачками по 10, чтобы ИИ не запутался
+    let processed = 0;
+
+    for (let i = 0; i < openRecords.length; i += BATCH_SIZE) {
+        const batch = openRecords.slice(i, i + BATCH_SIZE);
+        
+        let batchContext = batch.map((r, idx) => {
+            const daysLeft = r.deadline ? Math.ceil((new Date(r.deadline) - new Date()) / (1000 * 60 * 60 * 24)) : 'Не указан';
+            return `ID: ${idx} | Подрядчик: ${r.contractor} | Этап: ${r.category} | Дней до дедлайна: ${daysLeft} | Текст: ${r.text}`;
+        }).join('\n');
+
+        const promptSystem = `Ты — AI риск-менеджер на стройке. Оцени вероятность срыва дедлайна по каждому замечанию. 
+Учитывай сложность дефекта, этап работ и оставшееся время.
+Верни СТРОГО JSON-объект в формате:
+{
+  "0": { "risk": "High", "reason": "Короткое обоснование (до 10 слов)" },
+  "1": { "risk": "Low", "reason": "Легко исправить" }
+}
+Возможные значения risk: "High" (Красный), "Medium" (Желтый), "Low" (Зеленый). Без лишнего текста.`;
+
+        try {
+            const res = await window.callAI([
+                { role: 'system', content: promptSystem },
+                { role: 'user', content: batchContext }
+            ], { temperature: 0.2, max_tokens: 1000 });
+
+            const jsonMatch = res.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const aiResult = JSON.parse(jsonMatch[0]);
+                
+                for (let j = 0; j < batch.length; j++) {
+                    const ans = aiResult[j] || aiResult[String(j)];
+                    if (ans && ans.risk) {
+                        batch[j].predicted_risk = ans.risk;
+                        batch[j].predicted_reason = ans.reason || '';
+                        batch[j]._updatedAt = new Date().toISOString();
+                        await dbPut(STORES.SK_RECORDS, batch[j]);
+                        processed++;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Ошибка ИИ прогноза:", e);
+        }
+    }
+
+    if (processed > 0) {
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        sk_renderDashboard();
+        if (!silent) showToast(`✨ ИИ рассчитал риски для ${processed} замечаний!`);
     }
 };
 // Остальные функции (generatePulseAi, generateHeatmapAi, generateCultureAi, generateTaskRiskAi, generateAiRoutePlan, generateAiTutorAdvice, generatePrescriptionAi, generateTwiDraftAi, generateAiHintForDefect) 

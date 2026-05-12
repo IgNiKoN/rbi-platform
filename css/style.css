@@ -1029,3 +1029,26 @@ input[list]::-webkit-calendar-picker-indicator {
 }
 
 
+/* === РЕЖИМ "ТОЛЬКО ЧТЕНИЕ" (Для Гостей и Директоров) === */
+body.read-only-mode #audit-actions,
+body.read-only-mode button[onclick*="openTemplateBuilder"],
+body.read-only-mode button[onclick*="openNodeConstructor"],
+body.read-only-mode button[onclick*="openTwiConstructor"],
+body.read-only-mode button[onclick*="openAddDocModal"],
+body.read-only-mode button[onclick*="rbi_createEmptyFmea"],
+body.read-only-mode button[onclick*="rbi_createMeeting"],
+body.read-only-mode button[onclick*="rbi_openKbCreateChoice"],
+body.read-only-mode button[onclick*="rbi_openTaskModal"],
+body.read-only-mode button[onclick*="rbi_openMeetingSetupModal"],
+body.read-only-mode button[onclick*="triggerExcelImport"],
+body.read-only-mode button[onclick*="delete"],
+body.read-only-mode button[onclick*="save"],
+body.read-only-mode button[onclick*="toggleOk"],
+body.read-only-mode button[onclick*="toggleFail"],
+body.read-only-mode button[onclick*="toggleEscalation"],
+body.read-only-mode button[onclick*="'sk-excel-input'"],
+body.read-only-mode .swipe-bg-ok, 
+body.read-only-mode .swipe-bg-fail {
+    display: none !important;
+    pointer-events: none !important;
+}

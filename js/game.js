@@ -123,7 +123,7 @@ window.getBadgeSvg = function (badgeId, tier, sizeCls) {
 
 async function gameSaveLogs() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
-    try { await dbPut(STORES.SETTINGS, { key: 'game_action_logs', data: gameActionLogs }); }
+    try { await dbPut(STORES.GAME_LOGS, { id: 'main', data: gameActionLogs }); }
     catch (e) { console.error("Ошибка сохранения логов", e); }
 }
 
@@ -359,13 +359,13 @@ function getStartOfWeek(date = new Date()) {
 
 document.addEventListener("DOMContentLoaded", async () => {
     try {
-        const storedPlan = await dbGet(STORES.SETTINGS, 'weekly_plan_data');
+        const storedPlan = await dbGet(STORES.STATE, 'weekly_plan_data');
         if (storedPlan && storedPlan.data) weeklyPlanData = storedPlan.data;
 
-        const storedAbsence = await dbGet(STORES.SETTINGS, 'engineer_absence');
+        const storedAbsence = await dbGet(STORES.STATE, 'engineer_absence');
         if (storedAbsence && storedAbsence.data) engineerAbsence = storedAbsence.data;
 
-        const storedStatuses = await dbGet(STORES.SETTINGS, 'contractor_statuses');
+        const storedStatuses = await dbGet(STORES.STATE, 'contractor_statuses');
         if (storedStatuses && storedStatuses.data) contractorStatuses = storedStatuses.data;
     } catch (e) { console.error("Ошибка загрузки модуля планирования", e); }
 });
@@ -373,9 +373,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function saveWeeklyPlan() {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
     try {
-        await dbPut(STORES.SETTINGS, { key: 'weekly_plan_data', data: weeklyPlanData });
-        await dbPut(STORES.SETTINGS, { key: 'engineer_absence', data: engineerAbsence });
-        await dbPut(STORES.SETTINGS, { key: 'contractor_statuses', data: contractorStatuses });
+        await dbPut(STORES.STATE, { key: 'weekly_plan_data', data: weeklyPlanData });
+        await dbPut(STORES.STATE, { key: 'engineer_absence', data: engineerAbsence });
+        await dbPut(STORES.STATE, { key: 'contractor_statuses', data: contractorStatuses });
     } catch (e) { console.error("Ошибка сохранения плана", e); }
 }
 
@@ -1106,6 +1106,7 @@ function gameInjectManagerModals() {
                 <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors">HR Аналитика</button>
                 <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors">Перепроверки</button>
                 <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-emerald-500 hover:text-emerald-700 transition-colors">Разработчик</button>
+                <button onclick="switchManagerTab('objects')" id="btn-man-objects" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-blue-500 transition-colors">Объекты</button>
             </div>
             
             <div class="flex-1 overflow-y-auto p-2 sm:p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900 relative">
@@ -1130,6 +1131,15 @@ function gameInjectManagerModals() {
 
                 <!-- Вкладка 3: РАЗРАБОТЧИК -->
                 <div id="manager-tab-dev" class="hidden">
+                    <!-- НОВЫЙ БЛОК: УПРАВЛЕНИЕ РОЛЯМИ -->
+                    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl shadow-sm mb-4">
+                        <h2 class="text-[13px] font-black uppercase text-indigo-600 mb-1">Управление ролями</h2>
+                        <p class="text-[10px] text-slate-500 font-bold mb-3">Назначение прав доступа инженерам проекта.</p>
+                        <div id="manager-roles-list" class="space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
+                            <div class="text-center py-4 text-xs text-slate-400">Нажмите "Обновить список"</div>
+                        </div>
+                        <button onclick="gameLoadRoles()" class="mt-3 w-full bg-slate-100 text-indigo-600 border border-indigo-200 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors">🔄 Обновить список пользователей</button>
+                    </div>
                     <!-- НОВЫЙ БЛОК: ПЛАНЫ РАЗРАБОТЧИКА -->
                     <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl shadow-sm mb-4">
                         <h2 class="text-[12px] font-black uppercase text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Опубликовать планы (Roadmap)</h2>
@@ -1150,7 +1160,17 @@ function gameInjectManagerModals() {
                     </div>
                     <div id="manager-dev-list" class="space-y-3 pb-8"></div>
                 </div>
-
+                <!-- Вкладка 4: ОБЪЕКТЫ -->
+                <div id="manager-tab-objects" class="hidden">
+                    <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <div>
+                            <h2 class="text-[13px] font-black uppercase text-blue-600 mb-1">Справочник Объектов</h2>
+                            <p class="text-[10px] text-slate-500 font-bold">Управление базой объектов и синонимами (алиасами).</p>
+                        </div>
+                        <button onclick="ObjectDirectory.openAddObjectModal()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold uppercase shadow-md active:scale-95">Новый объект</button>
+                    </div>
+                    <div id="manager-objects-list" class="space-y-3 pb-8"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1180,16 +1200,18 @@ window.switchManagerTab = function (tab) {
     const btnHr = document.getElementById('btn-man-hr');
     const btnAudit = document.getElementById('btn-man-audit');
     const btnDev = document.getElementById('btn-man-dev');
+    const btnObj = document.getElementById('btn-man-objects'); // <-- НОВОЕ
     
     const tabHr = document.getElementById('manager-tab-hr');
     const tabAudit = document.getElementById('manager-tab-audit');
     const tabDev = document.getElementById('manager-tab-dev');
+    const tabObj = document.getElementById('manager-tab-objects'); // <-- НОВОЕ
 
     const actClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-colors ";
     const inactClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors";
 
-    btnHr.className = inactClass; btnAudit.className = inactClass; btnDev.className = inactClass;
-    tabHr.classList.add('hidden'); tabAudit.classList.add('hidden'); tabDev.classList.add('hidden');
+    btnHr.className = inactClass; btnAudit.className = inactClass; btnDev.className = inactClass; btnObj.className = inactClass;
+    tabHr.classList.add('hidden'); tabAudit.classList.add('hidden'); tabDev.classList.add('hidden'); tabObj.classList.add('hidden');
 
     if (tab === 'hr') {
         btnHr.className = actClass + "border-indigo-600 text-indigo-600 bg-indigo-50/50";
@@ -1200,9 +1222,14 @@ window.switchManagerTab = function (tab) {
     } else if (tab === 'dev') {
         btnDev.className = actClass + "border-emerald-600 text-emerald-600 bg-emerald-50/50";
         tabDev.classList.remove('hidden');
-        rbi_renderDevFeedbackTab(); // Рендерим панель разраба
+        rbi_renderDevFeedbackTab();
+    } else if (tab === 'objects') { // <-- НОВОЕ
+        btnObj.className = actClass + "border-blue-600 text-blue-600 bg-blue-50/50";
+        tabObj.classList.remove('hidden');
+        ObjectDirectory.renderManagerPanel();
     }
 }
+
 
 window.gameGenerateAuditPlan = function () {
     showToast("⚙️ Нейросеть анализирует аномалии (протыкивания, завышения)...");
@@ -2278,8 +2305,10 @@ window.rbi_renderFmeaRegistry = function() {
 };
 
 window.rbi_deleteFmea = async function(id) {
-    if(!confirm("Удалить этот FMEA отчет?")) return;
     const record = window.rbi_fmeaRecords.find(m => String(m.id) === String(id));
+    if (record && !RbiRoles.canDelete(record.author)) return showToast("⚠️ Нет прав на удаление чужого FMEA отчета!");
+
+    if(!confirm("Удалить этот FMEA отчет?")) return;
     if (record) {
         record._deleted = true;
         record.updatedAt = new Date().toISOString();
@@ -2858,4 +2887,113 @@ window.rbi_createEmptyFmea = function() {
     
     // Скроллим к рабочей области
     workspace.scrollIntoView({ behavior: 'smooth' });
+};
+
+// ==========================================
+// БЛОК: УПРАВЛЕНИЕ РОЛЯМИ В SUPABASE
+// ==========================================
+// ==========================================
+// БЛОК: УПРАВЛЕНИЕ ДОСТУПАМИ (ИМЯ - РОЛЬ - ОБЪЕКТ)
+// ==========================================
+window.gameLoadRoles = async function() {
+    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
+    const pCode = window.syncConfig.projectCode;
+    
+    document.getElementById('manager-roles-list').innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка пользователей...</div>';
+
+    try {
+        // Достаем из базы не только роль, но и скрытые настройки (settings), где лежат объекты
+        const { data, error } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .select('inspector_id, engineer_name, role, assigned_contractor, settings')
+            .eq('project_code', pCode);
+
+        if (error) throw error;
+
+        let html = '';
+        data.forEach(user => {
+            const role = user.role || 'guest';
+            const contrName = user.assigned_contractor || '';
+            
+            // Вытаскиваем объекты из настроек
+            let projectsStr = '';
+            if (user.settings && user.settings.assignedProjects && Array.isArray(user.settings.assignedProjects)) {
+                projectsStr = user.settings.assignedProjects.join(', ');
+            }
+
+            html += `
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 mb-3">
+                <div class="font-black text-[12px] text-slate-800 dark:text-white mb-2 uppercase">${user.engineer_name}</div>
+                
+                <div class="space-y-2">
+                    <select id="role_select_${user.inspector_id}" class="input-base !py-1.5 text-[11px] font-bold">
+                        <option value="guest" ${role==='guest'?'selected':''}>Гость (Просмотр)</option>
+                        <option value="contractor" ${role==='contractor'?'selected':''}>Подрядчик</option>
+                        <option value="engineer" ${role==='engineer'?'selected':''}>Инженер СК</option>
+                        <option value="universal" ${role==='universal'?'selected':''}>Универсальный (Всё можно)</option>
+                        <option value="project_manager" ${role==='project_manager'?'selected':''}>Руководитель Проекта</option>
+                        <option value="deputy_manager" ${role==='deputy_manager'?'selected':''}>Зам. руководителя</option>
+                        <option value="director" ${role==='director'?'selected':''}>Директор</option>
+                        <option value="manager" ${role==='manager'?'selected':''}>Админ</option>
+                    </select>
+
+                    <input type="text" id="contr_input_${user.inspector_id}" class="input-base !py-1.5 text-[11px]" placeholder="Название подрядчика (для роли 'Подрядчик')..." value="${contrName}">
+                    <input type="text" id="proj_input_${user.inspector_id}" class="input-base !py-1.5 text-[11px]" placeholder="Объекты (через запятую)..." value="${projectsStr}">
+                    
+                    <button onclick="gameSaveUserAccess('${user.inspector_id}', '${user.engineer_name.replace(/'/g, "\\'")}')" class="bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-black uppercase w-full shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить права
+                    </button>
+                </div>
+            </div>`;
+        });
+        
+        if (!html) html = '<div class="text-center py-4 text-[10px] text-slate-400">Нет данных</div>';
+        document.getElementById('manager-roles-list').innerHTML = html;
+    } catch(e) {
+        document.getElementById('manager-roles-list').innerHTML = '<div class="text-center py-4 text-xs text-red-500">Ошибка загрузки из БД</div>';
+    }
+};
+
+window.gameSaveUserAccess = async function(inspectorId, engineerName) {
+    if (!window.supabaseClient) return;
+
+    // Считываем всё, что заполнил руководитель
+    const role = document.getElementById(`role_select_${inspectorId}`).value;
+    const contr = document.getElementById(`contr_input_${inspectorId}`).value.trim();
+    const projStr = document.getElementById(`proj_input_${inspectorId}`).value.trim();
+
+    // Превращаем строку с объектами в чистый массив ("Объект 1, Объект 2" -> ["Объект 1", "Объект 2"])
+    const projectsArray = projStr ? projStr.split(',').map(p => p.trim()).filter(Boolean) : [];
+
+    showToast("⏳ Сохранение в облако...");
+
+    try {
+        // Сначала получаем текущие настройки юзера, чтобы не затереть его личную тему или шрифты
+        const { data: userData } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .select('settings')
+            .eq('inspector_id', inspectorId)
+            .single();
+
+        let currentSettings = (userData && userData.settings) ? userData.settings : {};
+        
+        // Вшиваем ему наши назначенные объекты
+        currentSettings.assignedProjects = projectsArray;
+
+        // Отправляем обратно в базу
+        const { error } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .update({
+                role: role,
+                assigned_contractor: contr,
+                settings: currentSettings
+            })
+            .eq('inspector_id', inspectorId);
+
+        if (error) throw error;
+        showToast(`✅ Права для "${engineerName}" успешно обновлены!`);
+    } catch(e) {
+        console.error(e);
+        showToast("❌ Ошибка сохранения прав");
+    }
 };

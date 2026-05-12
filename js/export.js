@@ -2099,7 +2099,7 @@ function generateBackupObject(mode) {
 // Запись в реестр IndexedDB
 async function logToBackupRegistry(typeStr, stats, fileName) {
     try {
-        let logsObj = await dbGet(STORES.SETTINGS, 'backup_logs');
+        let logsObj = await dbGet(STORES.BACKUP_LOGS, 'main');
         let logs = logsObj && logsObj.data ? logsObj.data : [];
         
         logs.unshift({
@@ -2111,14 +2111,14 @@ async function logToBackupRegistry(typeStr, stats, fileName) {
         });
 
         if (logs.length > 50) logs = logs.slice(0, 50); // Ограничение 50 записей
-        await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: logs });
+        await dbPut(STORES.BACKUP_LOGS, { id: 'main', data: logs });
     } catch(e) { console.error("Ошибка записи в реестр бэкапов", e); }
 }
 
 // Очистка реестра
 async function clearBackupRegistry() {
     if(!confirm("Очистить историю выгрузок? Сами данные проверок не удалятся.")) return;
-    await dbPut(STORES.SETTINGS, { key: 'backup_logs', data: [] });
+    await dbPut(STORES.BACKUP_LOGS, { id: 'main', data: [] });
     if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
     showToast("Реестр очищен");
 }
@@ -2336,10 +2336,10 @@ function processDataImport(event) {
                     for(const item of parsed.data.twi) {
                         if(!customTwiCards.find(x => x.id === item.id)) {
                             customTwiCards.push(item);
+                            await dbPut(STORES.TWI_CARDS, item); // <-- НОВОЕ ХРАНИЛИЩЕ
                             addedTwi++;
                         }
                     }
-                    await dbPut(STORES.SETTINGS, { key: 'custom_twi_cards', data: customTwiCards.filter(c => !String(c.id).startsWith('sys_')) });
                 }
                 if (parsed.data.docs) {
                     for(const item of parsed.data.docs) {
@@ -2431,13 +2431,13 @@ function processDataImport(event) {
                         for (const key in parsed.data.hr.skVolumes) {
                             window.skVolumes[key] = parsed.data.hr.skVolumes[key];
                         }
-                        await dbPut(STORES.SETTINGS, { key: 'sk_volumes', data: window.skVolumes });
+                        await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes }); // <-- НОВОЕ ХРАНИЛИЩЕ
                     }
                     if (parsed.data.hr.skContractorMap && typeof window.skContractorMap !== 'undefined') {
                         for (const key in parsed.data.hr.skContractorMap) {
                             window.skContractorMap[key] = parsed.data.hr.skContractorMap[key];
                         }
-                        await dbPut(STORES.SETTINGS, { key: 'sk_contractor_map', data: window.skContractorMap });
+                        await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap }); // <-- НОВОЕ ХРАНИЛИЩЕ
                     }
                 // <-- НОВОЕ: ИМПОРТ ЗАДАЧ ПЛАНИРОВЩИКА
                 if (parsed.data.tasks && typeof window.rbi_tasksData !== 'undefined') {

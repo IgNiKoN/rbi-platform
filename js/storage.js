@@ -1,8 +1,8 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Повышаем версию до 7 для создания таблиц модуля ПК СК
-const DB_VERSION = 7; 
+// Повышаем версию до 9 для разделения хранилищ
+const DB_VERSION = 10; // Обновили версию БД
 
 const STORES = {
     STATE: 'app_state',       
@@ -18,12 +18,21 @@ const STORES = {
     ETALON_ACTS: 'rbi_etalon_acts',
     ETALON_DRAFT: 'rbi_etalon_draft',
     FMEA: 'rbi_fmea',
-    // --- НОВЫЕ ХРАНИЛИЩА ДЛЯ МОДУЛЯ ПК СК ---
-    SK_IMPORTS: 'sk_imports',             // История загрузок файлов
-    SK_RECORDS: 'sk_records',             // Сами позиции из файлов
-    SK_CONTRACTOR_MAP: 'sk_contractor_map',// Словарь алиасов подрядчиков
-    SK_VOLUMES: 'sk_volumes',             // Справочник объемов объекта
-    SK_ISD_HISTORY: 'sk_isd_history'      // История значений ИСД
+    SK_IMPORTS: 'sk_imports',             
+    SK_RECORDS: 'sk_records',             
+    SK_CONTRACTOR_MAP: 'sk_contractor_map',
+    SK_VOLUMES: 'sk_volumes',             
+    SK_ISD_HISTORY: 'sk_isd_history',
+    SK_CATEGORY_MAP: 'sk_category_map', // <-- НОВОЕ
+    SK_MAPPING: 'sk_mapping',           // <-- НОВОЕ
+    PROJECT_OBJECTS: 'project_objects',   
+    OBJECT_ALIASES: 'object_aliases',   // <-- НОВОЕ
+    BACKUP_LOGS: 'backup_logs',   
+    GAME_LOGS: 'game_logs',      // <-- НОВОЕ
+    TWI_CARDS: 'twi_cards',
+    CUSTOM_DOCS: 'custom_docs',
+    CUSTOM_NODES: 'custom_nodes',
+    FEEDBACK_LIST: 'feedback_list'
 };
 
 /**
