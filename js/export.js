@@ -2,31 +2,29 @@
 // === МОДУЛЬ ГЕНЕРАЦИИ ОТЧЕТОВ (PDF, CSV, ПАСПОРТА) ===
 
 // 1. Главный обработчик всплывающего меню выгрузки
-// 1. Главный обработчик всплывающего меню выгрузки
-// 1. Главный обработчик всплывающего меню выгрузки
-function handleFabExportAction(actionType, mode = 'script') {
+async function handleFabExportAction(actionType, mode = 'script') {
     closeFabExportMenu();
+    
+    // --- НОВОЕ: Запускаем конструктор шаблонов вместо прямого вызова ---
+    if (actionType === 'onepager' || actionType === 'global_onepager' || actionType === 'full_report' || actionType === 'poster' || actionType === 'tender') {
+        openReportTemplateModal(actionType, mode);
+        return;
+    }
+
     const data = getFilteredAnalyticsData();
-    if(data.length === 0) return showToast('Нет данных для выгрузки');
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
 
     showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к выгрузке...');
-    
+
     setTimeout(async () => {
         if (actionType === 'current') {
             await exportPdfCurrentScreen(data, mode);
-        } else if (actionType === 'full_report') {
-            await exportPdfFullObjectReport(data, mode);
-        } else if (actionType === 'poster') {
-            await exportPdfPoster(data, mode);
-        } else if (actionType === 'onepager') {
-            await exportPdfOnePager(data, mode);
-        } else if (actionType === 'global_onepager') {
-            await exportPdfGlobalOnePager(data, mode);
         } else if (actionType === 'data') {
             exportPdfData(data, mode);
-        } else if (actionType === 'tender') {
-            if (mode === 'script') exportTenderPDF();
-            else exportTenderCSV();
+        } else if (actionType === 'schedule') {
+            exportPdfSchedule(mode);
+        } else if (actionType === 'sk_dashboard') {
+            exportPdfSK(mode);
         }
     }, 500);
 }
@@ -50,8 +48,8 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
     const fontSizeTitle = mode === 'browser' ? '11pt' : '14px';
     const fontSizeName = mode === 'browser' ? '8pt' : '10px';
     const fontSizeContr = mode === 'browser' ? '7pt' : '9px';
-    const imgHeight = mode === 'browser' ? '28mm' : '110px'; 
-    const cellHeight = mode === 'browser' ? '40mm' : '160px'; 
+    const imgHeight = mode === 'browser' ? '28mm' : '110px';
+    const cellHeight = mode === 'browser' ? '40mm' : '160px';
 
     if (!photos || photos.length === 0) {
         return `
@@ -95,7 +93,7 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
             </div>
         </td>`;
     }));
-    
+
     const tds = tdsList.join('');
 
     return `
@@ -109,59 +107,59 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
 
 // 6. Сводный отчет для руководителя (One-Pager - Формат А3 Альбомный)
 async function exportPdfOnePager(data, mode = 'script') {
-    if(data.length === 0) return showToast('Нет данных для выгрузки');
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
 
     const projName = document.getElementById('inp-project')?.value || 'Не указан';
-    
+
     let sumUrk = 0; let sumB3 = 0;
-    data.forEach(i => { if(i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
+    data.forEach(i => { if (i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
-    
+
     const groupedC = {};
-    data.forEach(item => { 
+    data.forEach(item => {
         const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
-        groupedC[cKey] = groupedC[cKey] || []; 
-        groupedC[cKey].push(item); 
+        groupedC[cKey] = groupedC[cKey] || [];
+        groupedC[cKey].push(item);
     });
     const currContractorsCount = Object.keys(groupedC).length;
 
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
     const mData = currIntMetrics || { redZonePerc: 0, IKO: "0.00", ikoStatus: "Мало данных", ikoColor: "text-slate-500" };
-    
+
     let pdfIkoColor = "#64748b";
     if (mData.ikoColor.includes('red')) pdfIkoColor = "#dc2626";
     else if (mData.ikoColor.includes('orange')) pdfIkoColor = "#f59e0b";
     else if (mData.ikoColor.includes('green')) pdfIkoColor = "#16a34a";
 
     const ratingData = [];
-    for(let cName in groupedC) {
+    for (let cName in groupedC) {
         if (groupedC[cName].length >= 3) {
             const m = getContractorMetrics(groupedC[cName], userTemplates);
             if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
         }
     }
-    ratingData.sort((a,b) => b.val - a.val);
+    ratingData.sort((a, b) => b.val - a.val);
 
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     let prevData = [];
     const now = new Date();
-    let trendLabel = "к 1-й пол. базы"; 
-    
+    let trendLabel = "к 1-й пол. базы";
+
     if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-7);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. нед.";
     } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-30);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. мес.";
     } else if (selPeriod === 'CUSTOM') {
         trendLabel = "к пред. периоду";
     } else {
         const half = Math.floor(data.length / 2);
-        const sortedData = [...data].sort((a,b) => new Date(a.date) - new Date(b.date));
+        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
         prevData = sortedData.slice(0, half);
     }
 
@@ -172,7 +170,7 @@ async function exportPdfOnePager(data, mode = 'script') {
         const pGrouped = {}; prevData.forEach(i => pGrouped[i.contractorName] = true);
         prevContrsCount = Object.keys(pGrouped).length;
         const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, userTemplates) : null;
-        if(pInt) prevIko = pInt.IKO;
+        if (pInt) prevIko = pInt.IKO;
     }
 
     const renderTrend = (curr, prev, label, inverse = false) => {
@@ -182,22 +180,22 @@ async function exportPdfOnePager(data, mode = 'script') {
         const isGood = inverse ? diff < 0 : diff > 0;
         const color = isGood ? '#16a34a' : '#dc2626';
         const sign = diff > 0 ? '▲' : '▼';
-        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
     };
 
     const sparkLabels = []; const sparkData = [];
-    for(let i=5; i>=0; i--) {
-        const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
-        const dEnd = new Date(); dEnd.setDate(now.getDate() - (i*7));
+    for (let i = 5; i >= 0; i--) {
+        const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
+        const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
         const weekChecks = contractorArray.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
         let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
         sparkLabels.push(`-${i}н`);
-        sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
+        sparkData.push(weekChecks.length > 0 ? Math.round(wSum / weekChecks.length) : null);
     }
 
     let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
-        if(i.state && i.details && i.templateKey) {
+        if (i.state && i.details && i.templateKey) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
                 let defName = "Дефект";
@@ -205,15 +203,15 @@ async function exportPdfOnePager(data, mode = 'script') {
                 const tKey = i.templateKey.replace(tType + '_', '');
                 const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
                 const foundItem = getFlatList(cl).find(x => x.id == id);
-                if(foundItem) defName = foundItem.n;
+                if (foundItem) defName = foundItem.n;
                 const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
 
-                if(s === 'fail' || s === 'fail_escalated') {
+                if (s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
                     if (isB3) {
                         if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно'), name: defName };
                         b3Map[defName].count++;
-                        if (photo) b3Map[defName].photo = photo; 
+                        if (photo) b3Map[defName].photo = photo;
                     } else {
                         const isB1 = foundItem && foundItem.w === 1;
                         if (isB1) return; // B1 не попадает в топ дефектов
@@ -230,15 +228,16 @@ async function exportPdfOnePager(data, mode = 'script') {
         }
     });
 
-    const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
-    const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
-    const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
+    const topB3 = Object.values(b3Map).sort((a, b) => b.count - a.count).slice(0, 5);
+    const topB2 = Object.values(b2Map).sort((a, b) => b.count - a.count).slice(0, 5);
+    const topOK = Object.values(okMap).sort((a, b) => b.count - a.count).slice(0, 5);
 
     const cSpark = document.getElementById('op-sparkline-chart');
     let imgSpark = '';
     if (cSpark && cSpark.width > 0 && cSpark.height > 0) {
-        try { imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${cSpark.toDataURL('image/png')}">`;
-        } catch(e) {}
+        try {
+            imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${cSpark.toDataURL('image/png')}">`;
+        } catch (e) { }
     }
 
     const cLine = document.getElementById('op-line-chart');
@@ -246,7 +245,7 @@ async function exportPdfOnePager(data, mode = 'script') {
 
     const pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
     const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
-    
+
     const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
     let ratingHtml = '';
@@ -267,15 +266,15 @@ async function exportPdfOnePager(data, mode = 'script') {
                     </td>
                 </tr>
             </table>`;
-            
+
         if (ratingData.length <= 10) ratingHtml = ratingData.map(renderRow).join('');
         else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
     }
 
     const fontSizeSmall = mode === 'browser' ? '7pt' : '9px';
-        const fontSizeNum = mode === 'browser' ? '18pt' : '26px';
+    const fontSizeNum = mode === 'browser' ? '18pt' : '26px';
 
-        const content = `
+    const content = `
         <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
             <tr>
                 <!-- ЛЕВАЯ КОЛОНКА (32%) -->
@@ -357,18 +356,18 @@ async function exportPdfOnePager(data, mode = 'script') {
 
 // 6.5. ГЛОБАЛЬНЫЙ СВОДНЫЙ ОТЧЕТ КОМПАНИИ (Титул + Объекты a-la OnePager)
 async function exportPdfGlobalOnePager(data, mode = 'script') {
-    if(data.length === 0) return showToast('Нет данных для выгрузки');
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
 
     // ==========================================
     // 1. РАСЧЕТ ГЛОБАЛЬНЫХ МЕТРИК И ТРЕНДОВ
     // ==========================================
     let globalSumUrk = 0;
-    data.forEach(i => { if(i.metrics) globalSumUrk += i.metrics.final; });
+    data.forEach(i => { if (i.metrics) globalSumUrk += i.metrics.final; });
     const globalAvgUrk = data.length > 0 ? Math.round(globalSumUrk / data.length) : 0;
-    
+
     const globalIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
     const globalIKO = globalIntMetrics ? globalIntMetrics.IKO : "0.00";
-    
+
     let pdfIkoColorGlobal = "#64748b";
     if (globalIKO >= 0.6) pdfIkoColorGlobal = "#dc2626";
     else if (globalIKO >= 0.3) pdfIkoColorGlobal = "#d97706";
@@ -379,23 +378,23 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     let prevData = [];
     const now = new Date();
-    let trendLabel = "к 1-й пол. базы"; 
-    
+    let trendLabel = "к 1-й пол. базы";
+
     if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-7);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. нед.";
     } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-30);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. мес.";
     } else if (selPeriod === 'CUSTOM') {
         trendLabel = "к пред. периоду";
     } else {
         const half = Math.floor(data.length / 2);
-        const sortedData = [...data].sort((a,b) => new Date(a.date) - new Date(b.date));
+        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
         prevData = sortedData.slice(0, half);
     }
 
@@ -405,7 +404,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         prevGlobalAvgUrk = Math.round(pSum / prevData.length);
         prevGlobalContrs = new Set(prevData.map(i => i.contractorName).filter(Boolean)).size;
         const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, userTemplates) : null;
-        if(pInt) prevGlobalIko = pInt.IKO;
+        if (pInt) prevGlobalIko = pInt.IKO;
     }
 
     const renderTrend = (curr, prev, label, inverse = false) => {
@@ -415,17 +414,17 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const isGood = inverse ? diff < 0 : diff > 0;
         const color = isGood ? '#16a34a' : '#dc2626';
         const sign = diff > 0 ? '▲' : '▼';
-        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
+        return `<div style="text-align:right;"><span style="color:${color}; font-size:${mode === 'browser' ? '12pt' : '16px'}; font-weight:900;">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span><div style="font-size:${mode === 'browser' ? '6pt' : '8px'}; color:#94a3b8; margin-top:2px; text-transform:uppercase;">${label}</div></div>`;
     };
 
     const formatTrendInline = (curr, prev, inverse = false) => {
         if (!prev || isNaN(prev)) return '';
         let diff = parseFloat(curr) - parseFloat(prev);
-        if (Math.abs(diff) < 0.01) return `<span style="color:#94a3b8; font-size:${mode==='browser'?'7pt':'9px'}; margin-left:4px;">▬ 0</span>`;
+        if (Math.abs(diff) < 0.01) return `<span style="color:#94a3b8; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▬ 0</span>`;
         const isGood = inverse ? diff < 0 : diff > 0;
         const color = isGood ? '#16a34a' : '#dc2626';
         const sign = diff > 0 ? '▲' : '▼';
-        return `<span style="color:${color}; font-size:${mode==='browser'?'7pt':'9px'}; margin-left:4px;">${sign}${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span>`;
+        return `<span style="color:${color}; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">${sign}${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span>`;
     };
 
     // ==========================================
@@ -440,7 +439,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     const projectsArray = Object.keys(projectsMap).map(pName => {
         const pData = projectsMap[pName];
         let pSumUrk = 0; let redZone = 0;
-        pData.forEach(i => { if(i.metrics) pSumUrk += i.metrics.final; });
+        pData.forEach(i => { if (i.metrics) pSumUrk += i.metrics.final; });
         const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
         const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
         const IKO = pMetrics ? pMetrics.IKO : "0.00";
@@ -452,9 +451,9 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
             let ppSum = 0; prevPData.forEach(i => ppSum += (i.metrics?.final || 0));
             pPrevAvgUrk = Math.round(ppSum / prevPData.length);
             const ppMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevPData, userTemplates) : null;
-            if(ppMetrics) pPrevIKO = ppMetrics.IKO;
+            if (ppMetrics) pPrevIKO = ppMetrics.IKO;
         }
-        
+
         let urkGrowth = pPrevAvgUrk ? (pAvgUrk - pPrevAvgUrk) : 0;
         let ikoDrop = pPrevIKO ? (parseFloat(pPrevIKO) - parseFloat(IKO)) : 0;
 
@@ -467,10 +466,10 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     const allContrMap = {};
     data.forEach(c => {
         const cKey = `${c.contractorName} [${c.projectName || 'Без объекта'}]`;
-        if(!allContrMap[cKey]) allContrMap[cKey] = [];
+        if (!allContrMap[cKey]) allContrMap[cKey] = [];
         allContrMap[cKey].push(c);
     });
-    
+
     let riskContractors = [];
     for (let cKey in allContrMap) {
         if (allContrMap[cKey].length >= 3) {
@@ -485,29 +484,29 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     // ==========================================
     // 4. ТИТУЛЬНЫЙ ЛИСТ
     // ==========================================
-    const projectsByUrk = [...projectsArray].sort((a,b) => b.avgUrk - a.avgUrk);
-    
-    const topGrowth = [...projectsArray].filter(p => p.urkGrowth > 0).sort((a,b) => b.urkGrowth - a.urkGrowth).slice(0, 3);
-    const topDrop = [...projectsArray].filter(p => p.urkGrowth < 0).sort((a,b) => a.urkGrowth - b.urkGrowth).slice(0, 3);
+    const projectsByUrk = [...projectsArray].sort((a, b) => b.avgUrk - a.avgUrk);
+
+    const topGrowth = [...projectsArray].filter(p => p.urkGrowth > 0).sort((a, b) => b.urkGrowth - a.urkGrowth).slice(0, 3);
+    const topDrop = [...projectsArray].filter(p => p.urkGrowth < 0).sort((a, b) => a.urkGrowth - b.urkGrowth).slice(0, 3);
 
     const renderObjectTableRow = (p) => {
         const urkColor = p.avgUrk < 70 ? '#ef4444' : (p.avgUrk < 85 ? '#f59e0b' : '#22c55e');
         const ikoColor = parseFloat(p.IKO) >= 0.6 ? '#dc2626' : (parseFloat(p.IKO) >= 0.3 ? '#f59e0b' : '#16a34a');
-        
+
         let urkTrend = "";
         if (p.prevAvgUrk) {
             const diff = p.avgUrk - p.prevAvgUrk;
-            if (diff > 0) urkTrend = `<span style="color:#16a34a; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▲${Math.abs(diff)}</span>`;
-            else if (diff < 0) urkTrend = `<span style="color:#dc2626; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▼${Math.abs(diff)}</span>`;
-            else urkTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▬0</span>`;
+            if (diff > 0) urkTrend = `<span style="color:#16a34a; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▲${Math.abs(diff)}</span>`;
+            else if (diff < 0) urkTrend = `<span style="color:#dc2626; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▼${Math.abs(diff)}</span>`;
+            else urkTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▬0</span>`;
         }
 
         let ikoTrend = "";
         if (p.prevIKO && p.prevIKO !== "0.00") {
             const diff = parseFloat(p.IKO) - parseFloat(p.prevIKO);
-            if (diff < 0) ikoTrend = `<span style="color:#16a34a; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▼${Math.abs(diff).toFixed(2)}</span>`;
-            else if (diff > 0) ikoTrend = `<span style="color:#dc2626; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▲${Math.abs(diff).toFixed(2)}</span>`;
-            else ikoTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser'?'7pt':'9px'}; margin-left:4px;">▬0</span>`;
+            if (diff < 0) ikoTrend = `<span style="color:#16a34a; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▼${Math.abs(diff).toFixed(2)}</span>`;
+            else if (diff > 0) ikoTrend = `<span style="color:#dc2626; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▲${Math.abs(diff).toFixed(2)}</span>`;
+            else ikoTrend = `<span style="color:#94a3b8; font-size:${mode === 'browser' ? '7pt' : '9px'}; margin-left:4px;">▬0</span>`;
         }
 
         return `
@@ -624,7 +623,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     // ==========================================
     for (let proj of projectsArray) {
         const pData = proj.data;
-        
+
         const pChecksCount = pData.length;
         const pContractorsCount = new Set(pData.map(i => i.contractorName).filter(Boolean)).size;
 
@@ -634,13 +633,13 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         else pIkoColor = "#16a34a";
 
         const sparkLabels = []; const sparkData = [];
-        for(let i=5; i>=0; i--) {
-            const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
-            const dEnd = new Date(); dEnd.setDate(now.getDate() - (i*7));
+        for (let i = 5; i >= 0; i--) {
+            const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
+            const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
             const weekChecks = pData.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
             let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
             sparkLabels.push(`-${i}н`);
-            sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
+            sparkData.push(weekChecks.length > 0 ? Math.round(wSum / weekChecks.length) : null);
         }
 
         const sparkUrl = generatePdfChart({
@@ -653,20 +652,20 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const groupedC = {};
         pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
         const ratingData = [];
-        for(let cName in groupedC) {
+        for (let cName in groupedC) {
             if (groupedC[cName].length >= 3) {
                 const m = getContractorMetrics(groupedC[cName], userTemplates);
                 if (m) ratingData.push({ name: cName, val: m.finalC });
             }
         }
-        ratingData.sort((a,b) => b.val - a.val);
+        ratingData.sort((a, b) => b.val - a.val);
         const topContrs = ratingData.slice(0, 10).map(r => r.name);
 
         const lineData = buildTrendChartData(pData, 'contractorName', topContrs, 'MONTH');
         lineData.datasets.forEach(ds => { ds.borderWidth = 2; ds.pointRadius = 2; });
         const lineUrl = generatePdfChart({
             type: 'line', data: lineData,
-            options: { scales: { y: { min: 0, max: 100, ticks: { font: {size: 9} } }, x: { ticks: { font: {size: 9} } } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: {size: 8} } } } }
+            options: { scales: { y: { min: 0, max: 100, ticks: { font: { size: 9 } } }, x: { ticks: { font: { size: 9 } } } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 8 } } } } }
         }, 600, 200);
         const imgLine = `<img style="width:100%; height:100%; object-fit:contain; display:block;" src="${lineUrl}">`;
 
@@ -693,20 +692,20 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         let b3Map = {}; let b2Map = {}; let okMap = {}; let sumB3Obj = 0;
         pData.forEach(i => {
             if (i.metrics && i.metrics.n_B3_fail > 0) sumB3Obj += i.metrics.n_B3_fail;
-            if(i.state && i.photos && i.templateKey) {
+            if (i.state && i.photos && i.templateKey) {
                 Object.keys(i.state).forEach(id => {
                     const s = i.state[id];
                     let defName = "Дефект";
-                    const flatList = getFlatList(userTemplates[i.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[i.templateKey.replace('sys_','')]?.groups);
+                    const flatList = getFlatList(userTemplates[i.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[i.templateKey.replace('sys_', '')]?.groups);
                     const foundItem = flatList.find(x => x.id == id);
-                    if(foundItem) defName = foundItem.n;
+                    if (foundItem) defName = foundItem.n;
                     const photo = i.photos[id];
 
-                    if(s === 'fail' || s === 'fail_escalated') {
+                    if (s === 'fail' || s === 'fail_escalated') {
                         let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
                         if (isB3) {
                             if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: i.contractorName, name: defName };
-                            b3Map[defName].count++; if (photo) b3Map[defName].photo = photo; 
+                            b3Map[defName].count++; if (photo) b3Map[defName].photo = photo;
                         } else {
                             const isB1 = foundItem && foundItem.w === 1;
                             if (isB1) return;
@@ -721,9 +720,9 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
             }
         });
 
-        const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
-        const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
-        const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
+        const topB3 = Object.values(b3Map).sort((a, b) => b.count - a.count).slice(0, 5);
+        const topB2 = Object.values(b2Map).sort((a, b) => b.count - a.count).slice(0, 5);
+        const topOK = Object.values(okMap).sort((a, b) => b.count - a.count).slice(0, 5);
 
         // --- ВАЖНОЕ ИЗМЕНЕНИЕ ДЛЯ ФОТО: ИСПОЛЬЗУЕМ AWAIT ВНУТРИ ЦИКЛА ---
         const gridB3 = await buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode);
@@ -739,84 +738,136 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const fsSmall = mode === 'browser' ? '7pt' : '9px';
         const fsNum = mode === 'browser' ? '18pt' : '26px';
 
-        content += `
-        <div class="pdf-page-break page-break-before"></div>
-        <div style="text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 15px;">
-            <h2 style="font-size: ${mode === 'browser' ? '16pt' : '20px'}; color: #0f172a; text-transform: uppercase; margin:0;">ОБЪЕКТ: ${proj.name}</h2>
-        </div>
+        // =========================================================
+    // === СБОРКА БЛОКОВ (КУБИКОВ) ДЛЯ ШАБЛОНИЗАТОРА ===
+    // =========================================================
+    const blocksMap = {
+        'header_metrics': `
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+                <tr>
+                    <td style="padding: 0 4px 8px 0; width:50%;">
+                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
+                        </div>
+                    </td>
+                    <td style="padding: 0 0 8px 4px; width:50%;">
+                        <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 0 4px 8px 0;">
+                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
+                        </div>
+                    </td>
+                    <td style="padding: 0 0 8px 4px;">
+                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 0 4px 0 0;">
+                        <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
+                            <div style="font-size: ${fsNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
+                        </div>
+                    </td>
+                    <td style="padding: 0 0 0 4px;">
+                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box; position: relative; overflow: hidden;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
+                            <div style="position:absolute; bottom:0; left:0; width:100%; height: 50%;">${imgSpark}</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        `,
+        'trend_chart': `
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
+                <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
+                <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
+            </div>
+        `,
+        'contractors_rating': `
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
+                <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
+                <div style="width: 100%;">${ratingHtml}</div>
+            </div>
+        `,
+        'top_b3_photos': gridB3,
+        'top_b2_photos': gridB2,
+        'top_ok_photos': gridOK,
+        'ai_summary': `
+            <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+                <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+            </div>
+        `
+    };
+
+    let content = '';
+
+    // Если был передан активный шаблон из конструктора
+    if (window._currentActiveTemplate) {
+        const t = window._currentActiveTemplate;
+        const activeBlocks = t.active_blocks || [];
         
-        <table class="no-break" style="width: 100%; border-collapse: collapse; table-layout: fixed;">
-            <tr>
-                <td style="width: 32%; vertical-align: top; padding-right: 15px;">
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
-                        <tr>
-                            <td style="padding: 0 4px 8px 0; width:50%;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${proj.avgUrk}%</td><td>${renderTrend(proj.avgUrk, proj.prevAvgUrk, trendLabel)}</td></tr></table>
-                                </div>
-                            </td>
-                            <td style="padding: 0 0 8px 4px; width:50%;">
-                                <div style="background: ${parseFloat(proj.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(proj.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
-                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pIkoColor}; line-height: 1;">${proj.IKO}</td><td>${renderTrend(proj.IKO, proj.prevIKO, trendLabel, true)}</td></tr></table>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 0 4px 8px 0;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pChecksCount}</td><td></td></tr></table>
-                                </div>
-                            </td>
-                            <td style="padding: 0 0 8px 4px;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                                    <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pContractorsCount}</td><td></td></tr></table>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 0 4px 0 0;">
-                                <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                                    <div style="font-size: ${fsSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                                    <div style="font-size: ${fsNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${proj.redZone}%</div>
-                                </div>
-                            </td>
-                            <td style="padding: 0 0 0 4px;">
-                                <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box; position: relative; overflow: hidden;">
-                                    <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
-                                    <div style="position:absolute; bottom:0; left:0; width:100%; height: 50%;">${imgSpark}</div>
-                                </div>
-                            </td>
-                        </tr>
-                    </table>
+        if (t.layout === 'one') {
+            // Одна сплошная колонка
+            content = activeBlocks.map(b => blocksMap[b] || '').join('');
+        } else {
+            // Две колонки (Делим массив блоков пополам)
+            const mid = Math.ceil(activeBlocks.length / 2);
+            const leftBlocks = activeBlocks.slice(0, mid).map(b => blocksMap[b] || '').join('');
+            const rightBlocks = activeBlocks.slice(mid).map(b => blocksMap[b] || '').join('');
+            
+            let w1 = '50%', w2 = '50%';
+            if (t.layout === 'two_uneven') { w1 = '35%'; w2 = '65%'; }
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
-                        <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
-                    </div>
+            content = `
+                <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+                    <tr>
+                        <td style="width: ${w1}; vertical-align: top; padding-right: 15px;">${leftBlocks}</td>
+                        <td style="width: ${w2}; vertical-align: top;">${rightBlocks}</td>
+                    </tr>
+                </table>
+            `;
+        }
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                        <div style="width: 100%;">${ratingHtml}</div>
-                    </div>
-                </td>
-                <td style="width: 68%; vertical-align: top;">
-                    ${gridB3}
-                    ${gridB2}
-                    ${gridOK}
+        // Добавляем текст подвала (Footer), если он указан в шаблоне
+        if (t.footer_text) {
+            content += `<div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${t.footer_text}</div>`;
+        }
 
-                    <div class="no-break" style="background: ${isDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
-                        <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
-                    </div>
-                </td>
-            </tr>
-        </table>
+    } else {
+        // КЛАССИЧЕСКИЙ СТАНДАРТНЫЙ МАКЕТ (Если шаблон не выбран)
+        content = `
+            <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
+                <tr>
+                    <td style="width: 32%; vertical-align: top; padding-right: 15px;">
+                        ${blocksMap['header_metrics']}
+                        ${blocksMap['trend_chart']}
+                        ${blocksMap['contractors_rating']}
+                    </td>
+                    <td style="width: 68%; vertical-align: top;">
+                        ${blocksMap['top_b3_photos']}
+                        ${blocksMap['top_b2_photos']}
+                        ${blocksMap['top_ok_photos']}
+                        ${blocksMap['ai_summary']}
+                    </td>
+                </tr>
+            </table>
         `;
-    } // Конец цикла for...of
+    }
+
+    printPdfShell(window._currentActiveTemplate ? window._currentActiveTemplate.name : "Сводка для Руководства", content, "A3", "landscape", mode);
+}
 
     printPdfShell("Сводный Отчет Компании", content, "A3", "landscape", mode);
 }
@@ -828,11 +879,11 @@ function generatePosterData() {
     const now = new Date();
     const lastWeekEnd = new Date(now);
     const day = lastWeekEnd.getDay() || 7;
-    lastWeekEnd.setDate(lastWeekEnd.getDate() - day); 
+    lastWeekEnd.setDate(lastWeekEnd.getDate() - day);
     lastWeekEnd.setHours(23, 59, 59, 999);
-    
+
     const lastWeekStart = new Date(lastWeekEnd);
-    lastWeekStart.setDate(lastWeekEnd.getDate() - 6); 
+    lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
     lastWeekStart.setHours(0, 0, 0, 0);
 
     const weekData = contractorArray.filter(i => {
@@ -841,9 +892,9 @@ function generatePosterData() {
     });
 
     const grouped = {};
-    weekData.forEach(item => { 
-        if(!grouped[item.contractorName]) grouped[item.contractorName] = []; 
-        grouped[item.contractorName].push(item); 
+    weekData.forEach(item => {
+        if (!grouped[item.contractorName]) grouped[item.contractorName] = [];
+        grouped[item.contractorName].push(item);
     });
 
     const candidates = [];
@@ -851,23 +902,23 @@ function generatePosterData() {
 
     for (let cName in grouped) {
         const cData = grouped[cName];
-        if (cData.length >= 3) { 
+        if (cData.length >= 3) {
             const m = getContractorMetrics(cData, userTemplates);
             if (m) {
                 let bestPhoto = null; let worstPhoto = null; let worstDefectName = '';
                 cData.forEach(check => {
                     globalUrkSum += check.metrics.final;
                     globalB3Count += check.metrics.n_B3_fail;
-                    if(check.photos && check.state) {
+                    if (check.photos && check.state) {
                         Object.keys(check.state).forEach(id => {
-                            if(check.state[id] === 'ok' && check.photos[id]) bestPhoto = check.photos[id];
-                            if((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) {
+                            if (check.state[id] === 'ok' && check.photos[id]) bestPhoto = check.photos[id];
+                            if ((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) {
                                 worstPhoto = check.photos[id];
                                 const tType = check.templateKey.split('_')[0];
                                 const tKey = check.templateKey.replace(tType + '_', '');
                                 const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
                                 const foundItem = getFlatList(cl).find(x => x.id == id);
-                                if(foundItem) worstDefectName = foundItem.n;
+                                if (foundItem) worstDefectName = foundItem.n;
                             }
                         });
                     }
@@ -883,7 +934,7 @@ function generatePosterData() {
 
     candidates.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
     const leaders = candidates.filter(c => c.metrics.finalC >= 85).slice(0, 3);
-    
+
     let antiLeaders = candidates.filter(c => c.metrics.n_изделий_с_B3 > 0 || c.metrics.finalC < 70);
     antiLeaders.sort((a, b) => {
         if (b.metrics.n_изделий_с_B3 !== a.metrics.n_изделий_с_B3) return b.metrics.n_изделий_с_B3 - a.metrics.n_изделий_с_B3;
@@ -912,23 +963,23 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
         const cData = data.filter(c => `${c.contractorName} [${c.projectName || 'Без объекта'}]` === currentDetailedContractor);
         if (cData.length === 0) return showToast('Нет данных по этому подрядчику');
-        
+
         const m = getContractorMetrics(cData, userTemplates);
         const workType = cData[0].templateTitle;
         const expertText = getExpertConclusion(m, currentDetailedContractor, workType, cData.length, 'print', customExpertConclusions).pdfHtml;
 
         let photosB3 = []; let photosB2 = [];
         cData.forEach(check => {
-            if(check.state && check.photos) {
+            if (check.state && check.photos) {
                 Object.keys(check.state).forEach(id => {
                     const s = check.state[id];
                     if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
-                        const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                        const flatList = getFlatList(userTemplates[check.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_', '')]?.groups);
                         const itemInfo = flatList.find(x => x.id == id);
                         const isB3 = s === 'fail_escalated' || (itemInfo && itemInfo.w === 3);
                         const defName = itemInfo ? itemInfo.n : 'Дефект';
-                        
-                        if (isB3) photosB3.push({ src: check.photos[id], name: defName, contr: check.contractorName }); 
+
+                        if (isB3) photosB3.push({ src: check.photos[id], name: defName, contr: check.contractorName });
                         else photosB2.push({ src: check.photos[id], name: defName, contr: check.contractorName });
                     }
                 });
@@ -972,10 +1023,10 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
             ${expertText}
             
             `;
-        
+
         const gridB3 = await buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', 'transparent', 5, mode);
         const gridB2 = await buildPhotoGridHTML(photosB2, '⚠️ Значимые дефекты (B2)', '#d97706', '#fde68a', 'transparent', 5, mode);
-        
+
         content += gridB3 + gridB2;
         printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4", "portrait", mode);
 
@@ -983,7 +1034,7 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
         // --- РЕЖИМ 2: СПИСОК ВСЕХ ПОДРЯДЧИКОВ (С ВЕРХНЕЙ СВОДКОЙ) ---
         let sumUrkProd = 0, sumB1 = 0, sumB2 = 0, sumB3 = 0;
         data.forEach(i => {
-            if(i.metrics) {
+            if (i.metrics) {
                 sumUrkProd += i.metrics.final;
                 sumB1 += i.metrics.n_B1_fail;
                 sumB2 += i.metrics.n_B2_fail;
@@ -993,24 +1044,24 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
         const avgUrkProd = data.length > 0 ? Math.round(sumUrkProd / data.length) : 0;
 
         const grouped = {};
-        data.forEach(item => { 
+        data.forEach(item => {
             const cKey = `${item.contractorName} [${item.projectName || 'Без объекта'}]`;
-            grouped[cKey] = grouped[cKey] || []; 
-            grouped[cKey].push(item); 
+            grouped[cKey] = grouped[cKey] || [];
+            grouped[cKey].push(item);
         });
 
         const cList = [];
         let validContrCount = 0;
         let sumIntegralUrk = 0;
-        
-        for(let cName in grouped) {
+
+        for (let cName in grouped) {
             const m = getContractorMetrics(grouped[cName], userTemplates);
             if (m) {
                 cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle });
                 if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
             }
         }
-        cList.sort((a,b) => b.metrics.finalC - a.metrics.finalC);
+        cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
         const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
 
         const globalKey = 'global_main_analysis';
@@ -1019,7 +1070,7 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
         if (rawSmartText) {
             const isCustomText = !!customExpertConclusions[globalKey];
             const pdfFormattedText = rawSmartText.replace(/^\[(.*?)\]/gm, `<div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>`).replace(/\n/g, '<br>');
-            
+
             aiHtml = `
             <div class="no-break" style="margin-bottom: 20px; border: 1px solid ${isCustomText ? '#fde047' : '#cbd5e1'}; border-radius: 8px; background: ${isCustomText ? '#fefce8' : '#f8fafc'}; padding: 15px;">
                 <h3 style="margin-top: 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; border-bottom: 2px solid ${isCustomText ? '#fef08a' : '#e2e8f0'}; padding-bottom: 8px; margin-bottom: 15px; color: ${isCustomText ? '#854d0e' : '#0f172a'};">
@@ -1035,7 +1086,7 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
             const color = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
             const borderColor = m.finalC < 70 ? '#fca5a5' : '#cbd5e1';
             const bg = m.finalC < 70 ? '#fef2f2' : 'white';
-            
+
             return `
             <div class="no-break" style="border:2px solid ${borderColor}; border-radius:12px; padding:15px; background:${bg}; margin-bottom: 15px;">
                 <table style="width: 100%; border: none;">
@@ -1077,7 +1128,7 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
 
         const tableRows = [];
         for (let i = 0; i < cList.length; i += 2) {
-            const left  = cList[i];
+            const left = cList[i];
             const right = cList[i + 1];
             tableRows.push(`
                 <tr class="no-break">
@@ -1104,7 +1155,7 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
                         <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
+                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk + '%' : 'СБОР'}</div>
                     </td>
                     <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
                         <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
@@ -1126,16 +1177,16 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
 
 // 6. Выгрузка Полного отчета по объекту (Паспорта подрядчиков А3)
 async function exportPdfFullObjectReport(data, mode = 'script') {
-    if(data.length === 0) return showToast('Нет данных для выгрузки');
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
 
     let projName = 'Все объекты';
     if (activeMultiFilters.analytics.project.length > 0) {
         projName = activeMultiFilters.analytics.project.join(', ');
     }
-    
+
     // --- ДАННЫЕ ДЛЯ ТИТУЛЬНОГО ЛИСТА ---
     let sumUrkProd = 0;
-    data.forEach(i => { if(i.metrics) { sumUrkProd += i.metrics.final; } });
+    data.forEach(i => { if (i.metrics) { sumUrkProd += i.metrics.final; } });
     const avgUrkProd = data.length > 0 ? Math.round(sumUrkProd / data.length) : 0;
 
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
@@ -1143,22 +1194,22 @@ async function exportPdfFullObjectReport(data, mode = 'script') {
     const redZonePerc = currIntMetrics ? currIntMetrics.redZonePerc : 0;
 
     const grouped = {};
-    data.forEach(item => { 
+    data.forEach(item => {
         const cKey = `${item.contractorName} [${item.projectName || 'Без объекта'}]`;
-        grouped[cKey] = grouped[cKey] || []; 
-        grouped[cKey].push(item); 
+        grouped[cKey] = grouped[cKey] || [];
+        grouped[cKey].push(item);
     });
 
     const cList = [];
-    for(let cName in grouped) {
+    for (let cName in grouped) {
         const m = getContractorMetrics(grouped[cName], userTemplates);
         if (m && m.count >= 3) {
             let b1 = 0, b2 = 0, b3 = 0;
-            grouped[cName].forEach(i => { if(i.metrics) { b1 += i.metrics.n_B1_fail; b2 += i.metrics.n_B2_fail; b3 += i.metrics.n_B3_fail; } });
-            cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle, data: grouped[cName], defects: {b1, b2, b3} });
+            grouped[cName].forEach(i => { if (i.metrics) { b1 += i.metrics.n_B1_fail; b2 += i.metrics.n_B2_fail; b3 += i.metrics.n_B3_fail; } });
+            cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle, data: grouped[cName], defects: { b1, b2, b3 } });
         }
     }
-    cList.sort((a,b) => b.metrics.finalC - a.metrics.finalC);
+    cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
 
     if (cList.length === 0) return showToast('Слишком мало данных для отчета по подрядчикам');
 
@@ -1254,8 +1305,8 @@ async function exportPdfFullObjectReport(data, mode = 'script') {
 
         // График для подрядчика
         const dates = []; const urkData = [];
-        cData.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
-            dates.push(`#${i+1}`); urkData.push(check.metrics.final);
+        cData.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
+            dates.push(`#${i + 1}`); urkData.push(check.metrics.final);
         });
 
         const lineChartUrl = generatePdfChart({
@@ -1266,11 +1317,11 @@ async function exportPdfFullObjectReport(data, mode = 'script') {
 
         let photosB3 = []; let photosB2 = []; let photosOK = [];
         cData.forEach(check => {
-            if(check.state && check.photos) {
+            if (check.state && check.photos) {
                 Object.keys(check.state).forEach(id => {
                     const s = check.state[id];
                     let defName = "Дефект";
-                    const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                    const flatList = getFlatList(userTemplates[check.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_', '')]?.groups);
                     const item = flatList.find(x => x.id == id);
                     if (item) defName = item.n;
 
@@ -1366,15 +1417,15 @@ async function exportPdfPoster(data, mode = 'script') {
     let periodStr = '';
 
     if (typeof isDemoMode !== 'undefined' && isDemoMode && contractorArray.length > 0) {
-        weekData = [...contractorArray].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 25);
+        weekData = [...contractorArray].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 25);
         periodStr = 'Демонстрационный период';
     } else {
         const now = new Date();
         const lastWeekEnd = new Date(now);
-        lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7)); 
+        lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7));
         lastWeekEnd.setHours(23, 59, 59, 999);
         const lastWeekStart = new Date(lastWeekEnd);
-        lastWeekStart.setDate(lastWeekEnd.getDate() - 6); 
+        lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
         lastWeekStart.setHours(0, 0, 0, 0);
 
         weekData = contractorArray.filter(i => {
@@ -1387,9 +1438,9 @@ async function exportPdfPoster(data, mode = 'script') {
     if (weekData.length === 0) return showToast("За выбранный период нет данных для плаката");
 
     const grouped = {};
-    weekData.forEach(item => { 
-        if(!grouped[item.contractorName]) grouped[item.contractorName] = []; 
-        grouped[item.contractorName].push(item); 
+    weekData.forEach(item => {
+        if (!grouped[item.contractorName]) grouped[item.contractorName] = [];
+        grouped[item.contractorName].push(item);
     });
 
     const candidates = [];
@@ -1398,20 +1449,20 @@ async function exportPdfPoster(data, mode = 'script') {
 
     for (let cName in grouped) {
         const cData = grouped[cName];
-        if (cData.length >= 3) { 
+        if (cData.length >= 3) {
             const m = getContractorMetrics(cData, userTemplates);
             if (m) {
                 cData.forEach(check => {
                     globalUrkSum += check.metrics.final;
                     globalB3Count += check.metrics.n_B3_fail;
-                    if(check.photos && check.state) {
+                    if (check.photos && check.state) {
                         Object.keys(check.state).forEach(id => {
-                            const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                            const flatList = getFlatList(userTemplates[check.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_', '')]?.groups);
                             const itemInfo = flatList.find(x => x.id == id);
                             const defName = itemInfo ? itemInfo.n : 'Дефект';
 
-                            if(check.state[id] === 'ok' && check.photos[id]) allOkPhotos.push({ src: check.photos[id], contr: cName, name: defName });
-                            if((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) allDefectPhotos.push({ src: check.photos[id], contr: cName, name: defName });
+                            if (check.state[id] === 'ok' && check.photos[id]) allOkPhotos.push({ src: check.photos[id], contr: cName, name: defName });
+                            if ((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) allDefectPhotos.push({ src: check.photos[id], contr: cName, name: defName });
                         });
                     }
                 });
@@ -1420,7 +1471,7 @@ async function exportPdfPoster(data, mode = 'script') {
                 if (!isDemoMode) {
                     const now = new Date();
                     const lastWeekEnd = new Date(now);
-                    lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7)); 
+                    lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7));
                     const prevStart = new Date(lastWeekEnd); prevStart.setDate(prevStart.getDate() - 13);
                     const prevEnd = new Date(lastWeekEnd); prevEnd.setDate(prevEnd.getDate() - 7);
                     const prevChecks = contractorArray.filter(i => i.contractorName === cName && new Date(i.date) >= prevStart && new Date(i.date) <= prevEnd);
@@ -1455,11 +1506,11 @@ async function exportPdfPoster(data, mode = 'script') {
         if (!c) return '';
         const isLeader = type === 'leader'; const isBreak = type === 'break'; const isBad = type === 'bad';
         let color = '#0f172a'; let bg = '#f8fafc'; let bd = '#cbd5e1'; let badge = '';
-        
+
         if (isLeader) { color = '#16a34a'; bg = '#f0fdf4'; bd = '#bbf7d0'; }
         if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:${mode === 'browser' ? '7pt' : '10px'}; font-weight:bold; display:inline-block; margin-bottom:4px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
         if (isBad) { color = '#dc2626'; bg = '#fef2f2'; bd = '#fecaca'; }
-        
+
         return `
         <div class="no-break" style="background: ${bg}; border: 2px solid ${bd}; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
             ${badge}
@@ -1532,19 +1583,19 @@ async function exportPdfPoster(data, mode = 'script') {
 
 // 7. Выгрузка сырой базы (Data)
 function exportPdfData(data, mode = 'script') {
-    if(data.length === 0) return showToast('Нет данных для выгрузки');
-    const sortedData = [...data].sort((a,b) => new Date(b.date) - new Date(a.date));
-    
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
+    const sortedData = [...data].sort((a, b) => new Date(b.date) - new Date(a.date));
+
     // Динамические шрифты под режим (pt для принтера, px для PDF)
     const fSizeTitle = mode === 'browser' ? '14pt' : '18px';
     const fSizeSub = mode === 'browser' ? '9pt' : '12px';
     const fSizeTable = mode === 'browser' ? '8pt' : '10px';
-    
+
     let rowsHtml = sortedData.map((r, i) => {
         const d = new Date(r.date).toLocaleDateString('ru-RU');
         const m = r.metrics;
         const color = m ? (m.final < 70 ? '#dc2626' : (m.final < 85 ? '#f59e0b' : '#16a34a')) : '#475569';
-        
+
         return `
         <tr class="avoid-break" style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
             <td style="border: 1px solid #cbd5e1; padding: 6px; text-align:center;">${i + 1}</td>
@@ -1586,57 +1637,51 @@ function exportPdfData(data, mode = 'script') {
 // 9. Универсальная печатная оболочка (Диспетчер потоков PDF / Print)
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
     window._pdfGenerating = true;
-    // 1. Управление лоадером
+    const isBackground = (mode === 'background');
+    
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
-    
-    if (loader && loaderText) {
+
+    // Показываем лоадер ТОЛЬКО если это не фоновый режим
+    if (!isBackground && loader && loaderText) {
         loaderText.innerText = mode === 'script' ? "Формируем PDF (высокое качество)..." : "Подготовка к системной печати...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
+    } else if (isBackground) {
+        showToast('🤖 Запущена фоновая генерация отчета...');
     }
 
     let projName = document.getElementById('inp-project')?.value || 'Не указан';
     let inspName = document.getElementById('inp-inspector')?.value || 'Не указан';
 
-    // Умная подстановка для вкладки Аналитики (учитываем мульти-фильтры)
     if (document.getElementById('tab-analytics')?.classList.contains('active')) {
         projName = activeMultiFilters.analytics.project.length > 0 ? activeMultiFilters.analytics.project.join(', ') : 'Все объекты';
         inspName = activeMultiFilters.analytics.inspector.length > 0 ? activeMultiFilters.analytics.inspector.join(', ') : 'Все инспекторы';
     }
 
-    // Константы для PDF режима (в Print режиме они не используются, там работают pt и mm)
     const MARGIN_MM = 10;
     const MM_TO_PX = 3.7795;
     const pageWidths = {
-        'A4_portrait':  Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A4_portrait': Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
-        'A3_portrait':  Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A3_portrait': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
     };
     const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
     const HIGH_QUALITY_SCALE = 2.5;
 
-    // Универсальная шапка (Пока используем единую, на следующих этапах для браузера будем дублировать её программно)
-    const header = `
-        <div class="no-break" style="border-bottom:3px solid #1e293b; padding-bottom:15px; margin-bottom:25px;">
-            <table style="width: 100%; border: none; border-spacing: 0;">
-                <tr>
-                    <td style="vertical-align: bottom;">
-                        <h1 style="font-size:24px; font-weight:900; text-transform:uppercase; margin:0; color:#0f172a;">${escapeHtml(title)}</h1>
-                        <div style="font-size:14px; margin-top:4px; font-weight:bold; color:#475569;">
-                            Объект: ${escapeHtml(projName)} | Инспектор: ${escapeHtml(inspName)}
-                        </div>
-                    </td>
-                    <td style="vertical-align: bottom; text-align: right;">
-                        <div style="font-size:12px; color:#64748b; font-weight:bold;">
-                            Сформировано:<br>${new Date().toLocaleString('ru-RU')}<br>RBI Quality
-                        </div>
-                    </td>
-                </tr>
-            </table>
-        </div>
-    `;
+    // === НОВОЕ: Генерируем ID отчета, QR-код и Брендированную шапку ===
+    const reportId = 'rep_' + Date.now().toString(36);
+    let qrDataUrl = null;
+    try {
+        if (typeof QRCode !== 'undefined') {
+            // QR-код ведет прямо на файл report.html
+            qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
+        }
+    } catch(e) { console.warn("QR не сгенерирован", e); }
+
+    const headerHtml = await getBrandedHeader(title, mode, qrDataUrl);
+    const fullHtml = headerHtml + content;
 
     // ============================================================================
     // ПАЙПЛАЙН 1: БРАУЗЕРНАЯ ПЕЧАТЬ (window.print)
@@ -1654,13 +1699,16 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 #print-wrapper table { width: 100%; table-layout: fixed; border-collapse: collapse; }
             </style>
             <div id="print-wrapper">
-                ${header}
-                ${content}
+                ${fullHtml}
             </div>
         `;
-        
+
         await resolveLocalPhotosForPdf(printContainer);
-        
+
+        // Для браузерной печати мы не можем получить Blob (сам файл), поэтому сохраняем "пустышку" в историю, просто чтобы остался след.
+        const emptyBlob = new Blob(["Отчет распечатан на принтере, цифровой PDF-копии нет."], { type: 'text/plain' });
+        await saveReportToLocal({ type: 'print', title: title, blob: emptyBlob, project: projName, period: 'Всё время', forcedId: reportId }, fullHtml);
+
         setTimeout(() => {
             window._pdfGenerating = false;
             window.print();
@@ -1672,8 +1720,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         return;
     }
 
-        // ============================================================================
-    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF (ФИНАЛЬНАЯ РАБОЧАЯ ВЕРСИЯ)
+    // ============================================================================
+    // ПАЙПЛАЙН 2: ВЫГРУЗКА PDF ЧЕРЕЗ HTML2PDF
     // ============================================================================
     const hiddenDiv = document.createElement('div');
     hiddenDiv.style.cssText = `position: absolute; left: 0; top: 0; width: ${widthPx + 50}px; background: white; z-index: -9999; opacity: 0.01; pointer-events: none;`;
@@ -1682,7 +1730,20 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
     const styleElem = document.createElement('style');
     styleElem.textContent = `
-        .pdf-print-root { width: ${widthPx}px !important; margin: 0 auto !important; padding: 20px !important; background: white !important; font-family: Arial, sans-serif !important; color: black !important; box-sizing: border-box !important; }
+        @import url('https://fonts.cdnfonts.com/css/history-pro');
+        .pdf-print-root { 
+            width: ${widthPx}px !important; 
+            margin: 0 auto !important; 
+            padding: 20px !important; 
+            background: white !important; 
+            font-family: 'Circe', Verdana, sans-serif !important; /* Основной шрифт RBI */
+            color: #1c2b39 !important; /* Фирменный темно-синий цвет текста */
+            box-sizing: border-box !important; 
+        }
+        .pdf-print-root h1, .pdf-print-root h2, .pdf-print-root h3 {
+            font-family: 'History PRO', 'Times New Roman', serif !important;
+            letter-spacing: 0.03em;
+        }
         .pdf-print-root * { box-sizing: border-box !important; }
         .pdf-print-root img { max-width: 100% !important; display: block !important; }
         .pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
@@ -1692,13 +1753,17 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
     const cleanup = () => {
         window._pdfGenerating = false;
-        if (loader) { loader.classList.add('opacity-0'); setTimeout(() => loader.style.display = 'none', 300); }
+        if (!isBackground && loader) { 
+            loader.classList.add('opacity-0'); 
+            setTimeout(() => loader.style.display = 'none', 300); 
+        }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
 
+    const filename = `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`;
     const opt = {
         margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
-        filename: `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`,
+        filename: filename,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
             scale: HIGH_QUALITY_SCALE,
@@ -1709,14 +1774,12 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         pagebreak: { mode: ['css', 'legacy'] }
     };
 
-    // --- ПРЕДВАРИТЕЛЬНАЯ ЗАГРУЗКА ОБЛАЧНЫХ ФОТО (без тостов, если нет интернета – пропускаем) ---
     if (navigator.onLine) {
-        const fullMarkup = header + content;
-        const cloudUrls = new Set(fullMarkup.match(/cloud:\/\/[^"\s]+/g) || []);
+        const cloudUrls = new Set(fullHtml.match(/cloud:\/\/[^"\s]+/g) || []);
         let i = 0;
         for (const url of cloudUrls) {
             if (loaderText) loaderText.innerText = `Кэширование фото ${++i}/${cloudUrls.size}…`;
-            try { await PhotoManager.getBase64(url); } catch (e) {}
+            try { await PhotoManager.getBase64(url); } catch (e) { }
         }
     }
 
@@ -1724,18 +1787,15 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         if (loaderText) loaderText.innerText = "Создание PDF…";
         await new Promise(r => requestAnimationFrame(r));
 
-        const pagesHtml = (header + content).split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
+        const pagesHtml = fullHtml.split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
+        const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
 
-        const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) 
-                             || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+        let pdfBlob;
 
         if ((isWeakDevice || pagesHtml.length > 1) && pagesHtml.length > 0) {
-            // Постраничный рендер (слабые устройства или несколько страниц)
             let worker = html2pdf().set(opt);
             for (let i = 0; i < pagesHtml.length; i++) {
                 if (loaderText) loaderText.innerText = `Лист ${i + 1}/${pagesHtml.length}…`;
-
-                // Очищаем предыдущую страницу
                 Array.from(hiddenDiv.children).forEach(c => { if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c); });
 
                 const pageDiv = document.createElement('div');
@@ -1743,36 +1803,62 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 pageDiv.innerHTML = pagesHtml[i];
                 hiddenDiv.appendChild(pageDiv);
 
-                // Конвертируем и дожидаемся фото (последовательно, без перекодировок)
                 await resolveLocalPhotosForPdf(pageDiv);
                 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+                // ИСПРАВЛЕНИЕ: создаем PDF на первом цикле
                 if (i === 0) {
                     worker = worker.from(pageDiv).toPdf();
                 } else {
-                    worker = worker.get('pdf').then(pdf => { pdf.addPage(); }).from(pageDiv).toContainer().toCanvas().toPdf();
+                    worker = worker.get('pdf').then(pdf => { pdf.addPage(); return pdf; }).from(pageDiv).toContainer().toCanvas().toPdf();
                 }
                 await worker;
-
-                // Чуть помогаем сборщику мусора на слабых устройствах
                 if (isWeakDevice) await new Promise(r => setTimeout(r, 300));
             }
-            await worker.save();
+            // Получаем сам файл (Blob)
+            pdfBlob = await worker.output('blob');
+            
+            // Если это не фоновый режим - предлагаем скачать на ПК
+            if (mode !== 'background') {
+                worker.save(); 
+            }
         } else {
-            // Одна страница, быстро
             const rootDiv = document.createElement('div');
             rootDiv.className = 'pdf-print-root';
-            rootDiv.innerHTML = header + content;
+            rootDiv.innerHTML = fullHtml;
             hiddenDiv.appendChild(rootDiv);
 
             await resolveLocalPhotosForPdf(rootDiv);
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-            await html2pdf().set(opt).from(rootDiv).save();
+            // Получаем сам файл (Blob)
+            const worker = html2pdf().set(opt).from(rootDiv);
+            pdfBlob = await worker.output('blob');
+            
+            // Если это не фоновый режим - предлагаем скачать на ПК
+            if (mode !== 'background') {
+                worker.save();
+            }
         }
 
+        // === НОВОЕ: Сохраняем полученный Blob (сам файл PDF) в нашу базу истории отчетов ===
+        await saveReportToLocal({ 
+            type: 'pdf', 
+            title: title, 
+            blob: pdfBlob, 
+            project: projName, 
+            period: 'Всё время', 
+            forcedId: reportId 
+        }, fullHtml);
+
+        // Перерисовываем список отчетов, если вкладка открыта
+        if (typeof renderReportsList === 'function') renderReportsList();
+
         cleanup();
-        if (typeof showToast === 'function') showToast("✅ PDF сохранён!");
+        if (typeof showToast === 'function') {
+            if (isBackground) showToast("✅ Фоновый отчет успешно создан и сохранен!");
+            else showToast("✅ PDF успешно сохранён в Историю!");
+        }
     } catch (err) {
         console.error('[PDF Error]', err);
         cleanup();
@@ -1789,7 +1875,7 @@ async function waitForAllImages(container) {
     const loadPromises = images.map(img => {
         // Уже загружено – просто декодируем
         if (img.complete && img.naturalWidth > 0) {
-            return img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+            return img.decode ? img.decode().catch(() => { }) : Promise.resolve();
         }
         // Ждём загрузки, затем декодируем
         return new Promise(resolve => {
@@ -1824,7 +1910,7 @@ async function waitForAllImages(container) {
 // ------------------------------------------------------------------
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return str.replace(/[&<>]/g, function (m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';
@@ -1847,16 +1933,16 @@ function exportFilteredCsv() {
 
 function getTenderData() {
     let proj = document.getElementById('tender-project-select')?.value;
-    
+
     // Автовыбор объекта (починит демо-режим, если пользователь забыл выбрать объект в списке)
     if (!proj) {
         const allProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
         if (allProjects.length > 0) {
-            proj = allProjects[0]; 
+            proj = allProjects[0];
             const selectEl = document.getElementById('tender-project-select');
-            if(selectEl) selectEl.value = proj;
+            if (selectEl) selectEl.value = proj;
         } else {
-            showToast('Нет доступных объектов для выгрузки!'); 
+            showToast('Нет доступных объектов для выгрузки!');
             return null;
         }
     }
@@ -1864,16 +1950,16 @@ function getTenderData() {
     const objChecks = contractorArray.filter(c => c.projectName === proj);
     const grouped = {};
     objChecks.forEach(c => {
-        if(!grouped[c.contractorName]) grouped[c.contractorName] = [];
+        if (!grouped[c.contractorName]) grouped[c.contractorName] = [];
         grouped[c.contractorName].push(c);
     });
 
     const tenderData = [];
-    for(let cName in grouped) {
+    for (let cName in grouped) {
         const cData = grouped[cName];
         if (cData.length >= 3) {
             // ВАЖНО: передаем 'false' третьим аргументом, чтобы отключить плавающее окно (берем всю историю!)
-            const m = getContractorMetrics(cData, userTemplates, false); 
+            const m = getContractorMetrics(cData, userTemplates, false);
             if (m) {
                 const causes = {}; let totalFails = 0;
                 cData.forEach(check => {
@@ -1890,15 +1976,15 @@ function getTenderData() {
 
                 let rec = "РЕКОМЕНДОВАН"; let recClass = "text-green-600"; let recDesc = "Подрядчик стабилен и показывает высокое качество работ за весь период.";
                 if (m.finalC < 70 || m.rateB3 >= 20) {
-                    rec = "НЕ РЕКОМЕНДОВАН"; recClass = "text-red-600"; 
+                    rec = "НЕ РЕКОМЕНДОВАН"; recClass = "text-red-600";
                     recDesc = "Подрядчик имеет недопустимый уровень критического брака и низкую оценку. Высокие риски для компании.";
                 } else if (m.finalC < 85 || m.rateB3 > 0 || m.stabilityIndex < 60) {
                     rec = "ДОПУСТИМ С ОГРАНИЧЕНИЯМИ"; recClass = "text-orange-500";
                     recDesc = "Подрядчик выполняет работы удовлетворительно, но имеет нестабильный процесс или допускал критические дефекты B3.";
                 }
 
-                const sortedDates = cData.map(c => new Date(c.date)).sort((a,b) => a - b);
-                
+                const sortedDates = cData.map(c => new Date(c.date)).sort((a, b) => a - b);
+
                 tenderData.push({
                     name: cName, proj: proj,
                     metrics: m, causes: causes, totalFails: totalFails,
@@ -1909,7 +1995,7 @@ function getTenderData() {
             }
         }
     }
-    tenderData.sort((a,b) => b.metrics.finalC - a.metrics.finalC);
+    tenderData.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
     return tenderData;
 }
 
@@ -1918,16 +2004,16 @@ function exportTenderCSV() {
     if (!data) return;
     if (data.length === 0) return showToast("Недостаточно данных по подрядчикам на этом объекте.");
 
-    let csvContent = "\uFEFF"; 
+    let csvContent = "\uFEFF";
     const headers = ['Подрядчик', 'Интегр. УрК', 'Средний балл', 'Проверок', 'B3 (%)', 'Стабильность', 'Системность (Ks)', 'Рекомендация'];
     csvContent += headers.join(";") + "\r\n";
 
     data.forEach(d => {
-        const row = [ d.name, d.metrics.finalC + '%', d.metrics.baseUrkContrPerc + '%', d.metrics.count, d.metrics.rateB3.toFixed(1) + '%', d.metrics.stabilityIndex + '%', d.metrics.ks.toFixed(2), d.rec ];
+        const row = [d.name, d.metrics.finalC + '%', d.metrics.baseUrkContrPerc + '%', d.metrics.count, d.metrics.rateB3.toFixed(1) + '%', d.metrics.stabilityIndex + '%', d.metrics.ks.toFixed(2), d.rec];
         csvContent += row.join(";") + "\r\n";
     });
 
-    downloadFile(csvContent, `Tender_Report_${data[0].proj.replace(/\W/g,'_')}.csv`, 'text/csv');
+    downloadFile(csvContent, `Tender_Report_${data[0].proj.replace(/\W/g, '_')}.csv`, 'text/csv');
     showToast("✅ CSV файл выгружен!");
 }
 
@@ -1942,9 +2028,9 @@ function exportTenderPDF() {
     // Генерируем по одной странице на каждого подрядчика
     data.forEach(d => {
         const m = d.metrics;
-        
+
         // Сортируем причины дефектов по убыванию (Топ-5)
-        const sortedCauses = Object.keys(d.causes).sort((a,b) => d.causes[b] - d.causes[a]).slice(0, 5);
+        const sortedCauses = Object.keys(d.causes).sort((a, b) => d.causes[b] - d.causes[a]).slice(0, 5);
         let causesHtml = sortedCauses.map(code => {
             const cName = DEFECT_CAUSES.find(x => x.code === code)?.name || 'Иное';
             return `
@@ -1953,8 +2039,8 @@ function exportTenderPDF() {
                     <span style="font-weight:bold; color:#0f172a;">${d.causes[code]} шт.</span>
                 </div>`;
         }).join('');
-        
-        if(!causesHtml) causesHtml = '<div style="color:#64748b; font-size:12px; padding:8px 0; text-align:center;">Дефектов не зафиксировано</div>';
+
+        if (!causesHtml) causesHtml = '<div style="color:#64748b; font-size:12px; padding:8px 0; text-align:center;">Дефектов не зафиксировано</div>';
 
         content += `
         <div style="page-break-after: always; padding-top: 20px;">
@@ -2029,14 +2115,15 @@ function exportTenderPDF() {
 // Вспомогательная: подсчет фото в массиве проверок
 function countPhotos(arr) {
     let count = 0;
-    arr.forEach(c => { if(c.photos) count += Object.keys(c.photos).length; });
+    arr.forEach(c => { if (c.photos) count += Object.keys(c.photos).length; });
     return count;
 }
 
 // Генерирует объект бэкапа и возвращает объект + статистику
+// Генерирует объект бэкапа и возвращает объект + статистику
 function generateBackupObject(mode) {
     const userDocsToExport = customDocs.filter(d => !String(d.id).startsWith('sys_'));
-    let historyToExport = contractorArray;
+    let historyToExport = Array.isArray(contractorArray) ? contractorArray.filter(i => !i._deleted) : [];
 
     if (mode === 'filtered') {
         historyToExport = getFilteredAnalyticsData();
@@ -2069,7 +2156,9 @@ function generateBackupObject(mode) {
         meetings: typeof window.rbi_meetingsData !== 'undefined' ? window.rbi_meetingsData : [],
         fmea: typeof window.rbi_fmeaRecords !== 'undefined' ? window.rbi_fmeaRecords : [],
         // --- ДОБАВЛЕНО ДЛЯ ПК СК ---
-        skRecords: typeof window.skRecords !== 'undefined' ? window.skRecords : [],
+        skRecords: typeof window.skRecords !== 'undefined'
+            ? window.skRecords.filter(r => !r._deleted)
+            : [],
         skVolumes: typeof window.skVolumes !== 'undefined' ? window.skVolumes : {},
         skContractorMap: typeof window.skContractorMap !== 'undefined' ? window.skContractorMap : {}
     };
@@ -2079,15 +2168,31 @@ function generateBackupObject(mode) {
         version: "17.4",
         timestamp: new Date().toISOString(),
         mode: mode,
+
+        backupMeta: {
+            backup_type: mode || 'local_backup',
+            created_by:
+                window.syncConfig?.engineerName ||
+                appSettings?.engineerName ||
+                document.getElementById('inp-inspector')?.value?.trim() ||
+                'Инженер',
+            local_role: appSettings?.userRole || 'engineer',
+            cloud_role: appSettings?.userRole || 'guest',
+            cloud_status: appSettings?.cloudStatus || appSettings?.cloud_status || 'offline',
+            project_code: window.syncConfig?.projectCode || '',
+            device_id: window.syncConfig?.deviceId || '',
+            created_at: new Date().toISOString()
+        },
+
         data: {
-            history: historyToExport, 
+            history: historyToExport,
             etalonActs: typeof etalonActsArray !== 'undefined' ? etalonActsArray : [], // НОВОЕ
             tasks: typeof rbi_tasksData !== 'undefined' ? rbi_tasksData : [],          // НОВОЕ
-            templates: userTemplates, 
-            twi: customTwiCards,      
-            docs: userDocsToExport,   
+            templates: userTemplates,
+            twi: customTwiCards,
+            docs: userDocsToExport,
             nodes: typeof customNodes !== 'undefined' ? customNodes : [],
-            expert: customExpertConclusions, 
+            expert: customExpertConclusions,
             gameLogs: typeof gameActionLogs !== 'undefined' ? gameActionLogs : [],
             hr: hrData
         }
@@ -2101,10 +2206,10 @@ async function logToBackupRegistry(typeStr, stats, fileName) {
     try {
         let logsObj = await dbGet(STORES.BACKUP_LOGS, 'main');
         let logs = logsObj && logsObj.data ? logsObj.data : [];
-        
+
         logs.unshift({
             timestamp: new Date().toISOString(),
-            dateStr: new Date().toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}),
+            dateStr: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
             type: typeStr,
             stats: stats,
             fileName: fileName
@@ -2112,12 +2217,12 @@ async function logToBackupRegistry(typeStr, stats, fileName) {
 
         if (logs.length > 50) logs = logs.slice(0, 50); // Ограничение 50 записей
         await dbPut(STORES.BACKUP_LOGS, { id: 'main', data: logs });
-    } catch(e) { console.error("Ошибка записи в реестр бэкапов", e); }
+    } catch (e) { console.error("Ошибка записи в реестр бэкапов", e); }
 }
 
 // Очистка реестра
 async function clearBackupRegistry() {
-    if(!confirm("Очистить историю выгрузок? Сами данные проверок не удалятся.")) return;
+    if (!confirm("Очистить историю выгрузок? Сами данные проверок не удалятся.")) return;
     await dbPut(STORES.BACKUP_LOGS, { id: 'main', data: [] });
     if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
     showToast("Реестр очищен");
@@ -2127,31 +2232,31 @@ async function clearBackupRegistry() {
 async function handleDataExport(type, mode = 'full', silent = false) {
     if (type !== 'json') return;
     if (!silent) showToast("Сборка базы данных...");
-    
+
     const { obj, stats } = generateBackupObject(mode);
     if ((mode === 'incremental' || mode === 'manager') && stats.checks === 0) {
         if (!silent) showToast('Нет новых проверок для выгрузки.');
         return false;
     }
 
-    const dataStr = JSON.stringify(obj, null, 2); 
+    const dataStr = JSON.stringify(obj, null, 2);
     const insp = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     const safeInsp = insp.replace(/[^a-zA-Zа-яА-Я0-9_]/g, '_');
-    
+
     let prefix = 'Full';
     let logName = 'Полный бэкап';
     if (mode === 'incremental') { prefix = 'Inc'; logName = 'Инкрементальный'; }
     if (mode === 'filtered') { prefix = 'Filtered'; logName = 'По фильтрам'; }
     if (mode === 'manager') { prefix = 'Manager'; logName = 'Отправка руководителю'; }
-    
+
     const d1 = obj.data.history.length > 0 ? new Date(obj.data.history[0].date).toLocaleDateString('ru-RU') : '';
-    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length-1].date).toLocaleDateString('ru-RU') : '';
+    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length - 1].date).toLocaleDateString('ru-RU') : '';
     const dateSuffix = d1 && d2 && d1 !== d2 ? `${d1}_${d2}` : new Date().toLocaleDateString('ru-RU');
 
     const fName = `RBI_${prefix}_${safeInsp}_${dateSuffix}.json`;
-    
+
     downloadFile(dataStr, fName, 'application/json');
-    
+
     await logToBackupRegistry(logName, stats, fName);
 
     if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
@@ -2167,7 +2272,7 @@ async function handleDataExport(type, mode = 'full', silent = false) {
 // Отправка через Web Share API с Fallback
 async function shareBackupViaApi(mode = 'full', silent = false) {
     if (!silent) showToast("Подготовка файла для отправки...");
-    
+
     const { obj, stats } = generateBackupObject(mode);
     if ((mode === 'incremental' || mode === 'manager') && stats.checks === 0) {
         if (!silent) showToast('Нет новых проверок для отправки.');
@@ -2177,23 +2282,23 @@ async function shareBackupViaApi(mode = 'full', silent = false) {
     const dataStr = JSON.stringify(obj, null, 2);
     const insp = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     const safeInsp = insp.replace(/[^a-zA-Zа-яА-Я0-9_]/g, '_');
-    
+
     let prefix = 'Full'; let logName = 'Полный бэкап (Share)';
     if (mode === 'incremental') { prefix = 'Inc'; logName = 'Инкрементальный (Share)'; }
     if (mode === 'filtered') { prefix = 'Filtered'; logName = 'По фильтрам (Share)'; }
     if (mode === 'manager') { prefix = 'Manager'; logName = 'Отправка руководителю (Share)'; }
 
     const d1 = obj.data.history.length > 0 ? new Date(obj.data.history[0].date).toLocaleDateString('ru-RU') : '';
-    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length-1].date).toLocaleDateString('ru-RU') : '';
+    const d2 = obj.data.history.length > 0 ? new Date(obj.data.history[obj.data.history.length - 1].date).toLocaleDateString('ru-RU') : '';
     const dateSuffix = d1 && d2 && d1 !== d2 ? `${d1}_${d2}` : new Date().toLocaleDateString('ru-RU');
 
     const fName = `RBI_${prefix}_${safeInsp}_${dateSuffix}.json`;
     const file = new File([dataStr], fName, { type: 'application/json' });
-    
+
     const projs = [...new Set(obj.data.history.map(c => c.projectName).filter(Boolean))].join(', ');
-    
+
     let textMsg = `Синхронизация базы RBI Quality.\nИнспектор: ${insp}\nПериод: с ${d1 || '-'} по ${d2 || '-'}\nОбъекты: ${projs || 'Не указаны'}\nВыгружено проверок: ${stats.checks} шт.\nФайл прикреплен.`;
-    
+
     const shareData = { title: 'Бэкап базы RBI Quality', text: textMsg, files: [file] };
 
     try {
@@ -2202,7 +2307,7 @@ async function shareBackupViaApi(mode = 'full', silent = false) {
             await logToBackupRegistry(logName, stats, fName);
             if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
             if (mode === 'manager') localStorage.setItem('last_share_to_manager_date', new Date().toISOString());
-            
+
             if (!silent) {
                 showToast("Файл успешно передан в меню отправки!");
                 if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
@@ -2218,7 +2323,7 @@ async function shareBackupViaApi(mode = 'full', silent = false) {
             await logToBackupRegistry(logName + ' (Fallback)', stats, fName);
             if (mode === 'full' || mode === 'incremental') localStorage.setItem('last_full_backup_date', new Date().toISOString());
             if (mode === 'manager') localStorage.setItem('last_share_to_manager_date', new Date().toISOString());
-            
+
             if (!silent) {
                 showToast("Файл сохранён. Вы можете отправить его вручную через почту или мессенджер.");
                 if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
@@ -2294,18 +2399,83 @@ async function checkScheduledBackups() {
     }
 }
 
+// Автоматическая генерация PDF-отчетов
+async function checkAutoReports() {
+    if (!appSettings.autoReportEnabled) return;
+
+    const today = new Date();
+    const currentMonthStr = today.getFullYear() + '-' + (today.getMonth() + 1); // например, "2025-5"
+    const lastRunMonth = localStorage.getItem('last_auto_report_month');
+
+    // Проверяем: Наступил ли нужный день? И не делали ли мы уже отчет в этом месяце?
+    if (today.getDate() >= parseInt(appSettings.autoReportDay) && lastRunMonth !== currentMonthStr) {
+        
+        console.log("Запуск автоматической фоновой генерации отчета...");
+        // Ставим метку, что в этом месяце мы отчет уже сделали
+        localStorage.setItem('last_auto_report_month', currentMonthStr);
+        
+        // Получаем все данные
+        const data = getFilteredAnalyticsData(); 
+        if (data.length === 0) return;
+
+        // Запускаем генерацию в фоне
+        if (appSettings.autoReportType === 'global_onepager') {
+            await exportPdfGlobalOnePager(data, 'background');
+        } else {
+            await exportPdfOnePager(data, 'background');
+        }
+    }
+}
+
 function triggerManagerShareManual() { shareBackupViaApi('manager'); }
 function triggerAutoBackupManual() {
     if (appSettings.autoBackupShare) shareBackupViaApi('full');
     else handleDataExport('json', 'full');
 }
 
+// Подготовка записи, импортированной из бэкапа.
+// ВАЖНО: импортированный бэкап не должен автоматически попадать в облачную аналитику.
+function markImportedRecordAsLocal(item, importBatchId, sourceName = 'backup') {
+    const copy = { ...item };
+
+    copy.source = 'local';
+    copy.syncStatus = 'not_synced';
+    copy.sync_status = 'not_synced';
+    copy.syncBlockReason = '';
+    copy.sync_block_reason = '';
+
+    copy.importedFromBackup = true;
+    copy.importBatchId = importBatchId;
+    copy.importSource = sourceName;
+    copy.importedAt = new Date().toISOString();
+
+    // Если в старой записи нет новых полей объекта — заполняем fallback.
+    if (!copy.project_canonical_key) {
+        copy.project_canonical_key = copy.projectName || copy.project_name || '';
+    }
+
+    if (!copy.project_display_name) {
+        copy.project_display_name = copy.projectName || copy.project_name || copy.project_canonical_key || '';
+    }
+
+    // Старое поле оставляем для совместимости.
+    if (!copy.projectName && copy.project_display_name) {
+        copy.projectName = copy.project_display_name;
+    }
+
+    copy.updatedAt = new Date().toISOString();
+
+    return copy;
+}
 // Восстановление (Импорт) - без изменений, просто вызов существующей логики
 function triggerDataImport() { document.getElementById('db-import-input').click(); }
 function processDataImport(event) {
     const file = event.target.files[0];
     if (!file) return;
-    showToast("Чтение файла и слияние баз...");
+
+    const importBatchId = 'import_' + Date.now().toString(36);
+
+    showToast("Чтение файла и безопасный импорт...");
     const reader = new FileReader();
     reader.onload = async (e) => {
         try {
@@ -2314,18 +2484,35 @@ function processDataImport(event) {
 
             if (parsed.type === "RBI_FULL_BACKUP" && parsed.data) {
                 if (parsed.data.history) {
-                    for(const item of parsed.data.history) {
-                        if(!contractorArray.find(x => x.id === item.id)) {
-                            contractorArray.push(item);
-                            await dbPut(STORES.HISTORY, item);
+                    for (const item of parsed.data.history) {
+                        if (!contractorArray.find(x => x.id === item.id)) {
+                            const importedItem = markImportedRecordAsLocal(item, importBatchId, 'history_backup');
+
+                            contractorArray.push(importedItem);
+                            await dbPut(STORES.HISTORY, importedItem);
+
                             addedHist++;
                         }
                     }
+
                     contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
                 }
+                if (parsed.data.tasks && typeof window.rbi_tasksData !== 'undefined') {
+                    for (const task of parsed.data.tasks) {
+                        if (!window.rbi_tasksData.find(x => x.id === task.id)) {
+                            const importedTask = markImportedRecordAsLocal(task, importBatchId, 'tasks_backup');
+
+                            window.rbi_tasksData.push(importedTask);
+
+                            if (typeof dbPut === 'function' && typeof STORES !== 'undefined') {
+                                await dbPut(STORES.TASKS, importedTask);
+                            }
+                        }
+                    }
+                }
                 if (parsed.data.templates) {
-                    for(const key in parsed.data.templates) {
-                        if(!userTemplates[key]) { 
+                    for (const key in parsed.data.templates) {
+                        if (!userTemplates[key]) {
                             userTemplates[key] = parsed.data.templates[key];
                             await dbPut(STORES.TEMPLATES, { slug: key, data: parsed.data.templates[key] });
                             addedTmpl++;
@@ -2333,8 +2520,8 @@ function processDataImport(event) {
                     }
                 }
                 if (parsed.data.twi) {
-                    for(const item of parsed.data.twi) {
-                        if(!customTwiCards.find(x => x.id === item.id)) {
+                    for (const item of parsed.data.twi) {
+                        if (!customTwiCards.find(x => x.id === item.id)) {
                             customTwiCards.push(item);
                             await dbPut(STORES.TWI_CARDS, item); // <-- НОВОЕ ХРАНИЛИЩЕ
                             addedTwi++;
@@ -2342,8 +2529,8 @@ function processDataImport(event) {
                     }
                 }
                 if (parsed.data.docs) {
-                    for(const item of parsed.data.docs) {
-                        if(!customDocs.find(x => x.id === item.id)) {
+                    for (const item of parsed.data.docs) {
+                        if (!customDocs.find(x => x.id === item.id)) {
                             customDocs.push(item);
                             addedDocs++;
                         }
@@ -2351,17 +2538,17 @@ function processDataImport(event) {
                     await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs.filter(d => !String(d.id).startsWith('sys_')) });
                 }
                 if (parsed.data.expert) {
-                    for(const key in parsed.data.expert) {
-                        if(!customExpertConclusions[key]) customExpertConclusions[key] = parsed.data.expert[key];
+                    for (const key in parsed.data.expert) {
+                        if (!customExpertConclusions[key]) customExpertConclusions[key] = parsed.data.expert[key];
                     }
-                    if (typeof saveSessionData === 'function') saveSessionData(); 
+                    if (typeof saveSessionData === 'function') saveSessionData();
                 }
-                
+
                 // ИМПОРТ HR ДАННЫХ И НОВЫХ МОДУЛЕЙ
                 if (parsed.data.hr) {
                     if (parsed.data.hr.weeklyPlanData && typeof weeklyPlanData !== 'undefined') weeklyPlanData = parsed.data.hr.weeklyPlanData;
                     if (parsed.data.hr.engineerAbsence && typeof engineerAbsence !== 'undefined') engineerAbsence = parsed.data.hr.engineerAbsence;
-                    
+
                     if (parsed.data.hr.contractorStatuses && typeof contractorStatuses !== 'undefined') {
                         for (let k in parsed.data.hr.contractorStatuses) {
                             if (!contractorStatuses[k]) contractorStatuses[k] = parsed.data.hr.contractorStatuses[k];
@@ -2419,26 +2606,26 @@ function processDataImport(event) {
                     }
                 }
                 // <-- НОВОЕ: Импорт данных ПК СК
-                    if (parsed.data.hr.skRecords && typeof window.skRecords !== 'undefined') {
-                        for (const item of parsed.data.hr.skRecords) {
-                            if (!window.skRecords.find(x => x.id === item.id)) {
-                                window.skRecords.push(item);
-                                await dbPut(STORES.SK_RECORDS, item);
-                            }
+                if (parsed.data.hr.skRecords && typeof window.skRecords !== 'undefined') {
+                    for (const item of parsed.data.hr.skRecords) {
+                        if (!window.skRecords.find(x => x.id === item.id)) {
+                            window.skRecords.push(item);
+                            await dbPut(STORES.SK_RECORDS, item);
                         }
                     }
-                    if (parsed.data.hr.skVolumes && typeof window.skVolumes !== 'undefined') {
-                        for (const key in parsed.data.hr.skVolumes) {
-                            window.skVolumes[key] = parsed.data.hr.skVolumes[key];
-                        }
-                        await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes }); // <-- НОВОЕ ХРАНИЛИЩЕ
+                }
+                if (parsed.data.hr.skVolumes && typeof window.skVolumes !== 'undefined') {
+                    for (const key in parsed.data.hr.skVolumes) {
+                        window.skVolumes[key] = parsed.data.hr.skVolumes[key];
                     }
-                    if (parsed.data.hr.skContractorMap && typeof window.skContractorMap !== 'undefined') {
-                        for (const key in parsed.data.hr.skContractorMap) {
-                            window.skContractorMap[key] = parsed.data.hr.skContractorMap[key];
-                        }
-                        await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap }); // <-- НОВОЕ ХРАНИЛИЩЕ
+                    await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes }); // <-- НОВОЕ ХРАНИЛИЩЕ
+                }
+                if (parsed.data.hr.skContractorMap && typeof window.skContractorMap !== 'undefined') {
+                    for (const key in parsed.data.hr.skContractorMap) {
+                        window.skContractorMap[key] = parsed.data.hr.skContractorMap[key];
                     }
+                    await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap }); // <-- НОВОЕ ХРАНИЛИЩЕ
+                }
                 // <-- НОВОЕ: ИМПОРТ ЗАДАЧ ПЛАНИРОВЩИКА
                 if (parsed.data.tasks && typeof window.rbi_tasksData !== 'undefined') {
                     for (const item of parsed.data.tasks) {
@@ -2459,10 +2646,44 @@ function processDataImport(event) {
                     }
                 }
 
+                // Импорт ПК СК из полного бэкапа.
+                // Такие записи становятся локальными и не попадают в облачную аналитику автоматически.
+                if (parsed.data.hr && parsed.data.hr.skRecords && typeof window.skRecords !== 'undefined') {
+                    let addedSk = 0;
+
+                    for (const rec of parsed.data.hr.skRecords) {
+                        if (!window.skRecords.find(x => String(x.id) === String(rec.id))) {
+                            const importedSk = markImportedRecordAsLocal(rec, importBatchId, 'sk_backup');
+
+                            if (!importedSk.uploaded_by) {
+                                importedSk.uploaded_by =
+                                    window.syncConfig?.engineerName ||
+                                    appSettings?.engineerName ||
+                                    'Импорт';
+                            }
+
+                            if (!importedSk.sk_uploaded_by) importedSk.sk_uploaded_by = importedSk.uploaded_by;
+                            if (!importedSk.imported_by) importedSk.imported_by = importedSk.uploaded_by;
+
+                            window.skRecords.push(importedSk);
+
+                            if (typeof dbPut === 'function' && typeof STORES !== 'undefined') {
+                                await dbPut(STORES.SK_RECORDS, importedSk);
+                            }
+
+                            addedSk++;
+                        }
+                    }
+
+                    if (addedSk > 0) {
+                        console.log(`[Backup] Импортировано ПК СК: ${addedSk}`);
+                    }
+                }
+
                 showToast(`✅ Базы слиты!\nПров: +${addedHist} | Ч/Л: +${addedTmpl}\nTWI: +${addedTwi} | НД: +${addedDocs}`);
             } else if (Array.isArray(parsed)) {
-                for(const item of parsed) {
-                    if(!contractorArray.find(x => x.id === item.id)) {
+                for (const item of parsed) {
+                    if (!contractorArray.find(x => x.id === item.id)) {
                         contractorArray.push(item);
                         await dbPut(STORES.HISTORY, item);
                         addedHist++;
@@ -2471,36 +2692,50 @@ function processDataImport(event) {
                 contractorArray.sort((a, b) => new Date(b.date) - new Date(a.date));
                 showToast(`✅ История объединена! Добавлено: ${addedHist} шт.`);
             } else { throw new Error("Неизвестный формат"); }
-            
+            // После импорта данные остаются локальными.
+            // Облако само решит при следующей синхронизации, что можно отправлять.
+            localStorage.setItem('rbi_cloud_dirty', '1');
+
+            if (typeof renderCurrentAnalyticsTab === 'function') {
+                renderCurrentAnalyticsTab();
+            }
+
+            if (typeof rbi_renderTasksList === 'function') {
+                rbi_renderTasksList();
+            }
+
+            if (typeof sk_renderDashboard === 'function') {
+                sk_renderDashboard();
+            }
             updateAllDynamicFilters();
-            if (typeof renderSelector === 'function') renderSelector(); 
+            if (typeof renderSelector === 'function') renderSelector();
             if (document.getElementById('tab-analytics').classList.contains('active')) renderCurrentAnalyticsTab();
-        } catch (err) { 
-            alert("Ошибка файла бэкапа. Проверьте формат."); 
+        } catch (err) {
+            alert("Ошибка файла бэкапа. Проверьте формат.");
         }
     };
     reader.readAsText(file);
     event.target.value = '';
 }
 
-window.exportPersonalContractorReport = async function(contractorName) {
+window.exportPersonalContractorReport = async function (contractorName) {
     const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
     if (data.length === 0) return showToast('Нет данных для отчета');
     if (data.length < 7) return showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.');
-    
+
     showToast("⚙️ Подготовка персонального отчета...");
 
     const cName = contractorName.split(' [')[0];
     const workType = data[0].templateTitle;
-    
+
     const m = getContractorMetrics(data, userTemplates);
     const colorMain = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
     const bgMain = m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4');
     const borderMain = m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0');
 
     const dates = []; const urkData = [];
-    data.sort((a,b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
-        dates.push(`#${i+1}`); urkData.push(check.metrics.final);
+    data.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
+        dates.push(`#${i + 1}`); urkData.push(check.metrics.final);
     });
 
     const lineChartUrl = generatePdfChart({
@@ -2512,12 +2747,12 @@ window.exportPersonalContractorReport = async function(contractorName) {
     let photosB3 = []; let photosB2 = []; let photosOK = [];
     let b1 = 0, b2 = 0, b3 = 0;
     data.forEach(check => {
-        if(check.metrics) { b1 += check.metrics.n_B1_fail; b2 += check.metrics.n_B2_fail; b3 += check.metrics.n_B3_fail; }
-        if(check.state && check.photos) {
+        if (check.metrics) { b1 += check.metrics.n_B1_fail; b2 += check.metrics.n_B2_fail; b3 += check.metrics.n_B3_fail; }
+        if (check.state && check.photos) {
             Object.keys(check.state).forEach(id => {
                 const s = check.state[id];
                 let defName = "Дефект";
-                const flatList = getFlatList(userTemplates[check.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_','')]?.groups);
+                const flatList = getFlatList(userTemplates[check.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[check.templateKey.replace('sys_', '')]?.groups);
                 const item = flatList.find(x => x.id == id);
                 if (item) defName = item.n;
 
@@ -2537,7 +2772,7 @@ window.exportPersonalContractorReport = async function(contractorName) {
     const content = `
     <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 10px; margin-bottom: 20px;">
         <h1 style="margin: 0 0 5px 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Отчет о качестве СМР: ${cName}</h1>
-        <div style="font-size: 14px; font-weight: bold; color: #4f46e5; text-transform: uppercase;">Вид работ: ${workType} | Объект: ${contractorName.split(' [')[1].replace(']','')}</div>
+        <div style="font-size: 14px; font-weight: bold; color: #4f46e5; text-transform: uppercase;">Вид работ: ${workType} | Объект: ${contractorName.split(' [')[1].replace(']', '')}</div>
     </div>
 
     <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
@@ -2593,10 +2828,10 @@ window.exportPersonalContractorReport = async function(contractorName) {
     `;
 
     await printPdfShell(`Отчет для ${cName}`, content, "A4", "landscape", "script");
-    if (typeof gameLogAction === 'function') gameLogAction('ai_copy', 'sent_report'); 
+    if (typeof gameLogAction === 'function') gameLogAction('ai_copy', 'sent_report');
 };
 
-window.promptMeetingAfterReport = function() {
+window.promptMeetingAfterReport = function () {
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = `<div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">📅</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Отчет сформирован!</div>`;
@@ -2617,7 +2852,7 @@ window.promptMeetingAfterReport = function() {
     modal.style.display = 'flex';
 };
 
-window.startMeetingFlow = function() {
+window.startMeetingFlow = function () {
     // 1. Перекидываем пользователя на вкладку Инженера
     switchTab('tab-engineer');
     // 2. Переключаем на подвкладку Совещаний
@@ -2631,7 +2866,7 @@ window.startMeetingFlow = function() {
 // НОВЫЙ МОДУЛЬ: КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА (Мега-отчет)
 // ============================================================================
 
-window.rbi_generateQualityDayReport = async function(taskId) {
+window.rbi_generateQualityDayReport = async function (taskId) {
     if (!appSettings.aiEnabled) {
         showToast("⚠️ Для формирования отчета Дня Качества требуется включить DeepSeek AI в настройках!");
         return;
@@ -2663,10 +2898,10 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         // 1. БАЗА ПРОВЕРОК
         const currentData = contractorArray.filter(c => new Date(c.date) >= startOfMonth && new Date(c.date) <= endOfMonth);
         const prevData = contractorArray.filter(c => new Date(c.date) >= prevMonthStart && new Date(c.date) <= prevMonthEnd);
-        
-        let sumUrk = 0; currentData.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
+
+        let sumUrk = 0; currentData.forEach(i => { if (i.metrics) sumUrk += i.metrics.final; });
         const currAvgUrk = currentData.length > 0 ? Math.round(sumUrk / currentData.length) : 0;
-        
+
         const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, userTemplates) : null;
         const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
         const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
@@ -2677,7 +2912,7 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         let totalImpact = 0; let totalInterventions = 0;
         hrStats.forEach(h => { totalImpact += h.avgImpact; totalInterventions += (h.improved + h.degraded); });
         const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
-        const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных" };
+        const bestEng = hrStats.length > 0 ? hrStats.sort((a, b) => b.pi - a.pi)[0] : { name: "Нет данных" };
         // СБОР ФОТОГРАФИЙ С СОВЕЩАНИЙ ЗА МЕСЯЦ
         const monthMeetings = window.rbi_meetingsData.filter(m => new Date(m.date) >= startOfMonth && m.qDayPhoto);
         let meetingPhotosHtml = '';
@@ -2700,7 +2935,7 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         // 3. ТОП ПРАКТИК (Отбираем 2 лучшие)
         let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом месяце не публиковалось.</div>`;
         if (typeof rbi_practicesData !== 'undefined' && rbi_practicesData.length > 0) {
-            const topPrac = [...rbi_practicesData].filter(p => new Date(p.date) >= startOfMonth).sort((a,b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
+            const topPrac = [...rbi_practicesData].filter(p => new Date(p.date) >= startOfMonth).sort((a, b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
             if (topPrac.length > 0) {
                 topPracticesHtml = topPrac.map(p => `
                     <div style="border:1px solid #cbd5e1; border-left:4px solid #16a34a; padding:10px; border-radius:6px; margin-bottom:10px; background:white; page-break-inside: avoid;">
@@ -2738,9 +2973,9 @@ window.rbi_generateQualityDayReport = async function(taskId) {
                 });
             }
         });
-        
+
         let causesHtml = '';
-        const sortedCauses = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 5);
+        const sortedCauses = Object.keys(causes).sort((a, b) => causes[b] - causes[a]).slice(0, 5);
         if (sortedCauses.length > 0) {
             causesHtml = sortedCauses.map(code => {
                 const cName = (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : 'Причина') || 'Иное';
@@ -2757,7 +2992,7 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         const promptSystem = `Ты — Директор по качеству (CQC). Сформируй официальное управленческое резюме для отчета "День Качества" за месяц.
         Тон: деловой, объективный, строгий. Формат: текст, разбитый на абзацы. Без воды.
         Отрази 3 вещи: 1. Оценку ИКО и тренда. 2. Оценку работы инженеров (Impact Score). 3. Главный риск следующего месяца.`;
-        
+
         const promptUser = `ИКО: ${IKO}. Красная зона: ${redZone}%. Средний Impact команды: ${avgTeamImpact.toFixed(2)}. Проверок за месяц: ${currentData.length}. ТОП проблема: ${sortedCauses.length > 0 ? sortedCauses[0] : 'Нет данных'}.`;
 
         const aiSummary = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 800 });
@@ -2768,7 +3003,7 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         const pdfContent = `
             <div style="text-align: center; margin-bottom: 30px;">
                 <h1 style="font-size: 24pt; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900;">КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА</h1>
-                <div style="font-size: 14pt; color: #4f46e5; font-weight: 900; margin-top: 5px; text-transform:uppercase;">ИТОГИ МЕСЯЦА: ${now.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}</div>
+                <div style="font-size: 14pt; color: #4f46e5; font-weight: 900; margin-top: 5px; text-transform:uppercase;">ИТОГИ МЕСЯЦА: ${now.toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}</div>
             </div>
 
             <!-- БЛОК 1: AI-РЕЗЮМЕ -->
@@ -2818,7 +3053,7 @@ window.rbi_generateQualityDayReport = async function(taskId) {
                         <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px; margin-bottom: 15px;">👤 Рейтинг Инженеров</h2>
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
                             <div style="font-size: 11pt; font-weight: bold; color: #1e293b; margin-bottom: 5px;">Лучший по Опыту (XP): <span style="color:#4f46e5;">${bestEng.name}</span></div>
-                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+'+bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
+                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+' + bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
                         </div>
                     </td>
                 </tr>
@@ -2828,13 +3063,13 @@ window.rbi_generateQualityDayReport = async function(taskId) {
         // Закрываем задачу (Если она была)
         if (taskId) {
             const task = window.rbi_tasksData.find(t => t.id === taskId);
-            if(task) { 
-                task.status = 'done'; task.resultComment = 'Отчет сгенерирован'; 
-                await dbPut(STORES.TASKS, task); 
+            if (task) {
+                task.status = 'done'; task.resultComment = 'Отчет сгенерирован';
+                await dbPut(STORES.TASKS, task);
             }
         }
 
-        printPdfShell(`День Качества ${now.toLocaleString('ru-RU', {month:'long'})}`, pdfContent, "A4", "landscape", "browser");
+        printPdfShell(`День Качества ${now.toLocaleString('ru-RU', { month: 'long' })}`, pdfContent, "A4", "landscape", "browser");
 
     } catch (e) {
         closeModal();
@@ -2877,7 +3112,7 @@ async function resolveLocalPhotosForPdf(container) {
 }
 
 // === ПЕЧАТЬ TWI КАРТЫ ДЛЯ РАБОЧИХ ===
-window.printCurrentTwi = async function(mode = 'browser') {
+window.printCurrentTwi = async function (mode = 'browser') {
     const twiId = document.getElementById('twi-viewer-overlay').dataset.currentTwiId;
     if (!twiId) return;
     const card = customTwiCards.find(c => c.id === twiId);
@@ -2956,11 +3191,11 @@ window.printCurrentTwi = async function(mode = 'browser') {
                 </tr>
             </table>
         `;
-        
+
         // ВАЖНО: Используем for...of вместо forEach, чтобы await работал
         for (let step of card.steps) {
             let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
-            
+
             content += `
                 <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
                     <tr>
@@ -2986,7 +3221,7 @@ window.printCurrentTwi = async function(mode = 'browser') {
 };
 
 // Функция печати Мемо в PDF (Расширенный красивый шаблон А4)
-window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
+window.rbi_printMeetingPdf = async function (id, mode = 'browser') {
     const meet = window.rbi_meetingsData.find(m => m.id === id);
     if (!meet) return;
 
@@ -3072,7 +3307,7 @@ window.rbi_printMeetingPdf = async function(id, mode = 'browser') {
 };
 
 // === ПЕЧАТЬ ПРАКТИКИ В PDF (А3 АЛЬБОМ, БЕЗ ЭМОДЗИ) ===
-window.rbi_printPracticePdf = async function(id, mode = 'browser') {
+window.rbi_printPracticePdf = async function (id, mode = 'browser') {
     const p = window.rbi_practicesData.find(x => x.id === id);
     if (!p) return;
 
@@ -3097,7 +3332,7 @@ window.rbi_printPracticePdf = async function(id, mode = 'browser') {
         imgAfterHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
     }
 
-    const efficiencyHtml = p.deltaUrk > 0 
+    const efficiencyHtml = p.deltaUrk > 0
         ? `<div style="font-size: 16px; color: #16a34a; font-weight: bold; margin-top: 10px;">Доказанная эффективность: Качество подрядчика выросло на +${p.deltaUrk}% УрК</div>`
         : `<div style="font-size: 16px; color: #4f46e5; font-weight: bold; margin-top: 10px;">Практический опыт, подтвержденный на строительной площадке</div>`;
 
@@ -3135,14 +3370,14 @@ window.rbi_printPracticePdf = async function(id, mode = 'browser') {
 };
 
 // 5. ПЕЧАТЬ FMEA В PDF (АЛЬБОМНАЯ ОРИЕНТАЦИЯ A3)
-window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
+window.rbi_printFmeaPdf = async function (fmeaId, mode = 'browser') {
     const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
     if (!record) return showToast("Запись не найдена");
 
     showToast("⏳ Формируем документ...");
 
     // Сортируем по RPN (Самые опасные сверху)
-    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
+    const sortedDefects = [...record.defects].sort((a, b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
 
     let rowsHtml = '';
     // Используем цикл for...of, чтобы дождаться распаковки ВСЕХ фотографий из БД
@@ -3213,11 +3448,11 @@ window.rbi_printFmeaPdf = async function(fmeaId, mode = 'browser') {
     }
 };
 
-window.rbi_printWorkshop = async function(taskId, mode = 'browser') {
+window.rbi_printWorkshop = async function (taskId, mode = 'browser') {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const scenario = document.getElementById('workshop-ai-scenario')?.value;
     if (!scenario || scenario.includes('⏳')) return showToast("Сгенерируйте сценарий!");
-    
+
     const relatedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.find(c => c.checklistKey === task.templateKey) : null;
 
     let content = `
@@ -3254,7 +3489,7 @@ window.rbi_printWorkshop = async function(taskId, mode = 'browser') {
     if (typeof printPdfShell === 'function') printPdfShell(`Воркшоп: ${task.contractor}`, content, "A4", "portrait", mode);
 };
 
-window.rbi_printIntroBriefing = async function(taskId, mode = 'browser') {
+window.rbi_printIntroBriefing = async function (taskId, mode = 'browser') {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task || !task.aiData) return showToast("Сначала сгенерируйте данные!");
 
@@ -3263,18 +3498,18 @@ window.rbi_printIntroBriefing = async function(taskId, mode = 'browser') {
             <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center;">${idx + 1}</td>
             <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight:bold;">${item.n}</td>
             <td style="border: 1px solid #cbd5e1; padding: 8px; color:#475569;">${item.t.replace(/<br>/g, ' ')}</td>
-            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center; font-weight:bold; color:${item.w===3?'#dc2626':'#0f172a'}">B${item.w}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center; font-weight:bold; color:${item.w === 3 ? '#dc2626' : '#0f172a'}">B${item.w}</td>
         </tr>
     `).join('');
 
     const linkedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.filter(c => c.checklistKey === task.templateKey && c.type === 'INSPECTOR') : [];
-    
+
     let twiHtml = '';
     // ВАЖНО: Используем for...of, чтобы дождаться картинок
     for (let card of linkedTwi) {
         let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
         let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
-        
+
         twiHtml += `
             <div style="page-break-before: always; margin-top: 20px;">
                 <h2 style="font-size: 16px; text-align: center; text-transform: uppercase; color: #0f172a; margin-bottom: 20px;">ВИЗУАЛЬНЫЙ СТАНДАРТ: ${card.title}</h2>
@@ -3321,10 +3556,10 @@ window.rbi_printIntroBriefing = async function(taskId, mode = 'browser') {
     if (typeof printPdfShell === 'function') printPdfShell(`Инструктаж ${task.contractor}`, content, "A4", "portrait", mode);
 };
 
-window.rbi_printFinalAcceptance = function(taskId) {
+window.rbi_printFinalAcceptance = function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const text = document.getElementById('final-ai-text').value;
-    
+
     const content = `
         <div style="text-align:center; margin-bottom: 20px;">
             <h1 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Справка о качестве СМР (для КС-2)</h1>
@@ -3348,7 +3583,7 @@ window.rbi_printFinalAcceptance = function(taskId) {
     if (typeof printPdfShell === 'function') printPdfShell(`КС-2: ${task.contractor}`, content, "A4", "portrait", "browser");
 };
 
-window.printEtalonAct = async function(historyId, mode = 'script') {
+window.printEtalonAct = async function (historyId, mode = 'script') {
     const record = etalonActsArray.find(c => c.id === historyId);
     if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
 
@@ -3430,3 +3665,603 @@ window.printEtalonAct = async function(historyId, mode = 'script') {
 
     printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode);
 };
+
+// ============================================================================
+// ПЕЧАТЬ ГРАФИКА СМР
+// ============================================================================
+window.exportPdfSchedule = function(mode = 'script') {
+    if (!window.rbi_scheduleData || window.rbi_scheduleData.length === 0) {
+        return showToast('График СМР пуст. Нет данных для выгрузки.');
+    }
+
+    const activeData = window.rbi_scheduleData.filter(s => !s._deleted).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+    
+    let rowsHtml = activeData.map((s, i) => {
+        const d1 = s.startDate ? new Date(s.startDate).toLocaleDateString('ru-RU') : '';
+        const d2 = s.endDate ? new Date(s.endDate).toLocaleDateString('ru-RU') : '';
+        const tmplName = s.templateKey ? (SYSTEM_TEMPLATES[s.templateKey.replace('sys_','')]?.title || userTemplates[s.templateKey.replace('user_','')]?.title || s.templateKey) : 'Не привязан';
+
+        return `
+        <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="border: 1px solid #cbd5e1; padding: 8px;"><b>${s.workTitle || 'Без названия'}</b></td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px;">${s.contractor || '-'}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center;">${d1}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; text-align:center;">${d2}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 8px; color: #4f46e5; font-weight:bold;">${tmplName}</td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+        <div class="no-break" style="margin-bottom: 20px;">
+            <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 5px 0; text-transform: uppercase;">ГРАФИК ПРОИЗВОДСТВА РАБОТ (СМР)</h2>
+            <div style="font-size: 12px; color: #64748b;">Актуальных этапов: <b>${activeData.length}</b></div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 10px; color: #1e293b; table-layout: fixed;">
+            <thead>
+                <tr style="background-color: #e2e8f0; font-weight: bold; text-transform: uppercase;">
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: left; width: 30%;">Вид работ</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: left; width: 25%;">Подрядчик</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; width: 10%;">Начало</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; width: 10%;">Окончание</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: left; width: 25%;">Чек-лист проверки</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+    printPdfShell("График СМР", content, "A4", "landscape", mode);
+};
+
+// ============================================================================
+// ПЕЧАТЬ ДАШБОРДА ПК СК (СТРОЙКОНТРОЛЬ)
+// ============================================================================
+window.exportPdfSK = function(mode = 'script') {
+    if (!window.skRecords || window.skRecords.length === 0) {
+        return showToast('Нет загруженных замечаний ПК СК.');
+    }
+
+    let totalIssues = 0; let totalOpen = 0; let totalOverdue = 0;
+    const contrMap = {};
+
+    window.skRecords.forEach(r => {
+        totalIssues++;
+        const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+        if (isOpen) totalOpen++;
+
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        if (deadline && isOpen && new Date() > deadline) totalOverdue++;
+
+        const c = r.contractor || 'Неизвестно';
+        if (!contrMap[c]) contrMap[c] = { total: 0, open: 0, overdue: 0 };
+        
+        contrMap[c].total++;
+        if (isOpen) contrMap[c].open++;
+        if (deadline && isOpen && new Date() > deadline) contrMap[c].overdue++;
+    });
+
+    const sortedContrs = Object.keys(contrMap).sort((a,b) => contrMap[b].total - contrMap[a].total);
+
+    let rowsHtml = sortedContrs.map((c, i) => {
+        const d = contrMap[c];
+        const overdueColor = d.overdue > 0 ? '#dc2626' : '#64748b';
+        return `
+        <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+            <td style="border: 1px solid #cbd5e1; padding: 10px; font-weight:bold;">${c}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 10px; text-align:center; font-weight:bold; color: #4f46e5;">${d.total}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 10px; text-align:center; font-weight:bold; color: ${d.open > 0 ? '#ea580c' : '#16a34a'};">${d.open}</td>
+            <td style="border: 1px solid #cbd5e1; padding: 10px; text-align:center; font-weight:bold; color: ${overdueColor};">${d.overdue}</td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+        <div class="no-break" style="margin-bottom: 20px; text-align:center;">
+            <h2 style="font-size: 24px; color: #0f172a; margin: 0 0 5px 0; text-transform: uppercase;">Дашборд Стройконтроля (Выгрузка ПК СК)</h2>
+        </div>
+
+        <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-bottom: 30px;" class="no-break">
+            <tr>
+                <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
+                    <div style="font-size:10px; color:#64748b; text-transform:uppercase; font-weight:bold;">Всего замечаний</div>
+                    <div style="font-size:32px; font-weight:900; color:#0f172a;">${totalIssues}</div>
+                </td>
+                <td style="background:#fff7ed; border:1px solid #fdba74; border-radius:12px; padding:15px; text-align:center;">
+                    <div style="font-size:10px; color:#9a3412; text-transform:uppercase; font-weight:bold;">Открыто сейчас</div>
+                    <div style="font-size:32px; font-weight:900; color:#ea580c;">${totalOpen}</div>
+                </td>
+                <td style="background:#fef2f2; border:1px solid #fca5a5; border-radius:12px; padding:15px; text-align:center;">
+                    <div style="font-size:10px; color:#991b1b; text-transform:uppercase; font-weight:bold;">Просрочено</div>
+                    <div style="font-size:32px; font-weight:900; color:#dc2626;">${totalOverdue}</div>
+                </td>
+            </tr>
+        </table>
+
+        <h3 style="font-size: 14px; text-transform: uppercase; color: #0f172a; margin-bottom: 10px;">📊 Статистика по подрядчикам</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; color: #1e293b; table-layout: fixed;">
+            <thead>
+                <tr style="background-color: #e2e8f0; font-weight: bold; text-transform: uppercase;">
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: left; width: 40%;">Подрядчик</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: center; width: 20%;">Выдано СК</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: center; width: 20%;">Открыто</th>
+                    <th style="border: 1px solid #94a3b8; padding: 10px; text-align: center; width: 20%;">Просрочка</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    `;
+    printPdfShell("Дашборд СК", content, "A4", "portrait", mode);
+};
+
+// ==========================================================
+// === НОВЫЙ МОДУЛЬ: БРЕНДИРОВАНИЕ И ШАБЛОНЫ ОТЧЕТОВ v17 ===
+// ==========================================================
+
+let userReportTemplates = []; // Кэш шаблонов отчетов
+
+// Генератор брендированной шапки (По брендбуку RBI)
+async function getBrandedHeader(title, mode, qrCodeDataUrl = null) {
+    let logoHtml = '';
+    
+    // Берем фирменный темно-синий цвет RBI, если он не задан
+    const brandColor = appSettings.brandColor || '#1c2b39'; 
+    const goldColor = '#c49a5f'; // Золотой RBI
+
+    if (appSettings.brandLogo) {
+        const logoSrc = await PhotoManager.getAsyncUrl(appSettings.brandLogo) || appSettings.brandLogo;
+        // Охранное поле логотипа по брендбуку (5X). Мы задаем прозрачный фон для PNG.
+        logoHtml = `<img src="${logoSrc}" style="height:45px; width:auto; max-width:200px; object-fit:contain; background: transparent; display: block;">`;
+    }
+    
+    const qrHtml = qrCodeDataUrl 
+        ? `<div style="width:60px; height:60px; border:2px solid ${brandColor}; padding:2px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div>` 
+        : '';
+
+    const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
+    const fontSizeSub = mode === 'browser' ? '9pt' : '12px';
+
+    return `
+        <!-- Встраиваем шрифты RBI -->
+        <style>
+            @import url('https://fonts.cdnfonts.com/css/history-pro');
+            .rbi-header { font-family: 'History PRO', 'Times New Roman', serif; letter-spacing: 0.05em; }
+            .rbi-text { font-family: 'Circe', Verdana, sans-serif; }
+        </style>
+
+        <div class="no-break rbi-text" style="border-bottom: 3px solid ${brandColor}; padding-bottom: 15px; margin-bottom: 25px;">
+            <table style="width: 100%; border: none; border-spacing: 0;">
+                <tr>
+                    <td style="width: 25%; vertical-align: middle;">${logoHtml}</td>
+                    <td style="width: 50%; vertical-align: middle; text-align: center;">
+                        <!-- Заголовок шрифтом History PRO с разрядкой -->
+                        <h1 class="rbi-header" style="font-size:${fontSizeTitle}; font-weight:normal; text-transform:uppercase; margin:0; color:${brandColor};">${title}</h1>
+                        <div style="font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
+                    </td>
+                    <td style="width: 25%; vertical-align: middle; text-align: right;">${qrHtml}</td>
+                </tr>
+            </table>
+        </div>
+    `;
+}
+
+// Генератор QR-кода
+async function generateQrCodeDataUrl(url) {
+    return new Promise((resolve) => {
+        const tempDiv = document.createElement('div');
+        new QRCode(tempDiv, {
+            text: url,
+            width: 128,
+            height: 128,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.L
+        });
+        setTimeout(() => {
+            const canvas = tempDiv.querySelector('canvas');
+            resolve(canvas.toDataURL());
+        }, 100);
+    });
+}
+
+// Универсальное сохранение отчета в IndexedDB и облако
+// Универсальное сохранение отчета в IndexedDB и облако
+async function saveReportToLocal(reportData, htmlContent) {
+    const reportId = reportData.forcedId || 'rep_' + Date.now().toString(36);
+    
+    // Пытаемся найти системный ключ объекта для правильной синхронизации
+    let canonicalKey = '';
+    if (typeof ObjectDirectory !== 'undefined' && reportData.project) {
+        // Ищем объект в справочнике по названию
+        const found = ObjectDirectory.objects.find(o => o.display_name === reportData.project || o.canonical_key === reportData.project);
+        if (found) canonicalKey = found.canonical_key;
+    }
+
+    const reportRecord = {
+        id: reportId,
+        project_code: window.syncConfig?.projectCode || 'local',
+        
+        // НОВЫЕ ПОЛЯ ДЛЯ РОЛЕВОЙ СИНХРОНИЗАЦИИ
+        project_canonical_key: canonicalKey || reportData.project,
+        project_display_name: reportData.project,
+        engineer_name: appSettings.engineerName || 'Инженер',
+
+        report_type: reportData.type,
+        title: reportData.title,
+        generated_at: new Date().toISOString(),
+        file_blob: reportData.blob,
+        file_size: reportData.blob ? reportData.blob.size : 0,
+        file_url: reportData.file_url || '', // На случай если это облачный отчет
+        mime_type: 'application/pdf',
+        metadata: {
+            project: reportData.project,
+            period: reportData.period
+        },
+        created_by: appSettings.engineerName || 'Инженер',
+        
+        source: 'local',
+        sync_status: 'not_synced',
+        syncStatus: 'not_synced',
+        sync_block_reason: '',
+        syncBlockReason: '',
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+    };
+
+    await dbPut(STORES.REPORTS, reportRecord);
+    
+    // Обновляем массив на экране, если он существует
+    if (typeof reportsArray !== 'undefined') {
+        const idx = reportsArray.findIndex(r => r.id === reportId);
+        if (idx > -1) reportsArray[idx] = reportRecord;
+        else reportsArray.unshift(reportRecord);
+    }
+
+    if (!window._tempSnapshots) window._tempSnapshots = {};
+    window._tempSnapshots[reportId] = {
+        report_id: reportId,
+        html_content: htmlContent,
+        created_at: new Date().toISOString()
+    }; 
+
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    return reportId;
+}
+
+// ==========================================================
+// === ИНТЕРФЕЙС УПРАВЛЕНИЯ ШАБЛОНАМИ ОТЧЕТОВ ===
+// ==========================================================
+
+let currentEditingPdfTemplateId = null;
+let sortableAvailable = null;
+let sortableActive = null;
+
+// Универсальные блоки, доступные для конструирования
+const PDF_BLOCKS_LIBRARY = [
+    { id: "header_metrics", name: "Макропоказатели (Шапка)", icon: "📊" },
+    { id: "trend_chart", name: "График: Динамика УрК", icon: "📈" },
+    { id: "contractors_rating", name: "Рейтинг подрядчиков", icon: "🏆" },
+    { id: "top_b3_photos", name: "Фото: Критические B3", icon: "🚨" },
+    { id: "top_b2_photos", name: "Фото: Значимые B2", icon: "⚠️" },
+    { id: "top_ok_photos", name: "Фото: Эталоны OK", icon: "✅" },
+    { id: "ai_summary", name: "Управленческое резюме (ИИ)", icon: "🧠" },
+    { id: "pareto_causes", name: "Диаграмма причин брака", icon: "🔍" },
+    { id: "hr_rating", name: "Рейтинг инженеров", icon: "👤" },
+    { id: "best_practices", name: "Топ лучших практик", icon: "💡" }
+];
+
+window.openPdfTemplateModal = async function() {
+    // 1. Загружаем шаблоны из базы
+    const tmpls = await dbGetAll(STORES.REPORT_TEMPLATES);
+    userReportTemplates = (tmpls || []).filter(t => !t.is_deleted);
+    
+    // 2. Отрисовываем список
+    renderPdfTemplatesList();
+    
+    // 3. Прячем редактор
+    document.getElementById('pdf-template-editor').classList.add('hidden');
+    
+    // 4. Показываем окно
+    const modal = document.getElementById('pdf-template-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+};
+
+window.closePdfTemplateModal = function() {
+    document.getElementById('pdf-template-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+    if (sortableAvailable) { sortableAvailable.destroy(); sortableAvailable = null; }
+    if (sortableActive) { sortableActive.destroy(); sortableActive = null; }
+};
+
+function renderPdfTemplatesList() {
+    const listDiv = document.getElementById('pdf-templates-list');
+    
+    if (userReportTemplates.length === 0) {
+        listDiv.innerHTML = `<div class="text-center py-4 text-slate-400 text-[10px] font-bold">У вас нет сохраненных шаблонов. Используются системные настройки.</div>`;
+        return;
+    }
+
+    listDiv.innerHTML = userReportTemplates.map(t => `
+        <div class="flex items-center justify-between bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
+            <div>
+                <div class="text-[11px] font-black text-slate-800 dark:text-white uppercase">${t.name}</div>
+                <div class="text-[9px] text-slate-500 font-bold">Тип: ${t.report_type === 'global_onepager' ? 'По компании' : 'По объекту'} | Блоков: ${t.active_blocks.length}</div>
+            </div>
+            <div class="flex gap-1.5">
+                <button onclick="window.editPdfTemplate('${t.id}')" class="bg-indigo-50 text-indigo-600 px-2 py-1 rounded text-[9px] font-bold active:scale-95 border border-indigo-200">Изменить</button>
+                <button onclick="window.deletePdfTemplate('${t.id}')" class="bg-red-50 text-red-500 px-2 py-1 rounded text-[9px] font-bold active:scale-95 border border-red-200">Удалить</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+window.createNewPdfTemplate = function() {
+    currentEditingPdfTemplateId = null;
+    
+    // Сброс полей
+    document.getElementById('pdf-tmpl-name').value = '';
+    document.getElementById('pdf-tmpl-type').value = 'onepager';
+    document.getElementById('pdf-tmpl-layout').value = 'two_uneven';
+    document.getElementById('pdf-tmpl-logo').checked = true;
+    document.getElementById('pdf-tmpl-qr').checked = true;
+    document.getElementById('pdf-tmpl-footer').value = 'Конфиденциально. Только для внутреннего использования.';
+    
+    // По умолчанию все блоки активны
+    initDragAndDrop([], PDF_BLOCKS_LIBRARY.map(b => b.id));
+    
+    document.getElementById('pdf-template-editor').classList.remove('hidden');
+};
+
+window.editPdfTemplate = function(id) {
+    const t = userReportTemplates.find(x => x.id === id);
+    if (!t) return;
+    
+    currentEditingPdfTemplateId = id;
+    
+    document.getElementById('pdf-tmpl-name').value = t.name;
+    document.getElementById('pdf-tmpl-type').value = t.report_type;
+    document.getElementById('pdf-tmpl-layout').value = t.layout || 'two_uneven';
+    document.getElementById('pdf-tmpl-logo').checked = t.show_logo !== false;
+    document.getElementById('pdf-tmpl-qr').checked = t.show_qr !== false;
+    document.getElementById('pdf-tmpl-footer').value = t.footer_text || '';
+    
+    // Распределяем блоки
+    const activeIds = t.active_blocks || [];
+    const availableIds = PDF_BLOCKS_LIBRARY.map(b => b.id).filter(id => !activeIds.includes(id));
+    
+    initDragAndDrop(availableIds, activeIds);
+    
+    document.getElementById('pdf-template-editor').classList.remove('hidden');
+};
+
+window.cancelPdfTemplateEdit = function() {
+    document.getElementById('pdf-template-editor').classList.add('hidden');
+    currentEditingPdfTemplateId = null;
+};
+
+// Инициализация перетаскивания (SortableJS)
+function initDragAndDrop(availableIds, activeIds) {
+    const availContainer = document.getElementById('pdf-blocks-available');
+    const activeContainer = document.getElementById('pdf-blocks-active');
+    
+    const createItemHtml = (id) => {
+        const blockDef = PDF_BLOCKS_LIBRARY.find(b => b.id === id);
+        if (!blockDef) return '';
+        return `
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 p-2 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-300 shadow-sm cursor-move flex items-center gap-2" data-id="${id}">
+                <span>${blockDef.icon}</span> ${blockDef.name}
+            </div>
+        `;
+    };
+    
+    availContainer.innerHTML = availableIds.map(createItemHtml).join('');
+    activeContainer.innerHTML = activeIds.map(createItemHtml).join('');
+    
+    if (sortableAvailable) { sortableAvailable.destroy(); sortableAvailable = null; }
+    if (sortableActive) { sortableActive.destroy(); sortableActive = null; }
+    
+    sortableAvailable = new Sortable(availContainer, {
+        group: 'shared', // позволяет перетаскивать между списками
+        animation: 150,
+        ghostClass: 'opacity-50'
+    });
+    
+    sortableActive = new Sortable(activeContainer, {
+        group: 'shared',
+        animation: 150,
+        ghostClass: 'opacity-50'
+    });
+}
+
+window.savePdfTemplate = async function() {
+    const name = document.getElementById('pdf-tmpl-name').value.trim();
+    if (!name) return showToast("⚠️ Укажите название шаблона!");
+    
+    // Собираем порядок активных блоков
+    const activeBlocksEls = document.getElementById('pdf-blocks-active').children;
+    const activeBlocks = Array.from(activeBlocksEls).map(el => el.dataset.id);
+    
+    if (activeBlocks.length === 0) return showToast("⚠️ Добавьте хотя бы один блок в отчет!");
+    
+    const templateData = {
+        id: currentEditingPdfTemplateId || 'tmpl_' + Date.now().toString(36),
+        project_code: window.syncConfig?.projectCode || 'local',
+        report_type: document.getElementById('pdf-tmpl-type').value,
+        name: name,
+        layout: document.getElementById('pdf-tmpl-layout').value,
+        show_logo: document.getElementById('pdf-tmpl-logo').checked,
+        show_qr: document.getElementById('pdf-tmpl-qr').checked,
+        footer_text: document.getElementById('pdf-tmpl-footer').value.trim(),
+        active_blocks: activeBlocks,
+        created_by: appSettings.engineerName || 'Инженер',
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        sync_status: 'not_synced' // Готовим к отправке в облако
+    };
+    
+    // Сохраняем локально
+    await dbPut(STORES.REPORT_TEMPLATES, templateData);
+    
+    // Обновляем массив в RAM
+    const idx = userReportTemplates.findIndex(x => x.id === templateData.id);
+    if (idx > -1) userReportTemplates[idx] = templateData;
+    else userReportTemplates.push(templateData);
+    
+    // Сигнал облаку
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    showToast("✅ Шаблон успешно сохранен!");
+    document.getElementById('pdf-template-editor').classList.add('hidden');
+    renderPdfTemplatesList();
+};
+
+window.deletePdfTemplate = async function(id) {
+    if (!confirm("Удалить этот шаблон?")) return;
+    
+    const idx = userReportTemplates.findIndex(x => x.id === id);
+    if (idx > -1) {
+        userReportTemplates[idx].is_deleted = true;
+        userReportTemplates[idx].updated_at = new Date().toISOString();
+        userReportTemplates[idx].sync_status = 'not_synced';
+        
+        await dbPut(STORES.REPORT_TEMPLATES, userReportTemplates[idx]);
+        
+        userReportTemplates = userReportTemplates.filter(x => !x.is_deleted);
+        renderPdfTemplatesList();
+        
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        
+        showToast("🗑️ Шаблон удален");
+    }
+};
+
+// ==========================================================
+// === ОБРАБОТЧИК ВЫБРАННОГО ДЕЙСТВИЯ (ЗАМЕНА СТАРОГО МЕНЮ) ===
+// ==========================================================
+
+// Это новая функция, которая перехватывает клик по кнопкам в меню выгрузки
+window.handleFabExportAction = async function(actionType, mode = 'script') {
+    closeFabExportMenu();
+    
+    const data = getFilteredAnalyticsData();
+    if (data.length === 0) return showToast('Нет данных для выгрузки');
+
+    // Если это отчеты, которые поддерживают шаблоны, мы сначала ищем шаблон!
+    if (actionType === 'onepager' || actionType === 'global_onepager') {
+        
+        // 1. Проверяем, есть ли в базе созданные шаблоны для этого типа отчета
+        const tmpls = await dbGetAll(STORES.REPORT_TEMPLATES);
+        userReportTemplates = (tmpls || []).filter(t => !t.is_deleted);
+        const matchingTemplates = userReportTemplates.filter(t => t.report_type === actionType);
+
+        if (matchingTemplates.length > 0) {
+            // Если шаблон есть, берем самый свежий (последний)
+            // В будущем здесь можно сделать модалку "Выбор шаблона", но для скорости пока берем активный
+            const activeTemplate = matchingTemplates.sort((a,b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+            
+            showToast(mode === 'script' ? `⏳ Формируем по шаблону: ${activeTemplate.name}...` : '🖨️ Подготовка к системной печати...');
+            
+            setTimeout(async () => {
+                // Запускаем НОВУЮ функцию динамического рендера
+                await renderReportFromTemplate(data, activeTemplate, actionType, mode);
+            }, 500);
+            return;
+        }
+    }
+
+    // Если шаблонов нет или это старый тип отчета — запускаем классические (встроенные) функции
+    showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к выгрузке...');
+
+    setTimeout(async () => {
+        if (actionType === 'current') {
+            await exportPdfCurrentScreen(data, mode);
+        } else if (actionType === 'full_report') {
+            await exportPdfFullObjectReport(data, mode);
+        } else if (actionType === 'poster') {
+            await exportPdfPoster(data, mode);
+        } else if (actionType === 'onepager') {
+            await exportPdfOnePager(data, mode); // Старый fallback
+        } else if (actionType === 'global_onepager') {
+            await exportPdfGlobalOnePager(data, mode); // Старый fallback
+        } else if (actionType === 'data') {
+            exportPdfData(data, mode);
+        } else if (actionType === 'schedule') {
+            exportPdfSchedule(mode);
+        } else if (actionType === 'sk_dashboard') {
+            exportPdfSK(mode);
+        } else if (actionType === 'tender') {
+            if (mode === 'script') exportTenderPDF();
+            else exportTenderCSV();
+        }
+    }, 500);
+};
+
+// ==========================================================
+// === ДИНАМИЧЕСКИЙ РЕНДЕР ОТЧЕТОВ НА ОСНОВЕ ШАБЛОНА ===
+// ==========================================================
+async function renderReportFromTemplate(data, template, reportType, mode) {
+    const title = template.name || 'Сводный отчет';
+    const layout = template.layout || 'two_uneven'; // two_uneven, two_even, one
+    
+    // Брендированная шапка (проверяем галочки из шаблона)
+    let qrDataUrl = null;
+    const reportId = 'rep_' + Date.now().toString(36);
+    
+    if (template.show_qr) {
+        try {
+            if (typeof QRCode !== 'undefined') {
+                qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
+            }
+        } catch(e) {}
+    }
+
+    let logoHtml = '';
+    if (template.show_logo && appSettings.brandLogo) {
+        const logoSrc = await PhotoManager.getAsyncUrl(appSettings.brandLogo) || appSettings.brandLogo;
+        logoHtml = `<img src="${logoSrc}" style="height:60px; width:auto; max-width:150px; object-fit:contain;">`;
+    }
+    
+    const qrHtml = qrDataUrl 
+        ? `<div style="width:70px; height:70px; border:2px solid ${appSettings.brandColor || '#4f46e5'}; padding:3px; border-radius:4px;"><img src="${qrDataUrl}" style="width:100%; height:100%;"></div>` 
+        : '';
+
+    const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
+    const fontSizeSub = mode === 'browser' ? '9pt' : '12px';
+
+    const headerHtml = `
+        <div class="no-break" style="border-bottom: 3px solid ${appSettings.brandColor || '#4f46e5'}; padding-bottom: 15px; margin-bottom: 25px;">
+            <table style="width: 100%; border: none; border-spacing: 0;">
+                <tr>
+                    <td style="width: 20%; vertical-align: middle;">${logoHtml}</td>
+                    <td style="width: 60%; vertical-align: middle; text-align: center;">
+                        <h1 style="font-size:${fontSizeTitle}; font-weight:900; text-transform:uppercase; margin:0; color:#0f172a;">${title}</h1>
+                        <div style="font-size:${fontSizeSub}; margin-top:5px; font-weight:bold; color:#64748b;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
+                    </td>
+                    <td style="width: 20%; vertical-align: middle; text-align: right;">${qrHtml}</td>
+                </tr>
+            </table>
+        </div>
+    `;
+
+    // Здесь мы должны сгенерировать HTML блоки в зависимости от того, какие блоки выбрал пользователь.
+    // Так как математика расчетов для блоков ОЧЕНЬ сложная (мы ее писали в exportPdfOnePager), 
+    // чтобы не дублировать тысячу строк кода, мы пойдем умным путем:
+    
+    // Мы сообщаем системе, что у нас запрошен кастомный рендер, и перенаправляем поток
+    // обратно в базовую функцию, но с флагом, который укажет функции применить наш шаблон.
+    
+    // Пока что, чтобы завершить этот этап безопасно:
+    if (reportType === 'onepager') {
+        window._currentActiveTemplate = template; // Передаем как глобальный параметр
+        await exportPdfOnePager(data, mode);
+        window._currentActiveTemplate = null; // Очищаем после использования
+    } else if (reportType === 'global_onepager') {
+        window._currentActiveTemplate = template;
+        await exportPdfGlobalOnePager(data, mode);
+        window._currentActiveTemplate = null;
+    }
+}

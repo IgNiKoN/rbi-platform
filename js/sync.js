@@ -4,14 +4,21 @@ console.log("✅ SYNC.JS загружен браузером!");
 window.supabaseClient = null;
 window.syncConfig = { enabled: false, engineerName: '', projectCode: '', pinHash: '', deviceId: '', syncMode: 'personal', fullAccessGranted: false };
 window.isSyncing = false;
+window.appAssistantData = []; // Массив базы знаний ИИ
 let syncTimeout = null;
+const syncChannel = new BroadcastChannel('rbi_sync_lock');
+syncChannel.onmessage = (e) => {
+    if (e.data === 'sync_started') window.isSyncing = true;
+    if (e.data === 'sync_done') window.isSyncing = false;
+};
 // Флаги отложенного обновления интерфейса (Lazy Rendering)
 window.syncDirtyFlags = {
     templates: false,
     history: false,
     analytics: false,
     tasks: false,
-    session: false
+    session: false,
+    reference: false
 };
 // Хэш SHA-256 для пароля ""
 const SYNC_FULL_ACCESS_HASH = "1570722437"
@@ -127,22 +134,78 @@ window.renderSyncUI = function () {
 
     if (window.syncConfig.enabled) {
         // Отрисовка "Моих объектов"
-        const myProjects = (typeof appSettings !== 'undefined' && appSettings.assignedProjects) ? appSettings.assignedProjects : [];
+        const myProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects))
+            ? appSettings.assignedProjects
+            : [];
+
+        const pendingProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.pendingAssignedProjects))
+            ? appSettings.pendingAssignedProjects
+            : [];
+
         let projectsHtml = '';
-        if (myProjects.length === 0) {
+
+        if (myProjects.length === 0 && pendingProjects.length === 0) {
             projectsHtml = '<div class="text-[10px] text-slate-400 italic text-center mb-2 border border-dashed border-slate-300 rounded p-2">Объекты не добавлены. Шапка осмотра разблокирована для ручного ввода.</div>';
         } else {
-            projectsHtml = myProjects.map(p => `
-                <div class="flex justify-between items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 rounded-lg mb-1.5 shadow-sm">
-                    <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</span>
-                    <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
-                </div>
-            `).join('');
+            const approvedHtml = myProjects.map(p => `
+        <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 rounded-lg mb-1.5 shadow-sm">
+            <div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</div>
+                <div class="text-[8px] font-black uppercase text-green-600">Подтверждён</div>
+            </div>
+            <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
+        </div>
+    `).join('');
+
+            const pendingHtml = pendingProjects.map(p => `
+        <div class="flex justify-between items-center bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-2 rounded-lg mb-1.5 shadow-sm">
+            <div>
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p.display_name || p.raw_name}</div>
+                <div class="text-[8px] font-black uppercase text-yellow-600">Ожидает подтверждения</div>
+                ${p.canonical_key ? `<div class="text-[8px] text-slate-400 mt-0.5">Найден ключ: ${p.canonical_key}</div>` : `<div class="text-[8px] text-slate-400 mt-0.5">Нужно связать со справочником</div>`}
+            </div>
+        </div>
+    `).join('');
+
+            projectsHtml = approvedHtml + pendingHtml;
         }
         // --- НОВОЕ: Готовим блок выбора режима синхронизации в зависимости от роли ---
         const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
         const isManagerRole = ['director', 'project_manager', 'deputy_manager', 'manager'].includes(currentRole);
-        
+        const cloudStatus = window.RbiRoles ? window.RbiRoles.getCloudStatus() : (appSettings?.cloudStatus || 'pending');
+
+        const roleLabels = {
+            guest: 'Гость',
+            contractor: 'Подрядчик',
+            engineer: 'Инженер',
+            project_manager: 'Руководитель проекта',
+            deputy_manager: 'Заместитель руководителя',
+            director: 'Директор',
+            manager: 'Администратор'
+        };
+
+        let syncStatusTitle = 'Синхронизация активна';
+        let syncStatusText = 'Данные могут синхронизироваться согласно вашей роли.';
+        let syncStatusClass = 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800/50 text-green-700 dark:text-green-400';
+
+        if (cloudStatus === 'pending') {
+            syncStatusTitle = 'Ожидает подтверждения';
+            syncStatusText = 'Администратор должен подтвердить вашу роль и закрепить объекты. До подтверждения данные не отправляются в облако.';
+            syncStatusClass = 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800/50 text-yellow-700 dark:text-yellow-400';
+        }
+
+        if (cloudStatus === 'blocked') {
+            syncStatusTitle = 'Доступ ограничен';
+            syncStatusText = 'Отправка данных в облако недоступна. Новые данные сохраняются локально.';
+            syncStatusClass = 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400';
+        }
+
+        if (cloudStatus === 'offline') {
+            syncStatusTitle = 'Локальный режим';
+            syncStatusText = 'Данные сохраняются только на устройстве.';
+            syncStatusClass = 'bg-slate-50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800/50 text-slate-600 dark:text-slate-400';
+        }
+
         let syncModeHtml = '';
         if (isManagerRole) {
             // Руководителям жестко блокируем интерфейс на "Вся команда"
@@ -171,12 +234,16 @@ window.renderSyncUI = function () {
         }
         // -----------------------------------------------------------------------------
         container.innerHTML = `
-            <div class="p-4 bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800/50 text-center">
-                <div class="text-[12px] font-black text-green-700 dark:text-green-400 uppercase mb-1">Синхронизация активна</div>
-                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Инженер: ${window.syncConfig.engineerName}</div>
-                <div class="text-[10px] text-green-600 dark:text-green-500 font-bold">Код компании: ${window.syncConfig.projectCode}</div>
-                <div class="text-[10px] text-green-700 dark:text-green-400 font-black mt-1 uppercase">Текущая роль: ${window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest'}</div>
-            </div>
+            <div class="p-4 ${syncStatusClass} border-b text-center">
+            <div class="text-[12px] font-black uppercase mb-1">${syncStatusTitle}</div>
+            <div class="text-[10px] font-bold leading-snug max-w-sm mx-auto">${syncStatusText}</div>
+             <div class="mt-3 grid grid-cols-1 gap-1 text-[10px] font-bold">
+            <div>Пользователь: ${window.syncConfig.engineerName}</div>
+        <div>Код компании: ${window.syncConfig.projectCode}</div>
+        <div class="font-black uppercase">Роль: ${roleLabels[currentRole] || currentRole}</div>
+        <div class="font-black uppercase">Статус: ${cloudStatus}</div>
+    </div>
+</div>
             
             <div class="p-4 border-b border-[var(--card-border)] bg-[var(--card-bg)]">
                 <h3 class="text-[11px] font-black uppercase text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-1.5">🏢 Мои Объекты (Справочник)</h3>
@@ -185,7 +252,10 @@ window.renderSyncUI = function () {
                 ${projectsHtml}
                 
                 <div class="flex gap-2 mt-2">
-                    <input type="text" id="new-assigned-project" class="input-base text-[11px] !py-2" placeholder="Название объекта...">
+                    <input type="text" id="new-assigned-project" list="sys-objects-list" class="input-base text-[11px] !py-2" placeholder="Название (или выберите из списка)...">
+                    <datalist id="sys-objects-list">
+                        ${(typeof ObjectDirectory !== 'undefined' ? ObjectDirectory.objects : []).map(o => `<option value="${o.display_name}"></option>`).join('')}
+                    </datalist>
                     <button onclick="window.addAssignedProject()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold text-[10px] uppercase shadow-sm active:scale-95 shrink-0">Добавить</button>
                 </div>
             </div>
@@ -193,7 +263,9 @@ window.renderSyncUI = function () {
             ${syncModeHtml}
 
             <div class="p-4 bg-[var(--hover-bg)]">
-                <button onclick="window.triggerSync('manual')" class="w-full bg-[var(--card-bg)] text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2 transition-colors hover:border-indigo-400">🔄 Синхронизировать сейчас</button>
+                <button onclick="window.triggerSync('manual')" class="w-full bg-[var(--card-bg)] text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2 transition-colors hover:border-indigo-400">
+    ${cloudStatus === 'pending' ? '🔎 Проверить статус' : '🔄 Синхронизировать сейчас'}
+</button>
                 <button onclick="window.disconnectSync()" class="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-colors">Отключить облако</button>
             </div>
         `;
@@ -222,30 +294,146 @@ window.renderSyncUI = function () {
     }
 };
 
-// Функции для добавления и удаления проектов
 window.addAssignedProject = async function () {
     const input = document.getElementById('new-assigned-project');
-    const val = input.value.trim();
-    if (!val) return;
+    const rawValue = input?.value?.trim() || '';
+    if (!rawValue) return;
 
-    if (typeof appSettings !== 'undefined') {
-        if (!appSettings.assignedProjects) appSettings.assignedProjects = [];
-        if (!appSettings.assignedProjects.includes(val)) {
-            appSettings.assignedProjects.push(val);
-            if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+    if (typeof appSettings === 'undefined') return;
 
-            // Обновляем шапку
-            if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
+    if (!Array.isArray(appSettings.assignedProjects)) {
+        appSettings.assignedProjects = [];
+    }
 
-            // Перерисовываем UI
-            window.renderSyncUI();
-            if (typeof showToast === 'function') showToast("🏢 Объект добавлен");
-            // Отправляем сигнал на синхронизацию профиля в облако
-            localStorage.setItem('rbi_cloud_dirty', '1');
-            if (typeof triggerSync === 'function') triggerSync('silent');
-        } else {
-            if (typeof showToast === 'function') showToast("⚠️ Этот объект уже в списке");
+    if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+        appSettings.pendingAssignedProjects = [];
+    }
+
+    let canonicalKey = '';
+    let displayName = rawValue;
+    let requestStatus = 'pending';
+
+    // Пытаемся сразу сопоставить объект со справочником
+    if (typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.normalizeProjectName === 'function') {
+        try {
+            const normalized = await ObjectDirectory.normalizeProjectName(rawValue);
+
+            if (
+                normalized &&
+                (
+                    normalized.status === 'matched' ||
+                    normalized.status === 'multiple_matched_auto_best'
+                )
+            ) {
+                canonicalKey = normalized.canonical_key || '';
+                displayName = normalized.display_name || rawValue;
+                requestStatus = 'matched_pending_approval';
+            }
+        } catch (e) {
+            console.warn('[Objects] Не удалось нормализовать объект:', e);
         }
+    }
+
+    const requestedProject = {
+        raw_name: rawValue,
+        canonical_key: canonicalKey,
+        display_name: displayName,
+        status: requestStatus,
+        created_at: new Date().toISOString()
+    };
+
+    const existsLocal = appSettings.pendingAssignedProjects.some(p =>
+        p.raw_name === rawValue ||
+        (canonicalKey && p.canonical_key === canonicalKey)
+    );
+
+    if (!existsLocal) {
+        appSettings.pendingAssignedProjects.push(requestedProject);
+    }
+
+    // ВАЖНО:
+    // Пока пользователь pending/guest, это НЕ подтверждённое право.
+    // Поэтому в assignedProjects не кладём, если статус не approved.
+    const cloudStatus = appSettings.cloudStatus || 'offline';
+
+    if (cloudStatus === 'approved' && canonicalKey) {
+        if (!appSettings.assignedProjects.includes(canonicalKey)) {
+            appSettings.assignedProjects.push(canonicalKey);
+        }
+    }
+
+    if (typeof dbPut === 'function') {
+        await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+    }
+
+    // Если облако подключено — записываем заявку в профиль пользователя,
+    // чтобы админ видел её в панели ролей.
+    if (
+        window.supabaseClient &&
+        window.syncConfig &&
+        window.syncConfig.enabled &&
+        window.syncConfig.projectCode &&
+        window.syncConfig.engineerName
+    ) {
+        const stableInspectorId = `${window.syncConfig.projectCode}_${window.syncConfig.engineerName}`.replace(/\s+/g, '_');
+
+        try {
+            const { data: profileRows, error: profileError } = await window.supabaseClient
+                .from('rbi_engineer_profiles')
+                .select('settings')
+                .eq('inspector_id', stableInspectorId)
+                .limit(1);
+
+            if (profileError) throw profileError;
+
+            const currentSettings =
+                profileRows && profileRows.length > 0 && profileRows[0].settings
+                    ? profileRows[0].settings
+                    : {};
+
+            const oldRequests = Array.isArray(currentSettings.requestedProjects)
+                ? currentSettings.requestedProjects
+                : [];
+
+            const existsCloud = oldRequests.some(p =>
+                p.raw_name === rawValue ||
+                (canonicalKey && p.canonical_key === canonicalKey)
+            );
+
+            const newRequests = existsCloud
+                ? oldRequests
+                : [...oldRequests, requestedProject];
+
+            const newSettings = {
+                ...currentSettings,
+                requestedProjects: newRequests
+            };
+
+            await window.supabaseClient
+                .from('rbi_engineer_profiles')
+                .update({
+                    settings: newSettings,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('inspector_id', stableInspectorId);
+
+        } catch (e) {
+            console.warn('[Objects] Не удалось отправить заявку на объект в профиль:', e);
+        }
+    }
+
+    input.value = '';
+
+    if (typeof ObjectDirectory !== 'undefined') {
+        ObjectDirectory.initUI();
+    }
+
+    if (typeof window.renderSyncUI === 'function') {
+        window.renderSyncUI();
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('🏢 Объект запрошен: ' + displayName);
     }
 };
 
@@ -272,7 +460,7 @@ window.removeAssignedProject = async function (val) {
     if (typeof triggerSync === 'function') triggerSync('silent');
 };
 
-window.initCloudConnection = async function() {
+window.initCloudConnection = async function () {
     const name = document.getElementById('sync-name').value.trim();
     const code = document.getElementById('sync-code').value.trim();
     const pin = document.getElementById('sync-pin').value.trim();
@@ -284,11 +472,113 @@ window.initCloudConnection = async function() {
     if (!projData || projData.length === 0) return safeToast("❌ Ошибка: Такого кода проекта не существует!");
 
     const hashedPin = await window.hashPin(pin);
-    const { data } = await window.supabaseClient.from('rbi_engineer_profiles').select('pin_hash').eq('project_code', code).eq('inspector_name', name).limit(1);
+    const stableInspectorId = `${code}_${name}`.replace(/\s+/g, '_');
 
+    const { data, error } = await window.supabaseClient
+        .from('rbi_engineer_profiles')
+        .select('inspector_id, pin_hash, role, cloud_status, assigned_projects, contractor_name, assigned_contractor, settings')
+        .eq('project_code', code)
+        .eq('inspector_name', name)
+        .limit(1);
+
+    if (error) {
+        console.error('[Sync] Ошибка проверки профиля:', error);
+        return safeToast("❌ Ошибка проверки профиля пользователя");
+    }
+
+    // Если профиль есть и PIN не совпал — просим правильный PIN.
     if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
         window.showPinPromptModal(name, code, data[0].pin_hash);
         return;
+    }
+
+    // Если профиля ещё нет — создаём заявку guest / pending.
+    if (!data || data.length === 0) {
+        const newProfile = {
+            inspector_id: stableInspectorId,
+            inspector_name: name,
+            engineer_name: name,
+            project_code: code,
+            pin_hash: hashedPin || '',
+            role: 'guest',
+            cloud_status: 'pending',
+            assigned_projects: [],
+            contractor_name: '',
+            assigned_contractor: '',
+            settings: {
+                assignedProjects: [],
+                createdFromApp: true
+            },
+            last_seen_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        const { error: insertError } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .insert(newProfile);
+
+        if (insertError) {
+            console.error('[Sync] Ошибка создания профиля:', insertError);
+            return safeToast("❌ Не удалось создать заявку на доступ");
+        }
+
+        if (typeof appSettings !== 'undefined') {
+            appSettings.userRole = 'guest';
+            appSettings.cloudStatus = 'pending';
+            appSettings.assignedProjects = [];
+            appSettings.assignedContractor = '';
+            appSettings.contractorName = '';
+
+            if (typeof dbPut === 'function') {
+                await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+            }
+        }
+
+        safeToast("✅ Заявка отправлена. Ожидает подтверждения администратора.");
+    }
+
+    // Если профиль уже есть — применяем его роль и статус.
+    if (data && data.length > 0 && typeof appSettings !== 'undefined') {
+        const profile = data[0];
+
+        appSettings.userRole = profile.role || 'guest';
+        appSettings.cloudStatus = profile.cloud_status || 'pending';
+
+        appSettings.assignedContractor =
+            profile.contractor_name ||
+            profile.assigned_contractor ||
+            '';
+
+        appSettings.contractorName = appSettings.assignedContractor;
+
+        const profileCloudStatus = profile.cloud_status || 'pending';
+
+        if (profileCloudStatus === 'approved') {
+            if (Array.isArray(profile.assigned_projects)) {
+                appSettings.assignedProjects = profile.assigned_projects;
+            } else if (profile.settings && Array.isArray(profile.settings.assignedProjects)) {
+                appSettings.assignedProjects = profile.settings.assignedProjects;
+            } else {
+                appSettings.assignedProjects = [];
+            }
+
+            appSettings.pendingAssignedProjects = [];
+        } else {
+            // pending/blocked не должны стирать локальные заявки
+            if (!Array.isArray(appSettings.assignedProjects)) {
+                appSettings.assignedProjects = [];
+            }
+
+            if (profile.settings && Array.isArray(profile.settings.requestedProjects)) {
+                appSettings.pendingAssignedProjects = profile.settings.requestedProjects;
+            } else if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+                appSettings.pendingAssignedProjects = [];
+            }
+        }
+
+        if (typeof dbPut === 'function') {
+            await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+        }
     }
 
     window.applySyncConnect(name, code, hashedPin);
@@ -507,8 +797,10 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
 
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
-    const isDeleted = data._deleted === true;
-    const deletedAt = isDeleted ? (data._deletedAt || data.updatedAt || new Date().toISOString()) : null;
+    
+    // ИСПРАВЛЕНИЕ: Учим синхронизатор понимать метки удаленных отчетов
+    const isDeleted = data._deleted === true || data.is_deleted === true;
+    const deletedAt = isDeleted ? (data._deletedAt || data.deleted_at || data.updatedAt || data.updated_at || new Date().toISOString()) : null;
     const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
 
     // МАППИНГ НОВЫХ ТАБЛИЦ И БАКЕТОВ
@@ -526,6 +818,12 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         case 'fmea': tableName = 'project_fmea'; targetBucket = 'inspection-photos'; break;
         case 'schedule': tableName = 'project_schedule_stages'; targetBucket = 'inspection-photos'; break;
         case 'sk_data_bundle': tableName = 'sk_data_bundles'; targetBucket = 'inspection-photos'; break;
+        case 'project_object': tableName = 'project_objects'; isShared = true; break; // <-- ДОБАВЛЕНО
+        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;   // <-- ДОБАВЛЕНО
+        case 'report': tableName = 'shared_reports'; isShared = false; targetBucket = 'reports'; break;
+        case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
+        case 'snapshot': tableName = 'shared_report_snapshots'; isShared = false; break;
+        case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
         default: return;
     }
 
@@ -541,16 +839,107 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         }
     }
 
-    const payload = {
-        id: id,
-        data: uploadedData,
-        is_deleted: isDeleted,
-        deleted_at: deletedAt,
-        updated_at: updatedAt
-    };
+    let payload = {};
 
-    if (isShared) payload.owner = data.owner || iName;
-    else { payload.project_code = pCode; payload.engineer_name = iName; }
+    if (objectType === 'report') {
+        // Специфичный формат для таблицы отчетов (С ПОДДЕРЖКОЙ РОЛЕЙ И ОБЪЕКТОВ)
+        payload = {
+            id: id,
+            project_code: window.syncConfig.projectCode,
+            project_canonical_key: data.project_canonical_key || data.metadata?.project || '',
+            project_display_name: data.project_display_name || data.metadata?.project || '',
+            engineer_name: data.engineer_name || data.created_by || iName,
+            report_type: data.report_type || 'unknown',
+            title: data.title || 'Отчет',
+            generated_at: data.generated_at || new Date().toISOString(),
+            file_url: data.file_url || '',
+            file_size: data.file_size || 0,
+            metadata: data.metadata || {},
+            created_by: data.created_by || iName,
+            is_deleted: isDeleted,
+            deleted_at: deletedAt,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else if (objectType === 'snapshot') {
+        // Специфичный формат для HTML-снимков (для QR)
+        payload = {
+            id: id,
+            report_id: data.report_id,
+            html_content: data.html_content,
+            created_at: data.created_at || new Date().toISOString(),
+            expires_at: null // Пока не используем
+        };
+        } else if (objectType === 'assistant_kb') {
+        // НОВОЕ: Специфичный формат для Базы Знаний ИИ
+        payload = {
+            id: id,
+            project_code: window.syncConfig.projectCode || 'local',
+            question: data.question || '',
+            answer: data.answer || '',
+            tags: data.tags || [],
+            enabled: data.enabled !== false,
+            created_by: data.created_by || iName,
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else {
+        // Стандартный формат для остальных объектов (TWI, Узлы, НД и т.д.)
+        payload = {
+            id: id,
+            data: uploadedData,
+            is_deleted: isDeleted,
+            deleted_at: deletedAt,
+            updated_at: updatedAt
+        };
+    }
+
+    if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb') {
+        if (isShared) {
+            payload.owner = data.owner || iName;
+        } else {
+            payload.project_code = pCode;
+
+            payload.project_canonical_key =
+                data.project_canonical_key ||
+                data.projectCanonicalKey ||
+                data.project ||
+                data.projectName ||
+                '';
+
+            payload.project_display_name =
+                data.project_display_name ||
+                data.projectDisplayName ||
+                data.project ||
+                data.projectName ||
+                '';
+
+            payload.engineer_name =
+                data.engineer_name ||
+                data.engineerName ||
+                data.inspector_name ||
+                data.inspectorName ||
+                iName;
+
+            payload.inspector_name =
+                data.inspector_name ||
+                data.inspectorName ||
+                data.engineer_name ||
+                data.engineerName ||
+                iName;
+
+            payload.contractor_name =
+                data.contractor_name ||
+                data.contractorName ||
+                data.contractor ||
+                '';
+
+            payload.source = 'cloud';
+            payload.sync_status = 'synced';
+            payload.sync_block_reason = '';
+        }
+    }
 
     const { error } = await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
     if (error) throw error;
@@ -561,6 +950,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
 
 window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
+    const iName = window.syncConfig.engineerName || 'Инженер'; // <-- ДОБАВЛЕНО
     let tableName = ''; let isShared = false;
 
     switch (objectType) {
@@ -576,10 +966,16 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
         case 'fmea': tableName = 'project_fmea'; break;
         case 'schedule': tableName = 'project_schedule_stages'; break;
         case 'sk_data_bundle': tableName = 'sk_data_bundles'; break;
+        case 'project_object': tableName = 'project_objects'; isShared = true; break; // <-- ДОБАВЛЕНО
+        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;   // <-- ДОБАВЛЕНО
+        case 'report': tableName = 'shared_reports'; isShared = false; targetBucket = 'reports'; break;
+        case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
+        case 'snapshot': tableName = 'shared_report_snapshots'; isShared = true; break;
+        case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
         default: return [];
     }
 
-    let query = window.supabaseClient.from(tableName).select('*');
+    let query = window.supabaseClient.from(tableName).select('*').limit(1000);
     if (!isShared) query = query.eq('project_code', pCode);
     if (lastPullTimeStr) query = query.gt('updated_at', lastPullTimeStr);
 
@@ -589,32 +985,116 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
     let result = [];
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
     const myProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
-    const myContrName = typeof appSettings !== 'undefined' ? appSettings.assignedContractor : '';
+    const myContrName = typeof appSettings !== 'undefined'
+        ? (appSettings.contractorName || appSettings.assignedContractor || '')
+        : '';
 
     for (const row of data || []) {
-        let obj = row.data || {};
-        obj.id = row.id;
-        obj.updatedAt = row.updated_at;
+        // ВАЖНО:
+        // В shared_* таблицах реальные данные лежат в row.data.
+        // Если взять просто {...row}, то title/category/name окажутся внутри data,
+        // и renderTwiList/renderNodesList упадут на .toLowerCase().
+        let obj = {};
+
+        if (row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
+            obj = { ...row.data };
+        } else {
+            obj = { ...row };
+        }
+
+        obj.id = row.id || obj.id;
+        obj.updatedAt = row.updated_at || obj.updatedAt || obj.updated_at || new Date().toISOString();
+        obj.updated_at = row.updated_at || obj.updated_at || obj.updatedAt || new Date().toISOString();
+
+        if (row.owner) obj.owner = row.owner;
+
+        if (row.is_deleted) {
+            obj._deleted = true;
+            obj._deletedAt = row.deleted_at || new Date().toISOString();
+        }
+
+        obj.project_code = row.project_code || obj.project_code || pCode;
+        obj.project_canonical_key = row.project_canonical_key || obj.project_canonical_key || obj.project || obj.projectName || '';
+        obj.project_display_name = row.project_display_name || obj.project_display_name || obj.project || obj.projectName || '';
+        obj.inspector_name = row.inspector_name || obj.inspector_name || obj.inspectorName || obj.engineer_name || obj.engineerName || '';
+        obj.contractor_name = row.contractor_name || obj.contractor_name || obj.contractorName || obj.contractor || '';
+
+        obj.source = 'cloud';
+        obj.syncStatus = 'synced';
+        obj.sync_status = 'synced';
+        obj.syncBlockReason = '';
+        obj.sync_block_reason = '';
 
         // --- УМНЫЙ ФИЛЬТР ДЛЯ ПРОЕКТНЫХ ДАННЫХ (Задачи, Мемо, FMEA и т.д.) ---
+        // --- ЕДИНЫЙ ФИЛЬТР ДЛЯ ПРОЕКТНЫХ ДАННЫХ ---
         if (!isShared) {
-            // --- УЛУЧШЕННЫЙ ФИЛЬТР: Подрядчику даем только его записи ---
-            if (role === 'contractor' && myContrName) {
-                // Ищем имя подрядчика в любых возможных полях
-                const itemContr = obj.contractor || obj.contractorName || obj.contractor_name || '';
-                // Если в объекте есть имя подрядчика, и оно не совпадает с тем, под кем мы зашли — пропускаем!
-                if (itemContr && itemContr !== myContrName) {
-                    continue; 
+            const itemProject =
+                obj.project_canonical_key ||
+                obj.projectCanonicalKey ||
+                obj.canonical_key ||
+                obj.project ||
+                obj.projectName ||
+                '';
+
+            const itemContr =
+                obj.contractor_name ||
+                obj.contractorName ||
+                obj.contractor ||
+                '';
+
+            const itemEngineer =
+                obj.inspector_name ||
+                obj.inspectorName ||
+                obj.engineer_name ||
+                obj.engineerName ||
+                obj.owner ||
+                '';
+
+            const assignedProjects = Array.isArray(myProjects) ? myProjects : [];
+
+            if (role === 'guest') {
+                continue;
+            }
+
+            if (role === 'contractor') {
+                if (!myContrName) continue;
+                if (itemContr && itemContr !== myContrName) continue;
+
+                if (assignedProjects.length > 0 && itemProject && itemProject !== 'Все' && !assignedProjects.includes(itemProject)) {
+                    continue;
                 }
             }
-            // ------------------------------------------------------------
-            // Руководителю проекта даем только записи по его объектам
-            else if (role === 'project_manager' && myProjects.length > 0) {
-                const itemProject = obj.project || obj.projectName || '';
-                // Если проект указан, и его нет в моих - пропускаем
-                if (itemProject && itemProject !== 'Все' && !myProjects.includes(itemProject)) continue;
+
+            else if (role === 'engineer') {
+                if (window.syncConfig.syncMode === 'personal') {
+                    if (itemEngineer && itemEngineer !== iName) continue; 
+                }
+
+                // УМНЫЙ ФИЛЬТР: Пропускаем глобальные отчеты и отчеты по всей компании
+                const isGlobal = !itemProject || itemProject.toLowerCase().includes('все ') || itemProject === 'all';
+                
+                if (assignedProjects.length > 0 && !isGlobal && !assignedProjects.includes(itemProject)) {
+                    continue;
+                }
+            }
+
+            else if (role === 'project_manager') {
+                if (assignedProjects.length === 0) continue;
+
+                if (itemProject && itemProject !== 'Все' && !assignedProjects.includes(itemProject)) {
+                    continue;
+                }
+            }
+
+            else if (['director', 'deputy_manager', 'manager'].includes(role)) {
+                // Полный просмотр / доступ согласно роли
+            }
+
+            else {
+                continue;
             }
         }
+        // -------------------------------------------------------------------
         // -------------------------------------------------------------------
 
         if (row.is_deleted) {
@@ -623,6 +1103,14 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
         }
 
         if (isShared && row.owner) obj.owner = row.owner;
+
+        // ИСПРАВЛЕНИЕ: Если Supabase вернул metadata как строку, превращаем в объект
+        if (typeof obj.metadata === 'string') {
+            try { obj.metadata = JSON.parse(obj.metadata); } catch(e) { obj.metadata = {}; }
+        }
+        
+        // Гарантируем наличие даты генерации для сортировки
+        if (!obj.generated_at) obj.generated_at = obj.created_at || new Date().toISOString();
 
         result.push(obj);
     }
@@ -648,7 +1136,7 @@ window.triggerSync = async function (mode = 'silent') {
     // Если пользователь - гость, подрядчик или просто читатель,
     // мы разрешаем ему синхронизацию (чтобы он стянул свежие данные - Pull),
     // но мы должны запомнить, что ему НЕЛЬЗЯ делать Push (отправлять данные).
-    const canPush = window.RbiRoles ? window.RbiRoles.canPush() : false;
+    let canPush = window.RbiRoles ? window.RbiRoles.canPush() : false;
     // -----------------------------------------------------
 
     if (window.isSyncing) {
@@ -660,8 +1148,10 @@ window.triggerSync = async function (mode = 'silent') {
     if (mode === 'silent' && localStorage.getItem('rbi_cloud_dirty') !== '1') {
         return;
     }
+    let pushErrors = 0;
 
     window.isSyncing = true;
+    syncChannel.postMessage('sync_started');
     let hasNewCriticalData = false;
     window.renderSyncUI();
 
@@ -678,30 +1168,90 @@ window.triggerSync = async function (mode = 'silent') {
     const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
     const lastPullAt = localStorage.getItem('rbi_sync_last_pull_at') || '';
     const lastPushAt = localStorage.getItem('rbi_sync_last_push_at') || '';
+    // Счётчики реально отправленных данных.
+    // Обязательно объявляем заранее, чтобы не было ReferenceError при первой синхронизации.
+
+    let actuallyPushedChecks = 0;
+    let actuallyPushedTasks = 0;
+    let actuallyPushedProfiles = 0;
     // --- НОВОЕ: Проверка роли при синхронизации ---
-  // --- НОВОЕ: Проверка роли при синхронизации ---
+    // --- НОВОЕ: Проверка роли при синхронизации ---
+    // --- Проверка серверного профиля перед синхронизацией ---
     try {
-        const { data: roleData } = await window.supabaseClient
+        const { data: roleData, error: roleError } = await window.supabaseClient
             .from('rbi_engineer_profiles')
-            .select('role, assigned_contractor')
+            .select('role, cloud_status, assigned_contractor, contractor_name, assigned_projects, settings')
             .eq('inspector_id', stableInspectorId)
             .limit(1);
 
+        if (roleError) throw roleError;
+
         if (roleData && roleData.length > 0) {
+            const serverProfile = roleData[0];
+
             if (typeof appSettings !== 'undefined') {
-                const fetchedRole = roleData[0].role || 'guest';
-                const fetchedContr = roleData[0].assigned_contractor || '';
-                
+                const fetchedRole = serverProfile.role || 'guest';
+                const fetchedCloudStatus = serverProfile.cloud_status || 'pending';
+
+                const fetchedContr =
+                    serverProfile.contractor_name ||
+                    serverProfile.assigned_contractor ||
+                    '';
+
+                let fetchedProjects = [];
+
+                if (Array.isArray(serverProfile.assigned_projects)) {
+                    fetchedProjects = serverProfile.assigned_projects;
+                } else if (
+                    serverProfile.settings &&
+                    Array.isArray(serverProfile.settings.assignedProjects)
+                ) {
+                    fetchedProjects = serverProfile.settings.assignedProjects;
+                }
+
                 let needUiUpdate = false;
 
-                // Если роль или привязка изменились — применяем мгновенно!
-                if (appSettings.userRole !== fetchedRole || appSettings.assignedContractor !== fetchedContr) {
+                if (appSettings.userRole !== fetchedRole) {
                     appSettings.userRole = fetchedRole;
-                    appSettings.assignedContractor = fetchedContr;
                     needUiUpdate = true;
                 }
-                
-                if (['director', 'project_manager', 'deputy_manager'].includes(fetchedRole)) {
+
+                if (appSettings.cloudStatus !== fetchedCloudStatus) {
+                    appSettings.cloudStatus = fetchedCloudStatus;
+                    needUiUpdate = true;
+                }
+
+                if (appSettings.assignedContractor !== fetchedContr) {
+                    appSettings.assignedContractor = fetchedContr;
+                    appSettings.contractorName = fetchedContr;
+                    needUiUpdate = true;
+                }
+
+                if (Array.isArray(fetchedProjects)) {
+                    // Только approved-профиль имеет право заменить локальные подтверждённые объекты.
+                    // pending/guest не должен стирать заявки пользователя.
+                    if (fetchedCloudStatus === 'approved') {
+                        const oldProjects = JSON.stringify(appSettings.assignedProjects || []);
+                        const newProjects = JSON.stringify(fetchedProjects);
+
+                        if (oldProjects !== newProjects) {
+                            appSettings.assignedProjects = fetchedProjects;
+                            appSettings.pendingAssignedProjects = [];
+                            needUiUpdate = true;
+                        }
+                    } else {
+                        if (!Array.isArray(appSettings.assignedProjects)) {
+                            appSettings.assignedProjects = [];
+                        }
+
+                        if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+                            appSettings.pendingAssignedProjects = [];
+                        }
+                    }
+                }
+
+                // Руководящим ролям автоматически включаем режим "Вся команда"
+                if (['director', 'project_manager', 'deputy_manager', 'manager'].includes(fetchedRole)) {
                     if (window.syncConfig.syncMode !== 'full') {
                         window.syncConfig.syncMode = 'full';
                         localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
@@ -709,17 +1259,54 @@ window.triggerSync = async function (mode = 'silent') {
                     }
                 }
 
-                if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+                // АВТОМАТИЧЕСКИ Включаем ИИ для штатных сотрудников
+                if (['director', 'project_manager', 'deputy_manager', 'manager', 'engineer'].includes(fetchedRole)) {
+                    if (typeof appSettings !== 'undefined' && !appSettings.aiEnabled) {
+                        appSettings.aiEnabled = true;
+                        appSettings.aiAuthMode = 'role'; // Используем корпоративный пароль
+                        needUiUpdate = true;
+                        console.log("[Sync] Корпоративный AI активирован автоматически.");
+                    }
+                }
 
-                // Мгновенное применение прав к интерфейсу
+                if (typeof dbPut === 'function') {
+                    await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+                }
+
                 if (needUiUpdate && window.RbiRoles) {
                     window.RbiRoles.applyUIConstraints();
+
                     if (typeof renderSyncUI === 'function') renderSyncUI();
+                    if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
                 }
             }
+        } else {
+            // Профиля ещё нет: считаем пользователя неподтверждённым.
+            if (typeof appSettings !== 'undefined') {
+                appSettings.userRole = 'guest';
+                appSettings.cloudStatus = 'pending';
+
+                if (typeof dbPut === 'function') {
+                    await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+                }
+
+                if (window.RbiRoles) window.RbiRoles.applyUIConstraints();
+            }
         }
+
+        // После получения серверной роли пересчитываем право push.
+        canPush = window.RbiRoles ? window.RbiRoles.canPush() : false;
+
+        if (!canPush) {
+            console.log('[Sync] Push заблокирован. Роль:', appSettings?.userRole, 'Статус:', appSettings?.cloudStatus);
+        }
+
     } catch (e) {
         console.warn("[Sync] Не удалось обновить роль:", e.message);
+
+        // Если профиль не удалось проверить — запрещаем отправку,
+        // но не запрещаем pull и локальную работу.
+        canPush = false;
     }
     // ==============================================
     // ==============================================
@@ -867,7 +1454,43 @@ window.triggerSync = async function (mode = 'silent') {
         // 1. ВСЕГДА ТЯНЕМ РЕЙТИНГ ИНЖЕНЕРОВ
         // =====================================================
         await pullEngineerRatingAlways();
-
+        // =====================================================
+        // 1.5. PULL: КОРПОРАТИВНЫЙ СТИЛЬ (Логотип и Цвет)
+        // =====================================================
+        try {
+            const { data: pSet, error: pSetErr } = await window.supabaseClient
+                .from('project_settings')
+                .select('*')
+                .eq('project_code', pCode)
+                .single();
+                
+            if (!pSetErr && pSet) {
+                // Если пользователь не кастомизировал стиль вручную, применяем корпоративный
+                if (typeof appSettings !== 'undefined' && !appSettings.isBrandingCustomized) {
+                    let changed = false;
+                    if (pSet.brand_color && appSettings.brandColor !== pSet.brand_color) {
+                        appSettings.brandColor = pSet.brand_color;
+                        changed = true;
+                    }
+                    if (pSet.logo_url !== undefined && appSettings.brandLogo !== pSet.logo_url) {
+                        appSettings.brandLogo = pSet.logo_url;
+                        changed = true;
+                        // Кэшируем логотип для офлайна
+                        if (pSet.logo_url.startsWith('http') && typeof PhotoManager !== 'undefined') {
+                            PhotoManager.downloadForOffline(pSet.logo_url);
+                        }
+                    }
+                    if (changed) {
+                        if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+                        if (document.getElementById('tab-settings')?.classList.contains('active')) {
+                            if (typeof renderSettingsTab === 'function') renderSettingsTab();
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[Sync] Корпоративные настройки проекта не найдены.");
+        }
         // =====================================================
         // 2. PULL: проверки из новой нормальной архитектуры
         // =====================================================
@@ -877,24 +1500,48 @@ window.triggerSync = async function (mode = 'silent') {
             .select('*')
             .eq('project_code', pCode)
             .eq('is_deleted', false)
-            .order('inspection_date', { ascending: false });
+            .order('inspection_date', { ascending: false })
+            .limit(500); // Ограничиваем загрузку, чтобы не повесить телефон
 
         // --- НОВОЕ: Фильтрация PULL по ролям ---
         const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-        
+
         if (role === 'guest') {
             // Гостям не нужны чужие проверки (экономим трафик)
             // Но запрос отменять нельзя (сломает цепочку), поэтому ставим заведомо ложное условие
             inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
-        } 
+        }
         else if (role === 'contractor') {
-            // Подрядчик качает только свои косяки
-            const myContrName = typeof appSettings !== 'undefined' ? appSettings.assignedContractor : '';
-            if (myContrName) inspectionsQuery = inspectionsQuery.eq('contractor_name', myContrName);
-            else inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id'); // Если забыли указать организацию
+            const myContrName =
+                typeof appSettings !== 'undefined'
+                    ? (appSettings.contractorName || appSettings.assignedContractor || '')
+                    : '';
+
+            if (myContrName) {
+                inspectionsQuery = inspectionsQuery.eq('contractor_name', myContrName);
+            } else {
+                inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
+            }
+        }
+        else if (role === 'project_manager') {
+            const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+
+            if (assignedProjects && assignedProjects.length > 0) {
+                inspectionsQuery = inspectionsQuery.in('project_canonical_key', assignedProjects);
+            } else {
+                inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
+            }
+        }
+        else if (role === 'engineer') {
+            const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+
+            inspectionsQuery = inspectionsQuery.eq('engineer_name', iName);
+
+            if (assignedProjects && assignedProjects.length > 0) {
+                inspectionsQuery = inspectionsQuery.in('project_canonical_key', assignedProjects);
+            }
         }
         else if (window.syncConfig.syncMode === 'personal') {
-            // Обычный инженер качает только свои проверки
             inspectionsQuery = inspectionsQuery.eq('engineer_name', iName);
         }
         // Директор и менеджер качают всё (условий не добавляем)
@@ -975,7 +1622,14 @@ window.triggerSync = async function (mode = 'silent') {
 
                 const localItem = {
                     id: String(h.id),
-                    projectName: h.project_name || '',
+
+                    // Старое поле для совместимости
+                    projectName: h.project_display_name || h.project_name || '',
+
+                    // Новые поля объекта
+                    project_canonical_key: h.project_canonical_key || h.project_name || '',
+                    project_display_name: h.project_display_name || h.project_name || '',
+
                     inspectorName: h.engineer_name || '',
                     contractorName: h.contractor_name || '',
                     templateKey: h.template_key || '',
@@ -990,7 +1644,12 @@ window.triggerSync = async function (mode = 'silent') {
                     details,
                     photos: photosMap[h.id] || {},
                     metrics: h.metrics || {},
-                    updatedAt: h.updated_at || new Date().toISOString()
+                    updatedAt: h.updated_at || new Date().toISOString(),
+
+                    // Всё, что пришло из Supabase, считается облачным и синхронизированным.
+                    source: 'cloud',
+                    syncStatus: 'synced',
+                    syncBlockReason: ''
                 };
 
                 // Собираем элементы в массив для пакетного сохранения
@@ -1081,17 +1740,42 @@ window.triggerSync = async function (mode = 'silent') {
                 .select('*')
                 .eq('project_code', pCode)
                 .eq('is_deleted', false)
-                .eq('task_data->>type', 'manual'); 
+                .eq('task_data->>type', 'manual');
 
             const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-            
+
             if (role === 'guest') {
                 taskQuery = taskQuery.eq('id', 'impossible_id');
-            } 
+            }
             else if (role === 'contractor') {
-                const myContrName = typeof appSettings !== 'undefined' ? appSettings.assignedContractor : '';
-                if (myContrName) taskQuery = taskQuery.eq('contractor_name', myContrName);
-                else taskQuery = taskQuery.eq('id', 'impossible_id');
+                const myContrName =
+                    typeof appSettings !== 'undefined'
+                        ? (appSettings.contractorName || appSettings.assignedContractor || '')
+                        : '';
+
+                if (myContrName) {
+                    taskQuery = taskQuery.eq('contractor_name', myContrName);
+                } else {
+                    taskQuery = taskQuery.eq('id', 'impossible_id');
+                }
+            }
+            else if (role === 'project_manager') {
+                const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+
+                if (assignedProjects && assignedProjects.length > 0) {
+                    taskQuery = taskQuery.in('project_canonical_key', assignedProjects);
+                } else {
+                    taskQuery = taskQuery.eq('id', 'impossible_id');
+                }
+            }
+            else if (role === 'engineer') {
+                const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+
+                taskQuery = taskQuery.eq('engineer_name', iName);
+
+                if (assignedProjects && assignedProjects.length > 0) {
+                    taskQuery = taskQuery.in('project_canonical_key', assignedProjects);
+                }
             }
             else if (window.syncConfig.syncMode === 'personal') {
                 taskQuery = taskQuery.eq('engineer_name', iName);
@@ -1115,7 +1799,14 @@ window.triggerSync = async function (mode = 'silent') {
                         t.id = row.id;
                         t.status = row.status || t.status;
                         t.updatedAt = row.updated_at;
+                        t.project_canonical_key = row.project_canonical_key || t.project_canonical_key || t.project || t.projectName || '';
+                        t.project_display_name = row.project_display_name || t.project_display_name || t.project || t.projectName || '';
 
+                        t.source = 'cloud';
+                        t.syncStatus = 'synced';
+                        t.sync_status = 'synced';
+                        t.syncBlockReason = '';
+                        t.sync_block_reason = '';
                         // --- НОВОЕ: Кэшируем фото закрытия задачи ---
                         if (t.completionPhoto && t.completionPhoto.startsWith('http')) {
                             t.completionPhoto = await window.cacheCloudPhotoToIndexedDB(t.completionPhoto);
@@ -1163,7 +1854,12 @@ window.triggerSync = async function (mode = 'silent') {
                 { type: 'custom_doc', store: 'custom_docs', memory: 'customDocs' },
                 { type: 'custom_node', store: 'custom_nodes', memory: 'customNodes' },
                 { type: 'custom_twi_card', store: 'twi_cards', memory: 'customTwiCards' },
-                { type: 'feedback', store: 'feedback_list', memory: 'rbi_feedbackData' }
+                { type: 'feedback', store: 'feedback_list', memory: 'rbi_feedbackData' },
+                { type: 'project_object', store: 'project_objects', memory: 'null' }, // <-- ДОБАВЛЕНО
+                { type: 'object_alias', store: 'object_aliases', memory: 'null' },     // <-- ДОБАВЛЕНО
+                { type: 'report', store: 'app_reports', memory: 'reportsArray' },
+                { type: 'report_template', store: 'report_templates', memory: 'userReportTemplates' },
+                { type: 'assistant_kb', store: 'app_assistant_kb', memory: 'appAssistantData' }
             ];
 
             for (const cType of cloudTypes) {
@@ -1171,12 +1867,12 @@ window.triggerSync = async function (mode = 'silent') {
                 if (!objects || objects.length === 0) continue;
 
                 window[cType.memory] = window[cType.memory] || [];
-                
+
                 for (const obj of objects) {
                     const localExisting = await dbGet(cType.store, obj.id);
                     const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || localExisting.createdAt || 0).getTime() : 0;
                     const cloudTime = new Date(obj.updatedAt || 0).getTime();
-                    
+
                     if (!localExisting || cloudTime > localTime) {
                         if (obj._deleted) {
                             await dbDelete(cType.store, obj.id);
@@ -1188,6 +1884,17 @@ window.triggerSync = async function (mode = 'silent') {
                             else window[cType.memory].push(obj);
                         }
                     }
+                }
+            } // конец цикла cloudTypes
+
+            // ИСПРАВЛЕНИЕ: ЖЕСТКАЯ СИНХРОНИЗАЦИЯ ПАМЯТИ ОТЧЕТОВ
+            // Достаем свежие данные из БД в оперативную память, чтобы экран их увидел
+            if (typeof dbGetAll === 'function') {
+                if (typeof reportsArray !== 'undefined') {
+                    reportsArray = (await dbGetAll('app_reports') || []).filter(x => !x._deleted);
+                }
+                if (typeof userReportTemplates !== 'undefined') {
+                    userReportTemplates = (await dbGetAll('report_templates') || []).filter(x => !x._deleted);
                 }
             }
 
@@ -1210,6 +1917,13 @@ window.triggerSync = async function (mode = 'silent') {
                                 if (localRecord) { await dbDelete('sk_records', cloudRecord.id); localMap.delete(cloudRecord.id); }
                             } else {
                                 cloudRecord._updatedAt = cloudRecord._updatedAt || new Date().toISOString();
+
+                                cloudRecord.source = 'cloud';
+                                cloudRecord.syncStatus = 'synced';
+                                cloudRecord.sync_status = 'synced';
+                                cloudRecord.syncBlockReason = '';
+                                cloudRecord.sync_block_reason = '';
+
                                 await dbPut('sk_records', cloudRecord);
                                 localMap.set(cloudRecord.id, cloudRecord);
                             }
@@ -1218,7 +1932,13 @@ window.triggerSync = async function (mode = 'silent') {
                     if (obj.volumes) { window.skVolumes = obj.volumes; await dbPut('sk_volumes', { id: 'main', data: window.skVolumes }); }
                     if (obj.contractorMap) { window.skContractorMap = obj.contractorMap; await dbPut('sk_contractor_map', { id: 'main', data: window.skContractorMap }); }
                 }
-                window.skRecords = Array.from(localMap.values()).filter(r => !r._deleted);
+                const allPulledSkRecords = Array.from(localMap.values()).filter(r => !r._deleted);
+
+                if (typeof sk_filterRecordsByAccess === 'function') {
+                    window.skRecords = sk_filterRecordsByAccess(allPulledSkRecords);
+                } else {
+                    window.skRecords = allPulledSkRecords;
+                }
                 if (document.getElementById('tab-analytics')?.classList.contains('active') && typeof currentActiveAnalyticsTab !== 'undefined' && currentActiveAnalyticsTab === 'sub-sk') {
                     if (typeof sk_renderMainTab === 'function') sk_renderMainTab();
                 }
@@ -1231,7 +1951,7 @@ window.triggerSync = async function (mode = 'silent') {
                     const localExisting = await dbGet('user_templates', obj.id);
                     const localTime = localExisting?.data ? new Date(localExisting.data.updatedAt || 0).getTime() : 0;
                     const cloudTime = new Date(obj.updatedAt || 0).getTime();
-                    
+
                     if (!localExisting || cloudTime > localTime) {
                         if (obj._deleted) {
                             delete userTemplates[obj.id];
@@ -1255,7 +1975,9 @@ window.triggerSync = async function (mode = 'silent') {
             currentHistory = typeof dbGetAll === 'function' ? (await dbGetAll('app_history') || []) : [];
 
             // Если не админ, отправляем ТОЛЬКО свои проверки, чтобы случайно не затереть чужие
-            if (window.RbiRoles && window.RbiRoles.getCurrentRole() !== 'manager') {
+            const currentPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+
+            if (!['manager', 'deputy_manager'].includes(currentPushRole)) {
                 currentHistory = currentHistory.filter(i => i.inspectorName === iName);
             }
 
@@ -1275,7 +1997,69 @@ window.triggerSync = async function (mode = 'silent') {
                     const uploadedPhotos = {};
                     const storagePathsToRemove = []; // Для мягкого удаления фото
                     const isDeleted = c._deleted === true;
+                    // --- РЕТРОАКТИВНАЯ НОРМАЛИЗАЦИЯ ИМЕНИ ОБЪЕКТА ---
+                    // Если у локальной проверки нет жесткого ключа или он равен сырому тексту:
+                    if (typeof ObjectDirectory !== 'undefined' && (!c.project_canonical_key || c.project_canonical_key === c.projectName || c.project_canonical_key === c.project_display_name)) {
+                        try {
+                            const match = await ObjectDirectory.normalizeProjectName(c.projectName || c.project_display_name);
+                            if (match && match.status === 'matched') {
+                                c.project_canonical_key = match.canonical_key;
+                                c.project_display_name = match.display_name;
+                                c.projectName = match.display_name; // Обновляем старое поле тоже
+                                if (typeof dbPut === 'function') await dbPut('app_history', c); // Сохраняем обновление
+                            }
+                        } catch (err) { console.warn("[Sync] Ошибка ретроактивной нормализации:", err); }
+                    }
+                    // ------------------------------------------------
+                    // Проверяем, можно ли отправлять локальную или импортированную запись.
+                    // ВАЖНО: проверка должна быть ДО загрузки фото.
+                    if (c.source === 'local' || c.importedFromBackup) {
+                        const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+                        const currentEngineer = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : (window.syncConfig?.engineerName || '');
+                        const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : (appSettings?.assignedProjects || []);
 
+                        const recProject = c.project_canonical_key || c.projectName || '';
+                        const recEngineer = c.inspectorName || c.inspector_name || '';
+
+                        let allowedToPush = false;
+                        let blockReason = '';
+
+                        if (!canPush) {
+                            blockReason = 'Роль не подтверждена для отправки';
+                        } else if (['manager', 'deputy_manager'].includes(currentRole)) {
+                            allowedToPush = true;
+                        } else if (currentRole === 'engineer') {
+                            const ownerOk = !recEngineer || recEngineer === currentEngineer;
+                            const projectOk =
+                                !assignedProjects ||
+                                assignedProjects.length === 0 ||
+                                assignedProjects.includes(recProject);
+
+                            if (ownerOk && projectOk) {
+                                allowedToPush = true;
+                            } else if (!ownerOk) {
+                                blockReason = 'Запись создана другим инженером';
+                            } else {
+                                blockReason = 'Объект не назначен пользователю';
+                            }
+                        } else {
+                            blockReason = 'Эта роль не может отправлять проектные данные';
+                        }
+
+                        if (!allowedToPush) {
+                            c.syncStatus = 'blocked';
+                            c.sync_status = 'blocked';
+                            c.syncBlockReason = blockReason || 'Отправка запрещена';
+                            c.sync_block_reason = c.syncBlockReason;
+                            c.updatedAt = new Date().toISOString();
+
+                            if (typeof dbPut === 'function') {
+                                await dbPut('app_history', c);
+                            }
+
+                            continue;
+                        }
+                    }
                     for (const itemId of Object.keys(c.photos || {})) {
                         const oldPhoto = c.photos[itemId];
 
@@ -1289,6 +2073,10 @@ window.triggerSync = async function (mode = 'silent') {
                                     id: `${inspectionId}_${itemId}_main`,
                                     inspection_id: inspectionId,
                                     project_code: pCode,
+                                    project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                    source: 'cloud',
+                                    sync_status: 'synced',
+                                    sync_block_reason: '',
                                     item_id: String(itemId),
                                     photo_type: 'inspection',
                                     bucket_name: 'inspection-photos',
@@ -1313,6 +2101,10 @@ window.triggerSync = async function (mode = 'silent') {
                                     id: `${inspectionId}_${itemId}_main`,
                                     inspection_id: inspectionId,
                                     project_code: pCode,
+                                    project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                    source: 'cloud',
+                                    sync_status: 'synced',
+                                    sync_block_reason: '',
                                     item_id: String(itemId),
                                     photo_type: 'inspection',
                                     bucket_name: 'inspection-photos',
@@ -1332,13 +2124,23 @@ window.triggerSync = async function (mode = 'silent') {
                         if (rmErr) console.warn("[Sync] Ошибка удаления фото инспекции из Storage:", rmErr);
                     }
 
+                    // Проверяем, можно ли отправлять локальную или импортированную запись
+
                     const { error: headerError } = await window.supabaseClient
                         .from('rbi_inspections')
                         .upsert({
                             id: inspectionId,
                             project_code: pCode,
-                            project_name: c.projectName || '',
+
+                            // Старое поле
+                            project_name: c.project_display_name || c.projectName || '',
+
+                            // Новые поля объектной модели
+                            project_canonical_key: c.project_canonical_key || c.projectName || '',
+                            project_display_name: c.project_display_name || c.projectName || '',
+
                             engineer_name: c.inspectorName || iName,
+                            inspector_name: c.inspectorName || iName,
                             contractor_name: c.contractorName || '',
                             template_key: c.templateKey || '',
                             template_title: c.templateTitle || '',
@@ -1351,10 +2153,33 @@ window.triggerSync = async function (mode = 'silent') {
                             is_completed: c.isCompleted !== false,
                             is_deleted: isDeleted,
                             deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
+
+                            source: 'cloud',
+                            sync_status: 'synced',
+                            sync_block_reason: '',
+
                             updated_at: new Date().toISOString()
                         }, { onConflict: 'id' });
 
                     if (headerError) throw headerError;
+                    actuallyPushedChecks++;
+
+                    // После успешной отправки шапки проверки помечаем локальную запись как синхронизированную.
+                    // Это важно для разделения "Моя аналитика" / "Облачная аналитика".
+                    if (!isDeleted) {
+                        c.source = 'cloud';
+                        c.syncStatus = 'synced';
+                        c.sync_status = 'synced';
+                        c.syncBlockReason = '';
+                        c.sync_block_reason = '';
+                        c.importedFromBackup = false;
+                        c.updatedAt = new Date().toISOString();
+                        c.updated_at = c.updatedAt;
+
+                        if (typeof dbPut === 'function') {
+                            await dbPut('app_history', c);
+                        }
+                    }
 
                     const itemRows = [];
 
@@ -1366,6 +2191,10 @@ window.triggerSync = async function (mode = 'silent') {
                             id: `${inspectionId}_${itemId}`,
                             inspection_id: inspectionId,
                             project_code: pCode,
+                            project_canonical_key: c.project_canonical_key || c.projectName || '',
+                            source: 'cloud',
+                            sync_status: 'synced',
+                            sync_block_reason: '',
                             item_id: String(itemId),
                             item_name: info?.n || d.name || '',
                             item_weight: info?.w || d.weight || null,
@@ -1443,9 +2272,6 @@ window.triggerSync = async function (mode = 'silent') {
                         }, { onConflict: 'id' });
                 }
             }
-            // Счётчики реально отправленных данных (чтобы не врать пользователю)
-            let actuallyPushedProfiles = 0;
-            let actuallyPushedTasks = 0;
         }
         // =====================================================
         // 7. PUSH: профиль инженера для совместимости
@@ -1516,6 +2342,7 @@ window.triggerSync = async function (mode = 'silent') {
         // =====================================================
         if (canPush) {
             try {
+
                 let tasks = typeof dbGetAll === 'function'
                     ? (await dbGetAll('rbi_tasks') || [])
                     : (typeof window.rbi_tasksData !== 'undefined' ? window.rbi_tasksData : []);
@@ -1528,6 +2355,24 @@ window.triggerSync = async function (mode = 'silent') {
                     const tTime = new Date(t.updatedAt || t.updated_at || t.date || t.createdAt || 0).getTime();
                     return tTime === 0 || tTime >= lastPushTimeTasks;
                 });
+                const taskPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+
+                if (taskPushRole === 'engineer') {
+                    tasks = tasks.filter(t => {
+                        const taskEngineer =
+                            t.engineerName ||
+                            t.inspectorName ||
+                            t.engineer_name ||
+                            t.inspector_name ||
+                            '';
+
+                        return !taskEngineer || taskEngineer === iName;
+                    });
+                }
+
+                if (!['engineer', 'deputy_manager', 'manager'].includes(taskPushRole)) {
+                    tasks = [];
+                }
 
                 actuallyPushedTasks = tasks.length; // Запоминаем для честного счетчика
 
@@ -1555,14 +2400,29 @@ window.triggerSync = async function (mode = 'silent') {
                         const upsertData = batch.map(task => ({
                             id: String(task.id),
                             project_code: pCode,
+
+                            project_canonical_key: task.project_canonical_key || task.project || task.projectName || '',
+                            project_display_name: task.project_display_name || task.project || task.projectName || '',
+
                             engineer_name: task.engineerName || task.inspectorName || iName,
+                            inspector_name: task.engineerName || task.inspectorName || iName,
                             contractor_name: task.contractor || task.contractorName || '',
                             title: task.title || '',
-                            task_data: task,
+                            task_data: {
+                                ...task,
+                                source: 'cloud',
+                                syncStatus: 'synced',
+                                sync_status: 'synced',
+                                syncBlockReason: '',
+                                sync_block_reason: ''
+                            },
                             status: task.status || 'pending',
                             task_date: task.date || task.taskDate || null,
                             is_deleted: task._deleted || false,
                             deleted_at: task._deleted ? (task._deletedAt || new Date().toISOString()) : null,
+                            source: 'cloud',
+                            sync_status: 'synced',
+                            sync_block_reason: '',
                             updated_at: task.updatedAt || task.updated_at || new Date().toISOString()
                         }));
 
@@ -1571,6 +2431,20 @@ window.triggerSync = async function (mode = 'silent') {
                             .upsert(upsertData, { onConflict: 'id' });
 
                         if (taskError) throw taskError;
+                        // После успешной отправки задач помечаем локальные ручные задачи как синхронизированные
+                        for (const task of batch) {
+                            task.source = 'cloud';
+                            task.syncStatus = 'synced';
+                            task.sync_status = 'synced';
+                            task.syncBlockReason = '';
+                            task.sync_block_reason = '';
+                            task.importedFromBackup = false;
+                            task.updatedAt = new Date().toISOString();
+
+                            if (typeof dbPut === 'function') {
+                                await dbPut('rbi_tasks', task);
+                            }
+                        }
                     }
                 }
             } catch (e) {
@@ -1623,88 +2497,222 @@ window.triggerSync = async function (mode = 'silent') {
         // =====================================================
         if (canPush) {
             try {
-                const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
-                const filterNew = (arr) => arr.filter(i => {
-                    const t = new Date(i.updatedAt || i.updated_at || i.date || i.createdAt || 0).getTime();
-                    return t === 0 || t >= lastPushTime;
-                });
+                const projectObjectPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
 
-                // Единая функция отправки для всех новых таблиц
-                const syncTableData = async (storeName, memoryArrayName, objectType) => {
-                    if (typeof dbGetAll !== 'function') return;
-                    const items = filterNew(await dbGetAll(storeName) || []);
-                    for (const obj of items) {
-                        // bucketName внутри функции pushCloudObject переопределится сам на правильный
-                        const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
-                        if (updated) {
-                            await dbPut(storeName, updated);
-                            if (window[memoryArrayName] && Array.isArray(window[memoryArrayName])) {
-                                const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
-                                if (idx !== -1) window[memoryArrayName][idx] = updated;
+                if (!['engineer', 'deputy_manager', 'manager'].includes(projectObjectPushRole)) {
+                    console.log('[Sync] Push прочих проектных модулей пропущен для роли:', projectObjectPushRole);
+                } else {
+                    const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
+                    const filterNew = (arr) => arr.filter(i => {
+                        const t = new Date(i.updatedAt || i.updated_at || i.date || i.createdAt || 0).getTime();
+                        return t === 0 || t >= lastPushTime;
+                    });
+
+                    // Единая функция отправки для всех новых таблиц
+                    const syncTableData = async (storeName, memoryArrayName, objectType) => {
+                        if (typeof dbGetAll !== 'function') return;
+                        let items = filterNew(await dbGetAll(storeName) || []);
+
+                        // --- ИСПРАВЛЕНИЕ ЗАЩИТЫ: Инженер может отправлять в облако только СВОИ записи ---
+                        if (projectObjectPushRole === 'engineer') {
+                            items = items.filter(obj => {
+                                const objOwner = obj.owner || obj.author || obj.inspectorName || obj.engineerName || '';
+                                return !objOwner || objOwner === iName;
+                            });
+                        }
+                        // ---------------------------------------------------------------------------------
+
+                        for (const obj of items) {
+                            // bucketName внутри функции pushCloudObject переопределится сам на правильный
+                            const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
+                            if (updated) {
+                                updated.source = 'cloud';
+                                updated.syncStatus = 'synced';
+                                updated.sync_status = 'synced';
+                                updated.syncBlockReason = '';
+                                updated.sync_block_reason = '';
+                                updated.importedFromBackup = false;
+                                updated.updatedAt = new Date().toISOString();
+
+                                await dbPut(storeName, updated);
+
+                                if (window[memoryArrayName] && Array.isArray(window[memoryArrayName])) {
+                                    const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
+
+                                    if (idx !== -1) {
+                                        window[memoryArrayName][idx] = updated;
+                                    } else {
+                                        window[memoryArrayName].push(updated);
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    // Синхронизация проектных модулей
+                    await syncTableData('rbi_meetings', 'rbi_meetingsData', 'meeting');
+                    await syncTableData('rbi_interventions', 'rbi_interventionsData', 'intervention');
+                    await syncTableData('rbi_practices', 'rbi_practicesData', 'practice');
+                    await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
+                    await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
+                    await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
+
+                    // Синхронизация новых таблиц Справочников
+                    await syncTableData('custom_docs', 'customDocs', 'custom_doc');
+                    await syncTableData('custom_nodes', 'customNodes', 'custom_node');
+                    await syncTableData('twi_cards', 'customTwiCards', 'custom_twi_card');
+                    await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
+                    await syncTableData('report_templates', 'userReportTemplates', 'report_template'); // <-- ДОБАВИЛИ
+                    await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
+                    // --- НОВОЕ: ОТПРАВКА ОТЧЕТОВ И HTML СНИМКОВ ---
+                    let reportsToPush = filterNew(await dbGetAll(STORES.REPORTS) || []);
+                    // Отправляем только свои отчеты
+                    reportsToPush = reportsToPush.filter(r => r.created_by === iName || !r.created_by);
+
+                    for (const rep of reportsToPush) {
+                        try {
+                            if (!rep.is_deleted && rep.file_blob && (!rep.file_url || rep.sync_status !== 'synced')) {
+                                // 1. Загружаем PDF в бакет
+                                const fileName = `${rep.id}.pdf`;
+                                const { data: fileData, error: fileErr } = await window.supabaseClient.storage
+                                    .from('reports')
+                                    .upload(fileName, rep.file_blob, { upsert: true, contentType: 'application/pdf' });
+
+                                if (fileErr) throw fileErr;
+
+                                // Получаем публичную ссылку
+                                const { data: pubData } = window.supabaseClient.storage.from('reports').getPublicUrl(fileName);
+                                rep.file_url = pubData.publicUrl;
+                            }
+
+                            // 2. Отправляем метаданные в таблицу
+                            await window.pushCloudObject('report', rep.id, rep, 'reports');
+
+                            // 3. Отправляем HTML-снимок для QR-кода (если он есть)
+                            if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
+                                await window.pushCloudObject('snapshot', 'snap_' + rep.id, window._tempSnapshots[rep.id]);
+                                delete window._tempSnapshots[rep.id]; 
+                            }
+
+                            // 4. ЖЕСТКО помечаем локально как синхронизированное (чтобы бейдж стал зеленым)
+                            rep.source = 'cloud';
+                            rep.sync_status = 'synced';
+                            rep.syncStatus = 'synced';
+                            rep.updated_at = new Date().toISOString();
+                            rep.updatedAt = rep.updated_at; // Дублируем ключ для верности
+                            await dbPut(STORES.REPORTS, rep);
+
+                            // Обновляем массив в оперативной памяти
+                            if (typeof reportsArray !== 'undefined') {
+                                const idx = reportsArray.findIndex(x => x.id === rep.id);
+                                if (idx !== -1) reportsArray[idx] = rep;
+                            }
+                            
+                            // Заставляем интерфейс перерисовать экран отчетов мгновенно!
+                            if (document.getElementById('tab-analytics')?.classList.contains('active') && window.currentHistoryViewMode === 'reports') {
+                                if (typeof renderReportsList === 'function') renderReportsList();
+                            }
+
+                        } catch (err) {
+                            console.error('[Sync] Ошибка выгрузки отчета:', err);
+                        }
+                    }
+                    // ---------------------------------------------
+
+                    // Отправка ПК СК (Стройконтроль) - у него своя логика бандлов
+                    if (typeof dbGetAll === 'function') {
+                        let skRecs = await dbGetAll('sk_records') || [];
+
+                        const skPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+                        const skCurrentUser = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : iName;
+
+                        // ПК СК отправляют только инженер, заместитель и администратор.
+                        // Инженер отправляет только свои загруженные записи.
+                        // Заместитель и администратор отправляют любые.
+                        if (!['engineer', 'deputy_manager', 'manager'].includes(skPushRole)) {
+                            skRecs = [];
+                        } else if (skPushRole === 'engineer') {
+                            skRecs = skRecs.filter(r => {
+                                const uploadedBy =
+                                    r.uploaded_by ||
+                                    r.sk_uploaded_by ||
+                                    r.imported_by ||
+                                    '';
+
+                                return uploadedBy === skCurrentUser;
+                            });
+                        }
+
+                        const newSkRecs = filterNew(skRecs);
+
+                        if (mode === 'manual' || newSkRecs.length > 0) {
+                            const skVols = await dbGet('sk_volumes', 'main');
+                            const skCmap = await dbGet('sk_contractor_map', 'main');
+                            if (skRecs.length > 0 || (skVols && skVols.data)) {
+                                const skBundle = {
+                                    id: 'sk_bundle_' + pCode + '_' + iName,
+                                    project_code: pCode,
+                                    project_canonical_key: '',
+                                    project_display_name: '',
+                                    inspector_name: iName,
+                                    contractor_name: '',
+                                    records: skRecs,
+                                    volumes: skVols ? skVols.data : {},
+                                    contractorMap: skCmap ? skCmap.data : {},
+                                    source: 'cloud',
+                                    syncStatus: 'synced',
+                                    sync_status: 'synced',
+                                    syncBlockReason: '',
+                                    sync_block_reason: '',
+                                    updatedAt: new Date().toISOString()
+                                };
+                                await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                                for (const rec of skRecs) {
+                                    rec.source = 'cloud';
+                                    rec.syncStatus = 'synced';
+                                    rec.sync_status = 'synced';
+                                    rec.syncBlockReason = '';
+                                    rec.sync_block_reason = '';
+                                    rec._updatedAt = new Date().toISOString();
+                                    rec.updated_at = rec._updatedAt;
+
+                                    if (typeof dbPut === 'function') {
+                                        await dbPut('sk_records', rec);
+                                    }
+                                }
                             }
                         }
                     }
-                };
 
-                // Синхронизация проектных модулей
-                await syncTableData('rbi_meetings', 'rbi_meetingsData', 'meeting');
-                await syncTableData('rbi_interventions', 'rbi_interventionsData', 'intervention');
-                await syncTableData('rbi_practices', 'rbi_practicesData', 'practice');
-                await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
-                await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
-                await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
-
-                // Синхронизация новых таблиц Справочников
-                await syncTableData('custom_docs', 'customDocs', 'custom_doc');
-                await syncTableData('custom_nodes', 'customNodes', 'custom_node');
-                await syncTableData('twi_cards', 'customTwiCards', 'custom_twi_card');
-                await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
-
-                // Отправка ПК СК (Стройконтроль) - у него своя логика бандлов
-                if (typeof dbGetAll === 'function') {
-                    const skRecs = await dbGetAll('sk_records') || [];
-                    const newSkRecs = filterNew(skRecs);
-                    if (mode === 'manual' || newSkRecs.length > 0) {
-                        const skVols = await dbGet('sk_volumes', 'main');
-                        const skCmap = await dbGet('sk_contractor_map', 'main');
-                        if (skRecs.length > 0 || (skVols && skVols.data)) {
-                            const skBundle = {
-                                id: 'sk_bundle_' + pCode + '_' + iName,
-                                records: skRecs,
-                                volumes: skVols ? skVols.data : {},
-                                contractorMap: skCmap ? skCmap.data : {},
-                                updatedAt: new Date().toISOString()
-                            };
-                            await window.pushCloudObject('sk_data_bundle', skBundle.id, skBundle, 'custom-assets');
+                    // Отправка Чек-листов (Это объект-словарь, а не массив)
+                    if (typeof userTemplates !== 'undefined') {
+                        const tmplArray = Object.values(userTemplates);
+                        for (const obj of filterNew(tmplArray)) {
+                            const updated = await window.pushCloudObject('user_template', obj.id, obj, 'library-checklists');
+                            if (updated) {
+                                userTemplates[updated.id] = updated;
+                                await dbPut('user_templates', { slug: updated.id, data: updated });
+                            }
                         }
                     }
                 }
-
-                // Отправка Чек-листов (Это объект-словарь, а не массив)
-                if (typeof userTemplates !== 'undefined') {
-                    const tmplArray = Object.values(userTemplates);
-                    for (const obj of filterNew(tmplArray)) {
-                        const updated = await window.pushCloudObject('user_template', obj.id, obj, 'library-checklists');
-                        if (updated) {
-                            userTemplates[updated.id] = updated;
-                            await dbPut('user_templates', { slug: updated.id, data: updated });
-                        }
-                    }
-                }
-
             } catch (e) {
                 console.warn("[Sync] Прочие модули не отправлены:", e.message);
             }
         } // <-- Идеально закрытая скобка if(canPush)
-            // =====================================================
+        // =====================================================
         // 9. ЗАВЕРШЕНИЕ СИНХРОНИЗАЦИИ И ОБНОВЛЕНИЕ UI
         // =====================================================
         const doneAt = new Date().toISOString();
 
         localStorage.setItem('rbi_sync_last_pull_at', doneAt);
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
-        localStorage.setItem('rbi_cloud_dirty', '0');
-        
+        if (pushErrors === 0) {
+            localStorage.setItem('rbi_cloud_dirty', '0');
+        } else {
+            console.log('[Sync] Были сетевые ошибки, флаг изменений сохранен для повторной попытки.');
+        }
+
         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
         if (typeof window.downloadMissingCloudFiles === 'function' && appSettings.autoCacheCloudFiles) {
             const now = Date.now();
@@ -1718,7 +2726,7 @@ window.triggerSync = async function (mode = 'silent') {
 
         // ИСПРАВЛЕНИЕ: Честный подсчет реально отправленных и полученных объектов
         const pulledChecks = cloudInspections ? cloudInspections.length : 0;
-        const pushedChecks = currentHistory ? currentHistory.length : 0;
+        const pushedChecks = actuallyPushedChecks;
 
         const totalPushed = pushedChecks + actuallyPushedTasks + actuallyPushedProfiles;
         const hasChanges = pulledChecks > 0 || totalPushed > 0;
@@ -1730,7 +2738,8 @@ window.triggerSync = async function (mode = 'silent') {
         window.syncDirtyFlags.tasks = true;
         window.syncDirtyFlags.session = true;
         window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
-
+        // Перезагружаем Справочник объектов в память, если он прилетел из облака
+        if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
         // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
         if (typeof window.rbi_generateAutoTasks === 'function') {
@@ -1757,10 +2766,20 @@ window.triggerSync = async function (mode = 'silent') {
             if (typeof renderDocsList === 'function') renderDocsList();
             if (typeof renderNodesList === 'function') renderNodesList();
 
+            if (typeof rbi_loadPractices === 'function' && typeof rbi_renderPracticesTab === 'function') {
+                await rbi_loadPractices();
+                await rbi_renderPracticesTab();
+            }
+
             // Обновляем текущую активную аналитику, если мы на этой вкладке
             const analyticsTab = document.getElementById('tab-analytics');
             if (analyticsTab && analyticsTab.classList.contains('active') && typeof renderCurrentAnalyticsTab === 'function') {
                 renderCurrentAnalyticsTab();
+            }
+
+            // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ОТЧЕТОВ: Если открыта вкладка отчетов, перерисовываем её
+            if (analyticsTab && analyticsTab.classList.contains('active') && window.currentHistoryViewMode === 'reports') {
+                if (typeof renderReportsList === 'function') renderReportsList();
             }
 
             if (hasChanges) {
@@ -1774,15 +2793,17 @@ window.triggerSync = async function (mode = 'silent') {
                 safeToast("⚠️ В фоне загружены новые аварии (B3). Обновите вкладку для просмотра.");
             }
         }
-        
+
     } catch (e) {
         console.error("[Sync] Ошибка:", e);
+        pushErrors++;
         if (mode === 'manual') {
             safeToast('❌ Ошибка: ' + (e.message ? e.message.substring(0, 80) : 'Сбой сети'));
         } // <-- ВОТ ЭТОЙ СКОБКИ НЕ ХВАТАЛО
     } finally {
         if (syncTimeout) clearTimeout(syncTimeout);
         window.isSyncing = false;
+        syncChannel.postMessage('sync_done');
         window.renderSyncUI();
     }
 };

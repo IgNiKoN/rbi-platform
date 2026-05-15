@@ -25,14 +25,169 @@ function updateSkRecordTimestamps(record) {
     if (record._deleted === undefined) record._deleted = false;
     return record;
 }
+// Текущий пользователь для ПК СК
+function sk_getCurrentUserName() {
+    if (window.RbiRoles && typeof window.RbiRoles.getCurrentEngineerName === 'function') {
+        return window.RbiRoles.getCurrentEngineerName();
+    }
+
+    return window.syncConfig?.engineerName ||
+        appSettings?.engineerName ||
+        document.getElementById('inp-inspector')?.value?.trim() ||
+        'Инженер';
+}
+
+// Роль текущего пользователя
+function sk_getCurrentRole() {
+    return window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+}
+
+// Загружать ПК СК могут инженер, заместитель и администратор
+function sk_canUploadRecords() {
+    return ['engineer', 'deputy_manager', 'manager'].includes(sk_getCurrentRole());
+}
+
+// Удаление ПК СК:
+// инженер удаляет только свои загруженные записи;
+// заместитель и администратор удаляют любые;
+// остальные не удаляют.
+function sk_canDeleteRecord(record) {
+    if (!record) return false;
+
+    const role = sk_getCurrentRole();
+
+    if (['manager', 'deputy_manager'].includes(role)) {
+        return true;
+    }
+
+    if (role !== 'engineer') {
+        return false;
+    }
+
+    const currentUser = sk_getCurrentUserName();
+
+    const uploadedBy =
+        record.uploaded_by ||
+        record.sk_uploaded_by ||
+        record.imported_by ||
+        '';
+
+    return uploadedBy === currentUser;
+}
+// Фильтрация записей ПК СК по текущей роли пользователя
+function sk_filterRecordsByAccess(records) {
+    if (!Array.isArray(records)) return [];
+
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+
+    const assignedProjects = window.RbiRoles
+        ? window.RbiRoles.getAssignedProjects()
+        : (appSettings?.assignedProjects || []);
+
+    const currentEngineer = window.RbiRoles
+        ? window.RbiRoles.getCurrentEngineerName()
+        : (appSettings?.engineerName || '');
+
+    const assignedContractor = window.RbiRoles
+        ? window.RbiRoles.getAssignedContractor()
+        : (appSettings?.contractorName || appSettings?.assignedContractor || '');
+
+    // Админ, зам и директор видят всё
+    if (['manager', 'deputy_manager', 'director'].includes(role)) {
+        return records;
+    }
+
+    // Руководитель проекта видит все записи по своим объектам
+    if (role === 'project_manager') {
+        if (!assignedProjects || assignedProjects.length === 0) return [];
+
+        return records.filter(r => {
+            const recProject =
+                r.project_canonical_key ||
+                r.canonical_key ||
+                r.projectName ||
+                r.project ||
+                '';
+
+            return assignedProjects.includes(recProject);
+        });
+    }
+
+    // Инженер видит только записи, которые он сам загрузил,
+    // и только по своим объектам, если объекты назначены.
+    if (role === 'engineer') {
+        return records.filter(r => {
+            const recProject =
+                r.project_canonical_key ||
+                r.canonical_key ||
+                r.projectName ||
+                r.project ||
+                '';
+
+            const uploadedBy =
+                r.uploaded_by ||
+                r.sk_uploaded_by ||
+                r.imported_by ||
+                '';
+
+            const projectOk =
+                !assignedProjects ||
+                assignedProjects.length === 0 ||
+                assignedProjects.includes(recProject);
+
+            const ownerOk =
+                uploadedBy === currentEngineer;
+
+            return projectOk && ownerOk;
+        });
+    }
+
+    // Подрядчик видит только свою организацию
+    if (role === 'contractor') {
+        if (!assignedContractor) return [];
+
+        return records.filter(r => {
+            const recContractor =
+                r.contractor ||
+                r.contractorName ||
+                r.contractor_name ||
+                '';
+
+            const recProject =
+                r.project_canonical_key ||
+                r.canonical_key ||
+                r.projectName ||
+                r.project ||
+                '';
+
+            const contractorOk = recContractor === assignedContractor;
+
+            const projectOk =
+                !assignedProjects ||
+                assignedProjects.length === 0 ||
+                assignedProjects.includes(recProject);
+
+            return contractorOk && projectOk;
+        });
+    }
+
+    // Гость не видит ПК СК
+    return [];
+}
 // === 1. ЗАГРУЗКА БАЗЫ ДАННЫХ ===
-window.sk_loadData = async function() {
+window.sk_loadData = async function () {
     // ВСТАВИТЬ ЭТУ СТРОЧКУ ДЛЯ ЗАЩИТЫ ДЕМО-РЕЖИМА:
-    if (typeof isDemoMode !== 'undefined' && isDemoMode) return; 
+    if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
 
     try {
         const records = await dbGetAll(STORES.SK_RECORDS);
-         if (records) window.skRecords = records.filter(r => !r._deleted);
+
+        if (records) {
+            const activeRecords = records.filter(r => !r._deleted);
+            window.skRecords = sk_filterRecordsByAccess(activeRecords);
+        } else {
+            window.skRecords = [];
+        }
 
         const volumes = await dbGet(STORES.SK_VOLUMES, 'main');
         if (volumes && volumes.data) window.skVolumes = volumes.data;
@@ -51,7 +206,7 @@ window.sk_loadData = async function() {
 // === 2. ГЛАВНЫЙ РЕНДЕР ВКЛАДКИ ===
 window.skCurrentPeriodFilter = 'ALL'; // Глобальная переменная для фильтра
 
-window.sk_renderMainTab = async function() {
+window.sk_renderMainTab = async function () {
     await sk_loadData();
     const container = document.getElementById('sk-main-container');
     if (!container) return;
@@ -59,10 +214,10 @@ window.sk_renderMainTab = async function() {
     // Вычисляем период загруженных данных
     let minD = null, maxD = null;
     window.skRecords.forEach(r => {
-        if(r.date_issued) {
+        if (r.date_issued) {
             const d = new Date(r.date_issued);
-            if(!minD || d < minD) minD = d;
-            if(!maxD || d > maxD) maxD = d;
+            if (!minD || d < minD) minD = d;
+            if (!maxD || d > maxD) maxD = d;
         }
     });
     const periodStr = (minD && maxD) ? `с ${minD.toLocaleDateString('ru-RU')} по ${maxD.toLocaleDateString('ru-RU')}` : 'Не определен';
@@ -70,7 +225,8 @@ window.sk_renderMainTab = async function() {
     // --- ПРОВЕРКА ПРАВ ДЛЯ ВКЛАДКИ HR ---
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
     const isManagement = ['project_manager', 'deputy_manager', 'director', 'manager'].includes(role);
-    
+    const canUploadSk = ['engineer', 'deputy_manager', 'manager'].includes(role);
+
     const hrBtnHtml = isManagement ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
 
     let html = `
@@ -86,13 +242,19 @@ window.sk_renderMainTab = async function() {
                     <p class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Период: ${periodStr}</p>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="sk_clearData()" class="w-10 h-10 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-transform" title="Очистить базу СК">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                ${canUploadSk ? `
+                   <button onclick="sk_clearData()" class="w-10 h-10 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-transform" title="Очистить базу СК">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                     <button onclick="document.getElementById('sk-excel-input').click()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold uppercase shadow-md active:scale-95 flex items-center gap-1.5 h-10">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
-                    </button>
-                </div>
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
+                   </button>
+                            ` : `
+                    <div class="text-[9px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl border border-[var(--card-border)]">
+                  Только просмотр
+                    </div>
+    `}
+</div>
             </div>
             
             <div class="flex items-center gap-2 border-t border-[var(--card-border)] pt-3">
@@ -117,14 +279,18 @@ window.sk_renderMainTab = async function() {
     `;
 
     container.innerHTML = html;
-    sk_renderVolumes(); 
-    sk_renderDashboard(); 
+    sk_renderVolumes();
+    sk_renderDashboard();
 };
 
 // Функция очистки данных Стройконтроля
-window.sk_clearData = async function() {
+window.sk_clearData = async function () {
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    if (!['manager', 'deputy_manager'].includes(role)) {
+        return showToast("⛔ Недостаточно прав для очистки ПК СК");
+    }
     if (!confirm("Удалить ВСЕ загруженные замечания Стройконтроля? (Справочник объемов и настройки колонок сохранятся)")) return;
-    
+
     for (let rec of window.skRecords) {
         rec._deleted = true;
         rec._updatedAt = new Date().toISOString();
@@ -137,11 +303,11 @@ window.sk_clearData = async function() {
     sk_renderMainTab();
 };
 
-window.sk_switchView = function(view) {
+window.sk_switchView = function (view) {
     document.getElementById('sk-view-dashboard').classList.add('hidden');
     document.getElementById('sk-view-volumes').classList.add('hidden');
     document.getElementById('sk-view-hr').classList.add('hidden');
-    
+
     const defaultBtnClass = "shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
     const activeBtnClass = "shrink-0 px-4 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
 
@@ -157,7 +323,7 @@ window.sk_switchView = function(view) {
 };
 
 // === 3. СПРАВОЧНИК ОБЪЕМОВ ===
-window.sk_renderVolumes = function() {
+window.sk_renderVolumes = function () {
     const container = document.getElementById('sk-view-volumes');
     if (!container) return;
 
@@ -191,14 +357,14 @@ window.sk_renderVolumes = function() {
     `;
 };
 
-window.sk_addVolume = async function() {
+window.sk_addVolume = async function () {
     const nameInput = document.getElementById('sk-vol-name');
     const amountInput = document.getElementById('sk-vol-amount');
     const unitInput = document.getElementById('sk-vol-unit');
 
     const name = nameInput.value.trim();
     // Убираем пробелы из числа (если юзер ввел "1 000") и парсим
-    const amount = parseFloat(amountInput.value.replace(/\s/g, '')); 
+    const amount = parseFloat(amountInput.value.replace(/\s/g, ''));
     const unit = unitInput.value.trim();
 
     if (!name) return showToast("⚠️ Укажите вид работ!");
@@ -207,16 +373,16 @@ window.sk_addVolume = async function() {
 
     window.skVolumes[name] = { amount, unit };
     await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes });
-    
+
     // Очищаем поля после успешного добавления
     nameInput.value = ''; amountInput.value = ''; unitInput.value = '';
-    
+
     showToast("✅ Объем добавлен в справочник!");
     sk_renderVolumes();
     sk_renderDashboard();
 };
 
-window.sk_deleteVolume = async function(name) {
+window.sk_deleteVolume = async function (name) {
     delete window.skVolumes[name];
     await dbPut(STORES.SK_VOLUMES, { id: 'main', data: window.skVolumes });
     sk_renderVolumes();
@@ -224,8 +390,12 @@ window.sk_deleteVolume = async function(name) {
 };
 
 // === 5. ИМПОРТ EXCEL (Чтение файла) ===
-window.sk_handleExcelImport = async function(event) {
+window.sk_handleExcelImport = async function (event) {
     const file = event.target.files[0];
+    if (!sk_canUploadRecords()) {
+        event.target.value = '';
+        return showToast("⛔ Загружать ПК СК могут только инженер, заместитель или администратор");
+    }
     if (!file) return;
 
     showToast("⚙️ Читаем Excel файл...");
@@ -242,10 +412,10 @@ window.sk_handleExcelImport = async function(event) {
             if (rows.length < 2) throw new Error("Файл пуст или не содержит данных");
 
             const headers = rows[0].map(h => h ? h.toString().trim() : '');
-            
+
             window.skTempRawHeaders = headers;
             window.skTempRawRows = rows;
-            
+
             sk_showMappingModal(headers, rows[1] || []);
 
         } catch (err) {
@@ -254,13 +424,13 @@ window.sk_handleExcelImport = async function(event) {
         }
     };
     reader.readAsArrayBuffer(file);
-    event.target.value = ''; 
+    event.target.value = '';
 };
 
 // === 6. МОДАЛКА МАППИНГА КОЛОНОК (С ИИ) ===
-window.sk_showMappingModal = function(fileHeaders, sampleRow) {
+window.sk_showMappingModal = function (fileHeaders, sampleRow) {
     const modal = document.getElementById('modal-overlay');
-    
+
     // Базовая эвристика (если ИИ отключен)
     const heuristics = {
         'number': ['замечания', 'номер', 'id', '№'],
@@ -287,7 +457,7 @@ window.sk_showMappingModal = function(fileHeaders, sampleRow) {
         let options = '<option value="-1">-- Пропустить (Не загружать) --</option>';
         fileHeaders.forEach((h, idx) => {
             if (!h) return;
-            const sampleText = sampleRow[idx] ? ` (напр: ${String(sampleRow[idx]).substring(0,15)})` : '';
+            const sampleText = sampleRow[idx] ? ` (напр: ${String(sampleRow[idx]).substring(0, 15)})` : '';
             const selected = (idx === bestMatchIdx) ? 'selected' : '';
             options += `<option value="${idx}" ${selected}>${h}${sampleText}</option>`;
         });
@@ -332,11 +502,11 @@ window.sk_showMappingModal = function(fileHeaders, sampleRow) {
 // === 8. ПАРСЕР ДАТ ИЗ EXCEL (С ПОДДЕРЖКОЙ DD.MM.YYYY) ===
 function sk_parseExcelDate(val) {
     if (val === undefined || val === null || val === '') return null;
-    
+
     if (typeof val === 'number') {
         return new Date((val - 25569) * 86400 * 1000).toISOString();
-    } 
-    
+    }
+
     if (typeof val === 'string') {
         const cleanVal = val.trim();
         // Проверка формата DD.MM.YYYY или DD/MM/YYYY
@@ -346,7 +516,7 @@ function sk_parseExcelDate(val) {
             let month = parts[1].padStart(2, '0');
             let year = parts[2];
             if (year.length === 2) year = "20" + year;
-            
+
             // ISO формат: YYYY-MM-DD
             const isoString = `${year}-${month}-${day}T12:00:00Z`;
             const d = new Date(isoString);
@@ -374,10 +544,10 @@ function sk_cleanContractorName(name) {
 // === ПАРСЕР ПРОСТРАНСТВЕННОГО РАСПОЛОЖЕНИЯ ===
 async function sk_parseLocation(rawStr) {
     if (!rawStr) return { canonical_key: 'unknown', display_name: 'Не указан', block: 'Неизвестно', floor: '?' };
-    
+
     // Разбиваем строку по слешам (стандарт выгрузки ПК СК)
     const parts = rawStr.split('/').map(s => s.trim());
-    
+
     if (parts.length < 2) return { canonical_key: 'unknown', display_name: rawStr, block: 'Общее', floor: '?' };
 
     // Сегмент 2: Название объекта
@@ -386,13 +556,14 @@ async function sk_parseLocation(rawStr) {
     let canonical = 'unknown';
 
     if (typeof ObjectDirectory !== 'undefined') {
-        normalizedProject = await ObjectDirectory.normalizeProjectName(rawProject);
-        canonical = ObjectDirectory.cleanString(normalizedProject);
+        const matchResult = await ObjectDirectory.normalizeProjectName(rawProject);
+        normalizedProject = matchResult.display_name; // Берем красивое имя из объекта
+        canonical = matchResult.canonical_key;        // Берем системный ключ из объекта
     }
-    
+
     // Сегмент 3: Корпус/Секция
     const block = parts.length > 2 ? parts[2] : 'Общее';
-    
+
     // Сегмент 4: Этаж (вытягиваем только цифры, включая минусовые паркинги)
     let floor = '?';
     if (parts.length > 3) {
@@ -411,7 +582,7 @@ function sk_similarity(s1, s2) {
     if (s1.length < s2.length) { longer = s2.toLowerCase(); shorter = s1.toLowerCase(); }
     let longerLength = longer.length;
     if (longerLength === 0) return 1.0;
-    
+
     let costs = new Array();
     for (let i = 0; i <= shorter.length; i++) costs[i] = i;
     for (let i = 1; i <= longer.length; i++) {
@@ -425,7 +596,7 @@ function sk_similarity(s1, s2) {
 }
 
 // === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
-window.sk_executeImport = async function() {
+window.sk_executeImport = async function () {
     // Сохраняем маппинг колонок
     const currentMapping = {};
     document.querySelectorAll('.sk-mapping-select').forEach(select => {
@@ -436,7 +607,7 @@ window.sk_executeImport = async function() {
 
     const rows = window.skTempRawRows;
     const contrIdx = currentMapping['contractor'];
-    
+
     // 1. Вытаскиваем всех уникальных подрядчиков из загружаемого файла
     const rawContractorsInFile = new Set();
     for (let i = 1; i < rows.length; i++) {
@@ -452,7 +623,7 @@ window.sk_executeImport = async function() {
 
     rawContractorsInFile.forEach(rawName => {
         const cleanName = sk_cleanContractorName(rawName);
-        
+
         // Если уже есть в словаре алиасов - берем без вопросов
         if (window.skContractorMap[rawName]) {
             window.skTempContractorMatches[rawName] = window.skContractorMap[rawName];
@@ -476,14 +647,14 @@ window.sk_executeImport = async function() {
         if (highestScore >= 0.85) {
             window.skTempContractorMatches[rawName] = bestMatch;
             window.skContractorMap[rawName] = bestMatch; // Запоминаем на будущее
-        } 
+        }
         // Порог 60-85% = спрашиваем юзера
         else if (highestScore >= 0.60 && highestScore < 0.85) {
             pairsToConfirm.push({ raw: rawName, target: bestMatch, score: Math.round(highestScore * 100) });
-        } 
+        }
         // Меньше 60% = считаем, что это новый подрядчик
         else {
-            window.skTempContractorMatches[rawName] = rawName; 
+            window.skTempContractorMatches[rawName] = rawName;
         }
     });
 
@@ -498,9 +669,9 @@ window.sk_executeImport = async function() {
 };
 
 // === 11. МОДАЛКА РУЧНОГО ПОДТВЕРЖДЕНИЯ АЛИАСОВ ===
-window.sk_showNormalizationModal = function() {
+window.sk_showNormalizationModal = function () {
     const modal = document.getElementById('modal-overlay');
-    
+
     let pairsHtml = window.skTempPairsToConfirm.map((pair, idx) => `
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl shadow-sm mb-3" id="norm-pair-${idx}">
             <div class="text-[10px] font-bold text-slate-500 uppercase mb-2 text-center">Сходство: ${pair.score}%</div>
@@ -537,7 +708,7 @@ window.sk_showNormalizationModal = function() {
     modal.style.display = 'flex';
 };
 
-window.sk_resolvePair = function(idx, isMatch) {
+window.sk_resolvePair = function (idx, isMatch) {
     const pair = window.skTempPairsToConfirm[idx];
     if (isMatch) {
         window.skTempContractorMatches[pair.raw] = pair.target;
@@ -552,7 +723,7 @@ window.sk_resolvePair = function(idx, isMatch) {
     // Проверяем, остались ли еще неподтвержденные
     const container = document.getElementById('norm-pairs-container');
     const remaining = container.querySelectorAll('div[id^="norm-pair-"]:not([style*="display: none"])');
-    
+
     if (remaining.length === 0) {
         closeModal();
         sk_finalizeImport(); // Переходим к сохранению
@@ -560,9 +731,9 @@ window.sk_resolvePair = function(idx, isMatch) {
 };
 
 // === 12. ФИНАЛЬНОЕ СОХРАНЕНИЕ ДАННЫХ В БД ===
-window.sk_finalizeImport = async function() {
+window.sk_finalizeImport = async function () {
     showToast("⏳ Сохраняем данные в базу...");
-    
+
     await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap });
 
     const rows = window.skTempRawRows;
@@ -607,9 +778,9 @@ window.sk_finalizeImport = async function() {
             deadline: sk_parseExcelDate(getVal('deadline')),
             status: getVal('status') ? String(getVal('status')).trim() : '',
             date_resolved: sk_parseExcelDate(getVal('date_resolved')),
-            
-            standards: extractedStandards, 
-            
+
+            standards: extractedStandards,
+
             // Новые поля для пространственного анализа
             structure: rawLoc,
             raw_location: rawLoc,
@@ -617,29 +788,60 @@ window.sk_finalizeImport = async function() {
             display_name: parsedLoc.display_name,
             block: parsedLoc.block,
             floor: parsedLoc.floor,
-            
+            uploaded_by: sk_getCurrentUserName(),
+            sk_uploaded_by: sk_getCurrentUserName(),
+            imported_by: sk_getCurrentUserName(),
+
+            source: 'local',
+            syncStatus: 'not_synced',
+            sync_status: 'not_synced',
+            syncBlockReason: '',
+            sync_block_reason: '',
             updated_at: new Date().toISOString(),
             _updatedAt: new Date().toISOString(),
             _deleted: false
         };
 
         const existingIdx = window.skRecords.findIndex(r => r.id === record.id);
-        if (existingIdx !== -1) {
-            const existing = window.skRecords[existingIdx];
-            const existingTime = existing._updatedAt ? new Date(existing._updatedAt).getTime() : 0;
-            const newTime = new Date(record._updatedAt).getTime();
-            if (newTime > existingTime) {
-                window.skRecords[existingIdx] = record;
-                updatedRecordsCount++;
-            } else {
-                // локальная версия новее – пропускаем
-                continue;
-            }
-        } else {
-            window.skRecords.push(record);
-            newRecordsCount++;
-        }
-        
+
+if (existingIdx !== -1) {
+    const existing = window.skRecords[existingIdx];
+
+    const existingOwner =
+        existing.uploaded_by ||
+        existing.sk_uploaded_by ||
+        existing.imported_by ||
+        '';
+
+    const role = sk_getCurrentRole();
+    const isAdminSk = ['manager', 'deputy_manager'].includes(role);
+
+    // Инженер не может перезаписать запись, которую загрузил другой пользователь.
+    // Заместитель и администратор могут.
+    if (!isAdminSk && existingOwner && existingOwner !== sk_getCurrentUserName()) {
+        continue;
+    }
+
+    const existingTime = existing._updatedAt ? new Date(existing._updatedAt).getTime() : 0;
+    const newTime = new Date(record._updatedAt).getTime();
+
+    if (newTime > existingTime || isAdminSk) {
+        // Если запись уже имела владельца — сохраняем его.
+        // Если записи владельца не было — ставим текущего загрузившего.
+        record.uploaded_by = existingOwner || sk_getCurrentUserName();
+        record.sk_uploaded_by = existingOwner || sk_getCurrentUserName();
+        record.imported_by = existingOwner || sk_getCurrentUserName();
+
+        window.skRecords[existingIdx] = record;
+        updatedRecordsCount++;
+    } else {
+        continue;
+    }
+} else {
+    window.skRecords.push(record);
+    newRecordsCount++;
+}
+
         await dbPut(STORES.SK_RECORDS, record);
     }
 
@@ -650,7 +852,7 @@ window.sk_finalizeImport = async function() {
     if (typeof gameLogAction === 'function') gameLogAction('sk_import_done', importLog.id);
     // Закрываем задачу на загрузку ПК СК
     if (typeof window.rbi_tasksData !== 'undefined') {
-        const skTask = window.rbi_tasksData.find(t => 
+        const skTask = window.rbi_tasksData.find(t =>
             t.title === 'Загрузить выгрузку ПК СК' && t.status === 'pending'
         );
         if (skTask) {
@@ -662,14 +864,14 @@ window.sk_finalizeImport = async function() {
         }
     }
 
-         showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
-    
+    showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
+
     // Запускаем синхронизацию сразу, не дожидаясь ИИ
     if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
         localStorage.setItem('rbi_cloud_dirty', '1');
         setTimeout(() => triggerSync('manual'), 500);
     }
-    
+
     // Запускаем ИИ в фоне (без await) – только если ещё не запущен
     if (typeof sk_autoMapCategories === 'function' && !skAiRunning) {
         skAiRunning = true;
@@ -693,7 +895,7 @@ window.sk_finalizeImport = async function() {
 
 
 // === 6. РЕНДЕР ДАШБОРДА (СМАРТ-МАТРИЦА ИСД И ЕДИНАЯ ЗАДАЧА) ===
-window.sk_renderDashboard = function() {
+window.sk_renderDashboard = function () {
     const container = document.getElementById('sk-view-dashboard');
     if (!container) return;
 
@@ -708,7 +910,7 @@ window.sk_renderDashboard = function() {
         const days = parseInt(window.skCurrentPeriodFilter);
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - days);
-        cutoffDate.setHours(0,0,0,0);
+        cutoffDate.setHours(0, 0, 0, 0);
 
         activeRecords = activeRecords.filter(r => {
             const isIssuedRecently = r.date_issued && new Date(r.date_issued) >= cutoffDate;
@@ -728,14 +930,15 @@ window.sk_renderDashboard = function() {
         return;
     }
 
-    const rbiContractors = [...new Set(contractorArray.map(c => c.contractorName.toLowerCase().trim()))];
+    // <-- ИСПРАВЛЕНО: Защита от пустых имен (Cannot read properties of undefined)
+    const rbiContractors = [...new Set(contractorArray.map(c => c.contractorName ? c.contractorName.toLowerCase().trim() : ''))];
 
     const getRbiDefectRate = (contractor, cleanCategory) => {
-        const relevantChecks = contractorArray.filter(c => 
-            c.contractorName === contractor && 
+        const relevantChecks = contractorArray.filter(c =>
+            c.contractorName === contractor &&
             c.templateTitle === cleanCategory
         );
-        if (relevantChecks.length === 0) return 0.05; 
+        if (relevantChecks.length === 0) return 0.05;
 
         let totalItemsChecked = 0; let totalDefectsFound = 0;
         relevantChecks.forEach(c => {
@@ -749,7 +952,7 @@ window.sk_renderDashboard = function() {
     };
 
     const contrMap = {};
-    const matrixMap = {}; 
+    const matrixMap = {};
     let totalIssues = 0;
     let totalOpen = 0;
     let standardsMap = {}; // Для подсчета частых ГОСТов
@@ -775,7 +978,7 @@ window.sk_renderDashboard = function() {
         }
         const c = r.contractor;
         totalIssues++;
-        
+
         const isOpen = isIssueOpen(r);
         if (isOpen) totalOpen++;
 
@@ -789,7 +992,7 @@ window.sk_renderDashboard = function() {
 
             const matrixKey = `${c}_||_${cleanCat}`;
             if (!matrixMap[matrixKey]) matrixMap[matrixKey] = { contractor: c, category: cleanCat, total: 0, open: 0, overdue: 0, closingDays: [] };
-            
+
             matrixMap[matrixKey].total++;
             if (isOpen) matrixMap[matrixKey].open++;
             // Расчет просрочек и времени для матрицы
@@ -821,7 +1024,7 @@ window.sk_renderDashboard = function() {
             cleanText = cleanText.replace(/(в осях|оси|отм\.|на отметке|кв\.|квартира)[\s\dа-яa-z\.\-\,\+]+/g, '');
             cleanText = cleanText.replace(/\d+[\.,]\d+[\.,]\d+/g, '').replace(/\d+/g, '');
             cleanText = cleanText.replace(/согласно ппр|согласно рд|по проекту|нарушение/g, '').trim();
-            if (cleanText.length < 5) cleanText = r.text.substring(0, 40); 
+            if (cleanText.length < 5) cleanText = r.text.substring(0, 40);
             cleanText = cleanText.charAt(0).toUpperCase() + cleanText.slice(1, 50) + (cleanText.length > 50 ? '...' : '');
             data.defects[cleanText] = (data.defects[cleanText] || 0) + 1;
         }
@@ -841,7 +1044,7 @@ window.sk_renderDashboard = function() {
                     data.overdueCount++;
                     data.overdueDaysArr.push(Math.floor((resolved - deadline) / (1000 * 60 * 60 * 24)));
                 } else {
-                    data.closedOnTimeCount++; 
+                    data.closedOnTimeCount++;
                 }
             }
         }
@@ -853,7 +1056,7 @@ window.sk_renderDashboard = function() {
 
     // --- РЕНДЕР МАТРИЦЫ ИСД (УМНАЯ ГРУППИРОВКА) ---
     let matrixRows = '';
-    
+
     // Группируем данные матрицы по подрядчикам для красивого вывода
     const matrixByContr = {};
     Object.keys(matrixMap).forEach(key => {
@@ -872,14 +1075,14 @@ window.sk_renderDashboard = function() {
         `;
 
         // Проверяем, связан ли подрядчик с базой RBI (строгая нормализация)
-        const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) || 
+        const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) ||
             Object.values(window.skContractorMap).map(v => v.toLowerCase().trim()).includes(contrName.toLowerCase().trim());
 
-        matrixByContr[contrName].sort((a,b) => b.total - a.total).forEach(mData => {
+        matrixByContr[contrName].sort((a, b) => b.total - a.total).forEach(mData => {
             let isdHtml = '<span class="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">Объем не задан</span>';
             let statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Недостаточно данных</span>';
             let expectedHtml = '<span class="text-slate-400">-</span>';
-            
+
             if (mData.category !== 'Без категории') {
                 if (!isLinkedContr) {
                     // Если подрядчик не связан с RBI, расчет не производим
@@ -890,26 +1093,26 @@ window.sk_renderDashboard = function() {
                     if (volKey) {
                         // Если связан и есть объемы - считаем!
                         const vol = window.skVolumes[volKey].amount;
-                    const rbiRate = getRbiDefectRate(mData.contractor, mData.category); 
-                    
-                    let expected = Math.round(vol * rbiRate); 
-                    if (expected < 1) expected = 1;
+                        const rbiRate = getRbiDefectRate(mData.contractor, mData.category);
+
+                        let expected = Math.round(vol * rbiRate);
+                        if (expected < 1) expected = 1;
                     }
                     expectedHtml = `<span class="text-slate-700 dark:text-slate-300 font-black">${expected}</span>`;
 
                     let isd = Math.round((mData.total / expected) * 100);
-                    
-                    let colorClass = 'text-green-600 bg-green-50 border-green-200'; 
+
+                    let colorClass = 'text-green-600 bg-green-50 border-green-200';
                     statusBadge = '<span class="text-green-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Прозрачно</span>';
-                    
-                    if (isd < 20) { 
-                        colorClass = 'text-red-600 bg-red-50 border-red-200'; 
+
+                    if (isd < 20) {
+                        colorClass = 'text-red-600 bg-red-50 border-red-200';
                         statusBadge = '<span class="text-red-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Скрывают брак</span>';
                         skIssues.isd.push(`${mData.contractor} (${mData.category})`);
                     }
-                    else if (isd < 60) { 
-                        colorClass = 'text-orange-500 bg-orange-50 border-orange-200'; 
-                        statusBadge = '<span class="text-orange-500 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Подозрительно</span>'; 
+                    else if (isd < 60) {
+                        colorClass = 'text-orange-500 bg-orange-50 border-orange-200';
+                        statusBadge = '<span class="text-orange-500 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Подозрительно</span>';
                     }
 
                     if (isd > 100) {
@@ -921,7 +1124,7 @@ window.sk_renderDashboard = function() {
             }
 
             // Вычисляем среднее время
-            const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a,b)=>a+b,0) / mData.closingDays.length) : 0;
+            const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a, b) => a + b, 0) / mData.closingDays.length) : 0;
             const overColor = mData.overdue > 0 ? 'text-red-600' : 'text-slate-500';
             const avgColor = avgClose > 14 ? 'text-orange-500' : 'text-slate-500';
             // Ищем наихудший прогноз ИИ для этой группы
@@ -951,25 +1154,25 @@ window.sk_renderDashboard = function() {
 
     let linkedHtml = '';
     let unlinkedHtml = '';
-    const sortedContrs = Object.keys(contrMap).sort((a,b) => contrMap[b].total - contrMap[a].total);
+    const sortedContrs = Object.keys(contrMap).sort((a, b) => contrMap[b].total - contrMap[a].total);
 
     sortedContrs.forEach(cName => {
         const data = contrMap[cName];
         const isLinked = rbiContractors.includes(cName.toLowerCase().trim()) || Object.values(window.skContractorMap).includes(cName);
-        
-        const linkBadge = isLinked 
+
+        const linkBadge = isLinked
             ? `<span class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest shadow-sm flex items-center gap-1 w-fit"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"></path></svg> Связан с RBI</span>`
             : `<span class="bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 w-fit"><svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Без связи</span>`;
 
         const overduePerc = data.total > 0 ? Math.round((data.overdueCount / data.total) * 100) : 0;
-        const avgOverdueDepth = data.overdueDaysArr.length > 0 ? Math.round(data.overdueDaysArr.reduce((a,b)=>a+b,0) / data.overdueDaysArr.length) : 0;
+        const avgOverdueDepth = data.overdueDaysArr.length > 0 ? Math.round(data.overdueDaysArr.reduce((a, b) => a + b, 0) / data.overdueDaysArr.length) : 0;
         const onTimePerc = data.closedCount > 0 ? Math.round((data.closedOnTimeCount / data.closedCount) * 100) : 100;
-        
+
         let cmi = 0;
         if (data.total > 0) {
             cmi = Math.round((onTimePerc * 0.6) + ((100 - overduePerc) * 0.4) - Math.min(avgOverdueDepth, 30));
-            cmi = Math.max(0, Math.min(100, cmi)); 
-            if (data.closedCount === 0 && data.overdueCount === 0) cmi = 100; 
+            cmi = Math.max(0, Math.min(100, cmi));
+            if (data.closedCount === 0 && data.overdueCount === 0) cmi = 100;
         }
 
         // === ТОЛЬКО СОБИРАЕМ ДАННЫЕ В МАССИВЫ (БЕЗ СОЗДАНИЯ ЗАДАЧ ЗДЕСЬ) ===
@@ -981,13 +1184,13 @@ window.sk_renderDashboard = function() {
         let cmiColor = cmi >= 70 ? 'text-green-600' : (cmi >= 40 ? 'text-orange-500' : 'text-red-600');
         let overdueColor = overduePerc > 30 ? 'text-red-600' : (overduePerc > 10 ? 'text-orange-500' : 'text-green-600');
 
-        const topDefects = Object.keys(data.defects).map(text => ({ text, count: data.defects[text] })).sort((a,b) => b.count - a.count).slice(0, 3);
-        let topDefectsHtml = topDefects.length > 0 && topDefects[0].count > 1 
+        const topDefects = Object.keys(data.defects).map(text => ({ text, count: data.defects[text] })).sort((a, b) => b.count - a.count).slice(0, 3);
+        let topDefectsHtml = topDefects.length > 0 && topDefects[0].count > 1
             ? topDefects.filter(d => d.count > 1).map(d => {
                 // Ищем норматив для этого текста в исходных записях
                 const recMatch = activeRecords.find(r => r.contractor === cName && r.text && r.text.toLowerCase().includes(d.text.replace('...', '').toLowerCase()));
-                const stdBadge = (recMatch && recMatch.standards && recMatch.standards.length > 0) 
-                    ? `<div class="text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-1 py-0.5 rounded w-fit mt-1">${recMatch.standards.join(', ')}</div>` 
+                const stdBadge = (recMatch && recMatch.standards && recMatch.standards.length > 0)
+                    ? `<div class="text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-200 px-1 py-0.5 rounded w-fit mt-1">${recMatch.standards.join(', ')}</div>`
                     : '';
                 return `<div class="flex items-start gap-2 mb-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5"><span class="bg-orange-100 text-orange-700 px-1.5 rounded text-[9px] font-black shrink-0 mt-0.5">${d.count} раз</span><div class="flex-1 min-w-0"><span class="text-[10px] text-slate-700 dark:text-slate-300 leading-snug">${d.text}</span>${stdBadge}</div></div>`;
             }).join('')
@@ -1059,7 +1262,7 @@ window.sk_renderDashboard = function() {
     // === АВТОЗАКРЫТИЕ ЗАДАЧИ "Анализ проблем ПК СК" (Если сигналов больше нет) ===
     if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
         if (typeof window.rbi_tasksData !== 'undefined') {
-            const staleTask = window.rbi_tasksData.find(t => 
+            const staleTask = window.rbi_tasksData.find(t =>
                 t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
             );
             if (staleTask) {
@@ -1075,7 +1278,7 @@ window.sk_renderDashboard = function() {
     // Если сигналов нет — закрываем задачу если она висит
     if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
         if (typeof window.rbi_tasksData !== 'undefined') {
-            const staleTask = window.rbi_tasksData.find(t => 
+            const staleTask = window.rbi_tasksData.find(t =>
                 t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
             );
             if (staleTask) {
@@ -1099,18 +1302,19 @@ window.sk_renderDashboard = function() {
         });
         window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
         // -----------------------------------------------------------------------
-        
-        
+
+
         let promptLines = [];
         if (skIssues.isd.length > 0) promptLines.push(`🚨 Низкий ИСД (скрывают брак):\n- ${[...new Set(skIssues.isd)].join('\n- ')}`);
         if (skIssues.open.length > 0) promptLines.push(`⚠️ Много открытых замечаний:\n- ${[...new Set(skIssues.open)].join('\n- ')}`);
         if (skIssues.cmi.length > 0) promptLines.push(`⏱ Низкий Индекс Зрелости (срывы сроков):\n- ${[...new Set(skIssues.cmi)].join('\n- ')}`);
-        
+
         const fullPrompt = "Выявлены проблемы по СВЯЗАННЫМ подрядчикам в Стройконтроле:\n\n" + promptLines.join('\n\n');
 
         const newTask = {
             id: 'tsk_sk_cons_' + Date.now().toString(36),
             type: 'auto', category: 'meeting',
+            engineerName: document.getElementById('inp-inspector')?.value.trim() || 'Инженер', // <-- ДОБАВЛЕНО
             icon: 'Совещание', taskType: 'Аналитика СК',
             contractor: 'Служебная', project: document.getElementById('inp-project')?.value || "Все",
             templateKey: '', workTitle: 'Аналитика СК',
@@ -1122,7 +1326,7 @@ window.sk_renderDashboard = function() {
         };
         window.rbi_tasksData.push(newTask);
         if (typeof dbPut === 'function') dbPut('rbi_tasks', newTask);
-        
+
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
     }
@@ -1130,12 +1334,12 @@ window.sk_renderDashboard = function() {
     const spatialMap = {};
     activeRecords.forEach(r => {
         if (!r.block || !r.floor || r.canonical_key === 'unknown') return; // Игнорируем нераспарсенные
-        
+
         const objKey = r.display_name;
         if (!spatialMap[objKey]) spatialMap[objKey] = {};
         if (!spatialMap[objKey][r.block]) spatialMap[objKey][r.block] = {};
         if (!spatialMap[objKey][r.block][r.floor]) spatialMap[objKey][r.block][r.floor] = { total: 0, open: 0, overdue: 0 };
-        
+
         const cell = spatialMap[objKey][r.block][r.floor];
         cell.total++;
         if (isIssueOpen(r)) cell.open++;
@@ -1146,10 +1350,10 @@ window.sk_renderDashboard = function() {
     let spatialHtml = '';
     Object.keys(spatialMap).forEach(objKey => {
         spatialHtml += `<div class="text-[11px] font-black uppercase text-slate-800 dark:text-white mt-4 mb-2 border-b border-[var(--card-border)] pb-1">🏢 Объект: ${objKey}</div>`;
-        
+
         Object.keys(spatialMap[objKey]).sort().forEach(blockName => {
             const blockData = spatialMap[objKey][blockName];
-            
+
             // Собираем этажи и сортируем как числа (учитывая минусовые)
             const floors = Object.keys(blockData).sort((a, b) => {
                 const numA = parseInt(a); const numB = parseInt(b);
@@ -1163,7 +1367,7 @@ window.sk_renderDashboard = function() {
                 let bgColor = 'bg-green-50 text-green-700'; // Мало замечаний
                 if (cell.total > 15) bgColor = 'bg-red-100 text-red-800 font-black'; // Много
                 else if (cell.total > 5) bgColor = 'bg-yellow-50 text-yellow-700 font-bold'; // Средне
-                
+
                 tableRows += `
                 <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-[var(--hover-bg)]">
                     <td class="p-2 text-[10px] font-bold text-slate-600 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800 text-center w-16">Эт. ${floor}</td>
@@ -1177,6 +1381,13 @@ window.sk_renderDashboard = function() {
                 <div class="bg-[var(--hover-bg)] p-2 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 border-b border-[var(--card-border)]">${blockName}</div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left whitespace-nowrap">
+                        <thead class="bg-slate-50 dark:bg-slate-900/50 text-[9px] text-slate-400 uppercase">
+                            <tr>
+                                <th class="p-2 text-center border-r border-slate-100 dark:border-slate-800">Уровень</th>
+                                <th class="p-2 text-center">Всего замечаний</th>
+                                <th class="p-2 text-center">Открыто / Просрочено</th>
+                            </tr>
+                        </thead>
                         <tbody>${tableRows}</tbody>
                     </table>
                 </div>
@@ -1199,15 +1410,15 @@ window.sk_renderDashboard = function() {
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 p-4">
             <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> Самые нарушаемые нормативы</h3>
             <div class="flex flex-wrap gap-2">
-                ${Object.keys(standardsMap).length > 0 
-                    ? Object.keys(standardsMap).sort((a,b) => standardsMap[b] - standardsMap[a]).slice(0, 8).map(std => `
+                ${Object.keys(standardsMap).length > 0
+            ? Object.keys(standardsMap).sort((a, b) => standardsMap[b] - standardsMap[a]).slice(0, 8).map(std => `
                         <div class="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded-lg cursor-pointer active:scale-95 transition-transform" onclick="switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('.sub-tab-btn'); if (btns[1]) switchReferenceSubTab('ref-sub-docs', btns[1]); const s = document.getElementById('doc-search-input'); if(s) {s.value='${std}'; renderDocsList();} }, 300);">
                             <span class="text-[11px] font-black text-blue-700 dark:text-blue-400">${std}</span>
                             <span class="text-[9px] font-bold bg-white dark:bg-slate-800 text-slate-500 px-1.5 rounded-md shadow-sm border border-blue-100 dark:border-blue-900">${standardsMap[std]}</span>
                         </div>
                     `).join('')
-                    : '<div class="text-[10px] font-bold text-slate-400">В текстах замечаний нет ссылок на ГОСТ/СП.</div>'
-                }
+            : '<div class="text-[10px] font-bold text-slate-400">В текстах замечаний нет ссылок на ГОСТ/СП.</div>'
+        }
             </div>
         </div>
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
@@ -1304,7 +1515,7 @@ window.sk_renderDashboard = function() {
                 const [year, month] = mKey.split('-');
                 const endOfMonth = new Date(year, month, 0, 23, 59, 59);
                 const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0);
-                
+
                 // Красивый лейбл: "Янв '24"
                 labels.push(endOfMonth.toLocaleString('ru-RU', { month: 'short', year: '2-digit' }));
 
@@ -1333,29 +1544,29 @@ window.sk_renderDashboard = function() {
             if (window.skTrendChartInstance) window.skTrendChartInstance.destroy();
             window.skTrendChartInstance = new Chart(ctxTrend, {
                 type: 'line',
-                data: { 
-                    labels: labels, 
+                data: {
+                    labels: labels,
                     datasets: [
-                        { 
+                        {
                             label: 'Открыто на конец мес.',
-                            data: dataOpen, 
-                            borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-                            borderWidth: 2, pointRadius: 4, fill: true, tension: 0.3 
+                            data: dataOpen,
+                            borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            borderWidth: 2, pointRadius: 4, fill: true, tension: 0.3
                         },
-                        { 
+                        {
                             label: 'Выдано новых',
-                            data: dataNew, 
-                            borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0)', 
-                            borderWidth: 2, borderDash: [5, 5], pointRadius: 3, fill: false, tension: 0.3 
+                            data: dataNew,
+                            borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0)',
+                            borderWidth: 2, borderDash: [5, 5], pointRadius: 3, fill: false, tension: 0.3
                         }
-                    ] 
+                    ]
                 },
-                options: { 
-                    animation: false, 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: {size: 9} } } }, 
-                    scales: { y: { beginAtZero: true } } 
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 9 } } } },
+                    scales: { y: { beginAtZero: true } }
                 }
             });
         }
@@ -1369,7 +1580,7 @@ function sk_extractStandards(text) {
     const regex = /(СП\s*\d+(\.\d+)*|ГОСТ\s*[Р]?\s*\d+(-\d+)?|СНиП\s*\d+(\.\d+)*(-\d+)?)/gi;
     const matches = text.match(regex);
     if (!matches) return [];
-    
+
     // Очищаем от лишних пробелов и уникализируем
     const unique = [...new Set(matches.map(m => m.replace(/\s+/g, ' ').toUpperCase()))];
     return unique;
@@ -1377,7 +1588,7 @@ function sk_extractStandards(text) {
 
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
-window.sk_renderHrTab = function() {
+window.sk_renderHrTab = function () {
     const container = document.getElementById('sk-view-hr');
     if (!container) return;
     // --- ПРОВЕРКА РОЛИ ---
@@ -1402,11 +1613,11 @@ window.sk_renderHrTab = function() {
         if (!engMap[engName]) {
             engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, closingTimes: [], contractors: new Set() };
         }
-        
+
         const data = engMap[engName];
         data.total++;
         if (r.contractor) data.contractors.add(r.contractor);
-        
+
         const isOpen = r.status && r.status.toLowerCase().includes('не устран');
         if (isOpen) data.open++;
 
@@ -1432,7 +1643,7 @@ window.sk_renderHrTab = function() {
     const rbiBadContractors = new Set();
     const groupedRBI = {};
     contractorArray.forEach(c => { groupedRBI[c.contractorName] = groupedRBI[c.contractorName] || []; groupedRBI[c.contractorName].push(c); });
-    
+
     for (let cName in groupedRBI) {
         const m = getContractorMetrics(groupedRBI[cName], typeof userTemplates !== 'undefined' ? userTemplates : {});
         if (m && (m.finalC < 85 || m.n_изделий_с_B3 > 0)) {
@@ -1442,10 +1653,10 @@ window.sk_renderHrTab = function() {
 
     const engArray = Object.keys(engMap).map(name => {
         const d = engMap[name];
-        const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a,b)=>a+b,0)/d.closingTimes.length) : 0;
+        const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a, b) => a + b, 0) / d.closingTimes.length) : 0;
         const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
         const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
-        
+
         // Корреляция с RBI (сколько выданных замечаний приходится на проблемных подрядчиков)
         let rbiHits = 0;
         d.contractors.forEach(c => {
@@ -1458,7 +1669,7 @@ window.sk_renderHrTab = function() {
         return { name, total: d.total, open: d.open, overduePerc, catPerc, avgTime, kpi, correlation };
     });
 
-    engArray.sort((a,b) => b.kpi - a.kpi);
+    engArray.sort((a, b) => b.kpi - a.kpi);
 
     const rowsHtml = engArray.map((e, idx) => {
         const rankColor = idx === 0 ? 'bg-yellow-400 text-white' : 'bg-slate-100 text-slate-500';
@@ -1481,7 +1692,11 @@ window.sk_renderHrTab = function() {
             <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex items-center justify-between">
                 <div>
                     <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI)</div>
-                    <div class="text-[9px] text-slate-500 mt-1">Оценивается работа инженеров Стройконтроля на основе выгрузки Excel.</div>
+                    <div class="text-[9px] text-slate-500 mt-1">
+                        Оценка на основе официальных предписаний: <br>
+                        <b>KPI = 100 - %Просрочки + Бонусы.</b><br>
+                        Колонка <b>"Связь с RBI"</b> показывает, насколько фокус инженера СК совпадает с "красными зонами", которые выявила ваша система аудитов.
+                    </div>
                 </div>
             </div>
             <div class="overflow-x-auto custom-scrollbar">
@@ -1489,9 +1704,9 @@ window.sk_renderHrTab = function() {
                     <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase">
                         <tr>
                             <th class="p-2.5">Инженер</th>
-                            <th class="p-2.5 text-center">Выдал</th>
-                            <th class="p-2.5 text-center">Просрочка</th>
-                            <th class="p-2.5 text-center">Ср. Время</th>
+                            <th class="p-2.5 text-center" title="Сколько всего замечаний выдал">Выдал</th>
+                            <th class="p-2.5 text-center" title="Доля просроченных замечаний">Просрочка</th>
+                            <th class="p-2.5 text-center" title="В среднем дней на устранение">Ср. Время</th>
                             <th class="p-2.5 text-center" title="Насколько совпадает фокус инженера СК с риск-зонами, которые выявила система RBI">Связь с RBI</th>
                             <th class="p-2.5 text-center text-indigo-600">Оценка KPI</th>
                         </tr>
@@ -1504,7 +1719,7 @@ window.sk_renderHrTab = function() {
 };
 
 // === 14. СПРАВОЧНЫЕ МОДАЛКИ (ФОРМУЛЫ ИСД, CMI, KPI) ===
-window.sk_showInfoModal = function(type) {
+window.sk_showInfoModal = function (type) {
     let title = "", body = "";
     if (type === 'cmi') {
         title = "Индекс Зрелости (CMI)";
@@ -1563,34 +1778,55 @@ window.sk_showInfoModal = function(type) {
 
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = ''; // Убрали лишнюю иконку
-    
+
     // В заголовке нет крестика, чистый текст
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg text-indigo-600 dark:text-indigo-400">${title}</div>`;
-    
+
     // ОДНА кнопка снизу
     document.getElementById('modal-body').innerHTML = body + `
         <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-700">
             <button onclick="closeModal()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase shadow-md active:scale-95 transition-transform">Понятно</button>
         </div>
     `;
-    
+
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
 window.sk_deleteRecord = async function(recordId) {
-    const record = window.skRecords.find(r => r.id === recordId);
+    const record = window.skRecords.find(r => String(r.id) === String(recordId));
     if (!record) return;
-    if (!RbiRoles.canDelete(record.inspector)) return showToast("⚠️ Нет прав на удаление чужого замечания!");
 
-    if (!confirm("Удалить это замечание? Оно исчезнет у всех членов команды после синхронизации.")) return;
-    if (!record) return;
+    if (!sk_canDeleteRecord(record)) {
+        return showToast("⚠️ Инженер может удалить только свои записи ПК СК. Остальные роли не имеют права удаления.");
+    }
+
+    const role = sk_getCurrentRole();
+    const confirmText = ['manager', 'deputy_manager'].includes(role)
+        ? "Удалить это замечание ПК СК? У вас есть право удалить любую запись."
+        : "Удалить это замечание ПК СК? Вы можете удалять только свои загруженные записи.";
+
+    if (!confirm(confirmText)) return;
+
     record._deleted = true;
     record._updatedAt = new Date().toISOString();
+    record.updated_at = record._updatedAt;
+
+    record.source = 'local';
+    record.syncStatus = 'not_synced';
+    record.sync_status = 'not_synced';
+
     await dbPut(STORES.SK_RECORDS, record);
-    window.skRecords = window.skRecords.filter(r => r.id !== recordId);
+
+    window.skRecords = window.skRecords.filter(r => String(r.id) !== String(recordId));
+
     sk_renderDashboard();
+
     localStorage.setItem('rbi_cloud_dirty', '1');
-    if (typeof triggerSync === 'function') triggerSync('silent');
-    showToast("🗑️ Замечание удалено. Синхронизируйтесь, чтобы обновить команду.");
+
+    if (typeof triggerSync === 'function') {
+        triggerSync('silent');
+    }
+
+    showToast("🗑️ Замечание ПК СК удалено");
 };

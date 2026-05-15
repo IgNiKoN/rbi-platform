@@ -158,3 +158,180 @@ function renderFaqList(searchTerm = '') {
     if (!html) html = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest">Ничего не найдено</div>`;
     container.innerHTML = html;
 }
+
+// ==========================================
+// AI-ПОМОЩНИК ПО ПРИЛОЖЕНИЮ (АДМИНСКАЯ БАЗА)
+// ==========================================
+
+window.openAppAssistantChat = function() {
+    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
+        return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
+    }
+    
+    // Закрываем основное окно FAQ
+    closeFaqModal();
+    
+    const modal = document.getElementById('app-assistant-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    setTimeout(() => { modal.classList.remove('opacity-0'); }, 10);
+};
+
+window.closeAppAssistantChat = function() {
+    const modal = document.getElementById('app-assistant-modal');
+    modal.classList.add('opacity-0');
+    setTimeout(() => {
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }, 300);
+};
+
+window.askAppAssistant = async function() {
+    const inputEl = document.getElementById('app-assistant-input');
+    const chatHistory = document.getElementById('app-assistant-history');
+    const btn = document.getElementById('app-assistant-send-btn');
+    
+    const question = inputEl.value.trim();
+    if (!question) return;
+
+    // 1. Отображаем вопрос пользователя
+    const userMsgHtml = `
+        <div class="flex gap-2 w-full max-w-[85%] ml-auto justify-end mb-4">
+            <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-[12px] shadow-sm font-medium leading-relaxed">${escapeHtml(question)}</div>
+        </div>`;
+    chatHistory.insertAdjacentHTML('beforeend', userMsgHtml);
+    inputEl.value = '';
+    inputEl.focus();
+
+    // 2. Отображаем лоадер
+    const loaderId = 'loader_' + Date.now();
+    const loaderHtml = `
+        <div id="${loaderId}" class="flex gap-2 w-full max-w-[85%] mb-4">
+            <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-500 shadow-sm animate-pulse">
+                Ищу инструкции в базе...
+            </div>
+        </div>`;
+    chatHistory.insertAdjacentHTML('beforeend', loaderHtml);
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+
+    try {
+        btn.disabled = true; btn.style.opacity = '0.5';
+
+        // 3. Достаем базу знаний из памяти устройства
+        let kbItems = [];
+        if (typeof dbGetAll === 'function') {
+            kbItems = await dbGetAll('app_assistant_kb') || [];
+        } else {
+            kbItems = window.appAssistantData || [];
+        }
+        kbItems = kbItems.filter(i => !i._deleted && !i.is_deleted);
+
+        // УМНЫЙ ПОИСК (Убираем окончания слов для лучшего совпадения)
+        const cleanQuestion = question.toLowerCase().replace(/[.,?!]/g, '');
+        const keywords = cleanQuestion.split(' ')
+            .filter(w => w.length > 3)
+            .map(w => w.length > 5 ? w.substring(0, w.length - 2) : w);
+        
+        let contextArr = [];
+        kbItems.forEach(item => {
+            let score = 0;
+            const textToSearch = (item.question + ' ' + item.answer + ' ' + (item.tags || []).join(' ')).toLowerCase();
+            
+            keywords.forEach(kw => {
+                if (textToSearch.includes(kw)) score += 10;
+            });
+            
+            // Если нашли точное совпадение слова
+            if (score > 0) {
+                contextArr.push({ ...item, score });
+            }
+        });
+
+        // 4. ЖЕСТКАЯ БЛОКИРОВКА ФАНТАЗИЙ
+        // Если в нашей базе вообще нет похожих слов — даже не отправляем запрос к нейросети!
+        if (contextArr.length === 0) {
+            document.getElementById(loaderId).remove();
+            const fallbackHtml = `
+                <div class="flex gap-2 w-full max-w-[90%] mb-4">
+                    <div class="w-6 h-6 bg-slate-300 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
+                    <div class="bg-slate-50 border border-slate-200 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 shadow-sm leading-relaxed whitespace-pre-wrap font-medium">
+                        К сожалению, в моей базе знаний пока нет информации по этому вопросу. Сформулируйте иначе или обратитесь к разработчику.
+                    </div>
+                </div>`;
+            chatHistory.insertAdjacentHTML('beforeend', fallbackHtml);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            return; // Прерываем выполнение
+        }
+
+        contextArr.sort((a,b) => b.score - a.score);
+        
+        // ОПТИМИЗАЦИЯ КОНТЕКСТА: Обрезаем слишком длинные статьи
+        let topContext = '';
+        const MAX_CONTEXT_LENGTH = 3000; // Безопасный лимит символов
+        
+        for (let i = 0; i < Math.min(contextArr.length, 3); i++) {
+            let article = contextArr[i].answer;
+            // Если статья гигантская, берем только первые 1500 символов
+            if (article.length > 1500) {
+                article = article.substring(0, 1500) + '... (текст сокращен)';
+            }
+            topContext += `Тема: ${contextArr[i].question}\nИнструкция: ${article}\n\n`;
+            
+            if (topContext.length > MAX_CONTEXT_LENGTH) break; // Защита от перегруза
+        }
+
+        // 5. ЖЕСТКИЙ ПРОМПТ ДЛЯ DEEPSEEK
+
+        // 5. ЖЕСТКИЙ ПРОМПТ ДЛЯ DEEPSEEK
+        const promptSystem = `Ты — строгий технический суппорт приложения "RBI Quality Pro". 
+        
+        ПРАВИЛО №1: ИСПОЛЬЗУЙ ТОЛЬКО ИНФОРМАЦИЮ ИЗ БЛОКА "ОФИЦИАЛЬНАЯ БАЗА ЗНАНИЙ".
+        ПРАВИЛО №2: КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО придумывать функции, кнопки или процессы, которых нет в тексте ниже.
+        ПРАВИЛО №3: Если вопрос пользователя не связан с текстом ниже, ответь СТРОГО одной фразой: "Я не знаю ответ на этот вопрос, так как его нет в моей базе инструкций."
+        
+        ОФИЦИАЛЬНАЯ БАЗА ЗНАНИЙ:
+        ${topContext}`;
+
+        // Вызов DeepSeek 
+        let response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: question }
+        ], { temperature: 0.1, max_tokens: 500 }); // Температура 0.1 делает ИИ "скучным" и точным
+
+        // 6. Вывод ответа
+        document.getElementById(loaderId).remove();
+        const aiMsgHtml = `
+            <div class="flex gap-2 w-full max-w-[90%] mb-4">
+                <div class="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
+                <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-2xl rounded-tl-none text-[12px] text-indigo-900 dark:text-indigo-200 shadow-sm leading-relaxed whitespace-pre-wrap font-medium">
+                    ${response}
+                </div>
+            </div>`;
+        chatHistory.insertAdjacentHTML('beforeend', aiMsgHtml);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+
+    } catch (e) {
+        document.getElementById(loaderId).remove();
+        chatHistory.insertAdjacentHTML('beforeend', `
+            <div class="flex gap-2 w-full max-w-[85%] mb-4">
+                <div class="w-6 h-6 bg-red-200 rounded-full flex items-center justify-center text-[10px] shrink-0">❌</div>
+                <div class="bg-red-50 text-red-600 border border-red-200 p-3 rounded-2xl rounded-tl-none text-[12px] shadow-sm">
+                    Ошибка связи с сервером: ${e.message}
+                </div>
+            </div>`);
+    } finally {
+        btn.disabled = false; btn.style.opacity = '1';
+    }
+};
+
+// Функция эскейпа (на случай если её нет в скоупе faq.js)
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function (m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}

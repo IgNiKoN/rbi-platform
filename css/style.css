@@ -1052,3 +1052,25 @@ body.read-only-mode .swipe-bg-fail {
     display: none !important;
     pointer-events: none !important;
 }
+
+/* === БЕГУЩАЯ СТРОКА ДЛЯ ДЛИННЫХ ИМЕН === */
+.name-marquee-container {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+}
+.name-marquee-content {
+    display: inline-block;
+    transition: transform 0.2s ease;
+}
+.name-marquee-container:hover .name-marquee-content,
+.name-marquee-container:active .name-marquee-content {
+    animation: marquee-scroll 4s linear infinite;
+}
+@keyframes marquee-scroll {
+    0% { transform: translateX(0); }
+    20% { transform: translateX(0); } /* Пауза в начале */
+    100% { transform: translateX(calc(-100% + 120px)); } /* Прокрутка */
+}

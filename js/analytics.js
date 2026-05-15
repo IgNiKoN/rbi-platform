@@ -1,38 +1,146 @@
 /* Файл: js/analytics.js */
 // === МОДУЛЬ АНАЛИТИКИ И ДАШБОРДОВ ===
 // Задаем стартовую вкладку по умолчанию! Именно из-за этого был пустой экран при входе
-let currentActiveAnalyticsTab = 'sub-contractors'; 
+let currentActiveAnalyticsTab = 'sub-contractors';
+// Источник аналитики:
+// local — все данные на устройстве;
+// cloud — только синхронизированные/облачные данные.
+window.analyticsDataMode = window.analyticsDataMode || 'local';
+
+window.setAnalyticsDataMode = function (mode) {
+    window.analyticsDataMode = mode === 'cloud' ? 'cloud' : 'local';
+    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+};
+
+// Единый выбор источника данных для аналитики
+function getAnalyticsDataSource(mode) {
+    const arr = Array.isArray(contractorArray) ? contractorArray : [];
+
+    if (mode === 'cloud') {
+        return arr.filter(i =>
+            i &&
+            i._deleted !== true &&
+            (
+                i.source === 'cloud' ||
+                i.syncStatus === 'synced' ||
+                i.sync_status === 'synced'
+            )
+        );
+    }
+
+    // Локальная аналитика показывает всё, что есть на устройстве,
+    // кроме мягко удалённых записей.
+    return arr.filter(i => i && i._deleted !== true);
+}
+
+// Рисуем переключатель источника аналитики (Идеальное выравнивание iOS Style)
+function renderAnalyticsModeSwitcher() {
+    const container = document.getElementById('analytics-mode-container');
+    const headerIconContainer = document.getElementById('analytics-status-icon-container');
+    
+    // Если облако отключено — прячем элементы
+    if (!window.syncConfig || !window.syncConfig.enabled) {
+        if (container) container.innerHTML = '';
+        if (headerIconContainer) headerIconContainer.innerHTML = '';
+        return;
+    }
+
+    const mode = window.analyticsDataMode || 'local';
+    const isCloud = mode === 'cloud';
+
+    // 1. Рендерим сам переключатель в 3-й колонке
+    if (container) {
+        const html = `
+            <div class="w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg flex p-0.5 shadow-sm" style="height: 34px;">
+                <button onclick="setAnalyticsDataMode('local')" title="Данные с телефона" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1 ${!isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 hover:text-slate-600'}">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"></path></svg>
+                    <span class="hidden min-[380px]:inline">Телефон</span>
+                </button>
+                <button onclick="setAnalyticsDataMode('cloud')" title="Данные с сервера" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1 ${isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 hover:text-slate-600'}">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"></path></svg>
+                    <span class="hidden min-[380px]:inline">Облако</span>
+                </button>
+            </div>
+        `;
+        container.className = "w-full";
+        container.innerHTML = html;
+    }
+
+    // 2. Рендерим иконку в шапке панели
+    if (headerIconContainer) {
+        let iconHtml = '';
+        let iconClass = 'text-slate-400';
+        
+        if (isCloud) {
+            if (window.isSyncing) {
+                iconClass = 'text-indigo-500 animate-pulse';
+                iconHtml = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"></path></svg>`;
+            } else {
+                iconClass = 'text-green-500';
+                iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"></path></svg>`;
+            }
+        } else {
+            iconHtml = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"></path></svg>`;
+        }
+        
+        headerIconContainer.innerHTML = `<div class="flex items-center ${iconClass} transition-colors duration-300" title="Источник: ${isCloud ? 'Облако' : 'Устройство'}">${iconHtml}</div>`;
+    }
+}
+
+// Рисуем тумблер "Объект / Компания" в заголовке фильтров
+function renderOnePagerModeToggle() {
+    const container = document.getElementById('analytics-global-mode-toggle');
+    if (!container) return;
+
+    // Показываем тумблер ТОЛЬКО на вкладке "Сводка"
+    if (currentActiveAnalyticsTab !== 'sub-onepager') {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    if (typeof window.onepagerMode === 'undefined') window.onepagerMode = 'local';
+    const isGlobal = window.onepagerMode === 'global';
+
+    // event.stopPropagation() нужен, чтобы при клике на тумблер не сворачивалась панель фильтров
+    container.innerHTML = `
+        <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-full shadow-inner cursor-pointer border border-slate-300 dark:border-slate-600" onclick="event.stopPropagation(); window.onepagerMode = '${isGlobal ? 'local' : 'global'}'; renderCurrentAnalyticsTab();">
+            <div class="px-2 py-0.5 rounded-full text-[8px] font-black uppercase transition-all duration-300 ${!isGlobal ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}">Объект</div>
+            <div class="px-2 py-0.5 rounded-full text-[8px] font-black uppercase transition-all duration-300 ${isGlobal ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}">Компания</div>
+        </div>
+    `;
+}
 
 // ЕДИНАЯ ФУНКЦИЯ ПЕРЕКЛЮЧЕНИЯ ПОДВКЛАДОК АНАЛИТИКИ
 function switchAnalyticsSubTab(tabId, btnElement) {
     currentActiveAnalyticsTab = tabId;
-    
+
     // Скрываем все секции
     document.querySelectorAll('.analytics-sub-section').forEach(el => el.classList.add('hidden'));
-    
+
     // Сбрасываем стили всех кнопок
     document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn').forEach(el => {
         el.classList.remove('bg-white', 'shadow-sm', 'text-indigo-600', 'dark:bg-slate-700', 'dark:text-indigo-400');
         el.classList.add('text-[var(--text-muted)]');
     });
-    
+
     // Показываем нужную секцию
     const targetTab = document.getElementById(tabId);
-    if(targetTab) targetTab.classList.remove('hidden');
-    
+    if (targetTab) targetTab.classList.remove('hidden');
+
     // Красим активную кнопку
-    if(btnElement) {
+    if (btnElement) {
         btnElement.classList.add('bg-white', 'shadow-sm', 'text-indigo-600', 'dark:bg-slate-700', 'dark:text-indigo-400');
         btnElement.classList.remove('text-[var(--text-muted)]');
     }
 
     // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ И ГРАФИКА
-   // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ, ГРАФИКА И ПК СК
+    // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ, ГРАФИКА И ПК СК
     const filtersBlock = document.getElementById('analytics-filters-block');
     if (tabId === 'sub-history' || tabId === 'sub-schedule' || tabId === 'sub-sk') {
-        if(filtersBlock) filtersBlock.style.display = 'none';
+        if (filtersBlock) filtersBlock.style.display = 'none';
     } else {
-        if(filtersBlock) filtersBlock.style.display = 'block';
+        if (filtersBlock) filtersBlock.style.display = 'block';
     }
 
     // Обновляем кнопку FAB
@@ -44,41 +152,46 @@ function switchAnalyticsSubTab(tabId, btnElement) {
 // 1. Фильтрация данных для всех вкладок аналитики
 function getFilteredAnalyticsData() {
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
-    
+
     const fProj = activeMultiFilters.analytics.project;
     const fContr = activeMultiFilters.analytics.contractor;
     const fInsp = activeMultiFilters.analytics.inspector;
     const fTmpl = activeMultiFilters.analytics.template;
-    
-    let arr = contractorArray;
+
+    let arr = getAnalyticsDataSource(window.analyticsDataMode || 'local');
     const now = new Date();
-    
+
     if (selPeriod === 'DAY') {
-        arr = arr.filter(i => new Date(i.date).toDateString() === now.toDateString()); 
-    } else if (selPeriod === 'MONTH') { 
-        const m = new Date(); m.setDate(now.getDate()-30); 
-        arr = arr.filter(i => new Date(i.date) >= m); 
-    } else if (selPeriod === 'WEEK') { 
-        const w = new Date(); w.setDate(now.getDate()-7); 
-        arr = arr.filter(i => new Date(i.date) >= w); 
+        arr = arr.filter(i => new Date(i.date).toDateString() === now.toDateString());
+    } else if (selPeriod === 'MONTH') {
+        const m = new Date(); m.setDate(now.getDate() - 30);
+        arr = arr.filter(i => new Date(i.date) >= m);
+    } else if (selPeriod === 'WEEK') {
+        const w = new Date(); w.setDate(now.getDate() - 7);
+        arr = arr.filter(i => new Date(i.date) >= w);
     } else if (selPeriod === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
         const dTo = document.getElementById('filter-date-to')?.value;
         if (dFrom) {
-            const fDate = new Date(dFrom); fDate.setHours(0, 0, 0, 0); 
+            const fDate = new Date(dFrom); fDate.setHours(0, 0, 0, 0);
             arr = arr.filter(i => new Date(i.date) >= fDate);
         }
         if (dTo) {
-            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999); 
+            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
             arr = arr.filter(i => new Date(i.date) <= tDate);
         }
     }
 
-    if (fProj.length > 0) arr = arr.filter(i => fProj.includes(i.projectName));
+    if (fProj.length > 0) {
+        arr = arr.filter(i => {
+            const p = i.project_display_name || i.projectName || i.project_canonical_key || '';
+            return fProj.includes(p) || fProj.includes(i.project_canonical_key);
+        });
+    }
     if (fContr.length > 0) arr = arr.filter(i => fContr.includes(i.contractorName));
     if (fInsp.length > 0) arr = arr.filter(i => fInsp.includes(i.inspectorName));
     if (fTmpl.length > 0) arr = arr.filter(i => fTmpl.includes(i.templateKey));
-    
+
     return arr;
 }
 
@@ -86,18 +199,21 @@ function getFilteredAnalyticsData() {
 function updateAnalyticsFilters() {
     const selectC = document.getElementById('global-filter-contractor');
     const selectT = document.getElementById('global-filter-template');
-    if(!selectC || !selectT) return;
-    
+    if (!selectC || !selectT) return;
+
     const uniqueCs = [...new Set(contractorArray.map(i => i.contractorName).filter(Boolean))];
     selectC.innerHTML = `<option value="ALL">Все подрядчики</option>` + uniqueCs.map(c => `<option value="${c}">${c}</option>`).join('');
-    
+
     const tmplSelect = document.getElementById('checklist-selector');
-    if(tmplSelect) {
+    if (tmplSelect) {
         let opts = `<option value="ALL">Все виды работ</option>`;
         Array.from(tmplSelect.options).forEach(o => {
-            if(o.value && o.value !== "HOME" && o.value !== "UPLOAD") opts += `<option value="${o.value}">${o.text}</option>`;
+            if (o.value && o.value !== "HOME" && o.value !== "UPLOAD") opts += `<option value="${o.value}">${o.text}</option>`;
         });
         selectT.innerHTML = opts;
+    }
+    if (typeof updateFilterButtonLabels === 'function') {
+        updateFilterButtonLabels();
     }
 }
 
@@ -105,12 +221,12 @@ function toggleDateRange() {
     const select = document.getElementById('global-filter-period');
     const period = select?.value;
     const label = document.getElementById('btn-ana-period-label');
-    
+
     if (select && label) { label.querySelector('.truncate').innerText = select.options[select.selectedIndex].text; }
 
     const rangeBlock = document.getElementById('custom-date-range');
     if (!rangeBlock) return;
-    
+
     if (period === 'CUSTOM') {
         rangeBlock.classList.remove('hidden'); rangeBlock.classList.add('grid');
     } else {
@@ -122,24 +238,26 @@ function toggleDateRange() {
 function renderCurrentAnalyticsTab() {
     for (const key in chartInstances) { if (chartInstances[key]) chartInstances[key].destroy(); }
     chartInstances = {};
+    renderAnalyticsModeSwitcher();
+    renderOnePagerModeToggle(); // <-- ДОБАВЛЕНО
 
     const data = getFilteredAnalyticsData();
-    
+
     if (currentActiveAnalyticsTab === 'sub-contractors') {
-    renderContractorsSubTab(data);
-    // Если была открыта детализация — восстанавливаем с пересозданием графика
-    if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
-        showContractorDetailView(currentDetailedContractor);
+        renderContractorsSubTab(data);
+        // Если была открыта детализация — восстанавливаем с пересозданием графика
+        if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
+            showContractorDetailView(currentDetailedContractor);
+        }
     }
-}
     else if (currentActiveAnalyticsTab === 'sub-onepager') renderOnePagerSubTab(data);
-    else if (currentActiveAnalyticsTab === 'sub-schedule') { if(typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
+    else if (currentActiveAnalyticsTab === 'sub-schedule') { if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
     else if (currentActiveAnalyticsTab === 'sub-data') renderDataSubTab(data);
     else if (currentActiveAnalyticsTab === 'sub-history') {
         renderHistoryTab();
         initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
     }
-    else if (currentActiveAnalyticsTab === 'sub-sk') { if(typeof sk_renderMainTab === 'function') sk_renderMainTab(); }
+    else if (currentActiveAnalyticsTab === 'sub-sk') { if (typeof sk_renderMainTab === 'function') sk_renderMainTab(); }
     else if (currentActiveAnalyticsTab === 'sub-rating') renderRatingTab(); // Обратная совместимость
 }
 
@@ -165,21 +283,22 @@ function renderContractorsSubTab(data) {
     // Глобальные массивы для фотогалерей
     let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
 
-    data.forEach(i => { 
-        if(i.metrics) { 
-            sumUrkProd += i.metrics.final; 
+    data.forEach(i => {
+        if (i.metrics) {
+            sumUrkProd += i.metrics.final;
             sumB1 += i.metrics.n_B1_fail;
             sumB2 += i.metrics.n_B2_fail;
             sumB3 += i.metrics.n_B3_fail;
         }
-        const cKey = i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']';
-        groupedC[cKey] = groupedC[cKey] || []; 
+        const projectLabel = i.project_display_name || i.projectName || i.project_canonical_key || 'Без объекта';
+        const cKey = i.contractorName + ' [' + projectLabel + ']';
+        groupedC[cKey] = groupedC[cKey] || [];
         groupedC[cKey].push(i);
 
-        if(i.state) {
+        if (i.state) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
-                
+
                 if (s === 'fail' || s === 'fail_escalated') {
                     let code = i.details && i.details[id] ? i.details[id].causeCode || 'C00' : 'C00';
                     causesCount[code] = (causesCount[code] || 0) + 1;
@@ -192,11 +311,11 @@ function renderContractorsSubTab(data) {
                     const tKey = i.templateKey ? i.templateKey.replace(tType + '_', '') : '';
                     const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
                     const foundItem = getFlatList(cl).find(x => String(x.id) === String(id));
-                    if(foundItem) defName = foundItem.n;
+                    if (foundItem) defName = foundItem.n;
 
                     const photoObj = { photo: photo, name: defName, contr: i.contractorName, date: new Date(i.date).toLocaleDateString('ru-RU') };
 
-                    if(s === 'fail' || s === 'fail_escalated') {
+                    if (s === 'fail' || s === 'fail_escalated') {
                         let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
                         if (isB3) allPhotosB3.push(photoObj);
                         else allPhotosB2.push(photoObj);
@@ -210,12 +329,12 @@ function renderContractorsSubTab(data) {
 
     const avgUrkProd = Math.round(sumUrkProd / data.length);
     const contrCount = Object.keys(groupedC).length;
-    
+
     let sumIntegralUrk = 0; let validContrCount = 0;
     let defaultSmartText = '';
     let cList = [];
-    
-    for(let cName in groupedC) {
+
+    for (let cName in groupedC) {
         const cData = groupedC[cName];
         const m = getContractorMetrics(cData, typeof userTemplates !== 'undefined' ? userTemplates : {});
         if (m) {
@@ -223,7 +342,7 @@ function renderContractorsSubTab(data) {
             if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
         }
     }
-    
+
     const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
     if (defaultSmartText === '') defaultSmartText = 'Все подрядчики в зеленой зоне. Вмешательство не требуется.';
 
@@ -234,8 +353,8 @@ function renderContractorsSubTab(data) {
 
     const getSelectHtml = (type) => `
         <select onchange="updateTrendCharts('${type}', this.value)" class="text-[9px] font-semibold border border-indigo-200 text-indigo-700 bg-white rounded px-1 py-1 outline-none cursor-pointer shadow-sm">
-            <option value="WEEK" ${trendGroupings[type]==='WEEK'?'selected':''}>Недели</option>
-            <option value="MONTH" ${trendGroupings[type]==='MONTH'?'selected':''}>Месяцы</option>
+            <option value="WEEK" ${trendGroupings[type] === 'WEEK' ? 'selected' : ''}>Недели</option>
+            <option value="MONTH" ${trendGroupings[type] === 'MONTH' ? 'selected' : ''}>Месяцы</option>
         </select>
     `;
 
@@ -247,7 +366,7 @@ function renderContractorsSubTab(data) {
             </div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
                 <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1" title="Средний Интегральный рейтинг подрядчиков">Надежность (ИУрК)</div>
-                <div class="text-2xl font-bold ${avgIntegralUrk < 70 ? 'text-red-600' : (avgIntegralUrk < 85 ? 'text-orange-500' : 'text-indigo-600')}">${validContrCount > 0 ? avgIntegralUrk+'%' : 'СБОР'}</div>
+                <div class="text-2xl font-bold ${avgIntegralUrk < 70 ? 'text-red-600' : (avgIntegralUrk < 85 ? 'text-orange-500' : 'text-indigo-600')}">${validContrCount > 0 ? avgIntegralUrk + '%' : 'СБОР'}</div>
             </div>
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col justify-center">
                 <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Подрядчиков</div>
@@ -359,27 +478,27 @@ function renderContractorsSubTab(data) {
     setTimeout(() => {
         const trendContrsData = buildTrendChartData(data, 'contractorName', selectedChartFilters.contrs, trendGroupings.contrs);
         const ctxTrendC = document.getElementById('chart_eng_trend_contrs')?.getContext('2d');
-        if(ctxTrendC) {
-            chartInstances['chart_eng_trend_contrs'] = new Chart(ctxTrendC, { type: 'line', data: trendContrsData, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: {size: 9} } } } } });
+        if (ctxTrendC) {
+            chartInstances['chart_eng_trend_contrs'] = new Chart(ctxTrendC, { type: 'line', data: trendContrsData, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } } } });
         }
 
         let causesLabels = []; let causesData = [];
-        Object.keys(causesCount).sort((a,b) => causesCount[b] - causesCount[a]).forEach(code => {
+        Object.keys(causesCount).sort((a, b) => causesCount[b] - causesCount[a]).forEach(code => {
             const name = typeof DEFECT_CAUSES !== 'undefined' ? (DEFECT_CAUSES.find(c => c.code === code)?.name || 'Иное') : 'Иное';
-            causesLabels.push(name.substring(0,15)); causesData.push(causesCount[code]);
+            causesLabels.push(name.substring(0, 15)); causesData.push(causesCount[code]);
         });
         const ctxCauses = document.getElementById('chart_eng_causes')?.getContext('2d');
-        if(ctxCauses && causesData.length > 0) {
+        if (ctxCauses && causesData.length > 0) {
             chartInstances['chart_eng_causes'] = new Chart(ctxCauses, { type: 'bar', indexAxis: 'y', data: { labels: causesLabels, datasets: [{ data: causesData, backgroundColor: '#f59e0b', borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
         }
 
-        cList.sort((a,b) => b.metrics.finalC - a.metrics.finalC);
-        const compLabels = cList.map(c => c.name.length > 10 ? c.name.substring(0,10)+'...' : c.name);
+        cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
+        const compLabels = cList.map(c => c.name.length > 10 ? c.name.substring(0, 10) + '...' : c.name);
         const compData = cList.map(c => c.metrics.finalC);
         const compColors = compData.map(v => v < 70 ? '#ef4444' : (v < 85 ? '#f59e0b' : '#22c55e'));
-        
+
         const ctxComp = document.getElementById('chart_eng_compare')?.getContext('2d');
-        if(ctxComp && compData.length > 0) {
+        if (ctxComp && compData.length > 0) {
             chartInstances['chart_eng_compare'] = new Chart(ctxComp, { type: 'bar', data: { labels: compLabels, datasets: [{ data: compData, backgroundColor: compColors, borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } } });
         }
     }, 100);
@@ -388,35 +507,36 @@ function renderContractorsSubTab(data) {
 }
 
 // ГЛОБАЛЬНАЯ ФУНКЦИЯ ДЛЯ ВЫЗОВА МАГИИ TWI
-window.createMagicTwi = function(checklistKey, itemId, photoGood, photoBad, title) {
+window.createMagicTwi = function (checklistKey, itemId, photoGood, photoBad, title) {
+    if (typeof rbi_requireKnowledgeEditRight === 'function' && !rbi_requireKnowledgeEditRight()) return;
     switchTab('tab-reference');
     setTimeout(() => {
         const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
-        if(btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]);
-        
+        if (btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]);
+
         openTwiConstructor(); // Открываем пустой конструктор
-        
+
         setTimeout(() => {
             document.getElementById('twi-title-input').value = title;
             document.getElementById('twi-checklist-select').value = checklistKey;
-            
+
             // Запускаем перерисовку селектора пунктов
             populateTwiItemSelect(itemId);
-            
+
             changeTwiType('INSPECTOR');
-            
+
             // Вставляем фото
             renderGoodPhoto(photoGood);
             renderBadPhoto(photoBad);
-            
+
             showToast('✨ Магия сработала! Допишите текст и сохраните.');
         }, 300);
     }, 100);
 };
 // === ФИЛЬТРАЦИЯ СПИСКА ПОДРЯДЧИКОВ ПО ЧИПСАМ ===
-window.filterContractorsList = function(filterType, btnElement) {
+window.filterContractorsList = function (filterType, btnElement) {
     currentContractorsFilter = filterType;
-    
+
     // Сбрасываем стили всех чипсов
     const container = document.getElementById('contractors-chips-container');
     if (container) {
@@ -424,7 +544,7 @@ window.filterContractorsList = function(filterType, btnElement) {
             el.className = "contr-chip px-3 py-1.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 active:scale-95 whitespace-nowrap transition-colors";
         });
     }
-    
+
     // Красим активный чипс
     if (btnElement) {
         btnElement.className = "contr-chip px-3 py-1.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap transition-colors";
@@ -439,20 +559,21 @@ function renderContractorsListOnly(data) {
     if (!listContainer) return;
 
     const groupedC = {};
-    data.forEach(item => { 
-        const cKey = item.contractorName + ' [' + (item.projectName || 'Без объекта') + ']';
-        groupedC[cKey] = groupedC[cKey] || []; 
-        groupedC[cKey].push(item); 
+    data.forEach(item => {
+        const projectLabel = item.project_display_name || item.projectName || item.project_canonical_key || 'Без объектa';
+        const cKey = item.contractorName + ' [' + projectLabel + ']';
+        groupedC[cKey] = groupedC[cKey] || [];
+        groupedC[cKey].push(item);
     });
 
     const cList = [];
-    for(let cName in groupedC) {
+    for (let cName in groupedC) {
         const cData = groupedC[cName];
         const m = getContractorMetrics(cData, userTemplates);
-        
+
         // Считаем B1 и B2 для вывода в карточку
         let sumB1 = 0, sumB2 = 0;
-        cData.forEach(i => { if(i.metrics) { sumB1 += i.metrics.n_B1_fail; sumB2 += i.metrics.n_B2_fail; } });
+        cData.forEach(i => { if (i.metrics) { sumB1 += i.metrics.n_B1_fail; sumB2 += i.metrics.n_B2_fail; } });
 
         if (m) cList.push({ name: cName, data: cData, metrics: m, workType: cData[0].templateTitle, b1: sumB1, b2: sumB2 });
     }
@@ -463,7 +584,7 @@ function renderContractorsListOnly(data) {
     else if (currentContractorsFilter === 'STABLE') filteredList = cList.filter(c => c.metrics.finalC >= 85 && c.metrics.n_изделий_с_B3 === 0);
     else if (currentContractorsFilter === 'NEW') filteredList = cList.filter(c => c.metrics.count < 7);
 
-    filteredList.sort((a,b) => {
+    filteredList.sort((a, b) => {
         if (a.metrics.count < 7 && b.metrics.count >= 7) return 1;
         if (b.metrics.count < 7 && a.metrics.count >= 7) return -1;
         return b.metrics.finalC - a.metrics.finalC;
@@ -476,13 +597,13 @@ function renderContractorsListOnly(data) {
 
     // Сетка: 2 колонки на мобильных, 3 на планшетах/ПК
     let html = '<div class="grid grid-cols-2 md:grid-cols-3 gap-3">';
-    
+
     filteredList.forEach((c) => {
         const m = c.metrics;
         const isPrelim = m.count < 7;
         const colorClass = m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600');
         const borderClass = m.finalC < 70 ? 'border-red-300 dark:border-red-800' : 'border-[var(--card-border)]';
-        
+
         // Защита от поломки HTML из-за кавычек в названиях
         const safeName = c.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
 
@@ -549,20 +670,28 @@ function renderContractorsListOnly(data) {
 // 6. Подвкладка: Сводка (One-Pager)
 function renderOnePagerSubTab(data) {
     const container = document.getElementById('onepager-content-container');
-    if(data.length === 0) { 
-        container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm mx-1">Нет данных для анализа</div>`; 
-        return; 
+    
+    // Инициализация режима по умолчанию
+    if (typeof window.onepagerMode === 'undefined') window.onepagerMode = 'local';
+
+    // Если выбран глобальный режим — передаем управление новой функции!
+    if (window.onepagerMode === 'global') {
+        return renderGlobalOnePager(data, container);
+    }
+    if (data.length === 0) {
+        container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm mx-1">Нет данных для анализа</div>`;
+        return;
     }
 
     let sumUrk = 0; let sumB3 = 0;
-    data.forEach(i => { if(i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
+    data.forEach(i => { if (i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
     const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
-    
+
     const groupedC = {};
-    data.forEach(item => { 
+    data.forEach(item => {
         const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
-        groupedC[cKey] = groupedC[cKey] || []; 
-        groupedC[cKey].push(item); 
+        groupedC[cKey] = groupedC[cKey] || [];
+        groupedC[cKey].push(item);
     });
     const currContractorsCount = Object.keys(groupedC).length;
 
@@ -570,34 +699,34 @@ function renderOnePagerSubTab(data) {
     const mData = currIntMetrics || { redZonePerc: 0, IKO: "0.00", ikoStatus: "Мало данных", ikoColor: "text-slate-500" };
 
     const ratingData = [];
-    for(let cName in groupedC) {
+    for (let cName in groupedC) {
         if (groupedC[cName].length >= 3) {
             const m = getContractorMetrics(groupedC[cName], userTemplates);
             if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
         }
     }
-    ratingData.sort((a,b) => b.val - a.val);
+    ratingData.sort((a, b) => b.val - a.val);
 
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     let prevData = [];
     const now = new Date();
-    let trendLabel = "к 1-й пол. базы"; 
-    
+    let trendLabel = "к 1-й пол. базы";
+
     if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-7);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. нед.";
     } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate()-30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate()-30);
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
         prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
         trendLabel = "к прош. мес.";
     } else if (selPeriod === 'CUSTOM') {
         trendLabel = "к пред. периоду";
     } else {
         const half = Math.floor(data.length / 2);
-        const sortedData = [...data].sort((a,b) => new Date(a.date) - new Date(b.date));
+        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
         prevData = sortedData.slice(0, half);
     }
 
@@ -608,7 +737,7 @@ function renderOnePagerSubTab(data) {
         const pGrouped = {}; prevData.forEach(i => pGrouped[i.contractorName] = true);
         prevContrsCount = Object.keys(pGrouped).length;
         const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, userTemplates) : null;
-        if(pInt) prevIko = pInt.IKO;
+        if (pInt) prevIko = pInt.IKO;
     }
 
     const renderTrend = (curr, prev, label, inverse = false) => {
@@ -618,17 +747,17 @@ function renderOnePagerSubTab(data) {
         const isGood = inverse ? diff < 0 : diff > 0;
         const color = isGood ? 'text-green-500' : 'text-red-500';
         const sign = diff > 0 ? '▲' : '▼';
-        return `<div class="text-right"><span class="${color} text-[11px] font-black">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff)?0:2)}</span><div class="text-[7px] text-slate-400 mt-0.5 uppercase tracking-wider">${label}</div></div>`;
+        return `<div class="text-right"><span class="${color} text-[11px] font-black">${sign} ${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span><div class="text-[7px] text-slate-400 mt-0.5 uppercase tracking-wider">${label}</div></div>`;
     };
 
     const sparkLabels = []; const sparkData = [];
-    for(let i=5; i>=0; i--) {
-        const dStart = new Date(); dStart.setDate(now.getDate() - (i*7) - 7);
-        const dEnd = new Date(); dEnd.setDate(now.getDate() - (i*7));
+    for (let i = 5; i >= 0; i--) {
+        const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
+        const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
         const weekChecks = contractorArray.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
         let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
         sparkLabels.push(`-${i}н`);
-        sparkData.push(weekChecks.length > 0 ? Math.round(wSum/weekChecks.length) : null);
+        sparkData.push(weekChecks.length > 0 ? Math.round(wSum / weekChecks.length) : null);
     }
 
     let defaultChartContrs = [];
@@ -639,14 +768,14 @@ function renderOnePagerSubTab(data) {
         defaultChartContrs = [...ratingData.slice(0, 5).map(r => r.name), ...ratingData.slice(-5).map(r => r.name)];
         isTruncatedForChart = true;
     }
-    
+
     if (!selectedChartFilters.onepager) selectedChartFilters.onepager = [];
     const activeLineFilters = selectedChartFilters.onepager.length > 0 ? selectedChartFilters.onepager : defaultChartContrs;
 
     // Сбор всех фото (B3, B2, OK)
     let b3Map = {}; let b2Map = {}; let okMap = {};
     data.forEach(i => {
-        if(i.state && i.details && i.templateKey) {
+        if (i.state && i.details && i.templateKey) {
             Object.keys(i.state).forEach(id => {
                 const s = i.state[id];
                 let defName = "Дефект";
@@ -654,16 +783,16 @@ function renderOnePagerSubTab(data) {
                 const tKey = i.templateKey.replace(tType + '_', '');
                 const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (userTemplates[tKey] ? userTemplates[tKey].groups : []);
                 const foundItem = getFlatList(cl).find(x => x.id == id);
-                if(foundItem) defName = foundItem.n;
+                if (foundItem) defName = foundItem.n;
 
                 const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
 
-                if(s === 'fail' || s === 'fail_escalated') {
+                if (s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
                     if (isB3) {
                         if (!b3Map[defName]) b3Map[defName] = { count: 0, photo: null, contr: (i.contractorName || 'Неизвестно') + ' [' + (i.projectName || 'Без объекта') + ']', name: defName };
                         b3Map[defName].count++;
-                        if (photo) b3Map[defName].photo = photo; 
+                        if (photo) b3Map[defName].photo = photo;
                     } else {
                         const isB1 = foundItem && foundItem.w === 1;
                         if (isB1) return; // B1 не попадает в топ дефектов
@@ -680,19 +809,19 @@ function renderOnePagerSubTab(data) {
         }
     });
 
-    const topB3 = Object.values(b3Map).sort((a,b) => b.count - a.count).slice(0, 5);
-    const topB2 = Object.values(b2Map).sort((a,b) => b.count - a.count).slice(0, 5);
-    const topOK = Object.values(okMap).sort((a,b) => b.count - a.count).slice(0, 5);
+    const topB3 = Object.values(b3Map).sort((a, b) => b.count - a.count).slice(0, 5);
+    const topB2 = Object.values(b2Map).sort((a, b) => b.count - a.count).slice(0, 5);
+    const topOK = Object.values(okMap).sort((a, b) => b.count - a.count).slice(0, 5);
 
     const renderUIPhotoCards = (arr, isCrit, isOk = false) => {
         if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${isOk ? 'Эталонов нет' : 'Дефектов не зафиксировано'}</div>`;
         return `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
             ${arr.map(d => {
-                const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${d.photo}')">` : `<div class="w-full h-24 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[10px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
-                let badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
-                let badgeText = isCrit ? 'B3' : 'B2';
-                if (isOk) { badgeColor = 'text-green-700 bg-green-100 border-green-200'; badgeText = 'OK'; }
-                return `
+            const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${d.photo}')">` : `<div class="w-full h-24 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[10px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
+            let badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
+            let badgeText = isCrit ? 'B3' : 'B2';
+            if (isOk) { badgeColor = 'text-green-700 bg-green-100 border-green-200'; badgeText = 'OK'; }
+            return `
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
                     ${imgHtml}
                     <div class="p-2 flex-1 flex flex-col justify-between">
@@ -703,7 +832,7 @@ function renderOnePagerSubTab(data) {
                         </div>
                     </div>
                 </div>`;
-            }).join('')}
+        }).join('')}
         </div>`;
     };
 
@@ -717,7 +846,7 @@ function renderOnePagerSubTab(data) {
         }
     }
     const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
-    
+
     const pdcaKey = 'global_onepager_pdca';
     let rawPdcaText = customExpertConclusions[pdcaKey] || "";
     if (!customExpertConclusions[pdcaKey]) {
@@ -737,24 +866,24 @@ function renderOnePagerSubTab(data) {
     const contrCheckCounts = {}; // Считаем проверки для вывода в топы матрицы
 
     data.forEach(check => {
-        if (!check.metrics) return; 
-        
+        if (!check.metrics) return;
+
         // Бронебойная защита от отсутствия названия
         const stage = check.templateTitle || check.templateKey || 'Неизвестный этап';
         const contr = check.contractorName || 'Неизвестно';
-        
+
         contrCheckCounts[contr] = (contrCheckCounts[contr] || 0) + 1;
 
         if (!heatmapStages[stage]) heatmapStages[stage] = {};
         if (!heatmapStages[stage][contr]) heatmapStages[stage][contr] = { checks: 0, defects: 0 };
-        
+
         heatmapStages[stage][contr].checks++;
         heatmapStages[stage][contr].defects += (check.metrics.n_B2_fail + check.metrics.n_B3_fail);
     });
 
     let heatmapHtml = '';
     const stageNames = Object.keys(heatmapStages).sort();
-    
+
     // ИСПРАВЛЕНИЕ: Берем топ-5 самых проверяемых подрядчиков ИМЕННО из текущей выборки (без лимита в 3 проверки)
     const topMatrixContrs = Object.keys(contrCheckCounts)
         .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a])
@@ -763,8 +892,8 @@ function renderOnePagerSubTab(data) {
     if (stageNames.length > 0 && topMatrixContrs.length > 0) {
         heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2"><table class="w-full text-left border-collapse text-[10px]">
             <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black">Вид работ / Подрядчик</th>`;
-        
-        topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold truncate max-w-[80px]" title="${c}">${c.substring(0,10)}</th>`);
+
+        topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold truncate max-w-[80px]" title="${c}">${c.substring(0, 10)}</th>`);
         heatmapHtml += `</tr></thead><tbody>`;
 
         stageNames.forEach(stage => {
@@ -775,8 +904,8 @@ function renderOnePagerSubTab(data) {
                     heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center bg-[var(--hover-bg)] text-slate-400 dark:text-slate-600">-</td>`;
                 } else {
                     const defectRate = cell.defects / cell.checks;
-                    let bgColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800'; 
-                    if (defectRate > 1.5) bgColor = 'bg-red-100 text-red-800 border-red-300 font-black dark:bg-red-900/40 dark:border-red-700'; 
+                    let bgColor = 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800';
+                    if (defectRate > 1.5) bgColor = 'bg-red-100 text-red-800 border-red-300 font-black dark:bg-red-900/40 dark:border-red-700';
                     else if (defectRate > 0.5) bgColor = 'bg-yellow-50 text-yellow-700 border-yellow-200 font-bold dark:bg-yellow-900/20 dark:border-yellow-800';
                     heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center ${bgColor}">${cell.defects} деф.</td>`;
                 }
@@ -796,13 +925,13 @@ function renderOnePagerSubTab(data) {
     // СБОРКА ИТОГОВОГО HTML (ОДИН СПИСОК АККОРДЕОНОВ - iOS STYLE)
     // ==========================================
     container.innerHTML = `
-        <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40 flex justify-between items-center">
+        <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 flex justify-between items-center">
             <div>
-                <h2 class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-                    Сводный статус
+                <h2 class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Сводный статус объекта
                 </h2>
-                <div class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5">Охват: ${data.length} проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
+                <div class="text-[9px] font-bold text-[var(--text-muted)] mt-1">Охват: ${data.length} проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
             </div>
         </div>
         
@@ -1005,21 +1134,21 @@ function renderOnePagerSubTab(data) {
         if (ctxLine) {
             const trendData = buildTrendChartData(data, 'contractorName', activeLineFilters, trendGroupings.onepager || 'MONTH');
             trendData.datasets.forEach(ds => { ds.borderWidth = 2; ds.pointRadius = 2; });
-            
+
             if (chartInstances['op-line-chart']) chartInstances['op-line-chart'].destroy();
             chartInstances['op-line-chart'] = new Chart(ctxLine.getContext('2d'), {
                 type: 'line',
                 data: trendData,
-                options: { 
-                    animation: false, 
-                    responsive: true, 
-                    maintainAspectRatio: false, 
-                    scales: { 
-                        y: { min: 0, max: 100, ticks: { font: {size: 9} } }, 
-                        x: { ticks: { font: {size: 9} } } 
-                    }, 
-                    plugins: { 
-                        legend: { position: 'right', labels: { boxWidth: 8, font: {size: 8} } },
+                options: {
+                    animation: false,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { min: 0, max: 100, ticks: { font: { size: 9 } } },
+                        x: { ticks: { font: { size: 9 } } }
+                    },
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 8, font: { size: 8 } } },
                         title: {
                             display: isTruncatedForChart,
                             text: 'Отображен ТОП-5 лучших и ТОП-5 худших подрядчиков',
@@ -1027,12 +1156,359 @@ function renderOnePagerSubTab(data) {
                             font: { size: 10, weight: 'bold' },
                             padding: { bottom: 5 }
                         }
-                    } 
+                    }
                 }
             });
         }
     }, 100);
 }
+
+// ============================================================================
+// НОВЫЙ БЛОК: ГЛОБАЛЬНАЯ СВОДКА (COMPANY DASHBOARD С ТРЕНДАМИ И ПК СК)
+// ============================================================================
+window.renderGlobalOnePager = function(data, container) {
+    if (data.length === 0) {
+        container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm mx-1">Нет данных для анализа компании</div>`;
+        return;
+    }
+
+    let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
+
+    // --- 1. РАСЧЕТ ПРЕДЫДУЩЕГО ПЕРИОДА ДЛЯ ТРЕНДОВ ---
+    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    let prevData = [];
+    const now = new Date();
+
+    if (selPeriod === 'WEEK') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
+        prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
+    } else if (selPeriod === 'MONTH') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
+        prevData = contractorArray.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
+    } else {
+        // Если "Все время" или кастомный - берем первую половину базы как "прошлое"
+        const half = Math.floor(data.length / 2);
+        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+        prevData = sortedData.slice(0, half);
+    }
+
+    // Вспомогательная функция для отрисовки мини-тренда
+    const formatTrendInline = (curr, prev, inverse = false) => {
+        if (!prev || isNaN(prev)) return '';
+        let diff = parseFloat(curr) - parseFloat(prev);
+        if (Math.abs(diff) < 0.01) return `<span class="text-slate-400 text-[9px] ml-1 font-black">▬ 0</span>`;
+        const isGood = inverse ? diff < 0 : diff > 0;
+        const color = isGood ? 'text-green-500' : 'text-red-500';
+        const sign = diff > 0 ? '▲' : '▼';
+        return `<span class="${color} text-[9px] ml-1 font-black">${sign}${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span>`;
+    };
+
+    // --- 2. АГРЕГАЦИЯ ДАННЫХ ПО ОБЪЕКТАМ ---
+    const projectsMap = {};
+    data.forEach(item => { const pName = item.projectName || 'Без объекта'; if (!projectsMap[pName]) projectsMap[pName] = []; projectsMap[pName].push(item); });
+
+    const prevProjectsMap = {};
+    prevData.forEach(item => { const pName = item.projectName || 'Без объекта'; if (!prevProjectsMap[pName]) prevProjectsMap[pName] = []; prevProjectsMap[pName].push(item); });
+
+    const projectsArray = Object.keys(projectsMap).map(pName => {
+        const pData = projectsMap[pName];
+        let pSumUrk = 0; let redZone = 0; let b3Found = 0;
+        pData.forEach(i => { if (i.metrics) { pSumUrk += i.metrics.final; b3Found += i.metrics.n_B3_fail; } });
+        const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
+        const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
+        const IKO = pMetrics ? pMetrics.IKO : "0.00";
+        if (pMetrics) redZone = pMetrics.redZonePerc;
+
+        // Данные прошлого периода
+        const prevPData = prevProjectsMap[pName] || [];
+        let pPrevAvgUrk = 0; let pPrevIKO = "0.00";
+        if (prevPData.length > 0) {
+            let ppSum = 0; prevPData.forEach(i => ppSum += (i.metrics?.final || 0));
+            pPrevAvgUrk = Math.round(ppSum / prevPData.length);
+            const ppMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevPData, userTemplates) : null;
+            if (ppMetrics) pPrevIKO = ppMetrics.IKO;
+        }
+
+        return { name: pName, data: pData, avgUrk: pAvgUrk, prevAvgUrk: pPrevAvgUrk, IKO: IKO, prevIKO: pPrevIKO, redZone, b3Found, count: pData.length };
+    });
+
+    projectsArray.sort((a, b) => parseFloat(b.IKO) - parseFloat(a.IKO)); // Худшие по ИКО наверх
+
+    // --- 3. КАРТОЧКИ ОБЪЕКТОВ С ТРЕНДАМИ ---
+    let cardsHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 mx-1">';
+    projectsArray.forEach(p => {
+        const ikoColor = parseFloat(p.IKO) >= 0.6 ? 'text-red-600 bg-red-50 border-red-200' : (parseFloat(p.IKO) >= 0.3 ? 'text-orange-600 bg-orange-50 border-orange-200' : 'text-green-600 bg-green-50 border-green-200');
+        const urkColor = p.avgUrk < 70 ? 'text-red-500' : (p.avgUrk < 85 ? 'text-orange-500' : 'text-green-500');
+
+        cardsHtml += `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex flex-col justify-between hover:border-indigo-300 transition-colors cursor-pointer active:scale-[0.98]" onclick="
+            activeMultiFilters.analytics.project = ['${p.name}'];
+            updateFilterButtonLabels();
+            window.onepagerMode = 'local';
+            renderCurrentAnalyticsTab();
+        ">
+            <div class="flex justify-between items-start mb-3">
+                <div class="text-[13px] font-black uppercase text-slate-800 dark:text-white leading-tight pr-2 line-clamp-2">${p.name}</div>
+                <div class="text-[10px] font-black px-2 py-0.5 rounded border ${ikoColor} shadow-sm shrink-0 flex items-center">
+                    ИКО ${p.IKO} ${formatTrendInline(p.IKO, p.prevIKO, true)}
+                </div>
+            </div>
+            <div class="flex justify-between items-end mt-auto pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                    <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ср. УрК Объекта</div>
+                    <div class="text-2xl font-black ${urkColor} leading-none flex items-center">
+                        ${p.avgUrk}% ${formatTrendInline(p.avgUrk, p.prevAvgUrk, false)}
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-[9px] font-bold text-slate-500 uppercase">Проверок: ${p.count}</div>
+                    <div class="text-[9px] font-bold ${p.b3Found > 0 ? 'text-red-500' : 'text-slate-400'} uppercase mt-1">Аварий B3: ${p.b3Found}</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    cardsHtml += '</div>';
+
+    // --- 4. РЕЙТИНГ ИНЖЕНЕРОВ ПК СТРОЙКОНТРОЛЬ ---
+    let skHrHtml = '';
+    if (typeof window.skRecords !== 'undefined' && window.skRecords.length > 0) {
+        const engMap = {};
+        window.skRecords.forEach(r => {
+            let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан';
+            if (!engMap[baseName]) engMap[baseName] = { total: 0, open: 0, overdue: 0, withCategory: 0 };
+            
+            engMap[baseName].total++;
+            const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+            if (isOpen) engMap[baseName].open++;
+            if (r.category && r.category !== 'Без категории') engMap[baseName].withCategory++;
+            
+            const deadline = r.deadline ? new Date(r.deadline) : null;
+            if (deadline && isOpen && new Date() > deadline) engMap[baseName].overdue++;
+        });
+
+        const skEngArray = Object.keys(engMap).map(name => {
+            const d = engMap[name];
+            const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
+            const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
+            const kpi = Math.max(0, 100 - overduePerc + (catPerc === 100 ? 10 : 0));
+            return { name, total: d.total, open: d.open, overduePerc, kpi };
+        });
+
+        skEngArray.sort((a, b) => b.kpi - a.kpi);
+
+        skHrHtml = skEngArray.map((e, idx) => `
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-black ${idx === 0 ? 'bg-orange-400 text-white shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'} shrink-0">${idx + 1}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${e.name}</div>
+                    <div class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Выдано: ${e.total} | Просрочка: ${e.overduePerc}%</div>
+                </div>
+                <div class="text-right shrink-0">
+                    <div class="text-[9px] font-bold text-slate-400 uppercase mb-0.5">KPI</div>
+                    <div class="text-[12px] font-black ${e.kpi >= 80 ? 'text-green-500' : (e.kpi >= 50 ? 'text-orange-500' : 'text-red-500')}">${e.kpi}</div>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        skHrHtml = '<div class="text-[10px] text-center text-slate-400 py-4">Данные Стройконтроля не загружены</div>';
+    }
+
+    // --- 5. ГЛОБАЛЬНЫЕ РЕЙТИНГИ ПОДРЯДЧИКОВ И ИНЖЕНЕРОВ RBI ---
+    const allContrMap = {};
+    data.forEach(c => {
+        const cKey = `${c.contractorName} [${c.projectName || 'Без объекта'}]`;
+        if (!allContrMap[cKey]) allContrMap[cKey] = [];
+        allContrMap[cKey].push(c);
+    });
+
+    let ratingData = [];
+    for (let cKey in allContrMap) {
+        if (allContrMap[cKey].length >= 3) {
+            const m = getContractorMetrics(allContrMap[cKey], userTemplates);
+            if (m) ratingData.push({ name: cKey, val: m.finalC, isPrelim: m.count < 7 });
+        }
+    }
+    ratingData.sort((a, b) => b.val - a.val);
+
+    let hrHtml = '';
+    if (typeof gameCalculateManagerMetrics === 'function') {
+        const hrStats = gameCalculateManagerMetrics();
+        hrHtml = hrStats.map((s, idx) => `
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <div class="w-5 h-5 rounded flex items-center justify-center text-[9px] font-black ${idx === 0 ? 'bg-indigo-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'} shrink-0">${idx + 1}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${s.name}</div>
+                    <div class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">Опыт: ${s.pi} XP | Инспекций: ${s.checks}</div>
+                </div>
+                <div class="text-right shrink-0">
+                    <div class="text-[9px] font-bold text-slate-400 uppercase mb-0.5">Impact</div>
+                    <div class="text-[12px] font-black ${s.avgImpact > 0 ? 'text-green-500' : (s.avgImpact < 0 ? 'text-red-500' : 'text-slate-500')}">${s.avgImpact > 0 ? '+' : ''}${s.avgImpact.toFixed(1)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // --- 6. СБОРКА HTML (Аккордеоны) ---
+   // 4. Сборка HTML (Аккордеоны)
+    container.innerHTML = `
+        <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 flex justify-between items-center">
+            <div>
+                <h2 class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Глобальная сводка (Компания)
+                </h2>
+                <div class="text-[9px] font-bold text-[var(--text-muted)] mt-1">Охват: ${data.length} проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
+            </div>
+        </div>
+
+        ${cardsHtml}
+
+        <div class="space-y-3 mx-1 pb-4">
+            
+            <!-- АНАЛИЗ ИИ -->
+            <details class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                <summary class="p-3.5 font-bold text-[11px] text-indigo-700 dark:text-indigo-400 uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-indigo-100 transition-colors rounded-2xl select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> 
+                        Анализ портфеля (AI)
+                    </span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-4 border-t border-indigo-100 dark:border-indigo-800 bg-white dark:bg-slate-800 rounded-b-2xl">
+                    <div id="global-ai-text" class="text-[12px] leading-relaxed text-slate-800 dark:text-slate-200 font-medium whitespace-pre-wrap">
+                        ${customExpertConclusions['global_portfolio_ai'] || 'Нажмите кнопку ниже для генерации отчета по всей компании.'}
+                    </div>
+                    <button onclick="rbi_generateGlobalAi()" class="mt-4 w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Сгенерировать резюме
+                    </button>
+                </div>
+            </details>
+            <!-- ДВА РЕЙТИНГА ОБЪЕКТОВ РЯДОМ -->
+            
+                
+                <!-- РЕЙТИНГ ОБЪЕКТОВ (Ср. УрК) -->
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"></path></svg> 
+                            Рейтинг Объектов (УрК)
+                        </span>
+                        <span class="transition-transform group-open:rotate-180">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                        </span>
+                    </summary>
+                    <div class="p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl">
+                        <div class="space-y-3 max-h-[30vh] overflow-y-auto custom-scrollbar pr-2">
+                            ${[...projectsArray].sort((a,b) => b.avgUrk - a.avgUrk).map(p => `
+                                <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                    <div class="flex-1 min-w-0 pr-2">
+                                        <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate" title="${p.name}">${p.name}</div>
+                                        <div class="w-full h-1.5 bg-[var(--card-border)] rounded-full overflow-hidden mt-1.5">
+                                            <div class="h-full ${p.avgUrk < 70 ? 'bg-red-500' : (p.avgUrk < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${p.avgUrk}%"></div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right shrink-0 flex flex-col items-end justify-center">
+                                        <div class="text-[14px] font-black leading-none ${p.avgUrk < 70 ? 'text-red-500' : (p.avgUrk < 85 ? 'text-orange-500' : 'text-green-500')}">${p.avgUrk}%</div>
+                                        <div class="flex items-center justify-end mt-1 h-3">${formatTrendInline(p.avgUrk, p.prevAvgUrk, false)}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </details>
+
+                <!-- АНТИРЕЙТИНГ ОБЪЕКТОВ (ИКО) -->
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+                            Антирейтинг (ИКО)
+                        </span>
+                        <span class="transition-transform group-open:rotate-180">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                        </span>
+                    </summary>
+                    <div class="p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl">
+                        <div class="space-y-3 max-h-[30vh] overflow-y-auto custom-scrollbar pr-2">
+                            ${[...projectsArray].sort((a,b) => parseFloat(b.IKO) - parseFloat(a.IKO)).map(p => `
+                                <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                                    <div class="flex-1 min-w-0 pr-2">
+                                        <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate" title="${p.name}">${p.name}</div>
+                                        <div class="text-[8px] font-bold text-slate-400 mt-1 uppercase">Аварий B3: ${p.b3Found} шт.</div>
+                                    </div>
+                                    <div class="text-right shrink-0 flex flex-col items-end justify-center">
+                                        <div class="text-[14px] font-black leading-none ${parseFloat(p.IKO) >= 0.6 ? 'text-red-500' : (parseFloat(p.IKO) >= 0.3 ? 'text-orange-500' : 'text-green-500')}">${p.IKO}</div>
+                                        <div class="flex items-center justify-end mt-1 h-3">${formatTrendInline(p.IKO, p.prevIKO, true)}</div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </details>
+                
+            
+            <!-- ГЛОБАЛЬНЫЕ ПОДРЯДЧИКИ -->
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 
+                        Глобальные Подрядчики (ИУрК)
+                    </span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="p-4 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl">
+                    <div class="space-y-3 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                        ${ratingData.map(r => `
+                            <div class="flex items-center gap-2">
+                                <div class="w-32 text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" title="${r.name}">${r.name}</div>
+                                <div class="flex-1 h-2.5 bg-[var(--hover-bg)] rounded-full overflow-hidden border border-[var(--card-border)] relative">
+                                    <div class="h-full ${r.val < 70 ? 'bg-red-500' : (r.val < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${r.val}%"></div>
+                                </div>
+                                <div class="w-10 text-right text-[11px] font-black ${r.val < 70 ? 'text-red-500' : (r.val < 85 ? 'text-orange-500' : 'text-green-500')}">${r.val}%</div>
+                            </div>
+                        `).join('') || '<div class="text-[10px] text-center text-slate-400">Нет данных</div>'}
+                    </div>
+                </div>
+            </details>
+
+            <!-- ДВА РЕЙТИНГА ИНЖЕНЕРОВ РЯДОМ -->
+            
+                
+                <!-- ИНЖЕНЕРЫ RBI -->
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> 
+                            Рейтинг Аудиторов RBI
+                        </span>
+                        <span class="transition-transform group-open:rotate-180">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-2xl">
+                        ${hrHtml || '<div class="text-[10px] text-center text-slate-400">Нет данных по команде</div>'}
+                    </div>
+                </details>
+
+                <!-- ИНЖЕНЕРЫ ПК СТРОЙКОНТРОЛЬ -->
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary class="p-3.5 font-bold text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-2xl select-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> 
+                            Рейтинг Инженеров (ПК СК)
+                        </span>
+                        <span class="transition-transform group-open:rotate-180">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-2xl">
+                        ${skHrHtml}
+                    </div>
+                </details>
+
+            
+
+        </div>
+    `;
+};
 
 // 7. Подвкладка: База данных (Таблица)
 
@@ -1044,32 +1520,35 @@ function showContractorDetailView(contractorName) {
     document.getElementById('contractors-main-view').classList.add('hidden');
     document.getElementById('contractor-detail-view').classList.remove('hidden');
     document.getElementById('detail-view-title').innerText = contractorName;
-    window.scrollTo(0,0);
+    window.scrollTo(0, 0);
 
     const container = document.getElementById('contractor-detail-content');
-    const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
-    
+    const data = getFilteredAnalyticsData().filter(c => {
+        const projectLabel = c.project_display_name || c.projectName || c.project_canonical_key || 'Без объекта';
+        return c.contractorName + ' [' + projectLabel + ']' === contractorName;
+    });
+
     if (data.length === 0) { container.innerHTML = 'Ошибка данных'; return; }
 
     const m = getContractorMetrics(data, userTemplates);
     const workType = data[0].templateTitle;
 
-    let cStageData = {}; let cFailCounts = {}; let cB3Counts = {}; 
+    let cStageData = {}; let cFailCounts = {}; let cB3Counts = {};
     let sumB1 = 0, sumB2 = 0, sumB3 = 0;
     let allPhotosB3 = []; let allPhotosB2 = []; let allPhotosOK = [];
-    
+
     data.forEach(unit => {
-        if(unit.metrics) { 
-            sumB1 += unit.metrics.n_B1_fail; 
-            sumB2 += unit.metrics.n_B2_fail; 
-            sumB3 += unit.metrics.n_B3_fail; 
+        if (unit.metrics) {
+            sumB1 += unit.metrics.n_B1_fail;
+            sumB2 += unit.metrics.n_B2_fail;
+            sumB3 += unit.metrics.n_B3_fail;
         }
 
         const tType = unit.templateKey ? unit.templateKey.split('_')[0] : '';
         const tKey = unit.templateKey ? unit.templateKey.replace(tType + '_', '') : '';
         const clGroups = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
 
-        if(unit.state) {
+        if (unit.state) {
             Object.keys(unit.state).forEach(id => {
                 const s = unit.state[id];
                 let defName = "Дефект";
@@ -1098,7 +1577,7 @@ function showContractorDetailView(contractorName) {
                     cStageData[parentStage].ok++;
                     if (photo) allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                 }
-                
+
                 if (s === 'fail' || s === 'fail_escalated') {
                     cStageData[parentStage].fail++;
                     const flatList = getFlatList(clGroups);
@@ -1107,14 +1586,14 @@ function showContractorDetailView(contractorName) {
 
                     if (isB3) {
                         cStageData[parentStage].b3++;
-                        if(!cB3Counts[defName]) cB3Counts[defName] = { count: 0, photo: null, name: defName };
+                        if (!cB3Counts[defName]) cB3Counts[defName] = { count: 0, photo: null, name: defName };
                         cB3Counts[defName].count++;
-                        if(photo) allPhotosB3.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                        if (photo) allPhotosB3.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                     } else {
                         cStageData[parentStage].b2++;
-                        if(!cFailCounts[defName]) cFailCounts[defName] = { count: 0, photo: null, name: defName };
+                        if (!cFailCounts[defName]) cFailCounts[defName] = { count: 0, photo: null, name: defName };
                         cFailCounts[defName].count++;
-                        if(photo) allPhotosB2.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                        if (photo) allPhotosB2.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
                     }
                 }
             });
@@ -1127,7 +1606,7 @@ function showContractorDetailView(contractorName) {
         return `<tr class="border-b border-[var(--card-border)] hover:bg-[var(--hover-bg)]">
             <td class="p-2 text-[10px] font-bold whitespace-normal">${k}</td>
             <td class="p-2 text-center text-[11px]">${d.checks}</td>
-            <td class="p-2 text-center text-[11px] font-black ${avgUrk<70?'text-red-500':(avgUrk<85?'text-orange-500':'text-green-600')}">${avgUrk}%</td>
+            <td class="p-2 text-center text-[11px] font-black ${avgUrk < 70 ? 'text-red-500' : (avgUrk < 85 ? 'text-orange-500' : 'text-green-600')}">${avgUrk}%</td>
             <td class="p-2 text-center text-[11px] text-green-600 font-bold">${d.ok}</td>
             <td class="p-2 text-center text-[11px] text-orange-500">${d.b2}</td>
             <td class="p-2 text-center text-[11px] text-red-600 font-black">${d.b3}</td>
@@ -1160,24 +1639,24 @@ function showContractorDetailView(contractorName) {
     const safeContractorNameForHtml = contractorName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
     // --- РАСЧЕТ ДАННЫХ ПК СТРОЙКОНТРОЛЬ ДЛЯ ДАННОГО ПОДРЯДЧИКА ---
-        let skTotal = 0, skOpen = 0, skOverdue = 0;
-        let skHtmlBlock = '';
-        if (typeof window.skRecords !== 'undefined' && window.skRecords.length > 0) {
-            const cleanCName = contractorName.split(' [')[0]; 
-            const cRecords = window.skRecords.filter(r => 
-                r.contractor === cleanCName || 
-                r.raw_contractor === cleanCName || 
-                (window.skContractorMap && window.skContractorMap[r.raw_contractor] === cleanCName)
-            );
-            skTotal = cRecords.length;
-            cRecords.forEach(r => {
-                const isOpen = r.status && r.status.toLowerCase().includes('не устран');
-                if (isOpen) skOpen++;
-                if (r.deadline && new Date() > new Date(r.deadline) && isOpen) skOverdue++;
-            });
-            if (skTotal > 0) {
-                const overdueColor = skOverdue > 3 ? 'text-red-600' : (skOverdue > 0 ? 'text-orange-500' : 'text-green-600');
-                skHtmlBlock = `
+    let skTotal = 0, skOpen = 0, skOverdue = 0;
+    let skHtmlBlock = '';
+    if (typeof window.skRecords !== 'undefined' && window.skRecords.length > 0) {
+        const cleanCName = contractorName.split(' [')[0];
+        const cRecords = window.skRecords.filter(r =>
+            r.contractor === cleanCName ||
+            r.raw_contractor === cleanCName ||
+            (window.skContractorMap && window.skContractorMap[r.raw_contractor] === cleanCName)
+        );
+        skTotal = cRecords.length;
+        cRecords.forEach(r => {
+            const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+            if (isOpen) skOpen++;
+            if (r.deadline && new Date() > new Date(r.deadline) && isOpen) skOverdue++;
+        });
+        if (skTotal > 0) {
+            const overdueColor = skOverdue > 3 ? 'text-red-600' : (skOverdue > 0 ? 'text-orange-500' : 'text-green-600');
+            skHtmlBlock = `
                 <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-3 shadow-sm mb-4">
                     <div class="text-[11px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">📑 Данные ПК Стройконтроль</div>
                     <div class="flex justify-between items-center bg-white dark:bg-slate-800 rounded-lg p-2 border border-blue-100 dark:border-blue-800">
@@ -1195,13 +1674,13 @@ function showContractorDetailView(contractorName) {
                         </div>
                     </div>
                 </div>`;
-            }
         }
+    }
 
     container.innerHTML = `
     ${skHtmlBlock}
         <!-- КНОПКА ПЕЧАТИ С ЗАЩИТОЙ -->
-        ${m.count < 7 
+        ${m.count < 7
             ? `<button onclick="showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.')" class="w-full mb-4 bg-slate-300 text-slate-500 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-none cursor-not-allowed flex justify-center items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Отчет недоступен (Мало данных)
                </button>`
@@ -1214,10 +1693,10 @@ function showContractorDetailView(contractorName) {
             <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">
                 <div class="bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm flex flex-col justify-center min-h-[70px]">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК)</div>
-                    ${m.count < 7 
-                        ? `<div class="text-[12px] font-black text-slate-500 uppercase leading-tight">Проведите минимум 7 проверок<br><span class="text-indigo-500">Собрано: ${m.count} из 7</span></div>`
-                        : `<div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>`
-                    }
+                    ${m.count < 7
+            ? `<div class="text-[12px] font-black text-slate-500 uppercase leading-tight">Проведите минимум 7 проверок<br><span class="text-indigo-500">Собрано: ${m.count} из 7</span></div>`
+            : `<div class="text-5xl font-black leading-none ${m.finalC < 70 ? 'text-red-600' : (m.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${m.finalC}%</div>`
+        }
                 </div>
                 <div class="text-right">
                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest block border border-[var(--card-border)] px-1.5 py-0.5 rounded mb-1 ${m.confCls}">${m.confStatus}</span>
@@ -1343,13 +1822,13 @@ function showContractorDetailView(contractorName) {
         const ctxL = document.getElementById('chart_detail_line')?.getContext('2d');
         if (ctxL) {
             chartInstances['chart_detail_line'] = new Chart(ctxL, {
-                type: 'line', 
-                data: { labels: data.map((_, i) => `#${i+1}`), datasets: [{ data: data.map(item => item.metrics.final), borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3, borderWidth: 2, pointRadius: 3 }] },
+                type: 'line',
+                data: { labels: data.map((_, i) => `#${i + 1}`), datasets: [{ data: data.map(item => item.metrics.final), borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3, borderWidth: 2, pointRadius: 3 }] },
                 options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } },
-                plugins: [{ 
-                    id: 'targetZone', 
+                plugins: [{
+                    id: 'targetZone',
                     beforeDraw: (chart) => {
-                        const { ctx, chartArea: { left, right }, scales: { y } } = chart; 
+                        const { ctx, chartArea: { left, right }, scales: { y } } = chart;
                         ctx.save();
                         ctx.fillStyle = 'rgba(34, 197, 94, 0.08)'; ctx.fillRect(left, y.getPixelForValue(100), right - left, y.getPixelForValue(85) - y.getPixelForValue(100));
                         ctx.fillStyle = 'rgba(234, 179, 8, 0.08)'; ctx.fillRect(left, y.getPixelForValue(85), right - left, y.getPixelForValue(70) - y.getPixelForValue(85));
@@ -1365,14 +1844,14 @@ function hideContractorDetailView() {
     currentDetailedContractor = null;
     document.getElementById('contractors-main-view').classList.remove('hidden');
     document.getElementById('contractor-detail-view').classList.add('hidden');
-    window.scrollTo(0,0);
+    window.scrollTo(0, 0);
 }
 
 // 9. Старый рейтинг (Оставлен для совместимости, если где-то вызывается)
 function renderRatingTab() {
-    const listDiv = document.getElementById('rating-list'); 
+    const listDiv = document.getElementById('rating-list');
     const emptyMsg = document.getElementById('rating-empty-msg');
-    if(!listDiv) return;
+    if (!listDiv) return;
 
     const data = getFilteredAnalyticsData();
 
@@ -1380,20 +1859,20 @@ function renderRatingTab() {
     emptyMsg.style.display = 'none';
 
     const grouped = {};
-    data.forEach(item => { const cName = item.contractorName || 'Не указан'; if(!grouped[cName]) grouped[cName] = []; grouped[cName].push(item); });
-    
+    data.forEach(item => { const cName = item.contractorName || 'Не указан'; if (!grouped[cName]) grouped[cName] = []; grouped[cName].push(item); });
+
     const ratingData = [];
-    for(let cName in grouped) { 
-        const metrics = getContractorMetrics(grouped[cName], userTemplates); 
-        if (metrics) ratingData.push({ name: cName, metrics: metrics }); 
-    }
-    
-    if (ratingData.length === 0) { 
-        listDiv.innerHTML = '<p class="text-sm text-[var(--text-muted)] text-center bg-[var(--card-bg)] border border-[var(--card-border)] p-6 rounded-xl shadow-sm">Недостаточно данных. Для рейтинга нужно минимум 3 проверки по одному виду работ.</p>'; 
-        return; 
+    for (let cName in grouped) {
+        const metrics = getContractorMetrics(grouped[cName], userTemplates);
+        if (metrics) ratingData.push({ name: cName, metrics: metrics });
     }
 
-    ratingData.sort((a,b) => {
+    if (ratingData.length === 0) {
+        listDiv.innerHTML = '<p class="text-sm text-[var(--text-muted)] text-center bg-[var(--card-bg)] border border-[var(--card-border)] p-6 rounded-xl shadow-sm">Недостаточно данных. Для рейтинга нужно минимум 3 проверки по одному виду работ.</p>';
+        return;
+    }
+
+    ratingData.sort((a, b) => {
         if (b.metrics.finalC !== a.metrics.finalC) return b.metrics.finalC - a.metrics.finalC;
         if (b.metrics.stabilityIndex !== a.metrics.stabilityIndex) return b.metrics.stabilityIndex - a.metrics.stabilityIndex;
         return a.metrics.rateB3 - b.metrics.rateB3;
@@ -1402,7 +1881,7 @@ function renderRatingTab() {
     listDiv.innerHTML = ratingData.map((r, index) => {
         const isGold = index === 0; const isSilver = index === 1; const isBronze = index === 2;
         const rankClass = isGold ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-white border-yellow-500' : (isSilver ? 'bg-gradient-to-br from-slate-300 to-slate-500 text-white border-slate-400' : (isBronze ? 'bg-gradient-to-br from-orange-400 to-orange-700 text-white border-orange-600' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'));
-        
+
         return `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 mb-4 shadow-sm relative overflow-hidden">
             ${isGold ? '<div class="absolute top-0 right-0 bg-yellow-400 text-yellow-900 text-[8px] font-black px-3 py-1 rounded-bl-lg uppercase shadow-sm z-10">🏆 Лидер</div>' : ''}
@@ -1435,10 +1914,10 @@ function openChartFilterModal(type) {
     const data = getFilteredAnalyticsData();
     const field = type === 'contrs' ? 'contractorName' : 'templateTitle';
     const title = type === 'contrs' ? 'Линии: Подрядчики' : 'Линии: Виды работ';
-    
+
     const counts = {};
-    data.forEach(i => { if(i[field]) counts[i[field]] = (counts[i[field]]||0)+1; });
-    const uniqueItems = Object.keys(counts).sort((a,b) => counts[b] - counts[a]);
+    data.forEach(i => { if (i[field]) counts[i[field]] = (counts[i[field]] || 0) + 1; });
+    const uniqueItems = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
     const isAuto = selectedChartFilters[type].length === 0;
 
@@ -1464,7 +1943,7 @@ function openChartFilterModal(type) {
     </div>`;
 
     const modal = document.getElementById('modal-overlay');
-    document.getElementById('modal-icon').innerHTML = ''; 
+    document.getElementById('modal-icon').innerHTML = '';
     document.getElementById('modal-title').innerHTML = `<div class="flex items-center gap-2"><svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg> ${title}</div>`;
     document.getElementById('modal-body').innerHTML = html;
     document.body.classList.add('modal-open');
@@ -1473,10 +1952,10 @@ function openChartFilterModal(type) {
 
 function saveChartFilters(type) {
     const isAuto = document.getElementById('chart-filter-auto').checked;
-    if (isAuto) { selectedChartFilters[type] = []; } 
+    if (isAuto) { selectedChartFilters[type] = []; }
     else {
         const checked = Array.from(document.querySelectorAll('.chart-filter-cb:checked')).map(cb => cb.value);
-        if(checked.length === 0) return showToast('Выберите линии или включите Авто');
+        if (checked.length === 0) return showToast('Выберите линии или включите Авто');
         selectedChartFilters[type] = checked;
     }
     closeModal(); updateTrendCharts(type);
@@ -1510,8 +1989,8 @@ function editExpertText(expertKey, textAreaId) {
     const textArea = document.getElementById(textAreaId);
     const modalInput = document.getElementById('modal-expert-input');
     const overlay = document.getElementById('expert-modal-overlay');
-    if(!textArea || !modalInput || !overlay) return;
-    
+    if (!textArea || !modalInput || !overlay) return;
+
     modalInput.value = textArea.value;
     overlay.style.display = 'flex';
     document.body.classList.add('modal-open');
@@ -1519,14 +1998,14 @@ function editExpertText(expertKey, textAreaId) {
 
 function cancelExpertEdit() {
     const overlay = document.getElementById('expert-modal-overlay');
-    if(overlay) overlay.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
     document.body.classList.remove('modal-open');
     currentEditingExpertKey = null; currentEditingTextAreaId = null;
 }
 
 function resetExpertEdit() {
-    if(!currentEditingExpertKey) return;
-    if(confirm('Сбросить текст до оригинального заключения ИИ? Ваша редакция будет удалена.')) {
+    if (!currentEditingExpertKey) return;
+    if (confirm('Сбросить текст до оригинального заключения ИИ? Ваша редакция будет удалена.')) {
         delete customExpertConclusions[currentEditingExpertKey];
         cancelExpertEdit(); scheduleSessionSave();
         // ИСПРАВЛЕНИЕ: Обновляем нужный экран
@@ -1541,13 +2020,13 @@ function resetExpertEdit() {
 
 function saveExpertEdit() {
     const modalInput = document.getElementById('modal-expert-input');
-    if(!modalInput || !currentEditingExpertKey) return;
+    if (!modalInput || !currentEditingExpertKey) return;
     const newText = modalInput.value.trim();
-    if(newText === "") return showToast('Текст не может быть пустым!');
-    
+    if (newText === "") return showToast('Текст не может быть пустым!');
+
     customExpertConclusions[currentEditingExpertKey] = newText;
     cancelExpertEdit(); scheduleSessionSave();
-    
+
     // ИСПРАВЛЕНИЕ: Мгновенная перерисовка экрана детализации
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         showContractorDetailView(currentDetailedContractor);
@@ -1560,8 +2039,8 @@ function saveExpertEdit() {
 function copyExpertText(btnId, textAreaId) {
     const textArea = document.getElementById(textAreaId);
     const btn = document.getElementById(btnId);
-    if(!textArea || !btn) return;
-    
+    if (!textArea || !btn) return;
+
     navigator.clipboard.writeText(textArea.value).then(() => {
         const originalHtml = btn.innerHTML;
         btn.innerHTML = '✅<span class="hidden min-[400px]:inline"> Скопировано</span>';
@@ -1575,9 +2054,9 @@ function copyExpertText(btnId, textAreaId) {
 // === СИСТЕМА ФОТОГАЛЕРЕЙ (ГОРИЗОНТАЛЬНАЯ ЛЕНТА С ПОДДЕРЖКОЙ ОК) ===
 window.rbiPhotoGalleries = {};
 
-window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeClass = null, customBadgeText = null) {
+window.initPhotoGallery = function (galleryId, photosArray, isCrit, customBadgeClass = null, customBadgeText = null) {
     if (!photosArray || photosArray.length === 0) return '<div class="text-xs text-slate-400">Нет фото</div>';
-    
+
     const badgeColor = customBadgeClass ? customBadgeClass : (isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200');
     const badgeText = customBadgeText ? customBadgeText : (isCrit ? 'B3' : 'B2');
 
@@ -1607,18 +2086,18 @@ window.initPhotoGallery = function(galleryId, photosArray, isCrit, customBadgeCl
 };
 
 // Пустая заглушка, чтобы не сломать старые HTML-кнопки (если они где-то остались в истории)
-window.loadMorePhotos = function() {};
+window.loadMorePhotos = function () { };
 
 
 // ============================================================================
 // НОВЫЙ МОДУЛЬ: КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА (С ВЫБОРОМ ПЕРИОДА)
 // ============================================================================
 
-window.rbi_openQualityDaySettings = function(taskId) {
+window.rbi_openQualityDaySettings = function (taskId) {
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">📅</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Настройки Отчета</div>`;
-    
+
     document.getElementById('modal-body').innerHTML = `
         <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
             Выберите период для формирования Мега-Отчета. Система агрегирует метрики всех подрядчиков, выберет лучшие практики и запросит ИИ-резюме.
@@ -1643,12 +2122,12 @@ window.rbi_openQualityDaySettings = function(taskId) {
             </button>
         </div>
     `;
-    
+
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
-window.rbi_executeQualityDayReport = async function(taskId) {
+window.rbi_executeQualityDayReport = async function (taskId) {
     if (!appSettings.aiEnabled) {
         return showToast("⚠️ Для формирования отчета требуется включить DeepSeek AI в настройках!");
     }
@@ -1680,11 +2159,11 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         if (periodValue === 'current_month') {
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
             endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            periodTitle = `ИТОГИ: ${now.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+            periodTitle = `ИТОГИ: ${now.toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}`;
         } else if (periodValue === 'last_month') {
             startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-            periodTitle = `ИТОГИ: ${startDate.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+            periodTitle = `ИТОГИ: ${startDate.toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}`;
         } else if (periodValue === 'quarter') {
             startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
             endDate = new Date();
@@ -1697,15 +2176,15 @@ window.rbi_executeQualityDayReport = async function(taskId) {
 
         // 1. БАЗА ПРОВЕРОК
         const currentData = contractorArray.filter(c => new Date(c.date) >= startDate && new Date(c.date) <= endDate);
-        
+
         if (currentData.length === 0) {
             closeModal();
             return showToast("⚠️ За выбранный период нет данных для отчета!");
         }
 
-        let sumUrk = 0; currentData.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
+        let sumUrk = 0; currentData.forEach(i => { if (i.metrics) sumUrk += i.metrics.final; });
         const currAvgUrk = Math.round(sumUrk / currentData.length);
-        
+
         const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, userTemplates) : null;
         const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
         const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
@@ -1713,15 +2192,15 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         // 2. HR МЕТРИКИ (КОМАНДА)
         let hrStats = [];
         if (typeof gameCalculateManagerMetrics === 'function') hrStats = gameCalculateManagerMetrics();
-        let totalImpact = 0; 
+        let totalImpact = 0;
         hrStats.forEach(h => { totalImpact += h.avgImpact; });
         const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
-        const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных", checks: 0 };
+        const bestEng = hrStats.length > 0 ? hrStats.sort((a, b) => b.pi - a.pi)[0] : { name: "Нет данных", checks: 0 };
 
         // 3. ТОП ПРАКТИК
         let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом периоде не публиковалось.</div>`;
         if (typeof window.rbi_practicesData !== 'undefined' && window.rbi_practicesData.length > 0) {
-            const topPrac = [...window.rbi_practicesData].filter(p => new Date(p.date) >= startDate && new Date(p.date) <= endDate).sort((a,b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
+            const topPrac = [...window.rbi_practicesData].filter(p => new Date(p.date) >= startDate && new Date(p.date) <= endDate).sort((a, b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
             if (topPrac.length > 0) {
                 topPracticesHtml = topPrac.map(p => `
                     <div style="border:1px solid #cbd5e1; border-left:4px solid #16a34a; padding:10px; border-radius:6px; margin-bottom:10px; background:white; page-break-inside: avoid;">
@@ -1759,9 +2238,9 @@ window.rbi_executeQualityDayReport = async function(taskId) {
                 });
             }
         });
-        
+
         let causesHtml = '';
-        const sortedCauses = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 5);
+        const sortedCauses = Object.keys(causes).sort((a, b) => causes[b] - causes[a]).slice(0, 5);
         if (sortedCauses.length > 0) {
             causesHtml = sortedCauses.map(code => {
                 const cName = (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : 'Причина') || 'Иное';
@@ -1778,7 +2257,7 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         const promptSystem = `Ты — Директор по качеству (CQC). Сформируй официальное управленческое резюме для отчета "День Качества" за выбранный период.
         Тон: деловой, объективный, строгий. Формат: текст, разбитый на абзацы. Без воды.
         Отрази 3 вещи: 1. Оценку ИКО и тренда. 2. Оценку работы инженеров (Impact Score). 3. Главный риск следующего периода.`;
-        
+
         const promptUser = `ИКО: ${IKO}. Красная зона: ${redZone}%. Средний Impact команды: ${avgTeamImpact.toFixed(2)}. Проверок за период: ${currentData.length}. ТОП проблема: ${sortedCauses.length > 0 ? sortedCauses[0] : 'Нет данных'}.`;
 
         const aiSummary = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 800 });
@@ -1834,7 +2313,7 @@ window.rbi_executeQualityDayReport = async function(taskId) {
                         <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px; margin-bottom: 15px;">👤 Рейтинг Инженеров</h2>
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
                             <div style="font-size: 11pt; font-weight: bold; color: #1e293b; margin-bottom: 5px;">Лучший по Опыту (XP): <span style="color:#4f46e5;">${bestEng.name}</span></div>
-                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+'+bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
+                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+' + bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
                         </div>
                     </td>
                 </tr>
@@ -1844,10 +2323,10 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         // Закрываем задачу в планировщике, так как отчет сформирован
         if (taskId) {
             const task = window.rbi_tasksData.find(t => t.id === taskId);
-            if(task) { 
-                task.status = 'done'; 
-                task.resultComment = 'Отчет сгенерирован'; 
-                await dbPut(STORES.TASKS, task); 
+            if (task) {
+                task.status = 'done';
+                task.resultComment = 'Отчет сгенерирован';
+                await dbPut(STORES.TASKS, task);
                 rbi_renderTasksList(); // Обновляем списки задач на экране
             }
         }
@@ -1858,5 +2337,250 @@ window.rbi_executeQualityDayReport = async function(taskId) {
     } catch (e) {
         closeModal();
         showToast("❌ Ошибка сборки отчета: " + e.message);
+    }
+};
+
+// ============================================================================
+// === УПРАВЛЕНИЕ АРХИВОМ ОТЧЕТОВ (ВКЛАДКА ИСТОРИЯ) ===
+// ============================================================================
+
+window.switchHistoryView = function(view) {
+    const btnChecks = document.getElementById('btn-hist-checks');
+    const btnReports = document.getElementById('btn-hist-reports');
+    const viewChecks = document.getElementById('history-checks-view');
+    const viewReports = document.getElementById('history-reports-view');
+    const actionsRow = document.getElementById('hist-checks-actions-row');
+
+    const actClass = "px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all duration-300 bg-white dark:bg-slate-800 text-indigo-600 shadow-sm";
+    const inactClass = "px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all duration-300 text-slate-500 dark:text-slate-400";
+
+    // Сохраняем стейт в глобальную переменную, чтобы фильтры понимали, что перерисовывать
+    window.currentHistoryViewMode = view;
+
+    if (view === 'checks') {
+        btnChecks.className = actClass;
+        btnReports.className = inactClass;
+        viewChecks.classList.remove('hidden');
+        viewReports.classList.add('hidden');
+        if (actionsRow) actionsRow.style.display = 'flex'; // Показываем чекбоксы (С фото, С B3 и тд)
+        renderHistoryTab();
+    } else {
+        btnReports.className = actClass;
+        btnChecks.className = inactClass;
+        viewChecks.classList.add('hidden');
+        viewReports.classList.remove('hidden');
+        if (actionsRow) actionsRow.style.display = 'none'; // Скрываем чекбоксы (С фото, С B3), они не нужны отчетам
+        renderReportsList();
+    }
+};
+
+window.renderReportsList = function() {
+    const listDiv = document.getElementById('reports-list');
+    if (!listDiv) return;
+
+    if (typeof reportsArray === 'undefined' || reportsArray.length === 0) {
+        listDiv.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">Сохраненных отчетов пока нет.</div>`;
+        return;
+    }
+
+    // Считываем текущие глобальные фильтры
+    const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
+    const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
+    
+    const fProj = activeMultiFilters.history.project || [];
+    const fContr = activeMultiFilters.history.contractor || [];
+    const fInsp = activeMultiFilters.history.inspector || [];
+
+    // Применяем фильтры
+    let filteredArr = [...reportsArray].filter(r => !r.is_deleted);
+    const now = new Date();
+
+    if (fSearch) {
+        filteredArr = filteredArr.filter(r => 
+            (r.title && r.title.toLowerCase().includes(fSearch)) ||
+            (r.metadata?.project && r.metadata.project.toLowerCase().includes(fSearch))
+        );
+    }
+
+    if (fProj.length > 0) {
+        filteredArr = filteredArr.filter(r => {
+            const p = r.metadata?.project || '';
+            // Отчет может быть "Все объекты" или конкретный. Если "Все", показываем, иначе сверяем.
+            return p.includes('Все объекты') || fProj.includes(p) || fProj.some(proj => p.includes(proj));
+        });
+    }
+
+    if (fContr.length > 0) {
+        // Подрядчик обычно пишется в названии отчета
+        filteredArr = filteredArr.filter(r => {
+            const t = r.title || '';
+            return fContr.some(c => t.includes(c));
+        });
+    }
+
+    if (fInsp.length > 0) {
+        // Ищем по автору отчета
+        filteredArr = filteredArr.filter(r => fInsp.includes(r.created_by));
+    }
+
+    if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.generated_at).toDateString() === now.toDateString());
+    else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= w); }
+    else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= m); }
+
+    if (filteredArr.length === 0) {
+        listDiv.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">По выбранным фильтрам отчетов не найдено.</div>`;
+        return;
+    }
+
+    // Сортировка по дате (самые свежие сверху)
+    const sorted = filteredArr.sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
+
+    // Сетка: 2 колонки на телефоне, 3-4 на ПК
+    listDiv.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(r => {
+        const syncBadge = getSyncBadgeHtml(r); 
+        const isOwner = !r.created_by || r.created_by === (appSettings.engineerName || 'Инженер');
+
+        return `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
+            
+            <div class="h-24 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-900 flex items-center justify-center relative">
+                <div class="w-12 h-14 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between p-1.5 relative overflow-hidden">
+                    <div class="absolute top-0 left-0 right-0 h-4 bg-indigo-500 flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">PDF</span></div>
+                    <div class="space-y-1 mt-5">
+                        <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-full"></div>
+                        <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>
+                        <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-4/6"></div>
+                    </div>
+                </div>
+                
+                <!-- Меню 3 точки -->
+                <button onclick="event.stopPropagation(); openUniversalActionSheet('${r.id}', 'report', '${r.title.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded-full flex items-center justify-center text-slate-600 dark:text-slate-300 active:scale-90 transition-transform">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-3 flex flex-col flex-1">
+                <div class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1 truncate">${r.metadata?.project || 'Сводный Отчет'}</div>
+                <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight mb-2 line-clamp-2">${r.title}</div>
+                
+                <div class="mt-auto pt-2 flex justify-between items-center">
+                    <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400">
+                        ${((r.file_size || 0)/1024/1024).toFixed(2)} MB
+                        ${syncBadge}
+                    </div>
+                    <div class="text-[9px] font-black text-slate-400">${new Date(r.generated_at).toLocaleDateString('ru-RU')}</div>
+                </div>
+            </div>
+            
+        </div>
+        `;
+    }).join('') + `</div>`;
+};
+
+window.openReport = async function(id) {
+    const r = reportsArray.find(x => x.id === id);
+    if (!r) return showToast('Файл отчета не найден');
+    
+    // ПРИОРИТЕТ 1: Локальный файл (Blob). Открывается мгновенно, без интернета!
+    if (r.file_blob) {
+        const url = URL.createObjectURL(r.file_blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+    }
+
+    // ПРИОРИТЕТ 2: Облачная ссылка (если мы сделали сброс и файла на телефоне физически нет)
+    if (r.file_url && r.file_url.startsWith('http')) {
+        window.open(r.file_url, '_blank');
+        return;
+    }
+    
+    showToast('❌ Ошибка: Файл отчета еще не загружен с сервера.');
+};
+
+window.shareReport = async function(id) {
+    const r = reportsArray.find(x => x.id === id);
+    if (!r) return showToast('Файл отчета не найден');
+
+    try {
+        let fileToShare = null;
+
+        // Если файл есть локально
+        if (r.file_blob) {
+            fileToShare = new File([r.file_blob], r.title + '.pdf', { type: 'application/pdf' });
+        } 
+        // Если файла локально нет, но есть ссылка (прилетел из облака)
+        else if (r.file_url && r.file_url.startsWith('http')) {
+            showToast('⏳ Скачиваем файл из облака для отправки...');
+            const response = await fetch(r.file_url);
+            if (!response.ok) throw new Error("Не удалось скачать файл");
+            const blob = await response.blob();
+            fileToShare = new File([blob], r.title + '.pdf', { type: 'application/pdf' });
+        }
+
+        if (!fileToShare) return showToast('❌ Не удалось подготовить файл к отправке');
+
+        // Отправка через системное меню Share
+        if (navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+            await navigator.share({
+                title: r.title,
+                text: 'Отчет: ' + r.title,
+                files: [fileToShare]
+            });
+        } else {
+            // Резервный вариант для ПК (просто скачивание)
+            const url = URL.createObjectURL(fileToShare);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = r.title + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('✅ Файл сохранен на устройство');
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            console.error("Ошибка при отправке файла:", e);
+            showToast('❌ Ошибка при отправке файла');
+        }
+    }
+};
+
+window.deleteReport = async function(id) {
+    const record = reportsArray.find(x => x.id === id);
+    
+    // Проверяем права: удалить может либо автор, либо Админ/Зам
+    const currentEngineer = appSettings.engineerName || 'Инженер';
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const isManager = ['manager', 'deputy_manager'].includes(role);
+    
+    if (record.created_by && record.created_by !== currentEngineer && !isManager) {
+        return showToast("⚠️ Вы можете удалять только свои отчеты!");
+    }
+
+    if (!confirm('Удалить этот отчет?')) return;
+    
+    const idx = reportsArray.findIndex(x => x.id === id);
+    if (idx > -1) {
+        // Ставим обе метки, чтобы и локальный код, и синхронизатор поняли, что это удаление
+        reportsArray[idx].is_deleted = true;
+        reportsArray[idx]._deleted = true; 
+        reportsArray[idx]._deletedAt = new Date().toISOString();
+        reportsArray[idx].updated_at = new Date().toISOString();
+        reportsArray[idx].updatedAt = reportsArray[idx].updated_at;
+        
+        // Возвращаем статус в not_synced, чтобы облако увидело изменение
+        reportsArray[idx].source = 'local';
+        reportsArray[idx].sync_status = 'not_synced';
+        reportsArray[idx].syncStatus = 'not_synced';
+        
+        await dbPut(STORES.REPORTS, reportsArray[idx]); // Мягкое удаление
+
+        reportsArray = reportsArray.filter(x => !x.is_deleted && !x._deleted);
+        renderReportsList();
+        
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
     }
 };

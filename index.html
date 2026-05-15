@@ -36,6 +36,11 @@
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
+    <!-- Подключаем qrcode.js для генерации QR-кодов -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+    <!-- Подключаем SortableJS для перетаскивания блоков отчета -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 
 <body id="app-body">
@@ -73,11 +78,19 @@
     <!-- === ТОСТЫ И УВЕДОМЛЕНИЯ === -->
     <div id="toast-container"></div>
     <!-- RBI NEW: УНИВЕРСАЛЬНОЕ МЕНЮ ДЕЙСТВИЙ (3 ТОЧКИ) -->
-    <div id="universal-action-sheet" class="fixed inset-0 bg-slate-900/60 z-[9500] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeUniversalActionSheet()">
-        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[20px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0 flex justify-between items-center">
-                <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white" id="uas-title">Действия</h3>
-                <button onclick="closeUniversalActionSheet()" class="text-slate-400 active:scale-90 p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+    <div id="universal-action-sheet"
+        class="fixed inset-0 bg-slate-900/60 z-[9500] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
+        onclick="closeUniversalActionSheet()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[20px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0 flex justify-between items-center">
+                <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white"
+                    id="uas-title">Действия</h3>
+                <button onclick="closeUniversalActionSheet()" class="text-slate-400 active:scale-90 p-1"><svg
+                        class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg></button>
             </div>
             <div class="p-2 space-y-1" id="uas-buttons">
                 <!-- Сюда вставятся кнопки из JS -->
@@ -838,7 +851,7 @@
                         </svg>
                         FAQ
                     </button>
-                    
+
 
                     <div class="relative pt-3 mt-1">
                         <div
@@ -865,7 +878,7 @@
 
             <!-- Возвращаем кнопки действий -->
             <div class="grid grid-cols-2 gap-3 mt-8 mb-4" id="audit-actions" style="display:none;">
-                <button onclick="saveProductToArray()"
+                <button onclick="saveProductToArray()" data-requires-create="true"
                     class="bg-indigo-600 text-white rounded-xl py-4 font-black text-xs uppercase shadow-[0_10px_20px_rgba(79,70,229,0.3)] active:scale-95 transition-transform">
                     Сохранить в Историю</button>
                 <button onclick="resetChecklist()"
@@ -926,7 +939,8 @@
 
             <!-- Подвкладка: ЗАДАЧИ -->
             <div id="eng-sub-tasks" class="eng-sub-section mx-1 mt-2">
-                <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
+                <div
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
                         <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-tight flex items-center gap-1.5"
                             id="rbi-week-title">
@@ -955,35 +969,58 @@
 
             <!-- Подвкладка: СОВЕЩАНИЯ -->
             <div id="eng-sub-meetings" class="eng-sub-section hidden mx-1 mt-2">
-                <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
+                <div
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
-                        <h2 class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        <h2
+                            class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                                </path>
+                            </svg>
                             Совещания
                         </h2>
-                        <p class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 uppercase tracking-widest">Умные протоколы</p>
+                        <p class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 uppercase tracking-widest">Умные
+                            протоколы</p>
                     </div>
-                    <button onclick="rbi_createMeeting()" class="bg-orange-500 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Новое
+                    <button onclick="rbi_createMeeting()"
+                        class="bg-orange-500 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                        </svg> Новое
                     </button>
                 </div>
                 <div id="rbi-meeting-container" class="space-y-3 pb-8">
-                    <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">Активных протоколов нет</div>
+                    <div
+                        class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm">
+                        Активных протоколов нет</div>
                 </div>
             </div>
 
             <!-- Подвкладка: ЭФФЕКТИВНОСТЬ -->
             <div id="eng-sub-impact" class="eng-sub-section hidden mx-1 mt-2">
-                <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
+                <div
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
-                        <h2 class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                        <h2
+                            class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6">
+                                </path>
+                            </svg>
                             Эффективность
                         </h2>
-                        <p class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 uppercase tracking-widest">Impact Score</p>
+                        <p class="text-[9px] font-bold text-[var(--text-muted)] mt-0.5 uppercase tracking-widest">Impact
+                            Score</p>
                     </div>
-                    <button onclick="rbi_openInterventionModal()" class="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> Воздействие
+                    <button onclick="rbi_openInterventionModal()"
+                        class="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
+                        </svg> Воздействие
                     </button>
                 </div>
                 <div id="rbi-impact-dashboard" class="space-y-3 pb-8">
@@ -998,22 +1035,35 @@
 
             <!-- Подвкладка: ДОСТИЖЕНИЯ (ПРОФИЛЬ) -->
             <div id="eng-sub-badges" class="eng-sub-section hidden mx-1 mt-2">
-                <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex flex-col">
+                <div
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex flex-col">
                     <div class="flex justify-between items-center w-full">
-                        <div id="profile-title-text" class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path>
+                        <div id="profile-title-text"
+                            class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z">
+                                </path>
                             </svg>
                             Профиль Инженера
                         </div>
-                        <button onclick="gameOpenManagerPanelAuth()" class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-800 rounded-full text-slate-500 active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        <button onclick="gameOpenManagerPanelAuth()"
+                            class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-800 rounded-full text-slate-500 active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                </path>
+                            </svg>
                         </button>
                     </div>
                     <!-- Умное поле ввода имени -->
                     <div id="profile-name-edit-container" class="hidden mt-2 w-full">
-                        <input type="text" id="profile-name-input" class="input-base text-[12px] border-indigo-300 bg-indigo-50 dark:bg-indigo-900/30" placeholder="Введите вашу Фамилию и И.О..." onchange="saveEngineerNameForce(this.value)">
-                        <div class="text-[9px] text-[var(--text-muted)] mt-1 pl-1 font-bold">Имя привяжется ко всем актам навсегда.</div>
+                        <input type="text" id="profile-name-input"
+                            class="input-base text-[12px] border-indigo-300 bg-indigo-50 dark:bg-indigo-900/30"
+                            placeholder="Введите вашу Фамилию и И.О..." onchange="saveEngineerNameForce(this.value)">
+                        <div class="text-[9px] text-[var(--text-muted)] mt-1 pl-1 font-bold">Имя привяжется ко всем
+                            актам навсегда.</div>
                     </div>
                 </div>
                 <div id="game-dashboard-container"></div>
@@ -1086,6 +1136,12 @@
                     class="text-[10px] font-black text-slate-400 uppercase mb-2 flex justify-between items-center cursor-pointer">
                     <span class="flex items-center gap-1"><span id="analytics-panel-toggle-icon"
                             style="display:inline-block; transition: transform 0.3s">▾</span> Глобальные фильтры</span>
+
+                    <!-- Правый блок: Тумблер + Иконка облака -->
+                    <div class="flex items-center gap-2">
+                        <div id="analytics-global-mode-toggle" class="hidden"></div>
+                        <div id="analytics-status-icon-container"></div>
+                    </div>
                 </div>
                 <div id="analytics-panel-body"
                     style="transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease; max-height: 200px; overflow: hidden;">
@@ -1114,8 +1170,8 @@
                             </svg></button>
                     </div>
 
-                    <!-- СТРОКА 2: Вид работ и Период -->
-                    <div class="grid grid-cols-2 gap-2 mb-2">
+                    <!-- СТРОКА 2: Вид работ, Период и Источник данных -->
+                    <div class="grid grid-cols-3 gap-2 mb-2">
                         <button id="btn-ana-template"
                             onclick="openMultiFilterModal('template', 'Виды работ', 'analytics')"
                             class="input-base text-[10px] !py-2 text-left flex justify-between items-center bg-white dark:bg-slate-800 shadow-sm"><span
@@ -1141,6 +1197,9 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
                                 </svg></button>
                         </div>
+
+                        <!-- Сюда JS вставит переключатель Аналитики -->
+                        <div id="analytics-mode-container" class="flex flex-col justify-center items-end"></div>
                     </div>
 
                     <!-- КАЛЕНДАРЬ (СКРЫТ ПО УМОЛЧАНИЮ) -->
@@ -1211,22 +1270,31 @@
             </div>
             <!-- ИСТОРИЯ ПЕРЕНЕСЕНА СЮДА -->
             <div id="sub-history" class="analytics-sub-section hidden mx-1 mt-2">
-                <!-- "Липкая" панель фильтров -->
+
+                <!-- ОБЩАЯ "ЛИПКАЯ" ПАНЕЛЬ ФИЛЬТРОВ (ТЕПЕРЬ СНАРУЖИ ВЬЮХ) -->
                 <div id="hist-sticky-panel"
-                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-2xl border border-[var(--card-border)] mb-4 shadow-sm">
-                    <!-- Заголовок (кликабельный — сворачивает панель) -->
+                    class="bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-2xl border border-[var(--card-border)] mb-4 shadow-sm">
+
+                    <!-- Заголовок с встроенным тумблером (iOS Style) -->
                     <div id="hist-panel-header" class="flex justify-between items-center mb-2">
                         <span
-                            class="text-[11px] font-black text-[var(--text-muted)] uppercase tracking-wide flex items-center gap-1">
+                            class="text-[11px] font-black text-[var(--text-muted)] uppercase tracking-wide flex items-center gap-1 cursor-pointer">
                             <span id="hist-panel-toggle-icon">▾</span>
-                            Сводная база (<span id="hist-count-total" class="text-indigo-600">0</span>)
+                            База и Отчеты
                         </span>
-                        <button onclick="clearHistory()"
-                            class="text-[9px] font-black text-red-500 uppercase bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-md active:scale-95">Очистить
-                            всё</button>
+
+                        <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-full shadow-inner cursor-pointer border border-slate-300 dark:border-slate-600"
+                            onclick="event.stopPropagation();">
+                            <div id="btn-hist-checks" onclick="switchHistoryView('checks')"
+                                class="px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all duration-300 bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">
+                                Проверки</div>
+                            <div id="btn-hist-reports" onclick="switchHistoryView('reports')"
+                                class="px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all duration-300 text-slate-500 dark:text-slate-400">
+                                Отчеты</div>
+                        </div>
                     </div>
 
-                    <!-- Тело панели (сворачиваемое) -->
+                    <!-- Тело панели фильтров (сворачиваемое) -->
                     <div id="hist-panel-body"
                         style="transition: max-height 0.3s ease, opacity 0.3s ease; max-height: 400px; overflow: hidden;">
                         <!-- Строка поиска -->
@@ -1241,7 +1309,7 @@
                                 placeholder="Поиск..." oninput="applyHistoryFilters()">
                         </div>
 
-                        <!-- Мульти-фильтры (История) -->
+                        <!-- Мульти-фильтры -->
                         <div class="grid grid-cols-2 gap-2 mb-2">
                             <button id="btn-hist-project"
                                 onclick="openMultiFilterModal('project', 'Объекты', 'history')"
@@ -1283,7 +1351,8 @@
                             </div>
                         </div>
 
-                        <div
+                        <!-- Нижняя строка (Чекбоксы + Кнопки) -->
+                        <div id="hist-checks-actions-row"
                             class="flex justify-between items-center px-1 border-t border-[var(--card-border)] pt-2 mt-1">
                             <div class="flex gap-4">
                                 <label
@@ -1323,8 +1392,17 @@
                     </div>
                 </div>
 
-                <div id="hist-empty-msg" class="text-center py-8 text-sm text-[var(--text-muted)]">История пуста.</div>
-                <div id="history-list"></div>
+                <!-- ВЬЮХА 1: КЛАССИЧЕСКАЯ ИСТОРИЯ ПРОВЕРОК -->
+                <div id="history-checks-view">
+                    <div id="hist-empty-msg" class="text-center py-8 text-sm text-[var(--text-muted)]">История пуста.
+                    </div>
+                    <div id="history-list"></div>
+                </div>
+
+                <!-- ВЬЮХА 2: АРХИВ ОТЧЕТОВ -->
+                <div id="history-reports-view" class="hidden">
+                    <div id="reports-list" class="pb-8"></div>
+                </div>
             </div>
 
             <!-- НОВЫЙ БЛОК: ГРАФИК РАБОТ -->
@@ -1434,14 +1512,24 @@
                     </div>
 
                     <!-- ТЕЛО УПРАВЛЕНИЯ (Компактное) -->
-                    <div id="ref-manage-body" style="transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease; max-height: 0px; opacity: 0; overflow: hidden; margin-top: 0px;">
+                    <div id="ref-manage-body"
+                        style="transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease; max-height: 0px; opacity: 0; overflow: hidden; margin-top: 0px;">
                         <div class="grid grid-cols-4 gap-2 mt-3 mb-2">
-                            <button onclick="openTemplateBuilder()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">+ Создать</button>
-                            <button onclick="triggerExcelImport()" class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↑ Excel</button>
-                            <button onclick="exportAllTemplatesJson()" class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↓ В код</button>
-                            <button onclick="showExcelHelp()" class="bg-slate-100 text-slate-500 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">Формат?</button>
+                            <button onclick="openTemplateBuilder()"
+                                class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">+
+                                Создать</button>
+                            <button onclick="triggerExcelImport()"
+                                class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↑
+                                Excel</button>
+                            <button onclick="exportAllTemplatesJson()"
+                                class="bg-slate-50 text-slate-700 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">↓
+                                В код</button>
+                            <button onclick="showExcelHelp()"
+                                class="bg-slate-100 text-slate-500 border border-slate-200 py-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 shadow-sm">Формат?</button>
                         </div>
-                        <div id="settings-user-templates-list" class="space-y-1.5 mt-2 border-t border-slate-100 dark:border-slate-700 pt-2 max-h-[150px] overflow-y-auto custom-scrollbar"></div>
+                        <div id="settings-user-templates-list"
+                            class="space-y-1.5 mt-2 border-t border-slate-100 dark:border-slate-700 pt-2 max-h-[150px] overflow-y-auto custom-scrollbar">
+                        </div>
                     </div>
 
                 </div>
@@ -1459,7 +1547,7 @@
 
             <!-- ПОДВКЛАДКА 2: НОРМАТИВЫ (НД) -->
             <div id="ref-sub-docs" class="ref-sub-section hidden mx-1">
-                                <!-- ЛИПКАЯ ПАНЕЛЬ ФИЛЬТРОВ НД (ДОБАВЛЕН ID) -->
+                <!-- ЛИПКАЯ ПАНЕЛЬ ФИЛЬТРОВ НД (ДОБАВЛЕН ID) -->
                 <div id="ref-docs-filters"
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2">
                     <div class="flex justify-between items-center mb-2">
@@ -1517,14 +1605,25 @@
                         <!-- НОВЫЙ БЛОК: Фильтр Мои/Все и Офлайн-загрузка -->
                         <div class="flex justify-between items-center mb-3">
                             <label class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400" id="twi-toggle-label">Только мои</span>
+                                <span class="text-[10px] font-black uppercase tracking-widest text-slate-400"
+                                    id="twi-toggle-label">Только мои</span>
                                 <div class="relative">
-                                    <input type="checkbox" id="twi-owner-toggle" class="sr-only peer" onchange="window.twiOwnerFilter = this.checked ? 'MY' : 'ALL'; document.getElementById('twi-toggle-label').className = this.checked ? 'text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400' : 'text-[10px] font-black uppercase tracking-widest text-slate-400'; renderTwiList()">
-                                    <div class="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+                                    <input type="checkbox" id="twi-owner-toggle" class="sr-only peer"
+                                        onchange="window.twiOwnerFilter = this.checked ? 'MY' : 'ALL'; document.getElementById('twi-toggle-label').className = this.checked ? 'text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400' : 'text-[10px] font-black uppercase tracking-widest text-slate-400'; renderTwiList()">
+                                    <div
+                                        class="w-8 h-4 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500">
+                                    </div>
                                 </div>
                             </label>
-                            <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать всё
+                            <button onclick="downloadMissingCloudFiles()"
+                                class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
+                                    </path>
+                                </svg> Скачать всё
                             </button>
                         </div>
 
@@ -2069,31 +2168,51 @@
 
             <!-- ПОДВКЛАДКА 5: FAQ И ЛОГИКА РАСЧЕТОВ (ОБНОВЛЕННЫЙ БОЛЬШОЙ FAQ) -->
 
-        <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
-        <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
-            <div id="practices-auto-detector" class="mb-4"></div>
-            <div class="flex justify-between items-center mb-3">
-                <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Библиотека
-                    Практик</h2>
+            <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
+            <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
+                <div id="practices-auto-detector" class="mb-4"></div>
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">
+                        Библиотека
+                        Практик</h2>
+                </div>
+                <div id="practices-list-container" class="space-y-4 pb-8">
+                    <!-- Список карточек -->
+                </div>
             </div>
-            <div id="practices-list-container" class="space-y-4 pb-8">
-                <!-- Список карточек -->
-            </div>
-        </div>
 
         </div> <!-- ИСТИННЫЙ ЗАКРЫВАЮЩИЙ ТЕГ ВКЛАДКИ СПРАВОЧНИКА (id="tab-reference") -->
 
-       <!-- ВКЛАДКА 5: НАСТРОЙКИ -->
+        <!-- ВКЛАДКА 5: НАСТРОЙКИ -->
         <div id="tab-settings" class="view-section">
-            <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center">
-                <h2 class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            <div
+                class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center">
+                <h2
+                    class="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                        </path>
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z">
+                        </path>
                     </svg>
                     Настройки
                 </h2>
-                <button onclick="resetSettingsToDefault()" class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg uppercase tracking-widest border border-red-100 dark:border-red-800/50 shadow-sm active:scale-95 transition-colors">Сбросить всё</button>
+                <div class="flex items-center gap-2">
+                    <button onclick="gameOpenManagerPanelAuth()"
+                        class="w-8 h-8 flex items-center justify-center bg-white dark:bg-slate-800 rounded-full text-slate-500 active:scale-95 shadow-sm border border-slate-200 dark:border-slate-700"
+                        title="Панель Руководителя">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                            </path>
+                        </svg>
+                    </button>
+                    <button onclick="resetSettingsToDefault()"
+                        class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg uppercase tracking-widest border border-red-100 dark:border-red-800/50 shadow-sm active:scale-95 transition-colors">Сбросить
+                        всё</button>
+                </div>
             </div>
 
             <div class="space-y-3">
@@ -2116,9 +2235,210 @@
                     <div id="sync-settings-block"></div>
                 </details>
 
-                <!-- ОФОРМЛЕНИЕ -->
+                <!-- AI АССИСТЕНТ -->
                 <details
-                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    class="bg-[var(--card-bg)] border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary
+                        class="p-4 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 transition-colors select-none group-open:border-b border-indigo-200 dark:border-indigo-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z">
+                                </path>
+                            </svg>
+                            AI-ассистент (DeepSeek)
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
+                    </summary>
+                    <div class="rounded-b-2xl overflow-hidden">
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Включить AI</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Интеллектуальные подсказки и
+                                    аналитика</div>
+                            </div>
+                            <label class="toggle-switch"><input type="checkbox" id="set-ai-enabled"
+                                    onchange="toggleSetting('aiEnabled', this)"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
+                        <div id="ai-settings-body" class="transition-all duration-300 hidden">
+                            <div class="p-4 bg-[var(--hover-bg)]">
+                                <div class="font-bold text-sm mb-3">Способ вызова нейросети</div>
+                                <div class="flex flex-col gap-3">
+                                    <!-- Режим 1: По роли -->
+                                    <label
+                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                        <input type="radio" name="ai-mode" value="role"
+                                            class="w-4 h-4 accent-indigo-600" onchange="window.changeAiMode('role')">
+                                        <span
+                                            class="text-[12px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
+                                                </path>
+                                            </svg> Автоматически (По роли)
+                                        </span>
+                                    </label>
+
+                                    <!-- Режим 2: Корпоративный пароль -->
+                                    <label
+                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                        <input type="radio" name="ai-mode" value="corporate"
+                                            class="w-4 h-4 accent-indigo-600"
+                                            onchange="window.changeAiMode('corporate')">
+                                        <span
+                                            class="text-[12px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                                </path>
+                                            </svg> Через корпоративный пароль
+                                        </span>
+                                    </label>
+                                    <div id="corporate-pwd-field"
+                                        class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
+                                        <label
+                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Пароль
+                                            доступа к ИИ</label>
+                                        <input type="password" id="set-ai-corp-pwd"
+                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
+                                            placeholder="Введите пароль..." onchange="toggleSetting('aiCorpPwd', this)">
+                                    </div>
+
+                                    <!-- Режим 3: Личный ключ -->
+                                    <label
+                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+                                        <input type="radio" name="ai-mode" value="personal"
+                                            class="w-4 h-4 accent-indigo-600"
+                                            onchange="window.changeAiMode('personal')">
+                                        <span
+                                            class="text-[12px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                                viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
+                                                </path>
+                                            </svg> Мой персональный API-ключ
+                                        </span>
+                                    </label>
+                                    <div id="personal-key-field"
+                                        class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
+                                        <label
+                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">API-ключ
+                                            DeepSeek</label>
+                                        <input type="password" id="set-ai-key"
+                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
+                                            placeholder="sk-..." onchange="toggleSetting('apiKey', this)">
+                                        <div class="text-[8px] text-slate-400 mt-1.5 leading-snug">Сохраняется только на
+                                            вашем устройстве.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- БРЕНДИРОВАНИЕ И АВТО-ОТЧЕТЫ -->
+                <details
+                    class="bg-[var(--card-bg)] border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary
+                        class="p-4 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 transition-colors select-none group-open:border-b border-indigo-200 dark:border-indigo-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01">
+                                </path>
+                            </svg>
+                            Брендирование и Авто-Отчеты (PRO)
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
+                    </summary>
+                    <div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Фирменный цвет</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Цвет акцентов в PDF</div>
+                            </div>
+                            <input type="color" id="set-brand-color"
+                                class="w-10 h-10 p-0 border-0 rounded cursor-pointer"
+                                onchange="toggleSetting('brandColor', this)">
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)]">
+                            <div class="flex justify-between items-center mb-2">
+                                <div>
+                                    <div class="font-bold text-sm">Логотип компании</div>
+                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Отобразится в шапке отчетов
+                                    </div>
+                                </div>
+                                <button onclick="document.getElementById('brand-logo-upload').click()"
+                                    class="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-[10px] font-bold active:scale-95 border border-indigo-200">Загрузить</button>
+                                <input type="file" id="brand-logo-upload" accept="image/png, image/jpeg" class="hidden"
+                                    onchange="window.handleLogoUpload(event)">
+                            </div>
+                            <div id="brand-logo-preview"
+                                class="hidden mt-3 border border-slate-200 rounded-lg p-2 bg-slate-50 flex justify-between items-center shadow-inner">
+                                <img id="brand-logo-img" src="" class="h-10 object-contain rounded">
+                                <button onclick="window.removeBrandLogo()"
+                                    class="text-red-500 text-[10px] font-bold px-3 py-1.5 bg-white rounded border border-red-200 shadow-sm active:scale-90">Удалить</button>
+                            </div>
+                            <!-- УПРАВЛЕНИЕ КОРПОРАТИВНЫМ СТИЛЕМ -->
+                            <div id="corp-branding-controls" class="mt-3"></div>
+                        </div>
+                        <!-- НОВАЯ КНОПКА: КОНСТРУКТОР ШАБЛОНОВ -->
+                        <div
+                            class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-50/30 dark:bg-indigo-900/10">
+                            <div>
+                                <div class="font-bold text-sm text-indigo-800 dark:text-indigo-300">Шаблоны отчетов
+                                    (PDF)</div>
+                                <div class="text-[10px] text-indigo-600 dark:text-indigo-400 mt-1">Настройка блоков и
+                                    дизайна</div>
+                            </div>
+                            <button onclick="window.openPdfTemplateModal()"
+                                class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
+                                    </path>
+                                </svg> Настроить
+                            </button>
+                        </div>
+                        <div class="p-4 bg-[var(--hover-bg)] rounded-b-2xl">
+                            <div class="flex justify-between items-center mb-3">
+                                <div>
+                                    <div class="font-bold text-sm text-indigo-700 dark:text-indigo-400">Фоновые отчеты
+                                    </div>
+                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Авто-генерация без зависаний
+                                    </div>
+                                </div>
+                                <label class="toggle-switch"><input type="checkbox" id="set-auto-report"
+                                        onchange="toggleSetting('autoReportEnabled', this)"><span
+                                        class="toggle-slider"></span></label>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 mt-3">
+                                <div>
+                                    <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">День месяца</div>
+                                    <input type="number" id="set-auto-report-day" class="input-base text-center !py-2"
+                                        min="1" max="28" onchange="toggleSetting('autoReportDay', this)">
+                                </div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">Тип отчета</div>
+                                    <select id="set-auto-report-type" class="input-base !py-2 text-[11px]"
+                                        onchange="toggleSetting('autoReportType', this)">
+                                        <option value="global_onepager">По Компании</option>
+                                        <option value="onepager">По Объектам</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- ИНТЕРФЕЙС И ОФОРМЛЕНИЕ -->
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
                     <summary
                         class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
                         <span class="flex items-center gap-2">
@@ -2127,11 +2447,12 @@
                                     d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01">
                                 </path>
                             </svg>
-                            Оформление
+                            Интерфейс и управление
                         </span>
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div>
+                        <!-- Настройки внешнего вида -->
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                             <div>
                                 <div class="font-bold text-sm">Тема приложения</div>
@@ -2156,37 +2477,6 @@
                                 <option value="xlarge">Очень крупный</option>
                             </select>
                         </div>
-                        <div class="p-4 flex justify-between items-center">
-                            <div>
-                                <div class="font-bold text-sm">Мини-дашборд</div>
-                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Отображение в шапке осмотра</div>
-                            </div>
-                            <select id="set-dashmode" class="input-base w-32"
-                                onchange="toggleSetting('dashboardMode', this)">
-                                <option value="compact">Компактный</option>
-                                <option value="expanded">Развернутый</option>
-                                <option value="hidden">Отключить</option>
-                            </select>
-                        </div>
-                    </div>
-                </details>
-
-                <!-- ИНТЕРФЕЙС И УПРАВЛЕНИЕ -->
-                <details
-                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                    <summary
-                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
-                                </path>
-                            </svg>
-                            Интерфейс и Управление
-                        </span>
-                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
-                    </summary>
-                    <div>
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                             <div>
                                 <div class="font-bold text-sm">Позиция меню</div>
@@ -2200,6 +2490,20 @@
                                 <option value="bottom">Всегда снизу</option>
                             </select>
                         </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Мини-дашборд</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Отображение в шапке осмотра</div>
+                            </div>
+                            <select id="set-dashmode" class="input-base w-32"
+                                onchange="toggleSetting('dashboardMode', this)">
+                                <option value="compact">Компактный</option>
+                                <option value="expanded">Развернутый</option>
+                                <option value="hidden">Отключить</option>
+                            </select>
+                        </div>
+
+                        <!-- Настройки поведения -->
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                             <div>
                                 <div class="font-bold text-sm">Свайпы (Вправо/Влево)</div>
@@ -2230,7 +2534,7 @@
                                     onchange="toggleSetting('defaultGroupsCollapsed', this)"><span
                                     class="toggle-slider"></span></label>
                         </div>
-                        <div class="p-4 flex justify-between items-center">
+                        <div class="p-4 flex justify-between items-center rounded-b-2xl">
                             <div>
                                 <div class="font-bold text-sm">Быстрый режим</div>
                                 <div class="text-[10px] text-[var(--text-muted)] mt-1">Скрыть тексты нормативов</div>
@@ -2316,92 +2620,21 @@
                     </div>
                 </details>
 
-                <!-- AI АССИСТЕНТ -->
-                <details
-                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
-                    <summary
-                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                            </svg>
-                            AI-ассистент (DeepSeek)
-                        </span>
-                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
-                    </summary>
-                    <div>
-                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
-                            <div>
-                                <div class="font-bold text-sm">Включить AI</div>
-                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Интеллектуальные подсказки и
-                                    аналитика</div>
-                            </div>
-                            <label class="toggle-switch"><input type="checkbox" id="set-ai-enabled"
-                                    onchange="toggleSetting('aiEnabled', this)"><span
-                                    class="toggle-slider"></span></label>
-                        </div>
-                        <div id="ai-settings-body" class="transition-all duration-300 hidden">
-                            <div class="p-4 bg-[var(--hover-bg)]">
-                                <div class="font-bold text-sm mb-3">Способ вызова нейросети</div>
-                                <div class="flex flex-col gap-3">
-                                    <label
-                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                                        <input type="radio" name="ai-mode" value="server"
-                                            class="w-4 h-4 accent-indigo-600" onchange="changeAiMode(false)">
-                                        <span
-                                            class="text-[12px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1"><svg
-                                                class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-                                                viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
-                                                </path>
-                                            </svg> Через корпоративный сервер</span>
-                                    </label>
-                                    <div id="corporate-pwd-field"
-                                        class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
-                                        <label
-                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Пароль
-                                            доступа к ИИ</label>
-                                        <input type="password" id="set-ai-corp-pwd"
-                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
-                                            placeholder="Введите пароль..." onchange="toggleSetting('aiCorpPwd', this)">
-                                    </div>
-                                    <label
-                                        class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
-                                        <input type="radio" name="ai-mode" value="personal"
-                                            class="w-4 h-4 accent-indigo-600" onchange="changeAiMode(true)">
-                                        <span
-                                            class="text-[12px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1"><svg
-                                                class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-                                                viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
-                                                </path>
-                                            </svg> Мой персональный API-ключ</span>
-                                    </label>
-                                    <div id="personal-key-field"
-                                        class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
-                                        <label
-                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">API-ключ
-                                            DeepSeek</label>
-                                        <input type="password" id="set-ai-key"
-                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
-                                            placeholder="sk-..." onchange="toggleSetting('apiKey', this)">
-                                        <div class="text-[8px] text-slate-400 mt-1.5 leading-snug">Сохраняется только на
-                                            вашем устройстве.</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </details>
+
                 <!-- РАСПИСАНИЕ ЗАДАЧ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
                     <summary
                         class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
-                        <span class="flex items-center gap-2">🗓 Расписание рутинных задач</span>
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            Расписание рутинных задач
+                        </span>
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div>
@@ -2431,7 +2664,7 @@
                                 <option value="5">Пятница</option>
                             </select>
                         </div>
-                        <div class="p-4 flex justify-between items-center bg-[var(--hover-bg)]">
+                        <div class="p-4 flex justify-between items-center bg-[var(--hover-bg)] rounded-b-2xl">
                             <div>
                                 <div class="font-bold text-sm">Ежемесячный отчет</div>
                             </div>
@@ -2444,25 +2677,34 @@
                         </div>
                     </div>
                 </details>
+
                 <!-- УПРАВЛЕНИЕ ДАННЫМИ И БЭКАПЫ -->
-                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
-                    <summary class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary
+                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
                         <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
+                                </path>
+                            </svg>
                             Хранилище и Резервные копии
                         </span>
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div class="bg-white dark:bg-slate-800 rounded-b-2xl">
-                        
+
                         <!-- Память устройства -->
                         <div class="p-4 border-b border-[var(--card-border)]">
                             <div class="flex justify-between items-center mb-3">
                                 <div class="font-bold text-sm">Хранилище (IndexedDB)</div>
-                                <div class="text-xs font-black text-indigo-600 dark:text-indigo-400" id="storage-percent">--%</div>
+                                <div class="text-xs font-black text-indigo-600 dark:text-indigo-400"
+                                    id="storage-percent">--%</div>
                             </div>
                             <div class="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mb-2">
-                                <div id="storage-bar" class="h-full bg-indigo-500 transition-all" style="width: 0%"></div>
+                                <div id="storage-bar" class="h-full bg-indigo-500 transition-all" style="width: 0%">
+                                </div>
                             </div>
                             <div class="flex justify-between text-[10px] text-[var(--text-muted)] font-bold mb-4">
                                 <span>Исп: <span id="storage-used">--</span> МБ</span>
@@ -2472,26 +2714,43 @@
                             <div class="flex justify-between items-center mb-4">
                                 <div>
                                     <div class="font-bold text-sm">Авто-кэш облачных файлов</div>
-                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Сохранять фото и PDF для офлайна</div>
+                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Сохранять фото и PDF для
+                                        офлайна</div>
                                 </div>
-                                <label class="toggle-switch"><input type="checkbox" id="set-autocache" onchange="toggleSetting('autoCacheCloudFiles', this)"><span class="toggle-slider"></span></label>
+                                <label class="toggle-switch"><input type="checkbox" id="set-autocache"
+                                        onchange="toggleSetting('autoCacheCloudFiles', this)"><span
+                                        class="toggle-slider"></span></label>
                             </div>
 
                             <div class="grid grid-cols-2 gap-2 mb-3">
-                                <button onclick="clearPdfCache()" class="bg-slate-50 text-slate-600 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-600 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                                <button onclick="clearPdfCache()"
+                                    class="bg-slate-50 text-slate-600 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase border border-slate-200 dark:border-slate-600 active:scale-95 transition-colors flex items-center justify-center gap-2">
                                     Очистить кэш
                                 </button>
-                                <button onclick="emptyTrashBin()" class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-3 rounded-xl font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                                <button onclick="emptyTrashBin()"
+                                    class="bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400 py-3 rounded-xl font-bold text-[10px] uppercase border border-orange-200 dark:border-orange-800/50 active:scale-95 transition-colors flex items-center justify-center gap-2">
                                     Очистить мусор
                                 </button>
                             </div>
 
-                            <button onclick="downloadMissingCloudFiles()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 mb-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg>
+                            <button onclick="downloadMissingCloudFiles()"
+                                class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 mb-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
+                                    </path>
+                                </svg>
                                 Скачать всё для Офлайна
                             </button>
-                            <button onclick="exportLibraryToJsCode()" class="w-full bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 shadow-sm">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                            <button onclick="exportLibraryToJsCode()"
+                                class="w-full bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 py-3 rounded-xl font-black text-[11px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                </svg>
                                 Выгрузить Библиотеку в код
                             </button>
                         </div>
@@ -2500,21 +2759,48 @@
                         <div class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
                             <div class="font-bold text-sm mb-3">Резервные копии (Ручная выгрузка)</div>
                             <div class="grid grid-cols-2 gap-2 mb-3">
-                                <div onclick="handleDataExport('json', 'incremental')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300">
-                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg>
-                                    <div class="text-[10px] font-black text-slate-800 dark:text-white uppercase text-center leading-tight">Только<br>Новое</div>
+                                <div onclick="handleDataExport('json', 'incremental')"
+                                    class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300">
+                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15">
+                                        </path>
+                                    </svg>
+                                    <div
+                                        class="text-[10px] font-black text-slate-800 dark:text-white uppercase text-center leading-tight">
+                                        Только<br>Новое</div>
                                 </div>
-                                <div onclick="handleDataExport('json', 'full')" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300">
-                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"></path></svg>
-                                    <div class="text-[10px] font-black text-slate-800 dark:text-white uppercase text-center leading-tight">Вся<br>База</div>
+                                <div onclick="handleDataExport('json', 'full')"
+                                    class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform cursor-pointer hover:border-indigo-300">
+                                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z">
+                                        </path>
+                                    </svg>
+                                    <div
+                                        class="text-[10px] font-black text-slate-800 dark:text-white uppercase text-center leading-tight">
+                                        Вся<br>База</div>
                                 </div>
                             </div>
                             <div class="flex gap-2">
-                                <button onclick="triggerDataImport()" class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 transition-colors hover:bg-slate-50">
-                                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Загрузить файл
+                                <button onclick="triggerDataImport()"
+                                    class="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 transition-colors hover:bg-slate-50">
+                                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
+                                        </path>
+                                    </svg> Загрузить файл
                                 </button>
-                                <button onclick="openShareModal()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 transition-colors hover:bg-indigo-700">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Поделиться
+                                <button onclick="openShareModal()"
+                                    class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 transition-colors hover:bg-indigo-700">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z">
+                                        </path>
+                                    </svg> Поделиться
                                 </button>
                             </div>
                         </div>
@@ -2523,11 +2809,14 @@
                         <div class="p-4 border-b border-[var(--card-border)]">
                             <div class="flex justify-between items-center mb-3">
                                 <div class="font-bold text-sm">История выгрузок</div>
-                                <button onclick="clearBackupRegistry()" class="text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-800/50 active:scale-95">Очистить</button>
+                                <button onclick="clearBackupRegistry()"
+                                    class="text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-800/50 active:scale-95">Очистить</button>
                             </div>
-                            <div class="overflow-x-auto custom-scrollbar max-h-32 border border-slate-100 dark:border-slate-700 rounded-lg">
+                            <div
+                                class="overflow-x-auto custom-scrollbar max-h-32 border border-slate-100 dark:border-slate-700 rounded-lg">
                                 <table class="w-full text-left text-[9px]">
-                                    <tbody id="rbi-backup-registry-list" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+                                    <tbody id="rbi-backup-registry-list"
+                                        class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
                                 </table>
                             </div>
                         </div>
@@ -2536,14 +2825,19 @@
                         <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)]">
                             <div class="flex justify-between items-center mb-3">
                                 <div>
-                                    <div class="font-bold text-sm text-indigo-700 dark:text-indigo-400">Автоматический бэкап</div>
-                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Регулярно сохранять базу устройства</div>
+                                    <div class="font-bold text-sm text-indigo-700 dark:text-indigo-400">Автоматический
+                                        бэкап</div>
+                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">Регулярно сохранять базу
+                                        устройства</div>
                                 </div>
-                                <label class="toggle-switch"><input type="checkbox" id="set-autobackup" onchange="toggleSetting('autoBackupEnabled', this)"><span class="toggle-slider"></span></label>
+                                <label class="toggle-switch"><input type="checkbox" id="set-autobackup"
+                                        onchange="toggleSetting('autoBackupEnabled', this)"><span
+                                        class="toggle-slider"></span></label>
                             </div>
                             <div class="flex justify-between items-center mb-1">
                                 <div class="font-bold text-sm">День автобэкапа</div>
-                                <select id="set-autobackup-day" class="input-base w-32 !py-1.5" onchange="toggleSetting('autoBackupDay', this)">
+                                <select id="set-autobackup-day" class="input-base w-32 !py-1.5"
+                                    onchange="toggleSetting('autoBackupDay', this)">
                                     <option value="1">Понедельник</option>
                                     <option value="2">Вторник</option>
                                     <option value="3">Среда</option>
@@ -2556,17 +2850,24 @@
                         </div>
 
                         <!-- Отправка руководителю -->
-                        <div class="p-4 border-b border-orange-100 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10">
+                        <div
+                            class="p-4 border-b border-orange-100 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-900/10">
                             <div class="flex justify-between items-center mb-3">
                                 <div>
-                                    <div class="font-bold text-sm text-orange-700 dark:text-orange-400">Отправка руководителю</div>
-                                    <div class="text-[10px] text-orange-600 dark:text-orange-500 mt-1">Авто-вызов меню "Поделиться" с инкрементом</div>
+                                    <div class="font-bold text-sm text-orange-700 dark:text-orange-400">Отправка
+                                        руководителю</div>
+                                    <div class="text-[10px] text-orange-600 dark:text-orange-500 mt-1">Авто-вызов меню
+                                        "Поделиться" с инкрементом</div>
                                 </div>
-                                <label class="toggle-switch"><input type="checkbox" id="set-automanager" onchange="toggleSetting('autoManagerEnabled', this)"><span class="toggle-slider"></span></label>
+                                <label class="toggle-switch"><input type="checkbox" id="set-automanager"
+                                        onchange="toggleSetting('autoManagerEnabled', this)"><span
+                                        class="toggle-slider"></span></label>
                             </div>
                             <div class="flex justify-between items-center mb-3">
                                 <div class="font-bold text-sm text-orange-800 dark:text-orange-300">День отправки</div>
-                                <select id="set-automanager-day" class="input-base w-32 !py-1.5 border-orange-200 dark:border-orange-800" onchange="toggleSetting('autoManagerDay', this)">
+                                <select id="set-automanager-day"
+                                    class="input-base w-32 !py-1.5 border-orange-200 dark:border-orange-800"
+                                    onchange="toggleSetting('autoManagerDay', this)">
                                     <option value="1">Понедельник</option>
                                     <option value="2">Вторник</option>
                                     <option value="3">Среда</option>
@@ -2576,32 +2877,54 @@
                                     <option value="0">Воскресенье</option>
                                 </select>
                             </div>
-                            <button onclick="triggerManagerShareManual()" class="w-full bg-orange-500 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex justify-center items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                            <button onclick="triggerManagerShareManual()"
+                                class="w-full bg-orange-500 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex justify-center items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                                </svg>
                                 Отправить руководителю сейчас
                             </button>
                         </div>
                     </div>
                 </details>
                 <!-- ОБРАТНАЯ СВЯЗЬ (ФИДБЕК И ИДЕИ) -->
-                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
-                    <summary class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary
+                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
                         <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
+                            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z">
+                                </path>
+                            </svg>
                             Обратная связь (Идеи)
                         </span>
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div class="p-4 bg-white dark:bg-slate-800 rounded-b-2xl">
                         <div class="mb-4 border-b border-[var(--card-border)] pb-4">
-                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Предложить улучшение / Сообщить об ошибке</label>
-                            <textarea id="feedback-input-text" class="input-base text-[12px] h-20 resize-none mb-2" placeholder="Опишите, чего не хватает или что работает не так..."></textarea>
-                            <button id="feedback-submit-btn" onclick="rbi_submitFeedback()" class="w-full bg-emerald-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg> Отправить разработчику
+                            <label
+                                class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Предложить
+                                улучшение / Сообщить об ошибке</label>
+                            <textarea id="feedback-input-text" class="input-base text-[12px] h-20 resize-none mb-2"
+                                placeholder="Опишите, чего не хватает или что работает не так..."></textarea>
+                            <button id="feedback-submit-btn" onclick="rbi_submitFeedback()"
+                                class="w-full bg-emerald-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                                </svg> Отправить разработчику
                             </button>
                         </div>
-                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-3">Бэклог команды</div>
-                        <div id="feedback-list-container" class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                        <div class="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-3">
+                            Бэклог команды</div>
+                        <div id="feedback-list-container"
+                            class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
                             <!-- Карточки фидбека будут здесь -->
                         </div>
                     </div>
@@ -2638,7 +2961,152 @@
                     RBI Quality PWA<br>Версия Pro (AI + Tasks + Sync)<br>Developed by Igor Kondratiev
                 </div>
             </div>
+            <!-- === КОНСТРУКТОР PDF-ШАБЛОНОВ (PRO) === -->
+            <div id="pdf-template-modal"
+                class="fixed inset-0 bg-slate-900/80 z-[7000] hidden items-start justify-center p-2 sm:p-4 backdrop-blur-sm overflow-y-auto"
+                onclick="window.closePdfTemplateModal()">
+                <div class="bg-[var(--bg-main)] w-full max-w-3xl mt-4 mb-10 rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-[var(--card-border)]"
+                    onclick="event.stopPropagation()">
 
+                    <!-- Шапка -->
+                    <div
+                        class="p-4 bg-indigo-600 border-b border-indigo-700 flex justify-between items-center sticky top-0 z-20 shadow-md">
+                        <h3 class="font-black text-[14px] uppercase tracking-tight text-white flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Конструктор PDF отчетов
+                        </h3>
+                        <button onclick="window.closePdfTemplateModal()"
+                            class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white shadow-sm border border-indigo-400 active:scale-90 transition-transform">✕</button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+
+                        <!-- Список сохраненных шаблонов -->
+                        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm">
+                            <div class="flex justify-between items-center mb-3">
+                                <div class="text-[11px] font-black uppercase text-slate-500">Ваши шаблоны</div>
+                                <button onclick="window.createNewPdfTemplate()"
+                                    class="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg active:scale-95 transition-colors">+
+                                    Создать новый</button>
+                            </div>
+                            <div id="pdf-templates-list"
+                                class="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                <!-- Список рендерится через JS -->
+                            </div>
+                        </div>
+
+                        <!-- Редактор (Изначально скрыт) -->
+                        <div id="pdf-template-editor"
+                            class="hidden space-y-4 border-t border-[var(--card-border)] pt-4">
+                            <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400">Настройка
+                                шаблона</div>
+
+                            <!-- Базовые настройки -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label
+                                        class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название
+                                        шаблона *</label>
+                                    <input type="text" id="pdf-tmpl-name" class="input-base"
+                                        placeholder="Например: Стандартный One-Pager">
+                                </div>
+                                <div>
+                                    <label
+                                        class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип
+                                        отчета</label>
+                                    <select id="pdf-tmpl-type" class="input-base">
+                                        <option value="onepager">Сводка по Объекту</option>
+                                        <option value="global_onepager">Глобальная сводка Компании</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Дизайн -->
+                            <div
+                                class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[var(--hover-bg)] p-3 rounded-xl border border-[var(--card-border)]">
+                                <div>
+                                    <label
+                                        class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Колонки</label>
+                                    <select id="pdf-tmpl-layout" class="input-base text-[11px] !py-1.5">
+                                        <option value="two_uneven">Две (40% / 60%)</option>
+                                        <option value="two_even">Две (50% / 50%)</option>
+                                        <option value="one">Одна колонка (100%)</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col justify-center">
+                                    <label class="flex items-center gap-2 cursor-pointer mt-3">
+                                        <input type="checkbox" id="pdf-tmpl-logo"
+                                            class="w-4 h-4 accent-indigo-600 rounded">
+                                        <span
+                                            class="text-[11px] font-bold text-slate-700 dark:text-slate-300">Показывать
+                                            логотип</span>
+                                    </label>
+                                </div>
+                                <div class="flex flex-col justify-center">
+                                    <label class="flex items-center gap-2 cursor-pointer mt-3">
+                                        <input type="checkbox" id="pdf-tmpl-qr"
+                                            class="w-4 h-4 accent-indigo-600 rounded" checked>
+                                        <span class="text-[11px] font-bold text-slate-700 dark:text-slate-300">Вставить
+                                            QR-код</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Текст в подвале -->
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Текст
+                                    в подвале (Footer)</label>
+                                <input type="text" id="pdf-tmpl-footer" class="input-base text-[11px]"
+                                    placeholder="Например: Конфиденциально. Только для внутреннего использования.">
+                            </div>
+
+                            <!-- DRAG AND DROP БЛОКИ -->
+                            <div
+                                class="text-[10px] text-slate-500 bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-100 dark:border-blue-800 leading-snug">
+                                💡 Перетаскивайте блоки из левой колонки в правую, чтобы добавить их в отчет.
+                                Выстраивайте нужный порядок.
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <!-- Доступные блоки -->
+                                <div
+                                    class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col h-64">
+                                    <div class="text-[10px] font-black uppercase text-slate-400 mb-2 text-center">
+                                        Скрытые блоки</div>
+                                    <div id="pdf-blocks-available"
+                                        class="flex-1 overflow-y-auto space-y-2 custom-scrollbar p-1 min-h-[50px]">
+                                        <!-- Рендерится через JS -->
+                                    </div>
+                                </div>
+
+                                <!-- Активные блоки -->
+                                <div
+                                    class="bg-indigo-50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800 flex flex-col h-64 shadow-inner">
+                                    <div class="text-[10px] font-black uppercase text-indigo-500 mb-2 text-center">
+                                        Активные (В отчете)</div>
+                                    <div id="pdf-blocks-active"
+                                        class="flex-1 overflow-y-auto space-y-2 custom-scrollbar p-1 min-h-[50px]">
+                                        <!-- Рендерится через JS -->
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Сохранение -->
+                            <div class="flex gap-2 pt-4 border-t border-[var(--card-border)]">
+                                <button onclick="window.cancelPdfTemplateEdit()"
+                                    class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 border border-[var(--card-border)]">Отмена</button>
+                                <button onclick="window.savePdfTemplate()"
+                                    class="flex-[2] bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex justify-center items-center gap-2">💾
+                                    Сохранить шаблон</button>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
     </main>
 
     </main>
@@ -2701,7 +3169,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/config.js"></script>
     <script src="js/sync.js"></script>
-     <!-- ДОБАВЛЕНО: Роли и Справочник объектов -->
+    <!-- ДОБАВЛЕНО: Роли и Справочник объектов -->
     <script src="js/roles.js"></script>
     <script src="js/objectDirectory.js"></script>
 
@@ -3017,36 +3485,55 @@
 
         <div class="space-y-4 px-3 max-w-2xl mx-auto">
             <!-- БЛОК 1: Основные данные и Привязка -->
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
-                <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2">Привязка эталона</div>
-                
+            <div
+                class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
+                <div
+                    class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2">
+                    Привязка эталона</div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект *</label>
-                        <div class="relative"><input type="text" id="etalon-project" class="input-base text-[12px] font-bold text-slate-800 dark:text-white" placeholder="Название объекта..."></div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект
+                            *</label>
+                        <div class="relative"><input type="text" id="etalon-project"
+                                class="input-base text-[12px] font-bold text-slate-800 dark:text-white"
+                                placeholder="Название объекта..."></div>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик *</label>
-                        <div class="relative"><input type="text" id="etalon-contractor" class="input-base text-[12px] font-bold text-slate-800 dark:text-white" placeholder="ООО Ромашка..."></div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик
+                            *</label>
+                        <div class="relative"><input type="text" id="etalon-contractor"
+                                class="input-base text-[12px] font-bold text-slate-800 dark:text-white"
+                                placeholder="ООО Ромашка..."></div>
                     </div>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Вид работ (Чек-лист) *</label>
-                    <select id="etalon-template" class="input-base text-[12px] font-bold text-slate-800 dark:text-white"></select>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Вид работ
+                        (Чек-лист) *</label>
+                    <select id="etalon-template"
+                        class="input-base text-[12px] font-bold text-slate-800 dark:text-white"></select>
                 </div>
 
-                <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2 mt-4 pt-3">Расположение и Участники</div>
+                <div
+                    class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1 border-b border-slate-100 dark:border-slate-700 pb-2 mt-4 pt-3">
+                    Расположение и Участники</div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Локация (Оси, Этаж) *</label>
-                    <input type="text" id="etalon-location" class="input-base text-[12px]" placeholder="Напр: Секция 1, Этаж 5, Оси А-Б">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Локация (Оси,
+                        Этаж) *</label>
+                    <input type="text" id="etalon-location" class="input-base text-[12px]"
+                        placeholder="Напр: Секция 1, Этаж 5, Оси А-Б">
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Комиссия (Участники) *</label>
-                    <textarea id="etalon-participants" class="input-base text-[11px] h-14 resize-none" placeholder="ФИО, Должности представителей..."></textarea>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Комиссия
+                        (Участники) *</label>
+                    <textarea id="etalon-participants" class="input-base text-[11px] h-14 resize-none"
+                        placeholder="ФИО, Должности представителей..."></textarea>
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допущения (Если есть)</label>
-                    <textarea id="etalon-deviations" class="input-base text-[11px] h-14 resize-none" placeholder="Отклонений не выявлено"></textarea>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Допущения (Если
+                        есть)</label>
+                    <textarea id="etalon-deviations" class="input-base text-[11px] h-14 resize-none"
+                        placeholder="Отклонений не выявлено"></textarea>
                 </div>
             </div>
 
@@ -3449,58 +3936,101 @@
         </div>
     </div>
     <!-- RBI NEW: МОДАЛКА РУЧНОЙ ПРАКТИКИ (БЕЗ ЭМОДЗИ) -->
-    <div id="manual-practice-modal" class="fixed inset-0 bg-slate-900/80 z-[9000] hidden items-center justify-center p-4 backdrop-blur-sm" onclick="rbi_closeManualPracticeModal()">
-        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
-            
-            <div class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
-                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+    <div id="manual-practice-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[9000] hidden items-center justify-center p-4 backdrop-blur-sm"
+        onclick="rbi_closeManualPracticeModal()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]"
+            onclick="event.stopPropagation()">
+
+            <div
+                class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
+                <div
+                    class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                        </path>
+                    </svg>
                     Новая практика
                 </div>
-                <button onclick="rbi_closeManualPracticeModal()" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button onclick="rbi_closeManualPracticeModal()"
+                    class="w-8 h-8 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
                 </button>
             </div>
-            
+
             <div class="p-4 overflow-y-auto custom-scrollbar space-y-4">
                 <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Название (Суть)</label>
-                    <button onclick="rbi_beautifyPracticeAi()" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Улучшить текст (ИИ)
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Название
+                        (Суть)</label>
+                    <button onclick="rbi_beautifyPracticeAi()"
+                        class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg> Улучшить текст (ИИ)
                     </button>
                 </div>
-                <input type="text" id="man-prac-title" class="input-base" placeholder="Напр: Замена типа анкеров на фасаде...">
+                <input type="text" id="man-prac-title" class="input-base"
+                    placeholder="Напр: Замена типа анкеров на фасаде...">
 
                 <div class="grid grid-cols-1 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Что делали / В чем проблема</label>
-                        <textarea id="man-prac-problem" class="input-base h-20 resize-none text-[11px]" placeholder="Опишите исходную ситуацию..."></textarea>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Что делали / В чем
+                            проблема</label>
+                        <textarea id="man-prac-problem" class="input-base h-20 resize-none text-[11px]"
+                            placeholder="Опишите исходную ситуацию..."></textarea>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Результат / Решение</label>
-                        <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px]" placeholder="Опишите, к какому выводу пришли..."></textarea>
+                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Результат /
+                            Решение</label>
+                        <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px]"
+                            placeholder="Опишите, к какому выводу пришли..."></textarea>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото 1</label>
-                        <button onclick="document.getElementById('man-prac-photo-before').click()" class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold" id="man-prac-btn-before">
-                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить
+                        <label
+                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото
+                            1</label>
+                        <button onclick="document.getElementById('man-prac-photo-before').click()"
+                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold"
+                            id="man-prac-btn-before">
+                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                            </svg> Добавить
                         </button>
-                        <input type="file" id="man-prac-photo-before" accept="image/*" class="hidden" onchange="rbi_handleManualPracticePhoto(event, 'before')">
+                        <input type="file" id="man-prac-photo-before" accept="image/*" class="hidden"
+                            onchange="rbi_handleManualPracticePhoto(event, 'before')">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото 2</label>
-                        <button onclick="document.getElementById('man-prac-photo-after').click()" class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold" id="man-prac-btn-after">
-                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить
+                        <label
+                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото
+                            2</label>
+                        <button onclick="document.getElementById('man-prac-photo-after').click()"
+                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold"
+                            id="man-prac-btn-after">
+                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                            </svg> Добавить
                         </button>
-                        <input type="file" id="man-prac-photo-after" accept="image/*" class="hidden" onchange="rbi_handleManualPracticePhoto(event, 'after')">
+                        <input type="file" id="man-prac-photo-after" accept="image/*" class="hidden"
+                            onchange="rbi_handleManualPracticePhoto(event, 'after')">
                     </div>
                 </div>
 
-                <button onclick="rbi_saveManualPractice()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mt-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg>
+                <button onclick="rbi_saveManualPractice()"
+                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mt-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
+                        </path>
+                    </svg>
                     Сохранить в базу
                 </button>
             </div>
@@ -3552,8 +4082,10 @@
                     <input type="date" id="manual-task-date" class="input-base !py-2 text-[12px]">
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Исполнитель (Кому назначить)</label>
-                    <select id="manual-task-engineer" class="input-base font-bold text-slate-800 dark:text-white bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"></select>
+                    <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Исполнитель (Кому
+                        назначить)</label>
+                    <select id="manual-task-engineer"
+                        class="input-base font-bold text-slate-800 dark:text-white bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"></select>
                 </div>
                 <button onclick="rbi_saveManualTask()"
                     class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2 mt-2">
@@ -3593,6 +4125,12 @@
             </div>
             <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50"
                 id="faq-list-container"></div>
+               <!-- Кнопка вызова Помощника в FAQ -->
+            <div class="p-4 border-t border-slate-200 dark:border-slate-700 bg-indigo-50 dark:bg-indigo-900/30 shrink-0 rounded-b-3xl sm:rounded-b-2xl">
+                <button onclick="openAppAssistantChat()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                    🤖 Спросить AI-Помощника
+                </button>
+            </div> 
         </div>
     </div>
 
@@ -3634,6 +4172,40 @@
             </div>
         </div>
     </div>
+
+
+    <!-- === МОДАЛКА AI-ПОМОЩНИКА ПО ПРИЛОЖЕНИЮ === -->
+    <div id="app-assistant-modal" class="fixed inset-0 bg-slate-900/80 z-[8500] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeAppAssistantChat()">
+        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col h-[85vh] sm:h-[75vh] border border-[var(--card-border)]" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-600 rounded-t-3xl sm:rounded-t-2xl shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-white text-indigo-600 rounded-xl flex items-center justify-center text-xl shadow-md">🤖</div>
+                    <div>
+                        <div class="font-black text-[13px] uppercase tracking-tight text-white">AI-Гид RBI Quality</div>
+                        <div class="text-[10px] text-indigo-200 font-bold">Отвечаю на вопросы по работе приложения</div>
+                    </div>
+                </div>
+                <button onclick="closeAppAssistantChat()" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white active:scale-90 shadow-sm border border-indigo-400">✕</button>
+            </div>
+
+            <div id="app-assistant-history" class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50 space-y-4">
+                <div class="flex gap-2 w-full max-w-[85%]">
+                    <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
+                    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 dark:text-slate-300 shadow-sm font-medium leading-relaxed">
+                        Привет! Я встроенный ассистент. Не знаешь, как выгрузить отчет, добавить TWI-карту или как считается УрК? Спроси меня!
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-3xl sm:rounded-b-2xl shrink-0 flex gap-2">
+                <textarea id="app-assistant-input" class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] outline-none resize-none h-12 text-slate-800 dark:text-white" placeholder="Напиши свой вопрос..."></textarea>
+                <button onclick="askAppAssistant()" id="app-assistant-send-btn" class="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 transition-transform">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    
 </body>
 
 </html>

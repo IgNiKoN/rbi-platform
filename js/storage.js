@@ -1,15 +1,18 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Повышаем версию до 9 для разделения хранилищ
-const DB_VERSION = 10; // Обновили версию БД
+// Повышаем версию для новой таблицы очереди объектов
+const DB_VERSION = 14;
 
 const STORES = {
-    STATE: 'app_state',       
-    HISTORY: 'app_history',   
-    SETTINGS: 'app_settings', 
-    TEMPLATES: 'user_templates', 
+    OBJECT_QUEUE: 'object_normalization_queue', // <-- ВСТАВИТЬ СЮДА
+    STATE: 'app_state',
+    HISTORY: 'app_history',
+    SETTINGS: 'app_settings',
+    TEMPLATES: 'user_templates',
     PHOTOS: 'app_photos',
+    REPORTS: 'app_reports',
+    REPORT_TEMPLATES: 'report_templates', // <-- ХРАНИЛИЩЕ ДЛЯ ДИЗАЙНА ОТЧЕТОВ
     TASKS: 'rbi_tasks',
     SCHEDULE: 'rbi_schedule_stages',
     MEETINGS: 'rbi_meetings',
@@ -18,21 +21,22 @@ const STORES = {
     ETALON_ACTS: 'rbi_etalon_acts',
     ETALON_DRAFT: 'rbi_etalon_draft',
     FMEA: 'rbi_fmea',
-    SK_IMPORTS: 'sk_imports',             
-    SK_RECORDS: 'sk_records',             
+    SK_IMPORTS: 'sk_imports',
+    SK_RECORDS: 'sk_records',
     SK_CONTRACTOR_MAP: 'sk_contractor_map',
-    SK_VOLUMES: 'sk_volumes',             
+    SK_VOLUMES: 'sk_volumes',
     SK_ISD_HISTORY: 'sk_isd_history',
     SK_CATEGORY_MAP: 'sk_category_map', // <-- НОВОЕ
     SK_MAPPING: 'sk_mapping',           // <-- НОВОЕ
-    PROJECT_OBJECTS: 'project_objects',   
+    PROJECT_OBJECTS: 'project_objects',
     OBJECT_ALIASES: 'object_aliases',   // <-- НОВОЕ
-    BACKUP_LOGS: 'backup_logs',   
+    BACKUP_LOGS: 'backup_logs',
     GAME_LOGS: 'game_logs',      // <-- НОВОЕ
     TWI_CARDS: 'twi_cards',
     CUSTOM_DOCS: 'custom_docs',
     CUSTOM_NODES: 'custom_nodes',
-    FEEDBACK_LIST: 'feedback_list'
+    FEEDBACK_LIST: 'feedback_list',
+    ASSISTANT_KB: 'app_assistant_kb'
 };
 
 /**
@@ -47,29 +51,37 @@ function openAppDb() {
         _dbPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-            request.onupgradeneeded = function(event) {
+            request.onupgradeneeded = function (event) {
                 const db = event.target.result;
-                
+
                 // Создаем таблицы, если их нет
                 Object.values(STORES).forEach(storeName => {
                     if (!db.objectStoreNames.contains(storeName)) {
                         let keyOptions = { keyPath: 'id' };
                         if (storeName === STORES.STATE || storeName === STORES.SETTINGS) keyOptions = { keyPath: 'key' };
                         if (storeName === STORES.TEMPLATES) keyOptions = { keyPath: 'slug' };
-                        
+
                         db.createObjectStore(storeName, keyOptions);
                     }
                 });
             };
 
             // ЕСЛИ БАЗА ЗАБЛОКИРОВАНА СТАРОЙ ВКЛАДКОЙ
-            request.onblocked = function() {
+            request.onblocked = function () {
                 console.error("IndexedDB заблокирована! Закройте другие вкладки.");
                 if (typeof showToast === 'function') showToast("⚠️ Закройте все вкладки приложения и откройте заново!");
                 reject(new Error("БД заблокирована"));
             };
 
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => {
+                    db.close();
+                    _dbPromise = null;
+                    if (typeof showToast === 'function') showToast('⚠️ База данных обновлена. Пожалуйста, перезагрузите страницу.');
+                };
+                resolve(db);
+            };
             request.onerror = () => {
                 _dbPromise = null; // Сбрасываем промис при ошибке
                 reject(request.error);
@@ -78,7 +90,46 @@ function openAppDb() {
     }
     return _dbPromise;
 }
+/**
+ * ГЛОБАЛЬНЫЙ НОРМАЛИЗАТОР СИСТЕМНЫХ КЛЮЧЕЙ (JS vs Supabase)
+ * Автоматически выравнивает camelCase и snake_case перед любым сохранением в базу.
+ */
+function normalizeSystemKeys(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
 
+    // 1. Метки удаления (_deleted <-> is_deleted)
+    const isDel = obj._deleted === true || obj.is_deleted === true;
+    obj._deleted = isDel;
+    obj.is_deleted = isDel;
+
+    const delAt = obj._deletedAt || obj.deleted_at || null;
+    if (delAt) {
+        obj._deletedAt = delAt;
+        obj.deleted_at = delAt;
+    }
+
+    // 2. Статусы синхронизации (syncStatus <-> sync_status)
+    const sStatus = obj.syncStatus || obj.sync_status || 'not_synced';
+    obj.syncStatus = sStatus;
+    obj.sync_status = sStatus;
+
+    const sReason = obj.syncBlockReason || obj.sync_block_reason || '';
+    obj.syncBlockReason = sReason;
+    obj.sync_block_reason = sReason;
+
+    // 3. Временные метки (updatedAt <-> updated_at)
+    const updAt = obj.updatedAt || obj.updated_at || new Date().toISOString();
+    obj.updatedAt = updAt;
+    obj.updated_at = updAt;
+
+    const creAt = obj.createdAt || obj.created_at;
+    if (creAt) {
+        obj.createdAt = creAt;
+        obj.created_at = creAt;
+    }
+
+    return obj;
+}
 /**
  * Базовые операции CRUD
  */
@@ -87,9 +138,15 @@ async function dbPut(storeName, data) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
-        store.put(data);
+        const normalizedData = normalizeSystemKeys(data);
+        store.put(normalizedData);
         tx.oncomplete = () => resolve(true);
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => {
+            if (tx.error && tx.error.name === 'QuotaExceededError') {
+                if (typeof showToast === 'function') showToast('❌ Память устройства заполнена! Очистите кэш.');
+            }
+            reject(tx.error);
+        };
     });
 }
 // МАССОВОЕ СОХРАНЕНИЕ (УСКОРЕНИЕ В 10 РАЗ)
@@ -99,13 +156,19 @@ async function dbPutBatch(storeName, itemsArray) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(storeName, 'readwrite');
         const store = tx.objectStore(storeName);
-        
+
         itemsArray.forEach(item => {
-            store.put(item);
+            const normalizedItem = normalizeSystemKeys(item);
+        store.put(normalizedItem);
         });
-        
+
         tx.oncomplete = () => resolve(true);
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => {
+            if (tx.error && tx.error.name === 'QuotaExceededError') {
+                if (typeof showToast === 'function') showToast('❌ Память устройства заполнена! Очистите кэш.');
+            }
+            reject(tx.error);
+        };
     });
 }
 async function dbGet(storeName, key) {
@@ -164,7 +227,7 @@ function base64ToBlob(base64, mimeType = 'image/jpeg') {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
     const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], {type: mimeType});
+    return new Blob([byteArray], { type: mimeType });
 }
 
 function blobToBase64(blob) {
@@ -201,10 +264,10 @@ async function arrayBufferToBase64(buffer, mimeType = 'image/webp') {
  */
 function exportToCSV(historyArray) {
     if (!historyArray || historyArray.length === 0) return null;
-    
+
     // Добавляем BOM для правильного отображения кириллицы в Excel
-    let csvContent = "\uFEFF"; 
-    
+    let csvContent = "\uFEFF";
+
     // Заголовки столбцов
     const headers = ['ID', 'Дата', 'Подрядчик', 'Вид работ', 'Локация', 'Инспектор', 'УрК (%)', 'Статус', 'Ошибки B1', 'Ошибки B2', 'Ошибки B3', 'Причина снижения'];
     csvContent += headers.join(";") + "\r\n";
@@ -213,7 +276,7 @@ function exportToCSV(historyArray) {
         const dateStr = new Date(item.date).toLocaleString('ru-RU').replace(/,/g, '');
         const reason = item.metrics.reason ? item.metrics.reason.replace(/;/g, ',').replace(/\n/g, ' ') : '';
         const loc = item.location ? item.location.replace(/;/g, ',').replace(/\n/g, ' ') : '';
-        
+
         const row = [
             item.id,
             dateStr,
@@ -285,12 +348,12 @@ async function updateStorageInfo() {
     const sFree = document.getElementById('storage-free');
     const sPercent = document.getElementById('storage-percent');
     const sBar = document.getElementById('storage-bar');
-    
+
     if (!sUsed || !navigator.storage || !navigator.storage.estimate) return;
 
     try {
         const estimate = await navigator.storage.estimate();
-        
+
         // Считаем РЕАЛЬНЫЙ физический вес фотографий в базе данных (в байтах)
         let realBytes = 0;
         try {
@@ -300,19 +363,19 @@ async function updateStorageInfo() {
                     if (p.data && p.data.byteLength) realBytes += p.data.byteLength;
                 });
             }
-        } catch(e) {}
+        } catch (e) { }
 
         // Базовая квота диска, выделенная браузером
         const quotaMB = estimate.quota / 1024 / 1024;
-        
+
         // Оценка браузера (Включает кэш приложения, шрифты, системный мусор SQLite)
         const browserUsedMB = estimate.usage / 1024 / 1024;
-        
+
         // Используем реальный вес фоток (так как они занимают 99% базы)
         let actualUsedMB = realBytes / 1024 / 1024;
         // Если фотки весят меньше мегабайта (пусто), берем вес каркаса приложения из кэша
         if (actualUsedMB < 1) actualUsedMB = browserUsedMB;
-        
+
         const usedStr = actualUsedMB.toFixed(1);
         const freeMB = (quotaMB - actualUsedMB).toFixed(1);
         const percentUsed = ((actualUsedMB / quotaMB) * 100).toFixed(1);
@@ -321,12 +384,27 @@ async function updateStorageInfo() {
         sFree.innerText = freeMB;
         sPercent.innerText = `${percentUsed}%`;
         sBar.style.width = `${percentUsed}%`;
-        
+
         // Меняем цвет полоски, если места мало
         if (parseFloat(percentUsed) > 80) sBar.className = 'h-full bg-red-500 transition-all';
         else if (parseFloat(percentUsed) > 50) sBar.className = 'h-full bg-yellow-500 transition-all';
         else sBar.className = 'h-full bg-indigo-500 transition-all';
-
+        // --- ПАНЕЛЬ ДИАГНОСТИКИ ---
+        let diagBlock = document.getElementById('rbi-diagnostics-block');
+        if (!diagBlock) {
+            const storageContainer = sBar.closest('.p-4');
+            if (storageContainer) {
+                storageContainer.insertAdjacentHTML('beforeend', '<div id="rbi-diagnostics-block" class="mt-4 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-slate-500 font-mono leading-relaxed"></div>');
+                diagBlock = document.getElementById('rbi-diagnostics-block');
+            }
+        }
+        if (diagBlock) {
+            const histCount = typeof contractorArray !== 'undefined' ? contractorArray.length : 0;
+            const notSyncedCount = typeof contractorArray !== 'undefined' ? contractorArray.filter(c => c.syncStatus !== 'synced').length : 0;
+            const lastSync = localStorage.getItem('rbi_sync_last_push_at');
+            const syncText = lastSync ? new Date(lastSync).toLocaleString('ru-RU') : 'Никогда';
+            diagBlock.innerHTML = `<b>Диагностика системы:</b><br>Версия: v17.8.188 | БД: v12<br>База проверок: ${histCount} шт.<br>Ожидают отправки: ${notSyncedCount} шт.<br>Последний контакт с облаком:<br>${syncText}`;
+        }
     } catch (e) {
         sUsed.innerText = 'н/д';
         sFree.innerText = 'н/д';
@@ -360,9 +438,9 @@ const PhotoManager = {
 
     getSrc(url) {
         if (!url) return '';
-        if (url.startsWith('local://') || url.startsWith('cloud://')) return url; 
-        if (this.cache[url]) return this.cache[url]; 
-        return url; 
+        if (url.startsWith('local://') || url.startsWith('cloud://')) return url;
+        if (this.cache[url]) return this.cache[url];
+        return url;
     },
 
     async getAsyncUrl(localIdOrHttp) {
@@ -391,7 +469,7 @@ const PhotoManager = {
                     return localUrl;
                 }
             }
-        } catch(e) { console.error("Ошибка загрузки фото", e); }
+        } catch (e) { console.error("Ошибка загрузки фото", e); }
         return localIdOrHttp;
     },
 
@@ -403,25 +481,25 @@ const PhotoManager = {
                 return await arrayBufferToBase64(record.data, record.mimeType || 'image/webp');
             }
             if (localId.startsWith('http')) {
-    // Проверим, нет ли уже в IndexedDB
-    const cached = await dbGet(STORES.PHOTOS, localId);
-    if (cached && cached.data) {
-        return await arrayBufferToBase64(cached.data, cached.mimeType || 'image/jpeg');
-    }
-    // Если нет – загружаем и сохраняем
-    const res = await fetch(localId);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const buffer = await blobToArrayBuffer(blob);
-    // Кладём в IndexedDB, чтобы в следующий раз не качать
-    await dbPut(STORES.PHOTOS, {
-        id: localId,
-        data: buffer,
-        mimeType: blob.type || 'image/jpeg'
-    });
-    return await arrayBufferToBase64(buffer, blob.type || 'image/jpeg');
-}
-        } catch(e) {}
+                // Проверим, нет ли уже в IndexedDB
+                const cached = await dbGet(STORES.PHOTOS, localId);
+                if (cached && cached.data) {
+                    return await arrayBufferToBase64(cached.data, cached.mimeType || 'image/jpeg');
+                }
+                // Если нет – загружаем и сохраняем
+                const res = await fetch(localId);
+                if (!res.ok) return null;
+                const blob = await res.blob();
+                const buffer = await blobToArrayBuffer(blob);
+                // Кладём в IndexedDB, чтобы в следующий раз не качать
+                await dbPut(STORES.PHOTOS, {
+                    id: localId,
+                    data: buffer,
+                    mimeType: blob.type || 'image/jpeg'
+                });
+                return await arrayBufferToBase64(buffer, blob.type || 'image/jpeg');
+            }
+        } catch (e) { }
         return null;
     },
 
@@ -452,7 +530,7 @@ const PhotoManager = {
             const localUrl = URL.createObjectURL(blob);
             this.cache[url] = localUrl;
             this.activeUrls.add(localUrl);
-        } catch(e) {}
+        } catch (e) { }
     }
 };
 
@@ -478,7 +556,7 @@ async function runPhotoMigration(historyArray) {
 }
 
 
-window.downloadMissingCloudFiles = async function(silent = false) {
+window.downloadMissingCloudFiles = async function (silent = false) {
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
 
@@ -537,7 +615,7 @@ window.downloadMissingCloudFiles = async function(silent = false) {
         });
     }
 
-        let downloadedCount = 0;
+    let downloadedCount = 0;
     let alreadyCachedCount = 0;
     const total = urlsToDownload.size;
 
@@ -600,11 +678,11 @@ window.downloadMissingCloudFiles = async function(silent = false) {
 
 // Окончательное удаление файлов из корзины (Hard Delete)
 // Глубокая очистка устройства (Удаление скрытых записей и осиротевших файлов)
-window.emptyTrashBin = async function() {
-    if(!confirm("Выполнить глубокую очистку памяти устройства?\n\nБудут окончательно удалены все скрытые записи и «осиротевшие» системные файлы (фото, PDF), которые больше нигде не используются.")) return;
-    
+window.emptyTrashBin = async function () {
+    if (!confirm("Выполнить глубокую очистку памяти устройства?\n\nБудут окончательно удалены все скрытые записи и «осиротевшие» системные файлы (фото, PDF), которые больше нигде не используются.")) return;
+
     showToast("⏳ Начинаем глубокое сканирование памяти...");
-    
+
     let deletedRecords = 0;
     let deletedFiles = 0;
     let freedBytes = 0;
@@ -635,7 +713,7 @@ window.emptyTrashBin = async function() {
 
         // 2. СБОР ВСЕХ ЖИВЫХ (ИСПОЛЬЗУЕМЫХ) ССЫЛОК НА ФАЙЛЫ
         const usedFiles = new Set();
-        
+
         // Рекурсивный сканер: лезет вглубь любого объекта и ищет ссылки
         const extractFiles = (obj) => {
             if (!obj) return;
@@ -666,7 +744,7 @@ window.emptyTrashBin = async function() {
                 if (!usedFiles.has(p.id)) {
                     if (p.data && p.data.byteLength) freedBytes += p.data.byteLength;
                     await dbDelete(STORES.PHOTOS, p.id);
-                    
+
                     // Выгружаем из кэша браузера, если он там застрял
                     if (PhotoManager.cache && PhotoManager.cache[p.id]) {
                         URL.revokeObjectURL(PhotoManager.cache[p.id]);
@@ -680,7 +758,7 @@ window.emptyTrashBin = async function() {
         // 4. ИТОГИ
         const freedMB = (freedBytes / 1024 / 1024).toFixed(1);
         showToast(`✅ Готово! Очищено записей: ${deletedRecords}. Удалено мусорных файлов: ${deletedFiles}. Освобождено: ${freedMB} МБ.`);
-        
+
         if (typeof updateStorageInfo === 'function') updateStorageInfo();
 
     } catch (e) {

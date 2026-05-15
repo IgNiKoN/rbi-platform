@@ -1,7 +1,7 @@
 {
   "name": "RBI Quality Pro",
   "short_name": "RBI Quality Pro",
-  "description": "Система контроля качества и аудита",
+  "description": "Система управления качеством",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8fafc",

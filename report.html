@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр отчета | RBI Quality</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Подключаем конфиг с ключами -->
+    <script src="js/config.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 p-4 font-sans">
+
+    <div class="max-w-4xl mx-auto">
+        <div id="loader" class="text-center py-20 animate-pulse font-bold text-indigo-600">
+            Загрузка отчета из базы данных...
+        </div>
+        
+        <!-- Сюда вставится HTML отчета -->
+        <div id="report-container" class="bg-white shadow-xl rounded-2xl p-4 md:p-8 overflow-x-auto hidden"></div>
+
+        <div id="error" class="text-center py-20 text-red-500 font-bold hidden">
+            Отчет не найден или ссылка устарела.
+        </div>
+    </div>
+
+    <script>
+        // Получаем ID из URL (например, ?id=rep_12345)
+        const urlParams = new URLSearchParams(window.location.search);
+        const reportId = urlParams.get('id');
+
+        async function loadReport() {
+            if (!reportId) {
+                document.getElementById('loader').classList.add('hidden');
+                document.getElementById('error').classList.remove('hidden');
+                document.getElementById('error').innerText = "Некорректная ссылка";
+                return;
+            }
+
+            try {
+                // Подключаемся к Supabase
+                const supabase = window.supabase.createClient(
+                    window.APP_CONFIG.SUPABASE_URL,
+                    window.APP_CONFIG.SUPABASE_KEY
+                );
+
+                // Ищем HTML снимок в таблице
+                const { data, error } = await supabase
+                    .from('shared_report_snapshots')
+                    .select('html_content')
+                    .eq('report_id', reportId)
+                    .single();
+
+                if (error || !data) throw new Error("Отчет не найден");
+
+                // Скрываем лоадер и вставляем HTML
+                document.getElementById('loader').classList.add('hidden');
+                const container = document.getElementById('report-container');
+                container.innerHTML = data.html_content;
+                container.classList.remove('hidden');
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('loader').classList.add('hidden');
+                document.getElementById('error').classList.remove('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadReport);
+    </script>
+</body>
+</html>

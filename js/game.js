@@ -264,7 +264,7 @@ function gameCalculateAllProfiles() {
         // --- БАЗОВЫЕ НАВЫКИ ---
         if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
         if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
-        
+
         // --- МЕТРИКИ ПК СТРОЙКОНТРОЛЬ ---
         if (log.action === 'sk_import_done') { p.pi += 5; p.monthlyPI[dStr] += 5; p.badgesData['discipline']++; } // Загрузка в срок (+5 XP)
         if (log.action === 'sk_red_isd_found') { p.pi += 15; p.monthlyPI[dStr] += 15; } // Найден красный ИСД (+15 XP)
@@ -412,7 +412,7 @@ window.gameUpdatePlanProgress = function () {
     const startOfThisWeek = getStartOfWeek();
     const myWeeklyChecks = contractorArray.filter(c => c.inspectorName === currentInspector && new Date(c.date) >= startOfThisWeek);
     let allTasksDone = true;
-    
+
     // ТРЕКЕР: Запоминаем, какие задачи мы закроем на этом прогоне
     let newlyClosedTasks = [];
 
@@ -462,7 +462,7 @@ window.gameUpdatePlanProgress = function () {
             } else {
                 task.done = validChecksCount;
             }
-            
+
             task.fillRate = validChecksCount > 0 ? (sumFillRate / validChecksCount) : 0;
             task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
 
@@ -497,7 +497,7 @@ window.gameUpdatePlanProgress = function () {
                 });
                 task.done = st.milestoneProgress.completedStages.length;
                 task.target = st.milestoneProgress.totalStages;
-                
+
                 if (task.done >= task.target && task.status === 'pending') {
                     st.status = 'completed';
                     task.status = 'done';
@@ -519,10 +519,10 @@ window.gameUpdatePlanProgress = function () {
     // --- УМНОЕ АВТОЗАКРЫТИЕ (СВЕРКА С БАЗОЙ ДАННЫХ) ---
     weeklyPlanData.tasks.forEach(task => {
         if (task.status !== 'pending') return;
-        
+
         const taskCreateDate = new Date(task.createdAt || task.date);
         // Отступаем 1 день назад, чтобы засчитывать документы, сделанные накануне
-        taskCreateDate.setDate(taskCreateDate.getDate() - 1); 
+        taskCreateDate.setDate(taskCreateDate.getDate() - 1);
 
         // 1. Проверяем Совещания (Мемо)
         if (task.category === 'meeting' || task.title.includes('Совещание')) {
@@ -533,7 +533,7 @@ window.gameUpdatePlanProgress = function () {
                 dbPut(STORES.TASKS, task);
             }
         }
-        
+
         // 2. Проверяем FMEA
         if (task.title.includes('FMEA')) {
             const hasFmea = (typeof window.rbi_fmeaRecords !== 'undefined') && window.rbi_fmeaRecords.some(f => new Date(f.date) >= taskCreateDate);
@@ -546,18 +546,18 @@ window.gameUpdatePlanProgress = function () {
         // 3. Проверяем Эталоны
         if (task.taskType === 'Эталон' || task.title.includes('Эталон')) {
             task.target = 1; // Жестко фиксируем цель: Эталон всегда 1!
-            
+
             // Ищем в массиве Эталонов совпадение по подрядчику и виду работ
-            const hasEtalonRecord = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e => 
-                e.contractorName === task.contractor && 
+            const hasEtalonRecord = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e =>
+                e.contractorName === task.contractor &&
                 (e.templateTitle === task.templateTitle || e.templateTitle === task.workTitle)
             );
-            
+
             task.done = hasEtalonRecord ? 1 : 0; // Жестко фиксируем прогресс
 
             if (hasEtalonRecord && task.status === 'pending') {
-                task.status = 'done'; 
-                task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)'; 
+                task.status = 'done';
+                task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)';
                 task.updatedAt = new Date().toISOString();
                 newlyClosedTasks.push('Приемка Эталона');
                 dbPut(STORES.TASKS, task);
@@ -568,7 +568,7 @@ window.gameUpdatePlanProgress = function () {
             const currentCandidates = window.getMagicTwiCandidates ? window.getMagicTwiCandidates() : [];
             // Прогресс = Цель минус то, что еще осталось сделать
             task.done = Math.max(0, task.target - currentCandidates.length);
-            
+
             if (task.done >= task.target) {
                 task.status = 'done';
                 task.resultComment = `Оформлено карт: ${task.done}`;
@@ -782,29 +782,30 @@ window.gameRenderDashboard = function () {
     }
 
     // РЕНДЕР HTML (БЕЗ БЛОКА ЗАДАЧ)
+    // РЕНДЕР HTML (БЕЗ БЛОКА ЗАДАЧ И БЕЗ ЭМОДЗИ)
     let html = `
         <div class="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
                 <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <!-- БЛОК СТРИКА УЛЕТАЕТ В ПРАВЫЙ ВЕРХНИЙ УГОЛ (ABSOLUTE) -->
-                <div class="absolute top-3 sm:top-5 right-3 sm:right-5 text-right z-20">
-                    <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Стрик</div>
-                    <div class="text-[12px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
-                </div>
-
-                <div class="flex justify-start items-start mb-4 sm:mb-5 relative z-10 pr-14 sm:pr-16">
-                    <div class="flex items-center gap-2.5 sm:gap-4 min-w-0 w-full">
+                <!-- НОВАЯ ГИБКАЯ ШАПКА: Аватар + Имя + Стрик -->
+                <div class="flex justify-between items-start mb-4 sm:mb-5 relative z-10 w-full gap-2">
+                    <div class="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
                         <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-lg sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
                             ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0, 1).toUpperCase()}
                         </div>
                         <div class="min-w-0 flex-1">
-                            <div class="text-[13px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal cursor-pointer" 
+                            <div class="text-[13px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate cursor-pointer" 
                                  onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
                                 ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
                             </div>
-                            <div class="text-[9px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-1 leading-tight whitespace-normal">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
+                            <div class="text-[9px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-1 truncate">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
                         </div>
+                    </div>
+                    
+                    <div class="text-right shrink-0">
+                        <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Стрик</div>
+                        <div class="text-[12px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
                     </div>
                 </div>
 
@@ -840,13 +841,16 @@ window.gameRenderDashboard = function () {
 
         <details class="mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">📊 Профиль навыков и Влияние</span>
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z"></path></svg>
+                    Профиль навыков и Влияние
+                </span>
                 <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
                 <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm p-4 flex flex-col justify-center relative min-h-[220px]">
                     <div style="height: 160px; width: 100%; position: relative;"><canvas id="pi-radar-chart"></canvas></div>
-                    <button onclick="generateAiTutorAdvice()" class="mt-3 w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 text-[9px] font-black uppercase py-2 rounded-lg border border-indigo-200 dark:border-indigo-800 active:scale-95 transition-transform shadow-sm">🧠 AI-Наставник</button>
+                    <button onclick="generateAiTutorAdvice()" class="mt-3 w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 text-[9px] font-black uppercase py-2 rounded-lg border border-indigo-200 dark:border-indigo-800 active:scale-95 transition-transform shadow-sm flex items-center justify-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Наставник</button>
                     <div id="ai-tutor-container" class="hidden mt-2 text-[10px] leading-snug text-slate-700 dark:text-slate-300 border-t border-slate-100 dark:border-slate-700 pt-2"></div>
                 </div>
                 <button onclick="gameOpenImpactModal()" class="w-full text-left p-5 rounded-xl border border-[var(--card-border)] shadow-sm active:scale-95 transition-transform flex flex-col justify-between min-h-[220px] ${globalImpactBg}">
@@ -865,7 +869,10 @@ window.gameRenderDashboard = function () {
 
         <details class="mb-4 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🔥 Активность и Рейтинг</span>
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                    Активность и Рейтинг
+                </span>
                 <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-2 sm:p-3 grid grid-cols-2 gap-2 sm:gap-3 bg-[var(--hover-bg)]">
@@ -886,9 +893,13 @@ window.gameRenderDashboard = function () {
             </div>
         </details>
 
-        <details id="badges-section" class="mb-8 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+       <details id="badges-section" class="mb-8 group bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">🏅 Коллекция наград <span class="bg-white dark:bg-slate-800 border border-[var(--card-border)] px-1.5 py-0.5 rounded text-[9px] ml-1">${myProfile.earnedBadges.length}/${COMPETENCIES.length}</span></span>
+                <!-- ИСПРАВЛЕНИЕ: Счетчик наград (используем activeBadges.length вместо earnedBadges.length) -->
+                <span class="text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"></path></svg>
+                    Коллекция наград <span class="bg-white dark:bg-slate-800 border border-[var(--card-border)] px-1.5 py-0.5 rounded text-[9px] ml-1">${activeBadges.length}/${COMPETENCIES.length}</span>
+                </span>
                 <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
             </summary>
             <div class="p-4 grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-y-6 gap-x-2 bg-[var(--hover-bg)]">
@@ -1089,27 +1100,44 @@ function gameInjectManagerModals() {
         </div>
     </div>
 
-    <div id="manager-panel-overlay" class="fixed inset-0 bg-slate-100 dark:bg-slate-900 z-[3500] hidden flex-col transition-opacity duration-300" onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');">
-        <div class="bg-[var(--bg-main)] w-full h-full max-w-6xl mx-auto flex flex-col shadow-2xl overflow-hidden relative" onclick="event.stopPropagation()">
-            <div class="bg-indigo-600 text-white p-4 flex justify-between items-center shadow-md z-10 shrink-0">
+    <div id="manager-panel-overlay" class="fixed inset-0 bg-slate-900/90 z-[3500] hidden flex-col transition-opacity duration-300 opacity-0" onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');">
+        <div class="bg-[var(--bg-main)] w-full h-full max-w-4xl mx-auto flex flex-col shadow-2xl overflow-hidden relative" onclick="event.stopPropagation()">
+            
+            <!-- Шапка (iOS Style) -->
+            <div class="bg-[var(--header-bg)] backdrop-blur-md border-b border-[var(--card-border)] p-4 flex justify-between items-center z-20 shrink-0">
                 <div class="flex flex-col min-w-0 pr-4">
                     <div class="flex items-center gap-2 mb-0.5">
-                        <span class="bg-white/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-white/30">СЕКРЕТНО</span>
-                        <span class="text-[10px] font-bold text-indigo-200 uppercase tracking-widest truncate">Панель Руководителя</span>
+                        <span class="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800">Admin</span>
+                        <span class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest truncate">Панель Руководителя</span>
                     </div>
                 </div>
-                <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center font-black active:scale-90 border border-indigo-400 shrink-0">
+                <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-slate-500 active:scale-90 border border-[var(--card-border)] shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-            <div class="flex bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shrink-0 shadow-sm">
-                <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20 transition-colors">HR Аналитика</button>
-                <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors">Перепроверки</button>
-                <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-emerald-500 hover:text-emerald-700 transition-colors">Разработчик</button>
-                <button onclick="switchManagerTab('objects')" id="btn-man-objects" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-blue-500 transition-colors">Объекты</button>
+            
+            <!-- Навигация (Тумблеры iOS Style) -->
+            <div class="p-3 bg-[var(--bg-main)] z-10 shrink-0">
+                <div class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)]">
+                    <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400 flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>HR Аналитика
+                    </button>
+                    <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>Аудиты
+                    </button>
+                    <button onclick="switchManagerTab('team')" id="btn-man-team" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>Команда и Объекты
+                    </button>
+                    <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>Бэклог
+                    </button>
+                    <button onclick="switchManagerTab('ai')" id="btn-man-ai" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>База ИИ
+                    </button>
+                </div>
             </div>
             
-            <div class="flex-1 overflow-y-auto p-2 sm:p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900 relative">
+            <div class="flex-1 overflow-y-auto p-3 sm:p-4 custom-scrollbar bg-[var(--bg-main)] relative">
                 <!-- Вкладка 1: HR -->
                 <div id="manager-tab-hr" class="block">
                     <div id="manager-panel-content"></div>
@@ -1117,62 +1145,104 @@ function gameInjectManagerModals() {
                 
                 <!-- Вкладка 2: АУДИТ -->
                 <div id="manager-tab-audit" class="hidden">
-                    <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <div class="flex justify-between items-center mb-4 bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--card-border)] shadow-sm">
                         <div>
                             <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white mb-1">Маршрут Перекрестных Проверок</h2>
-                            <p class="text-[10px] text-slate-500 font-bold">Алгоритм отбирает подозрительные (аномальные) проверки инженеров за прошлый месяц для выезда и перепроверки на месте.</p>
+                            <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Алгоритм отбирает аномальные проверки инженеров (быстрые или подозрительные) для выезда и перепроверки на месте.</p>
                         </div>
-                        <button onclick="gameGenerateAuditPlan()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 shrink-0 whitespace-nowrap">Сформировать План</button>
+                        <button onclick="gameGenerateAuditPlan()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 shrink-0 whitespace-nowrap transition-transform">Сформировать План</button>
                     </div>
                     <div id="manager-audit-list">
-                        <div class="text-center py-10 text-slate-400 font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать План"</div>
+                        <div class="text-center py-10 text-[var(--text-muted)] font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать План"</div>
                     </div>
                 </div>
 
-                <!-- Вкладка 3: РАЗРАБОТЧИК -->
-                <div id="manager-tab-dev" class="hidden">
-                    <!-- НОВЫЙ БЛОК: УПРАВЛЕНИЕ РОЛЯМИ -->
-                    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-4 rounded-xl shadow-sm mb-4">
-                        <h2 class="text-[13px] font-black uppercase text-indigo-600 mb-1">Управление ролями</h2>
-                        <p class="text-[10px] text-slate-500 font-bold mb-3">Назначение прав доступа инженерам проекта.</p>
-                        <div id="manager-roles-list" class="space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
-                            <div class="text-center py-4 text-xs text-slate-400">Нажмите "Обновить список"</div>
+                <!-- Вкладка 3: КОМАНДА И ОБЪЕКТЫ (НОВАЯ ОБЪЕДИНЕННАЯ) -->
+                <div id="manager-tab-team" class="hidden space-y-4">
+                    <!-- Блок: Заявки на объекты -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-orange-600 dark:text-orange-400 mb-1">Новые заявки на объекты</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Инженеры запрашивают доступ к новым объектам.</p>
+                            </div>
+                            <button onclick="ObjectDirectory.loadRequests()" class="bg-[var(--hover-bg)] text-orange-600 dark:text-orange-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
                         </div>
-                        <button onclick="gameLoadRoles()" class="mt-3 w-full bg-slate-100 text-indigo-600 border border-indigo-200 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors">🔄 Обновить список пользователей</button>
+                        <div id="obj-requests-list" class="max-h-[35vh] overflow-y-auto custom-scrollbar pr-1"></div>
                     </div>
-                    <!-- НОВЫЙ БЛОК: ПЛАНЫ РАЗРАБОТЧИКА -->
+
+                    <!-- Блок: Роли -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1">Управление командой (Роли)</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Управление доступом, статусами и привязка объектов.</p>
+                            </div>
+                            <button onclick="gameLoadRoles()" class="bg-[var(--hover-bg)] text-indigo-600 dark:text-indigo-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
+                        </div>
+                        <div id="manager-roles-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                            <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+                        </div>
+                    </div>
+
+                    <!-- Блок: Справочник объектов -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-4">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-blue-600 dark:text-blue-400 mb-1">Справочник Объектов компании</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Эталонная база объектов и синонимы (алиасы для Excel).</p>
+                            </div>
+                            <button onclick="ObjectDirectory.openAddObjectModal()" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 shrink-0 transition-transform">Новый объект</button>
+                        </div>
+                        <div id="manager-objects-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
+                    </div>
+                </div>
+
+                <!-- Вкладка 4: БЭКЛОГ И ПЛАНЫ (Бывшая вкладка Разработчика) -->
+                <div id="manager-tab-dev" class="hidden">
+                    <!-- ПЛАНЫ РАЗРАБОТЧИКА -->
                     <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl shadow-sm mb-4">
                         <h2 class="text-[12px] font-black uppercase text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Опубликовать планы (Roadmap)</h2>
                         <div class="flex gap-2">
-                            <input type="text" id="dev-roadmap-input" class="input-base text-[11px] !py-2.5 flex-1" placeholder="Напр: Добавить темную тему в PDF отчеты...">
-                            <button onclick="rbi_addRoadmapItem()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold uppercase active:scale-95 shadow-sm">Опубликовать</button>
+                            <input type="text" id="dev-roadmap-input" class="input-base text-[11px] !py-3 flex-1" placeholder="Напр: Добавить темную тему в PDF отчеты...">
+                            <button onclick="rbi_addRoadmapItem()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform">Опубликовать</button>
                         </div>
                     </div>
                     <div id="manager-roadmap-list" class="space-y-2 mb-6"></div>
 
-                    <!-- СТАРЫЙ БЛОК: ОБРАТНАЯ СВЯЗЬ ОТ ЮЗЕРОВ -->
-                    <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <!-- ОБРАТНАЯ СВЯЗЬ ОТ ЮЗЕРОВ -->
+                    <div class="flex justify-between items-center mb-4 bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--card-border)] shadow-sm">
                         <div>
-                            <h2 class="text-[13px] font-black uppercase text-emerald-600 mb-1">Бэклог доработок (Идеи команды)</h2>
-                            <p class="text-[10px] text-slate-500 font-bold">Управление обратной связью.</p>
+                            <h2 class="text-[13px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">Бэклог (Идеи команды)</h2>
+                            <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Запросы и идеи от пользователей.</p>
                         </div>
-                        <button onclick="rbi_exportFeedbackJson()" class="bg-slate-100 text-slate-600 border border-slate-300 px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95">↓ JSON</button>
+                        <button onclick="rbi_exportFeedbackJson()" class="bg-[var(--hover-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-sm active:scale-95 transition-colors">↓ JSON</button>
                     </div>
                     <div id="manager-dev-list" class="space-y-3 pb-8"></div>
                 </div>
-                <!-- Вкладка 4: ОБЪЕКТЫ -->
-                <div id="manager-tab-objects" class="hidden">
-                    <div class="flex justify-between items-center mb-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <div>
-                            <h2 class="text-[13px] font-black uppercase text-blue-600 mb-1">Справочник Объектов</h2>
-                            <p class="text-[10px] text-slate-500 font-bold">Управление базой объектов и синонимами (алиасами).</p>
+                <!-- Вкладка 5: БАЗА ЗНАНИЙ ИИ -->
+                <div id="manager-tab-ai" class="hidden space-y-4">
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1">База знаний AI-Помощника</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Загружайте сюда инструкции и правила работы.</p>
+                            </div>
+                            <button onclick="gameOpenAiKbModal()" class="bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 shrink-0 transition-transform">Добавить</button>
                         </div>
-                        <button onclick="ObjectDirectory.openAddObjectModal()" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-bold uppercase shadow-md active:scale-95">Новый объект</button>
+                        
+                        <!-- НОВАЯ СТРОКА ПОИСКА В АДМИНКЕ -->
+                        <div class="relative mb-3">
+                            <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></span>
+                            <input type="text" id="admin-ai-search" class="input-base pl-9 text-[11px] !py-2" placeholder="Поиск по статьям..." oninput="gameLoadAiKb()">
+                        </div>
+
+                        <div id="manager-ai-kb-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
                     </div>
-                    <div id="manager-objects-list" class="space-y-3 pb-8"></div>
                 </div>
             </div>
         </div>
+    </div>
     </div>
     `;
     document.body.insertAdjacentHTML('beforeend', html);
@@ -1188,8 +1258,16 @@ window.gameVerifyManagerPin = function () {
     const pin = document.getElementById('manager-pin-input').value;
     if (hashString(pin) === MANAGER_PIN_HASH) {
         document.getElementById('manager-auth-modal').style.display = 'none';
-        document.getElementById('manager-panel-overlay').style.display = 'flex';
+        
+        const overlay = document.getElementById('manager-panel-overlay');
+        overlay.style.display = 'flex';
         document.body.classList.add('modal-open');
+        
+        // Плавное появление
+        setTimeout(() => {
+            overlay.classList.remove('opacity-0');
+        }, 10);
+        
         gameRenderManagerAnalytics();
     } else {
         showToast('❌ Неверный ПИН-код');
@@ -1199,35 +1277,55 @@ window.gameVerifyManagerPin = function () {
 window.switchManagerTab = function (tab) {
     const btnHr = document.getElementById('btn-man-hr');
     const btnAudit = document.getElementById('btn-man-audit');
+    const btnTeam = document.getElementById('btn-man-team');
     const btnDev = document.getElementById('btn-man-dev');
-    const btnObj = document.getElementById('btn-man-objects'); // <-- НОВОЕ
-    
+    const btnAi = document.getElementById('btn-man-ai');
+
     const tabHr = document.getElementById('manager-tab-hr');
     const tabAudit = document.getElementById('manager-tab-audit');
+    const tabTeam = document.getElementById('manager-tab-team');
     const tabDev = document.getElementById('manager-tab-dev');
-    const tabObj = document.getElementById('manager-tab-objects'); // <-- НОВОЕ
+    const tabAi = document.getElementById('manager-tab-ai');
 
-    const actClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 transition-colors ";
-    const inactClass = "flex-1 py-3 text-[10px] font-black uppercase tracking-widest border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors";
+    // Сбрасываем стили у всех кнопок
+     [btnHr, btnAudit, btnTeam, btnDev, btnAi].forEach(btn => {
+        if(btn) {
+            btn.className = "flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all bg-transparent shadow-none";
+        }
+    });
 
-    btnHr.className = inactClass; btnAudit.className = inactClass; btnDev.className = inactClass; btnObj.className = inactClass;
-    tabHr.classList.add('hidden'); tabAudit.classList.add('hidden'); tabDev.classList.add('hidden'); tabObj.classList.add('hidden');
+    // Скрываем все вкладки
+    if(tabHr) tabHr.classList.add('hidden'); 
+    if(tabAudit) tabAudit.classList.add('hidden'); 
+    if(tabTeam) tabTeam.classList.add('hidden'); 
+    if(tabDev) tabDev.classList.add('hidden');
+    if(tabAi) tabAi.classList.add('hidden');
+
+    const activeClass = "flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm flex flex-col items-center gap-1 transition-all ";
 
     if (tab === 'hr') {
-        btnHr.className = actClass + "border-indigo-600 text-indigo-600 bg-indigo-50/50";
+        btnHr.className = activeClass + "text-indigo-600 dark:text-indigo-400";
         tabHr.classList.remove('hidden');
     } else if (tab === 'audit') {
-        btnAudit.className = actClass + "border-indigo-600 text-indigo-600 bg-indigo-50/50";
+        btnAudit.className = activeClass + "text-indigo-600 dark:text-indigo-400";
         tabAudit.classList.remove('hidden');
+    } else if (tab === 'team') {
+        btnTeam.className = activeClass + "text-indigo-600 dark:text-indigo-400";
+        tabTeam.classList.remove('hidden');
+        // Загружаем все три блока последовательно
+        ObjectDirectory.loadRequests();
+        gameLoadRoles();
+        ObjectDirectory.renderManagerPanel();
     } else if (tab === 'dev') {
-        btnDev.className = actClass + "border-emerald-600 text-emerald-600 bg-emerald-50/50";
+        btnDev.className = activeClass + "text-emerald-600 dark:text-emerald-400";
         tabDev.classList.remove('hidden');
         rbi_renderDevFeedbackTab();
-    } else if (tab === 'objects') { // <-- НОВОЕ
-        btnObj.className = actClass + "border-blue-600 text-blue-600 bg-blue-50/50";
-        tabObj.classList.remove('hidden');
-        ObjectDirectory.renderManagerPanel();
+    } else if (tab === 'ai') { // <-- НОВЫЙ БЛОК
+        btnAi.className = activeClass + "text-indigo-600 dark:text-indigo-400";
+        tabAi.classList.remove('hidden');
+        gameLoadAiKb();
     }
+
 }
 
 
@@ -1955,11 +2053,11 @@ window.gameUpdateEngineerName = function (newName) {
 // НОВЫЙ МОДУЛЬ: КОНСОЛИДИРОВАННЫЙ ОТЧЕТ КО ДНЮ КАЧЕСТВА (С ВЫБОРОМ ПЕРИОДА)
 // ============================================================================
 
-window.rbi_openQualityDaySettings = function(taskId) {
+window.rbi_openQualityDaySettings = function (taskId) {
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">📅</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Настройки Отчета</div>`;
-    
+
     document.getElementById('modal-body').innerHTML = `
         <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
             Выберите период для формирования Мега-Отчета. Система агрегирует метрики всех подрядчиков, выберет лучшие практики и запросит ИИ-резюме.
@@ -1984,12 +2082,12 @@ window.rbi_openQualityDaySettings = function(taskId) {
             </button>
         </div>
     `;
-    
+
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
-window.rbi_executeQualityDayReport = async function(taskId) {
+window.rbi_executeQualityDayReport = async function (taskId) {
     if (!appSettings.aiEnabled) {
         return showToast("⚠️ Для формирования отчета требуется включить DeepSeek AI в настройках!");
     }
@@ -2021,11 +2119,11 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         if (periodValue === 'current_month') {
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
             endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            periodTitle = `ИТОГИ: ${now.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+            periodTitle = `ИТОГИ: ${now.toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}`;
         } else if (periodValue === 'last_month') {
             startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-            periodTitle = `ИТОГИ: ${startDate.toLocaleString('ru-RU', {month: 'long', year: 'numeric'})}`;
+            periodTitle = `ИТОГИ: ${startDate.toLocaleString('ru-RU', { month: 'long', year: 'numeric' })}`;
         } else if (periodValue === 'quarter') {
             startDate = new Date(now.getFullYear(), now.getMonth() - 3, 1);
             endDate = new Date();
@@ -2038,15 +2136,15 @@ window.rbi_executeQualityDayReport = async function(taskId) {
 
         // 1. БАЗА ПРОВЕРОК
         const currentData = contractorArray.filter(c => new Date(c.date) >= startDate && new Date(c.date) <= endDate);
-        
+
         if (currentData.length === 0) {
             closeModal();
             return showToast("⚠️ За выбранный период нет данных для отчета!");
         }
 
-        let sumUrk = 0; currentData.forEach(i => { if(i.metrics) sumUrk += i.metrics.final; });
+        let sumUrk = 0; currentData.forEach(i => { if (i.metrics) sumUrk += i.metrics.final; });
         const currAvgUrk = Math.round(sumUrk / currentData.length);
-        
+
         const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, userTemplates) : null;
         const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
         const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
@@ -2054,15 +2152,15 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         // 2. HR МЕТРИКИ (КОМАНДА)
         let hrStats = [];
         if (typeof gameCalculateManagerMetrics === 'function') hrStats = gameCalculateManagerMetrics();
-        let totalImpact = 0; 
+        let totalImpact = 0;
         hrStats.forEach(h => { totalImpact += h.avgImpact; });
         const avgTeamImpact = hrStats.length > 0 ? (totalImpact / hrStats.length) : 0;
-        const bestEng = hrStats.length > 0 ? hrStats.sort((a,b) => b.pi - a.pi)[0] : { name: "Нет данных", checks: 0 };
+        const bestEng = hrStats.length > 0 ? hrStats.sort((a, b) => b.pi - a.pi)[0] : { name: "Нет данных", checks: 0 };
 
         // 3. ТОП ПРАКТИК
         let topPracticesHtml = `<div style="color:#64748b; font-size:10px;">Практик в этом периоде не публиковалось.</div>`;
         if (typeof window.rbi_practicesData !== 'undefined' && window.rbi_practicesData.length > 0) {
-            const topPrac = [...window.rbi_practicesData].filter(p => new Date(p.date) >= startDate && new Date(p.date) <= endDate).sort((a,b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
+            const topPrac = [...window.rbi_practicesData].filter(p => new Date(p.date) >= startDate && new Date(p.date) <= endDate).sort((a, b) => b.deltaUrk - a.deltaUrk).slice(0, 2);
             if (topPrac.length > 0) {
                 topPracticesHtml = topPrac.map(p => `
                     <div style="border:1px solid #cbd5e1; border-left:4px solid #16a34a; padding:10px; border-radius:6px; margin-bottom:10px; background:white; page-break-inside: avoid;">
@@ -2100,9 +2198,9 @@ window.rbi_executeQualityDayReport = async function(taskId) {
                 });
             }
         });
-        
+
         let causesHtml = '';
-        const sortedCauses = Object.keys(causes).sort((a,b) => causes[b] - causes[a]).slice(0, 5);
+        const sortedCauses = Object.keys(causes).sort((a, b) => causes[b] - causes[a]).slice(0, 5);
         if (sortedCauses.length > 0) {
             causesHtml = sortedCauses.map(code => {
                 const cName = (typeof DEFECT_CAUSES !== 'undefined' ? DEFECT_CAUSES.find(x => x.code === code)?.name : 'Причина') || 'Иное';
@@ -2119,7 +2217,7 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         const promptSystem = `Ты — Директор по качеству (CQC). Сформируй официальное управленческое резюме для отчета "День Качества" за выбранный период.
         Тон: деловой, объективный, строгий. Формат: текст, разбитый на абзацы. Без воды.
         Отрази 3 вещи: 1. Оценку ИКО и тренда. 2. Оценку работы инженеров (Impact Score). 3. Главный риск следующего периода.`;
-        
+
         const promptUser = `ИКО: ${IKO}. Красная зона: ${redZone}%. Средний Impact команды: ${avgTeamImpact.toFixed(2)}. Проверок за период: ${currentData.length}. ТОП проблема: ${sortedCauses.length > 0 ? sortedCauses[0] : 'Нет данных'}.`;
 
         const aiSummary = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 800 });
@@ -2175,7 +2273,7 @@ window.rbi_executeQualityDayReport = async function(taskId) {
                         <h2 style="font-size: 14pt; color: #0f172a; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 25px; margin-bottom: 15px;">👤 Рейтинг Инженеров</h2>
                         <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
                             <div style="font-size: 11pt; font-weight: bold; color: #1e293b; margin-bottom: 5px;">Лучший по Опыту (XP): <span style="color:#4f46e5;">${bestEng.name}</span></div>
-                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+'+bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
+                            <div style="font-size: 9pt; color: #64748b;">Проверок: ${bestEng.checks} | Строгость: ${bestEng.strictness > 0 ? '+' + bestEng.strictness.toFixed(1) : bestEng.strictness?.toFixed(1)}</div>
                         </div>
                     </td>
                 </tr>
@@ -2185,10 +2283,10 @@ window.rbi_executeQualityDayReport = async function(taskId) {
         // Закрываем задачу в планировщике, так как отчет сформирован
         if (taskId) {
             const task = window.rbi_tasksData.find(t => t.id === taskId);
-            if(task) { 
-                task.status = 'done'; 
-                task.resultComment = 'Отчет сгенерирован'; 
-                await dbPut(STORES.TASKS, task); 
+            if (task) {
+                task.status = 'done';
+                task.resultComment = 'Отчет сгенерирован';
+                await dbPut(STORES.TASKS, task);
                 rbi_renderTasksList(); // Обновляем списки задач на экране
             }
         }
@@ -2248,7 +2346,7 @@ window.rbi_renderFmeaHistory = function () {
     rbi_renderFmeaRegistry();
 };
 
-window.rbi_renderFmeaRegistry = function() {
+window.rbi_renderFmeaRegistry = function () {
     const listContainer = document.getElementById('fmea-registry-list');
     if (!listContainer) return;
 
@@ -2260,11 +2358,11 @@ window.rbi_renderFmeaRegistry = function() {
     const currentEngineer = appSettings.engineerName || 'Инженер';
     const sorted = [...window.rbi_fmeaRecords]
         .filter(f => f && f.id && !f._deleted && f.date && f.title && f.defects)
-        .sort((a,b) => new Date(b.date) - new Date(a.date));
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     listContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(f => {
         let isOwner = !f.author || f.author === currentEngineer;
-        
+
         // Берем первое фото для обложки, если есть
         let previewHtml = '';
         const photos = (f.defects || []).map(d => d.photo).filter(Boolean);
@@ -2304,11 +2402,11 @@ window.rbi_renderFmeaRegistry = function() {
     }).join('') + `</div>`;
 };
 
-window.rbi_deleteFmea = async function(id) {
+window.rbi_deleteFmea = async function (id) {
     const record = window.rbi_fmeaRecords.find(m => String(m.id) === String(id));
     if (record && !RbiRoles.canDelete(record.author)) return showToast("⚠️ Нет прав на удаление чужого FMEA отчета!");
 
-    if(!confirm("Удалить этот FMEA отчет?")) return;
+    if (!confirm("Удалить этот FMEA отчет?")) return;
     if (record) {
         record._deleted = true;
         record.updatedAt = new Date().toISOString();
@@ -2320,11 +2418,11 @@ window.rbi_deleteFmea = async function(id) {
     showToast("🗑️ Отчет удален");
 };
 // НОВАЯ ФУНКЦИЯ: Просмотр FMEA в интерфейсе
-window.rbi_viewFmea = async function(fmeaId) {
+window.rbi_viewFmea = async function (fmeaId) {
     const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
     if (!record) return showToast("Запись не найдена");
 
-    const sortedDefects = [...record.defects].sort((a,b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
+    const sortedDefects = [...record.defects].sort((a, b) => (parseInt(b.rpn) || 0) - (parseInt(a.rpn) || 0));
 
     let rowsHtml = '';
     for (let d of sortedDefects) {
@@ -2400,10 +2498,10 @@ window.rbi_viewFmea = async function(fmeaId) {
 };
 
 // НОВАЯ ФУНКЦИЯ: Загрузка FMEA в черновик для редактирования
-window.rbi_loadFmeaToWorkspace = function(id) {
+window.rbi_loadFmeaToWorkspace = function (id) {
     const record = window.rbi_fmeaRecords.find(m => m.id === id);
     if (!record) return;
-    
+
     window.currentEditingFmeaId = id; // Глобально запоминаем ID
 
     let rowsHtml = record.defects.map((def, idx) => {
@@ -2498,9 +2596,9 @@ window.rbi_loadFmeaToWorkspace = function(id) {
             </button>
         </div>
     `;
-    
+
     rbi_renderFmeaRegistry(); // Перерисовываем архив, чтобы убрать открытый файл
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast("Отчет открыт для редактирования");
 };
 
@@ -2508,14 +2606,14 @@ window.rbi_loadFmeaToWorkspace = function(id) {
 window.rbi_generateFmeaTable = function () {
     const workspace = document.getElementById('fmea-workspace');
     const periodVal = document.getElementById('fmea-period-select').value;
-    
+
     let days = 7; let periodName = "Неделя";
     if (periodVal === 'MONTH') { days = 30; periodName = "Месяц"; }
     if (periodVal === 'QUARTER') { days = 90; periodName = "Квартал"; }
 
     const d = new Date();
     const startDate = new Date(d); startDate.setDate(startDate.getDate() - days);
-    
+
     // Фильтруем проверки за период
     const periodChecks = contractorArray.filter(c => new Date(c.date) >= startDate);
 
@@ -2528,10 +2626,10 @@ window.rbi_generateFmeaTable = function () {
                 if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
                     const flat = getFlatList(userTemplates[c.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_', '')]?.groups);
                     const item = flat.find(x => x.id == id);
-                    
+
                     if (item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
                         const uniqueKey = `${c.contractorName}_${item.n}`;
-                        
+
                         if (!defectsCountMap[uniqueKey]) {
                             defectsCountMap[uniqueKey] = 0;
                             defectsDataMap[uniqueKey] = {
@@ -2552,13 +2650,13 @@ window.rbi_generateFmeaTable = function () {
     });
 
     const FMEA_THRESHOLD = 3; // Порог повторений для попадания в FMEA
-    
+
     const finalDefects = [];
     for (let key in defectsCountMap) {
         if (defectsCountMap[key] >= FMEA_THRESHOLD) {
             const def = defectsDataMap[key];
             def.count = defectsCountMap[key];
-            
+
             // Проверка на "Повторный" (Был ли он уже в архивных FMEA?)
             def.isRepeated = false;
             window.rbi_fmeaRecords.forEach(f => {
@@ -2595,7 +2693,7 @@ window.rbi_generateFmeaTable = function () {
             </div>`;
         }
         const repeatedTag = def.isRepeated ? `<div class="text-[8px] bg-red-600 text-white px-1 py-0.5 rounded uppercase font-black w-fit mt-1 animate-pulse">Повторный</div>` : '';
-        
+
         return `
         <tr class="fmea-row bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" data-idx="${idx}">
             <input type="hidden" class="f-contr" value="${def.contractor}">
@@ -2685,12 +2783,12 @@ window.rbi_generateFmeaTable = function () {
 
 
 // 4. СОХРАНЕНИЕ FMEA В БАЗУ
-window.rbi_saveFmea = async function(periodName) {
+window.rbi_saveFmea = async function (periodName) {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
-    
+
     const rows = document.querySelectorAll('.fmea-row');
     const defects = [];
-    
+
     rows.forEach(row => {
         defects.push({
             contractor: row.querySelector('.f-contr').value,
@@ -2729,9 +2827,9 @@ window.rbi_saveFmea = async function(periodName) {
 
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     document.getElementById('fmea-workspace').innerHTML = '';
-    
+
     // АВТОЗАКРЫТИЕ ЗАДАЧИ FMEA В ПЛАНИРОВЩИКЕ
     if (typeof window.rbi_tasksData !== 'undefined') {
         const fmeaTask = window.rbi_tasksData.find(t => t.title.includes('FMEA') && t.status === 'pending');
@@ -2755,22 +2853,22 @@ window.rbi_saveFmea = async function(periodName) {
 
 
 // === ОБРАБОТКА РУЧНОГО ФОТО В FMEA ===
-window.rbi_handleFmeaPhotoUpload = function(event) {
+window.rbi_handleFmeaPhotoUpload = function (event) {
     const file = event.target.files[0];
     if (!file || window.currentFmeaRowIdx === undefined) return;
-    
+
     showToast("⚙️ Загрузка фото FMEA...");
     compressImageToBase64(file, 1000, 0.8, async (base64) => {
         // Сохраняем в кэш IndexedDB
         const localUrl = await PhotoManager.saveLocal(base64, 'fmea');
-        
+
         // Находим нужную строку таблицы и её инпут
         const row = document.querySelector(`.fmea-row[data-idx="${window.currentFmeaRowIdx}"]`);
         if (row) {
             row.querySelector('.f-photo').value = localUrl;
             // Перерисовываем ячейку с фото
             const photoContainer = row.querySelector('.min-w-\\[150px\\]');
-            const targetDiv = photoContainer.lastElementChild; 
+            const targetDiv = photoContainer.lastElementChild;
             targetDiv.outerHTML = `
             <div class="relative w-16 h-16 mt-2 group">
                 <img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${localUrl}')">
@@ -2781,11 +2879,11 @@ window.rbi_handleFmeaPhotoUpload = function(event) {
     });
 };
 
-window.rbi_removeFmeaPhoto = function(btnEl) {
+window.rbi_removeFmeaPhoto = function (btnEl) {
     const row = btnEl.closest('.fmea-row');
     if (!row) return;
     row.querySelector('.f-photo').value = '';
-    
+
     const targetDiv = btnEl.closest('.relative');
     const idx = row.dataset.idx;
     targetDiv.outerHTML = `
@@ -2795,9 +2893,9 @@ window.rbi_removeFmeaPhoto = function(btnEl) {
         </div>`;
 };
 
-window.rbi_addManualFmeaRow = function() {
+window.rbi_addManualFmeaRow = function () {
     const tbody = document.querySelector('#fmea-workspace tbody');
-    if(!tbody) return;
+    if (!tbody) return;
     const idx = tbody.children.length;
     const newRow = `
         <tr class="fmea-row bg-white hover:bg-purple-50/30 transition-colors" data-idx="${idx}">
@@ -2840,7 +2938,7 @@ window.rbi_addManualFmeaRow = function() {
 };
 
 // НОВАЯ ФУНКЦИЯ: Создание пустого бланка FMEA
-window.rbi_createEmptyFmea = function() {
+window.rbi_createEmptyFmea = function () {
     const workspace = document.getElementById('fmea-workspace');
     window.currentEditingFmeaId = null; // Сбрасываем ID, чтобы сохранился как новый
 
@@ -2881,119 +2979,407 @@ window.rbi_createEmptyFmea = function() {
             </button>
         </div>
     `;
-    
+
     // Сразу добавляем одну пустую строку
     rbi_addManualFmeaRow();
-    
+
     // Скроллим к рабочей области
     workspace.scrollIntoView({ behavior: 'smooth' });
 };
 
-// ==========================================
-// БЛОК: УПРАВЛЕНИЕ РОЛЯМИ В SUPABASE
-// ==========================================
-// ==========================================
-// БЛОК: УПРАВЛЕНИЕ ДОСТУПАМИ (ИМЯ - РОЛЬ - ОБЪЕКТ)
-// ==========================================
-window.gameLoadRoles = async function() {
-    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
-    const pCode = window.syncConfig.projectCode;
-    
-    document.getElementById('manager-roles-list').innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка пользователей...</div>';
+window.gameLoadRoles = async function () {
+    if (!window.supabaseClient) return showToast("Облако не подключено");
+
+    const pCode = window.syncConfig?.projectCode || 'RBI';
+    const container = document.getElementById('manager-roles-list');
+
+    if (!container) return;
+
+    container.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка пользователей...</div>';
+
+    const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    const safeId = (v) => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     try {
-        // Достаем из базы не только роль, но и скрытые настройки (settings), где лежат объекты
         const { data, error } = await window.supabaseClient
             .from('rbi_engineer_profiles')
-            .select('inspector_id, engineer_name, role, assigned_contractor, settings')
-            .eq('project_code', pCode);
+            .select('inspector_id, inspector_name, engineer_name, role, cloud_status, assigned_contractor, contractor_name, assigned_projects')
+            .eq('project_code', pCode)
+            .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        let html = '';
-        data.forEach(user => {
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Нет пользователей</div>';
+            return;
+        }
+
+        const pendingUsers = data.filter(u => u.cloud_status === 'pending');
+        const activeUsers = data.filter(u => u.cloud_status !== 'pending').sort((a,b) => (a.engineer_name || '').localeCompare(b.engineer_name || ''));
+
+        const renderUserRow = (user) => {
+            const inspectorId = user.inspector_id || '';
+            const domId = safeId(inspectorId);
+            const engineerName = user.engineer_name || user.inspector_name || 'Без имени';
             const role = user.role || 'guest';
-            const contrName = user.assigned_contractor || '';
-            
-            // Вытаскиваем объекты из настроек
-            let projectsStr = '';
-            if (user.settings && user.settings.assignedProjects && Array.isArray(user.settings.assignedProjects)) {
-                projectsStr = user.settings.assignedProjects.join(', ');
-            }
+            const cloudStatus = user.cloud_status || 'pending';
+            const contrName = user.contractor_name || user.assigned_contractor || '';
+            const projectsStr = Array.isArray(user.assigned_projects) ? user.assigned_projects.join(', ') : '';
 
-            html += `
-            <div class="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700 mb-3">
-                <div class="font-black text-[12px] text-slate-800 dark:text-white mb-2 uppercase">${user.engineer_name}</div>
-                
-                <div class="space-y-2">
-                    <select id="role_select_${user.inspector_id}" class="input-base !py-1.5 text-[11px] font-bold">
-                        <option value="guest" ${role==='guest'?'selected':''}>Гость (Просмотр)</option>
-                        <option value="contractor" ${role==='contractor'?'selected':''}>Подрядчик</option>
-                        <option value="engineer" ${role==='engineer'?'selected':''}>Инженер СК</option>
-                        <option value="universal" ${role==='universal'?'selected':''}>Универсальный (Всё можно)</option>
-                        <option value="project_manager" ${role==='project_manager'?'selected':''}>Руководитель Проекта</option>
-                        <option value="deputy_manager" ${role==='deputy_manager'?'selected':''}>Зам. руководителя</option>
-                        <option value="director" ${role==='director'?'selected':''}>Директор</option>
-                        <option value="manager" ${role==='manager'?'selected':''}>Админ</option>
-                    </select>
+            let statusBadge = '';
+            if (cloudStatus === 'pending') statusBadge = '<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Ожидает</span>';
+            else if (cloudStatus === 'approved') statusBadge = '<span class="bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Активен</span>';
+            else statusBadge = '<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Заблок.</span>';
 
-                    <input type="text" id="contr_input_${user.inspector_id}" class="input-base !py-1.5 text-[11px]" placeholder="Название подрядчика (для роли 'Подрядчик')..." value="${contrName}">
-                    <input type="text" id="proj_input_${user.inspector_id}" class="input-base !py-1.5 text-[11px]" placeholder="Объекты (через запятую)..." value="${projectsStr}">
-                    
-                    <button onclick="gameSaveUserAccess('${user.inspector_id}', '${user.engineer_name.replace(/'/g, "\\'")}')" class="bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-black uppercase w-full shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить права
-                    </button>
+            const isNoObjectsRole = ['guest', 'director', 'deputy_manager', 'manager'].includes(role);
+            const displayObjects = isNoObjectsRole ? 'hidden' : 'block';
+
+            return `
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm mb-3">
+                    <div class="flex justify-between items-start mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+                        <div>
+                            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase leading-tight flex items-center gap-2">
+                                ${esc(engineerName)} ${statusBadge}
+                            </div>
+                            <div class="text-[8px] text-slate-400 font-mono mt-0.5 break-all">${esc(inspectorId)}</div>
+                        </div>
+                        <button onclick="gameSaveUserAccess('${esc(inspectorId)}', '${esc(engineerName)}')" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform shrink-0 h-fit">
+                            Сохранить
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                        <div>
+                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Роль</label>
+                            <select id="role_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold" onchange="
+                                const role = this.value;
+                                const objBlock = document.getElementById('obj_block_${domId}');
+                                if(['guest', 'director', 'deputy_manager', 'manager'].includes(role)) objBlock.style.display='none';
+                                else objBlock.style.display='block';
+                            ">
+                                <option value="guest" ${role === 'guest' ? 'selected' : ''}>Гость (Чтение)</option>
+                                <option value="contractor" ${role === 'contractor' ? 'selected' : ''}>Подрядчик</option>
+                                <option value="engineer" ${role === 'engineer' ? 'selected' : ''}>Инженер (Аудитор)</option>
+                                <option value="project_manager" ${role === 'project_manager' ? 'selected' : ''}>Руководитель проекта</option>
+                                <option value="deputy_manager" ${role === 'deputy_manager' ? 'selected' : ''}>Зам. руководителя</option>
+                                <option value="manager" ${role === 'manager' ? 'selected' : ''}>Админ</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Доступ</label>
+                            <select id="status_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold">
+                                <option value="pending" ${cloudStatus === 'pending' ? 'selected' : ''}>Ожидает (Pending)</option>
+                                <option value="approved" ${cloudStatus === 'approved' ? 'selected' : ''}>Разрешен (Approved)</option>
+                                <option value="blocked" ${cloudStatus === 'blocked' ? 'selected' : ''}>Заблокирован (Blocked)</option>
+                            </select>
+                        </div>
+                        <div class="col-span-2">
+                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Имя подрядчика (Только для Подрядчиков)</label>
+                            <input type="text" id="contr_input_${domId}" class="input-base !py-1.5 !text-[10px]" placeholder="Введите название..." value="${esc(contrName)}">
+                        </div>
+                    </div>
+
+                    <div id="obj_block_${domId}" style="display: ${displayObjects};">
+                        <div class="flex justify-between items-center mb-0.5 mt-2">
+                            <label class="text-[8px] font-bold text-slate-400 uppercase block">Закрепленные объекты (ID через запятую)</label>
+                            <button onclick="document.getElementById('proj_input_${domId}').value=''" class="text-[8px] text-red-500 font-bold hover:underline">Очистить всё</button>
+                        </div>
+                        <input type="text" id="proj_input_${domId}" class="input-base !py-1.5 !text-[10px]" placeholder="Напр: ligovsky_240, moskovsky_12" value="${esc(projectsStr)}">
+                    </div>
                 </div>
-            </div>`;
-        });
+            `;
+        };
+
+        let html = '';
+        if (pendingUsers.length > 0) {
+            html += `<div class="text-[10px] font-black uppercase text-orange-500 mb-2 pl-1">Новые заявки на доступ (${pendingUsers.length})</div>`;
+            html += pendingUsers.map(renderUserRow).join('');
+        }
         
-        if (!html) html = '<div class="text-center py-4 text-[10px] text-slate-400">Нет данных</div>';
-        document.getElementById('manager-roles-list').innerHTML = html;
-    } catch(e) {
-        document.getElementById('manager-roles-list').innerHTML = '<div class="text-center py-4 text-xs text-red-500">Ошибка загрузки из БД</div>';
+        if (activeUsers.length > 0) {
+            html += `<div class="text-[10px] font-black uppercase text-slate-500 mb-2 pl-1 mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">Активные пользователи (${activeUsers.length})</div>`;
+            html += activeUsers.map(renderUserRow).join('');
+        }
+
+        container.innerHTML = html;
+        
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500 font-bold">Ошибка загрузки из БД</div>';
     }
 };
 
-window.gameSaveUserAccess = async function(inspectorId, engineerName) {
-    if (!window.supabaseClient) return;
 
-    // Считываем всё, что заполнил руководитель
-    const role = document.getElementById(`role_select_${inspectorId}`).value;
-    const contr = document.getElementById(`contr_input_${inspectorId}`).value.trim();
-    const projStr = document.getElementById(`proj_input_${inspectorId}`).value.trim();
+window.gameSaveUserAccess = async function (inspectorId, engineerName) {
+    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
 
-    // Превращаем строку с объектами в чистый массив ("Объект 1, Объект 2" -> ["Объект 1", "Объект 2"])
-    const projectsArray = projStr ? projStr.split(',').map(p => p.trim()).filter(Boolean) : [];
+    const domId = String(inspectorId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    showToast("⏳ Сохранение в облако...");
+    const role = document.getElementById(`role_select_${domId}`)?.value || 'guest';
+    const cloudStatus = document.getElementById(`status_select_${domId}`)?.value || 'pending';
+    const contr = document.getElementById(`contr_input_${domId}`)?.value.trim() || '';
+    const projStr = document.getElementById(`proj_input_${domId}`)?.value.trim() || '';
+
+    // Если роль не требует объектов, очищаем массив
+    const isNoObjectsRole = ['guest', 'director', 'deputy_manager', 'manager'].includes(role);
+    let projectsArray = isNoObjectsRole ? [] : (projStr ? projStr.split(',').map(p => p.trim()).filter(Boolean) : []);
+
+    if (role === 'contractor' && !contr) {
+        return showToast('⚠️ Для подрядчика обязательно укажите организацию!');
+    }
+
+    showToast('⏳ Сохранение в облако...');
 
     try {
-        // Сначала получаем текущие настройки юзера, чтобы не затереть его личную тему или шрифты
-        const { data: userData } = await window.supabaseClient
+        const { data: userData, error: userError } = await window.supabaseClient
             .from('rbi_engineer_profiles')
-            .select('settings')
+            .select('settings, project_code')
             .eq('inspector_id', inspectorId)
             .single();
 
-        let currentSettings = (userData && userData.settings) ? userData.settings : {};
-        
-        // Вшиваем ему наши назначенные объекты
-        currentSettings.assignedProjects = projectsArray;
+        if (userError) throw userError;
 
-        // Отправляем обратно в базу
+        let currentSettings = userData?.settings || {};
+        const projectCode = userData?.project_code || window.syncConfig?.projectCode || 'RBI';
+
+        let requestedProjects = Array.isArray(currentSettings.requestedProjects) ? currentSettings.requestedProjects : [];
+        let remainingRequests = []; 
+
+        for (let i = 0; i < requestedProjects.length; i++) {
+            const req = requestedProjects[i];
+            const actionSelect = document.getElementById(`req_action_${domId}_${i}`);
+            const action = actionSelect ? actionSelect.value : 'ignore';
+
+            if (action === 'ignore') {
+                remainingRequests.push(req);
+                continue;
+            }
+
+            if (action === 'reject') {
+                continue; // Просто пропускаем, она не попадет в remainingRequests
+            }
+
+            if (action.startsWith('link_')) {
+                // Привязка к существующему объекту
+                const canonicalKey = action.replace('link_', '');
+                if (!projectsArray.includes(canonicalKey)) projectsArray.push(canonicalKey);
+
+                // Сохраняем как синоним в базу объектов
+                if (req.raw_name && req.raw_name !== canonicalKey) {
+                    const { data: objRows } = await window.supabaseClient.from('project_objects').select('id, synonyms').eq('project_code', projectCode).eq('canonical_key', canonicalKey).limit(1);
+                    if (objRows && objRows.length > 0) {
+                        const oldSynonyms = Array.isArray(objRows[0].synonyms) ? objRows[0].synonyms : [];
+                        if (!oldSynonyms.includes(req.raw_name)) {
+                            await window.supabaseClient.from('project_objects').update({
+                                synonyms: [...oldSynonyms, req.raw_name], updated_at: new Date().toISOString()
+                            }).eq('id', objRows[0].id);
+                            
+                            await window.supabaseClient.from('object_aliases').upsert({
+                                project_code: projectCode, raw_name: req.raw_name, canonical_key: canonicalKey, updated_at: new Date().toISOString()
+                            }, { onConflict: 'project_code,raw_name' });
+                        }
+                    }
+                }
+            }
+
+            if (action === 'create') {
+                // Создание абсолютно нового объекта
+                const newKey = (typeof ObjectDirectory !== 'undefined') ? ObjectDirectory.cleanString(req.raw_name) : req.raw_name.toLowerCase().replace(/\s+/g, '_');
+                
+                // Создаем в БД Supabase
+                await window.supabaseClient.from('project_objects').upsert({
+                    id: 'obj_' + Date.now().toString(36),
+                    project_code: projectCode,
+                    canonical_key: newKey,
+                    display_name: req.raw_name,
+                    synonyms: [],
+                    created_by: window.syncConfig.engineerName,
+                    updated_at: new Date().toISOString(),
+                    is_deleted: false
+                });
+
+                if (!projectsArray.includes(newKey)) projectsArray.push(newKey);
+            }
+        }
+
+        currentSettings = {
+            ...currentSettings,
+            assignedProjects: projectsArray,
+            requestedProjects: remainingRequests, 
+            role: role,
+            cloudStatus: cloudStatus,
+            assignedContractor: contr,
+            contractorName: contr
+        };
+
         const { error } = await window.supabaseClient
             .from('rbi_engineer_profiles')
             .update({
                 role: role,
+                cloud_status: cloudStatus,
                 assigned_contractor: contr,
-                settings: currentSettings
+                contractor_name: contr,
+                assigned_projects: projectsArray,
+                settings: currentSettings,
+                updated_at: new Date().toISOString()
             })
             .eq('inspector_id', inspectorId);
 
         if (error) throw error;
-        showToast(`✅ Права для "${engineerName}" успешно обновлены!`);
-    } catch(e) {
-        console.error(e);
-        showToast("❌ Ошибка сохранения прав");
+
+        showToast(`✅ Права успешно сохранены!`);
+        if (typeof gameLoadRoles === 'function') gameLoadRoles();
+
+    } catch (e) {
+        console.error('[gameSaveUserAccess]', e);
+        showToast('❌ Ошибка сохранения прав');
+    }
+};
+
+// ==========================================
+// УПРАВЛЕНИЕ БАЗОЙ ЗНАНИЙ AI-ПОМОЩНИКА
+// ==========================================
+window.gameLoadAiKb = async function () {
+    const container = document.getElementById('manager-ai-kb-list');
+    const searchInput = document.getElementById('admin-ai-search')?.value.toLowerCase() || '';
+    if (!container) return;
+    
+    try {
+        const kbItems = await dbGetAll('app_assistant_kb') || window.appAssistantData || [];
+        let activeItems = kbItems.filter(i => !i._deleted && !i.is_deleted);
+        
+        // Фильтрация поиска
+        if (searchInput) {
+            activeItems = activeItems.filter(i => 
+                (i.question && i.question.toLowerCase().includes(searchInput)) || 
+                (i.answer && i.answer.toLowerCase().includes(searchInput))
+            );
+        }
+
+        if (activeItems.length === 0) {
+            container.innerHTML = '<div class="text-center py-6 text-slate-400 text-[10px] font-bold uppercase bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">База знаний пуста или ничего не найдено</div>';
+            return;
+        }
+        
+        // Сортировка: новые сверху
+        activeItems.sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+        container.innerHTML = activeItems.map(item => {
+            // Обрезаем длинный текст для превью (ОПТИМИЗАЦИЯ!)
+            const shortAnswer = item.answer.length > 120 ? item.answer.substring(0, 120) + '...' : item.answer;
+            return `
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm mb-3">
+                <div class="flex justify-between items-start mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+                    <div class="font-black text-[12px] text-slate-800 dark:text-white leading-tight pr-2 flex-1">📌 ${item.question}</div>
+                    <div class="flex gap-1.5 shrink-0">
+                        <button onclick="gameOpenAiKbModal('${item.id}')" class="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 shadow-sm">Изменить</button>
+                        <button onclick="gameDeleteAiKb('${item.id}')" class="text-[9px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200 active:scale-95 shadow-sm">Удалить</button>
+                    </div>
+                </div>
+                <div class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">${shortAnswer}</div>
+                ${item.tags && item.tags.length > 0 ? `<div class="mt-2 flex gap-1 flex-wrap">${item.tags.map(t => `<span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">${t}</span>`).join('')}</div>` : ''}
+            </div>
+            `;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-4 text-red-500 font-bold text-xs">Ошибка загрузки базы</div>';
+    }
+};
+
+window.gameOpenAiKbModal = async function(editId = null) {
+    let q = '', a = '', tags = '';
+    
+    if (editId) {
+        const kbItems = await dbGetAll('app_assistant_kb') || [];
+        const item = kbItems.find(i => i.id === editId);
+        if (item) {
+            q = item.question;
+            a = item.answer;
+            tags = (item.tags || []).join(', ');
+        }
+    }
+    
+    const html = `
+    <div id="ai-kb-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4 backdrop-blur-sm" onclick="this.remove()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+            <div class="font-black text-[13px] uppercase tracking-tight mb-4 text-slate-800 dark:text-white flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-3 shrink-0">
+                <span>${editId ? 'Редактировать статью' : 'Добавить материал для ИИ'}</span>
+                <button onclick="document.getElementById('ai-kb-modal').remove()" class="text-slate-400 hover:text-red-500 px-2 text-lg">✕</button>
+            </div>
+            
+            <div class="space-y-3 mb-4 overflow-y-auto custom-scrollbar pr-1 flex-1">
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тема или частый вопрос</label>
+                    <input type="text" id="ai-kb-q" class="input-base text-[12px]" value="${q.replace(/"/g, '&quot;')}" placeholder="Напр: Инструкция по созданию TWI карты">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Текст инструкции (Контекст)</label>
+                    <textarea id="ai-kb-a" class="input-base text-[12px] h-48 resize-none leading-relaxed" placeholder="Вставьте сюда часть документа (до 3-4 абзацев)...">${a}</textarea>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ключевые слова (через запятую)</label>
+                    <input type="text" id="ai-kb-tags" class="input-base text-[11px]" value="${tags}" placeholder="Напр: twi, инструкция, обучение">
+                </div>
+            </div>
+            
+            <div class="flex gap-2 pt-2 shrink-0">
+                <button onclick="document.getElementById('ai-kb-modal').remove()" class="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95 transition-colors">Отмена</button>
+                <button onclick="gameSaveAiKb('${editId || ''}')" class="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform">💾 Сохранить</button>
+            </div>
+        </div>
+    </div>`;
+    
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.gameSaveAiKb = async function(editId) {
+    const q = document.getElementById('ai-kb-q').value.trim();
+    const a = document.getElementById('ai-kb-a').value.trim();
+    const tagsStr = document.getElementById('ai-kb-tags').value.trim();
+    
+    if (!q || !a) return showToast('⚠️ Заполните вопрос и ответ!');
+    
+    const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+    
+    const record = {
+        id: editId || 'kb_' + Date.now().toString(36),
+        project_code: window.syncConfig?.projectCode || 'local',
+        question: q,
+        answer: a,
+        tags: tags,
+        enabled: true,
+        created_by: window.syncConfig?.engineerName || 'Admin',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        _deleted: false,
+        source: 'local',
+        sync_status: 'not_synced'
+    };
+    
+    // Сохраняем локально и даем флаг синхронизатору
+    await dbPut('app_assistant_kb', record);
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    document.getElementById('ai-kb-modal').remove();
+    showToast('✅ База знаний обновлена');
+    gameLoadAiKb();
+};
+
+window.gameDeleteAiKb = async function(id) {
+    if (!confirm('Удалить эту запись из базы ИИ?')) return;
+    
+    const record = await dbGet('app_assistant_kb', id);
+    if (record) {
+        record._deleted = true;
+        record.is_deleted = true;
+        record.updated_at = new Date().toISOString();
+        record.sync_status = 'not_synced';
+        await dbPut('app_assistant_kb', record);
+        
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        
+        showToast('🗑️ Запись удалена');
+        gameLoadAiKb();
     }
 };

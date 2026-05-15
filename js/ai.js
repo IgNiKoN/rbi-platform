@@ -3,33 +3,50 @@
 // === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
 window.callAI = async function(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 2000 } = options;
-    const useServer = !appSettings.usePersonalKey || !appSettings.apiKey;
+    const mode = appSettings.aiAuthMode || 'corporate';   // по умолчанию corporate
     
-    let url, headers;
+    let url, headers, body;
     
-    if (useServer) {
-        url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/deepseek-proxy`;
-        const token = appSettings.aiCorpPwd;
-        if (!token) throw new Error('Введите пароль доступа к корпоративному AI в Настройках!');
-        headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
-    } else {
+    if (mode === 'personal') {
+        if (!appSettings.apiKey) throw new Error('Введите ваш API-ключ в Настройках!');
         url = 'https://api.deepseek.com/chat/completions';
         headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${appSettings.apiKey}` };
+        body = { model: 'deepseek-chat', messages, temperature, max_tokens };
+    } else {
+        url = `${window.APP_CONFIG.SUPABASE_URL}/functions/v1/deepseek-proxy`;
+        headers = { 'Content-Type': 'application/json' };
+        body = {
+            model: 'deepseek-chat',
+            messages,
+            temperature,
+            max_tokens,
+            mode: mode,
+            engineer_name: window.syncConfig?.engineerName || '',
+            project_code: window.syncConfig?.projectCode || '',
+            password: appSettings.aiCorpPwd || ''
+        };
     }
 
     try {
-        const body = { model: 'deepseek-chat', messages, temperature, max_tokens };
-        const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+        });
         
         if (!response.ok) {
+            let errorMsg = `Ошибка сервера: ${response.status}`;
+            try {
+                const errData = await response.json();
+                if (errData.error) errorMsg = errData.error;
+            } catch(e) {}
             if (response.status === 403) throw new Error("Доступ запрещен. Проверьте пароль.");
             if (response.status === 401) throw new Error("Неверный персональный API-ключ.");
-            throw new Error(`Ошибка сервера: ${response.status}`);
+            throw new Error(errorMsg);
         }
         
         const data = await response.json();
         let aiText = data.choices[0].message.content;
-        // Глобальный фикс: превращаем **текст** в <b>текст</b>
         aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
         return aiText;
     } catch (e) {
@@ -37,7 +54,6 @@ window.callAI = async function(messages, options = {}) {
         throw e;
     }
 };
-
 // === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
 window.generateSmartComment = async function(scenario) {
     if (!currentEditingExpertKey) return;
@@ -1397,6 +1413,51 @@ window.sk_predictRisksAi = async function(silent = false) {
         if (!silent) showToast(`✨ ИИ рассчитал риски для ${processed} замечаний!`);
     }
 };
-// Остальные функции (generatePulseAi, generateHeatmapAi, generateCultureAi, generateTaskRiskAi, generateAiRoutePlan, generateAiTutorAdvice, generatePrescriptionAi, generateTwiDraftAi, generateAiHintForDefect) 
-// просто переносятся сюда из analytics.js и app.js без изменения логики.
-// Для экономии токенов в этом ответе я показал структуру файла. Полный перенос подразумевает Ctrl+X из старых файлов и Ctrl+V сюда.
+
+window.rbi_generateGlobalAi = async function() {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    
+    const container = document.getElementById('global-ai-text');
+    if (!container) return;
+    
+    const data = getFilteredAnalyticsData();
+    if (data.length === 0) return showToast("Нет данных для анализа");
+
+    container.innerHTML = `<span class="animate-pulse text-indigo-600 font-bold">🧠 DeepSeek анализирует весь портфель объектов...</span>`;
+
+    let sumB3 = 0;
+    const projectsMap = {};
+    data.forEach(item => { 
+        if (item.metrics) sumB3 += item.metrics.n_B3_fail;
+        const pName = item.projectName || 'Без объекта'; 
+        if (!projectsMap[pName]) projectsMap[pName] = []; 
+        projectsMap[pName].push(item); 
+    });
+
+    const pStats = Object.keys(projectsMap).map(p => {
+        const pData = projectsMap[p];
+        const m = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, userTemplates) : null;
+        return `${p} (ИКО: ${m ? m.IKO : 0})`;
+    }).join('; ');
+
+    const promptSystem = `Ты — Директор по строительству. Сформируй КРАТКОЕ управленческое резюме по всему портфелю проектов компании.
+    Структура: 
+    1. Оценка ИКО по объектам (где всё хорошо, где катастрофа). 
+    2. Главные риски.
+    Отвечай СТРОГО в 2-3 коротких абзаца. Тон жесткий, деловой. Без воды.`;
+    
+    const promptUser = `Объекты: ${pStats}. Всего проверок: ${data.length}. Найдено критических дефектов (Аварий B3): ${sumB3}.`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem }, 
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 400 });
+        
+        container.innerHTML = response;
+        customExpertConclusions['global_portfolio_ai'] = response;
+        if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
+    } catch (e) { 
+        container.innerHTML = `<span class="text-red-500">❌ Ошибка AI: ${e.message}</span>`; 
+    }
+};

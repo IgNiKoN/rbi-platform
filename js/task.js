@@ -1,6 +1,6 @@
 /* Файл: js/task.js (Единый модуль управления задачами) */
 
-window.rbi_scheduleData = []; 
+window.rbi_scheduleData = [];
 window.rbi_tasksData = []; // ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ ДЛЯ ВСЕХ ЗАДАЧ
 
 const RBI_TASK_ICONS = {
@@ -16,7 +16,7 @@ const RBI_TASK_ICONS = {
 // ==========================================
 // 1. УПРАВЛЕНИЕ РУЧНЫМИ ЗАДАЧАМИ
 // ==========================================
-window.rbi_openTaskModal = function() {
+window.rbi_openTaskModal = function () {
     // 1. Заполняем список подрядчиков
     const cSelect = document.getElementById('manual-task-contractor');
     if (cSelect) {
@@ -31,8 +31,19 @@ window.rbi_openTaskModal = function() {
         const uniqueEngs = [...new Set(contractorArray.map(c => c.inspectorName).filter(Boolean))].sort();
         // Добавляем себя, если нас еще нет в базе
         if (!uniqueEngs.includes(currentEng)) uniqueEngs.unshift(currentEng);
-        
+
         eSelect.innerHTML = uniqueEngs.map(e => `<option value="${e.replace(/"/g, '&quot;')}" ${e === currentEng ? 'selected' : ''}>${e}</option>`).join('');
+
+        // --- НОВОЕ: Блокировка выбора для рядовых инженеров ---
+        const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        if (['manager', 'deputy_manager'].includes(currentRole)) {
+            eSelect.removeAttribute('disabled');
+            eSelect.classList.remove('opacity-60', 'cursor-not-allowed');
+        } else {
+            eSelect.setAttribute('disabled', 'true');
+            eSelect.classList.add('opacity-60', 'cursor-not-allowed');
+        }
+        // --------------------------------------------------------
     }
 
     // Сброс полей
@@ -43,51 +54,75 @@ window.rbi_openTaskModal = function() {
     document.body.classList.add('modal-open');
 };
 
-window.rbi_closeTaskModal = function() {
+window.rbi_closeTaskModal = function () {
     document.getElementById('manual-task-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
 };
 
-window.rbi_saveManualTask = async function() {
+window.rbi_saveManualTask = async function () {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
     const title = document.getElementById('manual-task-title').value.trim();
-    const typeCat = document.getElementById('manual-task-type').value; 
+    const typeCat = document.getElementById('manual-task-type').value;
     const contr = document.getElementById('manual-task-contractor').value;
     const dateStr = document.getElementById('manual-task-date').value;
-    
+
     // Считываем кому назначена задача
     const assignee = document.getElementById('manual-task-engineer')?.value || document.getElementById('inp-inspector')?.value || 'Инженер';
 
     if (!title) return showToast("⚠️ Укажите название задачи!");
 
     const tDate = dateStr ? new Date(dateStr) : new Date();
-    tDate.setHours(12,0,0,0);
+    tDate.setHours(12, 0, 0, 0);
 
     let iconType = 'Контроль';
-    if(typeCat === 'method') iconType = 'ППР';
-    if(typeCat === 'meeting') iconType = 'Совещание';
+    if (typeCat === 'method') iconType = 'ППР';
+    if (typeCat === 'meeting') iconType = 'Совещание';
+
+    const projectInput = document.getElementById('inp-project');
+    const projectValue = projectInput?.value || 'Все';
 
     const newTask = {
         id: 'task_man_' + Date.now().toString(36),
-        type: 'manual', 
+        type: 'manual',
+        task_origin: 'manual',
+
         category: typeCat,
         icon: iconType,
         contractor: contr || "Служебная",
-        project: document.getElementById('inp-project')?.value || "Все",
-        templateKey: '', 
+
+        // Старое поле оставляем для совместимости
+        project: projectValue,
+
+        // Новые поля для облака и фильтрации
+        project_canonical_key: projectValue === 'Все' ? '' : projectValue,
+        project_display_name: projectInput?.dataset?.displayName || projectValue,
+
+        templateKey: '',
         workTitle: 'Поручение',
-        title: title, 
-        prompt: 'Создано инженером вручную.',
-        
-        // --- ПРИВЯЗКА К ИСПОЛНИТЕЛЮ ---
+        title: title,
+
+        prompt: ['manager', 'deputy_manager'].includes(window.RbiRoles ? window.RbiRoles.getCurrentRole() : '')
+            ? '⭐ Поручение от Руководителя. Требует обязательного выполнения.'
+            : 'Создано инженером вручную.',
+
+        // Привязка к исполнителю
         engineerName: assignee,
-        inspectorName: assignee, // Для обратной совместимости
-        
-        status: 'pending', 
-        priorityLvl: 2, 
+        inspectorName: assignee,
+
+        status: 'pending',
+        priorityLvl: 2,
         date: tDate.toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+
+        // Новая двухконтурная модель
+        source: 'local',
+        syncStatus: 'not_synced',
+        sync_status: 'not_synced',
+        syncBlockReason: '',
+        sync_block_reason: '',
+        importedFromBackup: false,
+
         _deleted: false
     };
 
@@ -100,12 +135,12 @@ window.rbi_saveManualTask = async function() {
     rbi_renderTasksList();
 };
 
-window.gameForceUpdatePlan = async function(silent = false) {
+window.gameForceUpdatePlan = async function (silent = false) {
     if (!silent) showToast("🧠 ИИ зачищает дубликаты и перестраивает план...");
-    
+
     const uniqueKeys = new Set();
     window.rbi_tasksData.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
-    
+
     for (let t of window.rbi_tasksData) {
         if (!t._deleted) {
             // ИСПРАВЛЕНИЕ БАГА С ТАРГЕТОМ: Жестко сбрасываем испорченные значения Эталонов в базе
@@ -114,18 +149,20 @@ window.gameForceUpdatePlan = async function(silent = false) {
             }
 
             let key = '';
+            // --- ИСПРАВЛЕНИЕ: Добавляем имя инженера (t.engineerName) в ключ, чтобы задачи разных инженеров не склеивались и не удалялись ---
+            const engKey = t.engineerName || 'NoName';
             if (t.contractor === 'Системная' && t.status === 'pending') {
-                key = `SYSTEMIC_${t.title}`;
+                key = `SYSTEMIC_${engKey}_${t.title}`;
             } else if (t.status === 'pending' || t.status === 'paused') {
-                key = `ACTIVE_${t.contractor}_${t.templateKey || 'NO_TMPL'}_${t.taskType}`;
+                key = `ACTIVE_${engKey}_${t.contractor}_${t.templateKey || 'NO_TMPL'}_${t.taskType}`;
             } else {
                 const tDate = new Date(t.createdAt || t.date || Date.now());
                 const weekStr = getWeekId(tDate);
-                key = `ARCHIVE_${t.contractor}_${t.templateKey || 'NO_TMPL'}_${t.taskType}_${weekStr}`;
+                key = `ARCHIVE_${engKey}_${t.contractor}_${t.templateKey || 'NO_TMPL'}_${t.taskType}_${weekStr}`;
             }
-            
+
             if (uniqueKeys.has(key)) {
-                t._deleted = true; 
+                t._deleted = true;
                 t.updatedAt = new Date().toISOString();
                 if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
             } else {
@@ -137,27 +174,35 @@ window.gameForceUpdatePlan = async function(silent = false) {
             }
         }
     }
-    
+
     window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
 
     await gameGenerateWeeklyPlan(true);
     rbi_renderTasksList();
-    
+
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     if (!silent) setTimeout(() => showToast("✨ База очищена, дубликаты инспекций удалены!"), 500);
 };
 // Флаг для блокировки параллельных вызовов (защита от спама задачами)
 window.isPlanGenerating = false;
 
-window.gameGenerateWeeklyPlan = async function(force = false) {
+window.gameGenerateWeeklyPlan = async function (force = false) {
     if (window.isPlanGenerating) return; // Если уже генерируем - отменяем повторный вызов
     window.isPlanGenerating = true;
 
     try {
+        // --- НОВОЕ: Задачи генерируются ТОЛЬКО для роли "Инженер" ---
+        const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        if (currentRole !== 'engineer') {
+            window.isPlanGenerating = false;
+            return; // Руководителям, подрядчикам и гостям авто-задачи не нужны
+        }
+        // ----------------------------------------------------------------
+
         const currentInspector = document.getElementById('inp-inspector')?.value.trim();
-        
+
         // ИСПРАВЛЕНИЕ: Если инспектор не указан или стоит дефолтное имя - прерываем генерацию плана!
         if (!currentInspector || currentInspector === 'Инженер' || currentInspector === 'Неизвестный инспектор') {
             return;
@@ -176,12 +221,12 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
         // ОБНОВЛЕНИЕ ПЛАНА (Сборка долгов и умная очистка)
         if (force) {
-            const nowTime = new Date().setHours(0,0,0,0);
-            
+            const nowTime = new Date().setHours(0, 0, 0, 0);
+
             // 1. Начисляем "Долг" (carryOverCount) всем просроченным задачам
             window.rbi_tasksData.forEach(t => {
                 if (t.status === 'pending') {
-                    const tDate = new Date(t.date).setHours(0,0,0,0);
+                    const tDate = new Date(t.date).setHours(0, 0, 0, 0);
                     if (tDate < nowTime && t.type === 'auto') {
                         t.carryOverCount = (t.carryOverCount || 0) + 1;
                     }
@@ -190,13 +235,13 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
             // 2. Удаляем ТОЛЬКО рядовые инспекции (Аудиты), к которым не приступали.
             // Эталоны, Отчеты, Плакаты, Совещания и Воркшопы — НЕ УДАЛЯЕМ, они переходят в Долг!
-            const tasksToDelete = window.rbi_tasksData.filter(t => 
-                t.type === 'auto' && 
-                t.status === 'pending' && 
+            const tasksToDelete = window.rbi_tasksData.filter(t =>
+                t.type === 'auto' &&
+                t.status === 'pending' &&
                 (!t.done || t.done === 0) &&
                 t.taskType === 'Аудит' // Удаляем только рутину
             );
-            
+
             for (let t of tasksToDelete) {
                 t._deleted = true;
                 t.updatedAt = new Date().toISOString();
@@ -212,14 +257,19 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             let existingTask = window.rbi_tasksData.find(t => {
                 if (t._deleted) return false;
 
+                // --- НОВОЕ: Проверяем, что задача принадлежит ТЕКУЩЕМУ инженеру ---
+                const taskEng = t.engineerName || t.inspectorName || '';
+                // Системные задачи общие, остальные - строго личные
+                if (contractor !== 'Системная' && taskEng !== currentInspector) return false;
+                // ------------------------------------------------------------------
+
                 // 1. Системные отчеты: ищем по точному названию в активных
                 if (contractor === 'Системная' && (t.status === 'pending' || t.status === 'paused')) {
                     return t.title === title;
                 }
-                
+
                 // 2. Обычные задачи: сверяем Подрядчик + Шаблон + ТИП ЗАДАЧИ!
                 if (t.status === 'pending' || t.status === 'paused') {
-                    // Строго проверяем совпадение ТИПА задачи (чтобы Эталон и Аудит не сливались)
                     return t.contractor === contractor && t.templateKey === tmplKey && t.taskType === taskType;
                 }
 
@@ -231,7 +281,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
                 return false;
             });
-            
+
             if (existingTask) {
                 // ЗАДАЧА УЖЕ СУЩЕСТВУЕТ (ИЛИ ВЫПОЛНЕНА НА ЭТОЙ НЕДЕЛЕ)
                 // Если это активный Аудит, и мы обновляем план - плюсуем квоту
@@ -239,8 +289,8 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
                     if (taskType === 'Аудит') {
                         const deficit = existingTask.target - (existingTask.done || 0);
                         if (deficit > 0) {
-                            existingTask.target = deficit + targetCount; 
-                            existingTask.date = tDate.toISOString(); 
+                            existingTask.target = deficit + targetCount;
+                            existingTask.date = tDate.toISOString();
                             if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingTask);
                         }
                     } else {
@@ -253,9 +303,10 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
             // ЕСЛИ ЗАДАЧИ НЕТ — СОЗДАЕМ
             const task = {
-                id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random()*1000),
+                id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random() * 1000),
                 source: 'ai', type: 'auto', category: cat, icon: icon, taskType: taskType,
                 contractor: contractor, project: document.getElementById('inp-project')?.value || "Все",
+                engineerName: currentInspector, // <-- ДОБАВЬ ЭТУ СТРОКУ
                 templateKey: tmplKey, workTitle: workTitle,
                 title: title, prompt: prompt,
                 status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
@@ -271,7 +322,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
         const allMyChecks = contractorArray.filter(c => c.inspectorName === currentInspector);
         const pairMap = {};
-        
+
         allMyChecks.forEach(c => {
             if (c.templateKey === 'sys_etalon_act') return;
             let key = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
@@ -287,10 +338,10 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 
         for (let key in pairMap) {
             const pair = pairMap[key];
-            
-            const hasEtalon = etalonActsArray.some(c => 
-                c.contractorName === pair.contractor && 
-                c.templateKey === 'sys_etalon_act' && 
+
+            const hasEtalon = etalonActsArray.some(c =>
+                c.contractorName === pair.contractor &&
+                c.templateKey === 'sys_etalon_act' &&
                 c.templateTitle === pair.templateTitle &&
                 c.projectName === pair.project // <-- НОВОЕ УСЛОВИЕ: ПРИВЯЗКА К ПРОЕКТУ
             );
@@ -299,69 +350,69 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             }
 
             const m = pair.allTimeCount > 0 ? getContractorMetrics(pair.checks, userTemplates) : null;
-        let targetCount = 1;
-        let promptText = "🟢 Плановый поддерживающий контроль (Зеленая зона). Подрядчик работает стабильно, достаточно 1 инспекции в неделю.";
-        let lvl = 1;
-        let deadlineDays = 7; // По умолчанию даем неделю на выполнение задачи
+            let targetCount = 1;
+            let promptText = "🟢 Плановый поддерживающий контроль (Зеленая зона). Подрядчик работает стабильно, достаточно 1 инспекции в неделю.";
+            let lvl = 1;
+            let deadlineDays = 7; // По умолчанию даем неделю на выполнение задачи
 
-        if (pair.allTimeCount < 7) {
-            targetCount = 7; 
-            deadlineDays = 14; // ДАЕМ 2 НЕДЕЛИ НА СБОР БАЗЫ
-            promptText = "🔵 Новый подрядчик (Сбор данных). В базе менее 7 проверок. Необходимо набрать базу для расчета достоверного рейтинга надежности."; 
-            lvl = 3;
-        } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
-            targetCount = 5; deadlineDays = 7; 
-            promptText = "🔴 Подрядчик в красной зоне (или допустил дефект B3). Согласно риск-матрице, требуется усиленный контроль: минимум 5 проверок на этой неделе. При наличии B3 — останавливайте приемку."; 
-            lvl = 4;
-        } else if (m && m.finalC >= 70 && m.finalC <= 84) {
-            targetCount = 2; deadlineDays = 7; 
-            promptText = "🟡 Подрядчик в желтой зоне (Системный брак). Качество нестабильно. Необходимо провести 2 проверки контроля ранее выданных предписаний."; 
-            lvl = 3;
-        }
-
-        const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
-        if (pair.allTimeCount >= 7 && daysSinceLastCheck > 14) {
-            promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите внеплановый аудит.`;
-            lvl = 4;
-            targetCount = Math.max(targetCount, 2);
-            deadlineDays = 2; // Даем всего 2 дня на срочный аудит
-        }
-
-        // УМНЫЙ ПОДСЧЕТ ДЕФИЦИТА ПРОВЕРОК
-        let validChecksDone = 0;
-        if (targetCount >= 7) {
-            // Для новичков: считаем все исторические проверки (где проверено >= 3 пунктов)
-            validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
-        } else {
-            // Для рутины: считаем только проверки на ЭТОЙ неделе
-            validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek).length;
-        }
-
-        const deficit = targetCount - validChecksDone;
-
-        // Ищем, есть ли уже активная задача ИМЕННО АУДИТА 
-        const activeAuditTask = window.rbi_tasksData.find(t => 
-            t.contractor === pair.contractor && 
-            t.templateKey === pair.templateKey && 
-            t.taskType === 'Аудит' && 
-            (t.status === 'pending' || t.status === 'paused')
-        );
-        
-        // Создаем задачу ТОЛЬКО если есть РЕАЛЬНЫЙ ДЕФИЦИТ проверок И нет активной задачи
-        if (deficit > 0 && !activeAuditTask && targetCount > 0) {
-            let taskDate = new Date(now);
-            taskDate.setDate(now.getDate() + deadlineDays); 
-            
-            addTask(`aud_multi`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, 'Аудит', targetCount);
-        } else if (deficit > 0 && activeAuditTask) {
-            // Если задача уже есть, просто обновляем ей цель (на случай, если логика изменила требуемое кол-во)
-            if (activeAuditTask.target !== targetCount) {
-                activeAuditTask.target = targetCount;
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, activeAuditTask);
+            if (pair.allTimeCount < 7) {
+                targetCount = 7;
+                deadlineDays = 14; // ДАЕМ 2 НЕДЕЛИ НА СБОР БАЗЫ
+                promptText = "🔵 Новый подрядчик (Сбор данных). В базе менее 7 проверок. Необходимо набрать базу для расчета достоверного рейтинга надежности.";
+                lvl = 3;
+            } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
+                targetCount = 5; deadlineDays = 7;
+                promptText = "🔴 Подрядчик в красной зоне (или допустил дефект B3). Согласно риск-матрице, требуется усиленный контроль: минимум 5 проверок на этой неделе. При наличии B3 — останавливайте приемку.";
+                lvl = 4;
+            } else if (m && m.finalC >= 70 && m.finalC <= 84) {
+                targetCount = 2; deadlineDays = 7;
+                promptText = "🟡 Подрядчик в желтой зоне (Системный брак). Качество нестабильно. Необходимо провести 2 проверки контроля ранее выданных предписаний.";
+                lvl = 3;
             }
-        }
 
-        if (m) {
+            const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
+            if (pair.allTimeCount >= 7 && daysSinceLastCheck > 14) {
+                promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите внеплановый аудит.`;
+                lvl = 4;
+                targetCount = Math.max(targetCount, 2);
+                deadlineDays = 2; // Даем всего 2 дня на срочный аудит
+            }
+
+            // УМНЫЙ ПОДСЧЕТ ДЕФИЦИТА ПРОВЕРОК
+            let validChecksDone = 0;
+            if (targetCount >= 7) {
+                // Для новичков: считаем все исторические проверки (где проверено >= 3 пунктов)
+                validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
+            } else {
+                // Для рутины: считаем только проверки на ЭТОЙ неделе
+                validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek).length;
+            }
+
+            const deficit = targetCount - validChecksDone;
+
+            // Ищем, есть ли уже активная задача ИМЕННО АУДИТА 
+            const activeAuditTask = window.rbi_tasksData.find(t =>
+                t.contractor === pair.contractor &&
+                t.templateKey === pair.templateKey &&
+                t.taskType === 'Аудит' &&
+                (t.status === 'pending' || t.status === 'paused')
+            );
+
+            // Создаем задачу ТОЛЬКО если есть РЕАЛЬНЫЙ ДЕФИЦИТ проверок И нет активной задачи
+            if (deficit > 0 && !activeAuditTask && targetCount > 0) {
+                let taskDate = new Date(now);
+                taskDate.setDate(now.getDate() + deadlineDays);
+
+                addTask(`aud_multi`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, 'Аудит', targetCount);
+            } else if (deficit > 0 && activeAuditTask) {
+                // Если задача уже есть, просто обновляем ей цель (на случай, если логика изменила требуемое кол-во)
+                if (activeAuditTask.target !== targetCount) {
+                    activeAuditTask.target = targetCount;
+                    if (typeof dbPut === 'function') dbPut(STORES.TASKS, activeAuditTask);
+                }
+            }
+
+            if (m) {
                 if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now, pair.templateKey, 'Совещание');
                 if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
                     addTask('workshop', 'dev', 'Развитие', `Воркшоп с бригадой`, pair.templateTitle, pair.contractor, `Системный брак B2 повторяется часто. Проведите обучение на объекте.`, 3, now, pair.templateKey, 'Воркшоп');
@@ -379,14 +430,14 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
             } else {
                 addTask('magic', 'method', 'Развитие', 'Создать карту TWI', 'База Знаний', 'Системная', 'Система нашла пару OK и FAIL. Подключите ИИ и закончите формирование карточки.', 3, now, '', 'Магия TWI', magicCandidates.length);
             }
-        } 
+        }
         // --- ЛОГИКА 2: РУТИНА И ОТЧЕТНОСТЬ (Будущие даты) ---
         const getNextTargetDate = (targetDayNumStr) => {
             const targetDay = parseInt(targetDayNumStr) === 0 ? 7 : parseInt(targetDayNumStr);
             const d = new Date(now);
             const currentDay = d.getDay() === 0 ? 7 : d.getDay();
             let diff = targetDay - currentDay;
-            if (diff < 0) diff += 7; 
+            if (diff < 0) diff += 7;
             d.setDate(d.getDate() + diff);
             d.setHours(12, 0, 0, 0);
             return d;
@@ -396,9 +447,9 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
         const fmeaDate = getNextTargetDate(appSettings.taskFmeaDay || '5');
         const recentFmeaChecks = contractorArray.filter(c => new Date(c.date) >= startOfThisWeek);
         const defectCounts = {};
-        
+
         recentFmeaChecks.forEach(c => {
-            if(c.state) {
+            if (c.state) {
                 Object.keys(c.state).forEach(id => {
                     if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
                         const tType = c.templateKey ? c.templateKey.split('_')[0] : '';
@@ -406,7 +457,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
                         const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
                         const flat = getFlatList(cl);
                         const item = flat.find(x => String(x.id) === String(id));
-                        if(item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
+                        if (item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
                             const dKey = `${c.contractorName}_${item.n}`;
                             defectCounts[dKey] = (defectCounts[dKey] || 0) + 1;
                         }
@@ -414,7 +465,7 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
                 });
             }
         });
-        
+
         let needsFmea = false;
         for (let k in defectCounts) {
             if (defectCounts[k] >= 3) {
@@ -422,12 +473,12 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
                 if (!isAnalyzed) { needsFmea = true; break; }
             }
         }
-        
+
         if (needsFmea) {
             addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Накопились системные дефекты (>3 повторений), требующие анализа коренных причин.', 3, fmeaDate, '', 'Отчет');
         }
-        
-        const posterDate = getNextTargetDate(appSettings.taskFmeaDay || '5'); 
+
+        const posterDate = getNextTargetDate(appSettings.taskFmeaDay || '5');
         addTask('post_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте плакат А3 и повесьте в штабе подрядчиков.', 2, posterDate, '', 'Отчет');
 
         const meetingDate = getNextTargetDate(appSettings.taskMeetingDay || '1');
@@ -472,21 +523,52 @@ window.gameGenerateWeeklyPlan = async function(force = false) {
 // ==========================================
 // 3. UI РЕНДЕР: Вкладка "Задачи" (iOS Style)
 // ==========================================
-window.rbi_renderTasksList = async function() {
+window.rbi_renderTasksList = async function () {
     const container = document.getElementById('rbi-tasks-container');
     if (!container) return;
 
-    const activeTasks = window.rbi_tasksData;
+    // ИСПРАВЛЕНИЕ: Объявляем переменную только один раз через let
+    let activeTasks = window.rbi_tasksData;
 
-    const today = new Date(); 
-    today.setHours(0,0,0,0);
+    // --- НОВОЕ: Фильтр по инженерам для руководителей ---
+    const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const currentEng = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
+    let managerFilterHtml = '';
+
+    if (['manager', 'deputy_manager'].includes(currentRole)) {
+        // Собираем всех инженеров, у которых есть задачи
+        const allEngsInTasks = [...new Set(window.rbi_tasksData.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
+        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = currentEng; // По умолчанию показываем свои
+
+        // Фильтруем массив задач перед рендером
+        if (window.taskEngineerFilter !== 'ALL') {
+            activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === window.taskEngineerFilter);
+        }
+
+        managerFilterHtml = `
+            <div class="mb-4 bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 p-3 rounded-xl shadow-sm flex items-center justify-between gap-3">
+                <div class="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-400 tracking-widest shrink-0">План инженера:</div>
+                <select class="input-base !py-1.5 text-[11px] font-bold flex-1" onchange="window.taskEngineerFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskEngineerFilter === 'ALL' ? 'selected' : ''}>Вся команда (Общий список)</option>
+                    ${allEngsInTasks.map(e => `<option value="${e}" ${window.taskEngineerFilter === e ? 'selected' : ''}>${e}</option>`).join('')}
+                </select>
+            </div>
+        `;
+    } else {
+        // Защита для рядовых инженеров: оставляем только их задачи
+        activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === currentEng || t.contractor === 'Системная');
+    }
+    // -----------------------------------------------------
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const startW = getStartOfWeek(today);
-    const endW = new Date(startW); endW.setDate(startW.getDate() + 6); endW.setHours(23,59,59,999);
-    
+    const endW = new Date(startW); endW.setDate(startW.getDate() + 6); endW.setHours(23, 59, 59, 999);
+
     const weekNumEl = document.getElementById('rbi-week-number');
     const weekDatesEl = document.getElementById('rbi-week-dates');
     if (weekNumEl) weekNumEl.innerText = getWeekNumber(today);
-    if (weekDatesEl) weekDatesEl.innerText = `${startW.toLocaleDateString('ru-RU', {day:'numeric', month:'short'})} — ${endW.toLocaleDateString('ru-RU', {day:'numeric', month:'short', year:'numeric'})}`;
+    if (weekDatesEl) weekDatesEl.innerText = `${startW.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} — ${endW.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
     let globalActionsHtml = `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
@@ -504,7 +586,7 @@ window.rbi_renderTasksList = async function() {
     }
 
     let overdue = []; let todayTasks = []; let weekTasks = []; let monthTasks = [];
-    let archiveTasks = []; 
+    let archiveTasks = [];
     let weekTotal = 0; let weekDone = 0;
 
     activeTasks.forEach(t => {
@@ -513,37 +595,37 @@ window.rbi_renderTasksList = async function() {
         if (t.status === 'done' || t.status === 'blocked') {
             archiveTasks.push(t);
             const tDate = t.date ? new Date(t.date) : new Date();
-            tDate.setHours(0,0,0,0);
-            if (t.status === 'done' && tDate.getTime() >= startW.getTime() && tDate.getTime() <= endW.getTime()) { 
-                weekTotal++; weekDone++; 
+            tDate.setHours(0, 0, 0, 0);
+            if (t.status === 'done' && tDate.getTime() >= startW.getTime() && tDate.getTime() <= endW.getTime()) {
+                weekTotal++; weekDone++;
             }
-            return; 
+            return;
         }
-        
+
         if (t.status === 'paused') { monthTasks.push(t); weekTotal++; return; }
-        
+
         const tDate = t.date ? new Date(t.date) : new Date();
-        tDate.setHours(0,0,0,0);
-        
-        if (tDate.getTime() < today.getTime()) { overdue.push(t); weekTotal++; } 
-        else if (tDate.getTime() === today.getTime()) { todayTasks.push(t); weekTotal++; } 
-        else if (tDate.getTime() > today.getTime() && tDate.getTime() <= endW.getTime()) { weekTasks.push(t); weekTotal++; } 
+        tDate.setHours(0, 0, 0, 0);
+
+        if (tDate.getTime() < today.getTime()) { overdue.push(t); weekTotal++; }
+        else if (tDate.getTime() === today.getTime()) { todayTasks.push(t); weekTotal++; }
+        else if (tDate.getTime() > today.getTime() && tDate.getTime() <= endW.getTime()) { weekTasks.push(t); weekTotal++; }
         else if (tDate.getTime() > endW.getTime()) { monthTasks.push(t); weekTotal++; }
     });
 
     const progText = document.getElementById('rbi-tasks-progress-text');
     const progBar = document.getElementById('rbi-tasks-progress-bar');
     if (progText) progText.innerText = `${weekDone}/${weekTotal}`;
-    if (progBar) progBar.style.width = weekTotal > 0 ? `${(weekDone/weekTotal)*100}%` : '0%';
+    if (progBar) progBar.style.width = weekTotal > 0 ? `${(weekDone / weekTotal) * 100}%` : '0%';
 
     const renderCard = (t, isOverdue, isArchive = false) => {
         const icon = t.icon ? (RBI_TASK_ICONS[t.icon] || RBI_TASK_ICONS['Контроль']) : RBI_TASK_ICONS['Контроль'];
-        const dateStr = t.date ? new Date(t.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : 'Без даты';
-        
+        const dateStr = t.date ? new Date(t.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : 'Без даты';
+
         let borderClass = isOverdue ? 'border-red-300 dark:border-red-800' : 'border-[var(--card-border)]';
         let bgClass = isOverdue && !isArchive ? 'bg-red-50/30 dark:bg-red-900/10' : 'bg-[var(--card-bg)]';
         let opacityClass = isArchive ? 'opacity-60 grayscale' : '';
-        
+
         let priorityColor = 'text-green-600 bg-green-50 border-green-200';
         let priorityText = 'Низкий';
         if (t.priorityLvl === 4) { priorityColor = 'text-red-600 bg-red-50 border-red-200'; priorityText = 'Крит.'; }
@@ -604,32 +686,32 @@ window.rbi_renderTasksList = async function() {
     `;
 
     let accordionsHtml = '';
-    
+
     // СЕТКА 2 на телефоне, 3 на планшете, 4 на ПК
     const gridClass = "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3 pb-2";
 
     const activeToday = [...overdue.map(t => renderCard(t, true)), ...todayTasks.map(t => renderCard(t, false))];
 
     if (activeToday.length > 0) accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Сегодня (${activeToday.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${activeToday.join('')}</div></details>`;
-    
+
     if (weekTasks.length > 0) accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Плановые задачи (${weekTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${weekTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
-    
+
     if (monthTasks.length > 0) accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (${monthTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${monthTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
-    
+
     if (archiveTasks.length > 0) {
-        const recentArchive = archiveTasks.sort((a,b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date)).slice(0, 10);
+        const recentArchive = archiveTasks.sort((a, b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date)).slice(0, 10);
         accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Завершенные (${archiveTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${recentArchive.map(t => renderCard(t, false, true)).join('')}</div></details>`;
     }
 
     if (weekTotal === 0 && archiveTasks.length === 0) {
-        container.innerHTML = globalActionsHtml + `<div class="bg-[var(--card-bg)] border border-dashed border-[var(--card-border)] rounded-2xl p-8 text-center shadow-sm mt-4"><div class="text-[14px] font-black text-slate-400 uppercase tracking-wider mb-2">План чист</div><div class="text-[11px] text-slate-500 font-medium">Система пока не сформировала задачи. Сделайте проверку или обновите план.</div></div>`;
+        container.innerHTML = globalActionsHtml + managerFilterHtml + `<div class="bg-[var(--card-bg)] border border-dashed border-[var(--card-border)] rounded-2xl p-8 text-center shadow-sm mt-4"><div class="text-[14px] font-black text-slate-400 uppercase tracking-wider mb-2">План чист</div><div class="text-[11px] text-slate-500 font-medium">Система пока не сформировала задачи. Сделайте проверку или обновите план.</div></div>`;
         return;
     }
 
-    container.innerHTML = globalActionsHtml + filterHtml + accordionsHtml;
+    container.innerHTML = globalActionsHtml + managerFilterHtml + filterHtml + accordionsHtml;
 };
 
-window.rbi_filterTaskHub = function(category, btnElement) {
+window.rbi_filterTaskHub = function (category, btnElement) {
     const container = document.getElementById('hub-filters');
     if (container) {
         container.querySelectorAll('.hub-filter-btn').forEach(btn => {
@@ -643,7 +725,7 @@ window.rbi_filterTaskHub = function(category, btnElement) {
     const cards = document.querySelectorAll('.task-card-item');
     cards.forEach(card => {
         if (category === 'all' || card.dataset.category === category) {
-            card.style.display = 'flex'; 
+            card.style.display = 'flex';
         } else {
             card.style.display = 'none';
         }
@@ -655,16 +737,16 @@ window.rbi_filterTaskHub = function(category, btnElement) {
 // ==========================================
 let currentTaskContext = null;
 
-window.rbi_openTaskAction = async function(taskId) {
+window.rbi_openTaskAction = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
-    
+
     currentTaskContext = task;
     document.getElementById('task-details-header-title').innerHTML = `
         <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
         Детали Задачи
     `;
-    
+
     const body = document.getElementById('task-details-body');
     const footer = document.getElementById('task-details-footer');
 
@@ -717,7 +799,7 @@ window.rbi_openTaskAction = async function(taskId) {
             </div>
             <div class="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm text-center">
                 <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Срок (Дедлайн)</div>
-                <div class="text-[16px] font-black ${new Date(task.date) < new Date() && task.status !== 'done' ? 'text-red-500' : 'text-slate-800 dark:text-white'}">${task.date ? new Date(task.date).toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : '-'}</div>
+                <div class="text-[16px] font-black ${new Date(task.date) < new Date() && task.status !== 'done' ? 'text-red-500' : 'text-slate-800 dark:text-white'}">${task.date ? new Date(task.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '-'}</div>
             </div>
         </div>
 
@@ -747,10 +829,10 @@ window.rbi_openTaskAction = async function(taskId) {
         // ЕСЛИ ЗАДАЧА АКТИВНА - РОУТИНГ КНОПОК
 
         if (task.type === 'manual') {
-            let photoPreviewHtml = task.completionPhoto 
-                ? `<div class="mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm"><img src="${window.getPhotoSrc(task.completionPhoto)}" class="w-full h-full object-cover"></div>` 
+            let photoPreviewHtml = task.completionPhoto
+                ? `<div class="mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm"><img src="${window.getPhotoSrc(task.completionPhoto)}" class="w-full h-full object-cover"></div>`
                 : `<div id="task-photo-preview" class="hidden mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm" data-photo=""></div>`;
-                
+
             actionButtonsHtml += `
                 <div class="mb-3">
                     <button onclick="document.getElementById('task-photo-upload').click(); window.currentTaskPhotoId='${task.id}';" class="w-full bg-indigo-50 dark:bg-slate-800 border border-dashed border-indigo-300 dark:border-indigo-600 text-indigo-600 dark:text-indigo-400 py-3 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
@@ -826,13 +908,13 @@ window.rbi_openTaskAction = async function(taskId) {
                         </div>
                     </div>
                 </div>`;
-        } 
+        }
         else if (task.taskType === 'Эталон') {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; openEtalonConstructor('${safeContractor}', '${task.templateKey}', '${safeWorkTitle}', '${safeProject}', '${safeStatusKeyForHtml}');" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg> Снять Эталон
                 </button>`;
-        } 
+        }
         else if (task.taskType === 'Совещание' || task.title.includes('Еженедельный разбор')) {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; rbi_openReportSettingsModal('full_report', 'browser', '${task.id}', false);" class="w-full bg-blue-50 text-blue-700 border border-blue-200 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
@@ -842,7 +924,7 @@ window.rbi_openTaskAction = async function(taskId) {
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> 2. Открыть Протокол (Мемо)
                 </button>
                 <div class="text-[9px] text-slate-500 text-center mb-2 leading-tight">Сначала скачайте отчет, затем проведите встречу и зафиксируйте протокол. Задача закроется автоматически при сохранении протокола.</div>`;
-        } 
+        }
         else if (task.title.includes('Разбор критического брака')) {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; rbi_createMeeting([{contractorName: '${safeContractor}'}]);" class="w-full bg-red-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
@@ -862,13 +944,13 @@ window.rbi_openTaskAction = async function(taskId) {
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); rbi_openQualityDaySettings('${task.id}');" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Собрать Отчет (AI)
                 </button>`;
-        } 
+        }
         else if (task.taskType === 'Отчет' && task.title.includes('Плакат')) {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; rbi_openReportSettingsModal('poster', 'browser', '${task.id}', true);" class="w-full bg-orange-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Сгенерировать Плакат
                 </button>`;
-        } 
+        }
         else if (task.taskType === 'Отчет' && task.title.includes('One-Pager')) {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; rbi_openReportSettingsModal('global_onepager', 'script', '${task.id}', true);" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
@@ -896,7 +978,7 @@ window.rbi_openTaskAction = async function(taskId) {
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); window.activeTaskId = '${task.id}'; startInspectionWithValues('${safeContractor}', '${task.templateKey}', null, '${safeProject}');" class="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Провести аудит
                 </button>`;
-        } 
+        }
         else if (task.taskType === 'Магия TWI') {
             actionButtonsHtml += `
                 <button onclick="document.getElementById('task-details-modal').style.display='none'; document.body.classList.remove('modal-open'); switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); const magicBlock = document.getElementById('twi-magic-block'); if(magicBlock) magicBlock.classList.remove('magic-collapsed'); }, 300);" class="w-full bg-purple-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex justify-center items-center gap-2 mb-2">
@@ -913,7 +995,7 @@ window.rbi_openTaskAction = async function(taskId) {
 
         // Блок нижних кнопок управления задачей (Сдвинуть, Пауза, Отменить)
         let postponeCountHtml = task.postponeCount > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full font-black">${task.postponeCount}</span>` : '';
-        
+
         actionButtonsHtml += `
             <div class="grid grid-cols-3 gap-2 w-full mt-2 pt-2 border-t border-[var(--card-border)]">
                 <button onclick="rbi_postponeTask('${task.id}')" class="relative flex flex-col justify-center items-center p-2 rounded-xl bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 font-bold text-[9px] uppercase active:scale-95 border border-[var(--card-border)] hover:bg-[var(--hover-bg)] transition-colors">
@@ -938,18 +1020,18 @@ window.rbi_openTaskAction = async function(taskId) {
 // ИНТЕГРАЦИЯ УМНЫХ КНОПОК ИЗ КАРТОЧЕК ЗАДАЧ
 // ==========================================
 
-window.rbi_markTaskDone = async function(taskId, silent = false) {
+window.rbi_markTaskDone = async function (taskId, silent = false) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
-    if(task) {
-        task.status = 'done'; 
+    if (task) {
+        task.status = 'done';
         task.resultComment = 'Выполнено инженером вручную';
         task.updatedAt = new Date().toISOString();
-        
+
         if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
-        
+
         document.getElementById('task-details-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
-        
+
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
 
@@ -966,45 +1048,45 @@ window.rbi_markTaskDone = async function(taskId, silent = false) {
 // ==========================================
 // 5. ФУНКЦИИ СТАТУСОВ (ПЕРЕНОС И ПР.)
 // ==========================================
-window.rbi_resumeTask = async function(taskId) {
+window.rbi_resumeTask = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
     task.status = 'pending'; task.resultComment = '';
-    if(!task.history) task.history = [];
+    if (!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Возобновлена инженером.`);
     task.updatedAt = new Date().toISOString();
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
     showToast("🔄 Задача снова активна");
-    
+
     // ИСПРАВЛЕНИЕ: Жестко закрываем окно
-    document.getElementById('task-details-modal').style.display = 'none'; 
+    document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
     rbi_renderTasksList();
 };
 
-window.rbi_pauseTask = async function(taskId) {
+window.rbi_pauseTask = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
     const reason = prompt("Укажите причину паузы:");
-    if (reason === null) return; 
+    if (reason === null) return;
     if (reason.trim() === "") return showToast("⚠️ Причина обязательна!");
 
     task.status = 'paused'; task.resultComment = `На паузе: ${reason}`;
-    if(!task.history) task.history = [];
+    if (!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Пауза: ${reason}`);
     task.updatedAt = new Date().toISOString();
-    
+
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     showToast("⏸ Задача скрыта в архив (Пауза)");
-    document.getElementById('task-details-modal').style.display = 'none'; 
+    document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
     rbi_renderTasksList();
 };
 
-window.rbi_cancelTask = async function(taskId) {
+window.rbi_cancelTask = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
     // --- НОВОЕ: ЗАЩИТА ПРАВ НА ОТМЕНУ ЗАДАЧИ ---
@@ -1013,25 +1095,25 @@ window.rbi_cancelTask = async function(taskId) {
     }
     // -------------------------------------------
     const reason = prompt("Укажите причину отмены задачи:");
-    if (reason === null) return; 
+    if (reason === null) return;
     if (reason.trim() === "") return showToast("⚠️ Причина обязательна!");
 
     task.status = 'blocked'; task.resultComment = `Отменена: ${reason}`;
-    if(!task.history) task.history = [];
+    if (!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Отменена: ${reason}`);
     task.updatedAt = new Date().toISOString();
-    
+
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     showToast("🚫 Задача отменена");
-    document.getElementById('task-details-modal').style.display = 'none'; 
+    document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
     rbi_renderTasksList();
 };
 
-window.rbi_postponeTask = async function(taskId) {
+window.rbi_postponeTask = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
 
@@ -1046,7 +1128,7 @@ window.rbi_postponeTask = async function(taskId) {
     task.date = newDate.toISOString();
 
     task.postponeCount = (task.postponeCount || 0) + 1;
-    if(!task.history) task.history = [];
+    if (!task.history) task.history = [];
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Перенос с ${oldDateStr} на ${daysNum} дн.`);
 
     if (task.postponeCount > 2) {
@@ -1057,20 +1139,20 @@ window.rbi_postponeTask = async function(taskId) {
         showToast(`➡️ Задача перенесена на ${newDate.toLocaleDateString('ru-RU')}`);
     }
     task.updatedAt = new Date().toISOString();
-    
+
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
-    document.getElementById('task-details-modal').style.display = 'none'; 
+
+    document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
-    rbi_renderTasksList(); 
+    rbi_renderTasksList();
 };
 
 // ==========================================
 // 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ИИ В ЗАДАЧАХ
 // ==========================================
-window.rbi_generateTaskScenario = async function() {
+window.rbi_generateTaskScenario = async function () {
     if (!appSettings.aiEnabled) return showToast("Включите AI-ассистента!");
     const t = currentTaskContext;
     const txtArea = document.getElementById('task-ai-scenario');
@@ -1093,7 +1175,7 @@ window.rbi_generateTaskScenario = async function() {
     } catch (e) { txtArea.value = "❌ Ошибка ИИ."; }
 };
 
-window.rbi_printTaskScenario = function() {
+window.rbi_printTaskScenario = function () {
     const scenario = document.getElementById('task-ai-scenario')?.value;
     if (!scenario || scenario.includes('⏳')) return showToast("Сгенерируйте сценарий!");
     const t = currentTaskContext;
@@ -1132,17 +1214,17 @@ window.rbi_printTaskScenario = function() {
 
 
 
-window.rbi_saveFinalAndClose = async function(taskId) {
+window.rbi_saveFinalAndClose = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const text = document.getElementById('final-ai-text').value;
     task.aiData = { finalReport: text };
-    
+
     task.status = 'done';
     task.resultComment = 'Справка КС-2 сохранена';
     task.updatedAt = new Date().toISOString();
-    
+
     await dbPut(STORES.TASKS, task);
-    document.getElementById('task-details-modal').style.display='none'; 
+    document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
     showToast("✅ Задача финальной приемки закрыта!");
     rbi_renderTasksList();
@@ -1152,14 +1234,14 @@ window.rbi_saveFinalAndClose = async function(taskId) {
 
 
 
-window.rbi_handleTaskCompletionPhoto = function(event) {
+window.rbi_handleTaskCompletionPhoto = function (event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     showToast("⚙️ Прикрепляю фото факта проведения...");
     compressImageToBase64(file, 1000, 0.8, async (base64) => {
         const localUrl = await PhotoManager.saveLocal(base64, 'task');
-        
+
         const taskId = window.currentTaskPhotoId;
         const task = window.rbi_tasksData.find(t => t.id === taskId);
         if (task) {
@@ -1177,10 +1259,10 @@ window.rbi_handleTaskCompletionPhoto = function(event) {
 
 
 
-window.rbi_finishWorkshop = async function(taskId) {
+window.rbi_finishWorkshop = async function (taskId) {
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     if (!task) return;
-    
+
     // Вычисляем реальный УрК подрядчика на момент воркшопа (для Impact Score)
     const cChecks = contractorArray.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
     const m = cChecks.length > 0 ? getContractorMetrics(cChecks, userTemplates) : null;
@@ -1211,12 +1293,12 @@ window.rbi_finishWorkshop = async function(taskId) {
 /* УНИВЕРСАЛЬНЫЙ СБОРЩИК НАСТРОЕК ОТЧЕТА ИЗ ЗАДАЧ (ДЛЯ СОВЕЩАНИЙ И ПЛАКАТОВ)  */
 /* ============================================================================ */
 
-window.rbi_openReportSettingsModal = function(actionType, mode, taskId, closeTask = true) {
+window.rbi_openReportSettingsModal = function (actionType, mode, taskId, closeTask = true) {
     const modal = document.getElementById('modal-overlay');
-    
+
     // Собираем уникальные объекты из истории проверок
     const uniqueProjects = [...new Set(contractorArray.map(c => c.projectName).filter(Boolean))].sort();
-    
+
     let projOptions = `<option value="ALL">Все объекты компании (Глобально)</option>`;
     uniqueProjects.forEach(p => {
         projOptions += `<option value="${p.replace(/"/g, '&quot;')}">${p}</option>`;
@@ -1224,9 +1306,9 @@ window.rbi_openReportSettingsModal = function(actionType, mode, taskId, closeTas
 
     document.getElementById('modal-icon').innerHTML = `<div class="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-indigo-200">⚙️</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Настройки Отчета</div>`;
-    
+
     // Текст меняется в зависимости от того, закрывается ли задача
-    const taskInfoText = closeTask 
+    const taskInfoText = closeTask
         ? "Выберите параметры для формирования выгрузки. Система автоматически закроет эту задачу после скачивания файла."
         : "Выберите объект и период для формирования презентации. После скачивания вернитесь в задачу для заполнения протокола.";
 
@@ -1261,12 +1343,12 @@ window.rbi_openReportSettingsModal = function(actionType, mode, taskId, closeTas
             </button>
         </div>
     `;
-    
+
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
-window.rbi_executeTaskReport = function(actionType, mode, taskId, closeTask) {
+window.rbi_executeTaskReport = function (actionType, mode, taskId, closeTask) {
     const proj = document.getElementById('task-rep-project').value;
     const period = document.getElementById('task-rep-period').value;
 
@@ -1291,4 +1373,148 @@ window.rbi_executeTaskReport = function(actionType, mode, taskId, closeTask) {
     setTimeout(() => {
         handleFabExportAction(actionType, mode);
     }, 300);
+};
+
+// --- ГЕНЕРАТОР АВТОЗАДАЧ НА ОСНОВЕ ГРАФИКА (SMART SYNC) ---
+window.rbi_generateAutoTasks = async function (silent = false) {
+    if (!silent) showToast("🧠 Синхронизация задач с графиком...");
+
+    let generatedCount = 0;
+    let updatedCount = 0;
+    let deletedCount = 0;
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    // 1. Создаем список существующих задач, созданных графиком
+    const scheduleTasks = window.rbi_tasksData.filter(t => t.source === 'schedule' && !t._deleted);
+
+    // 2. Проходимся по актуальному графику
+    window.rbi_scheduleData.forEach(stage => {
+        if (stage._deleted) return;
+
+        const startD = new Date(stage.startDate);
+        const endD = new Date(stage.endDate);
+
+        const addTaskOrUpdate = (daysOffset, typeName, title, desc, iconName, catName) => {
+            const tDate = new Date(startD);
+            tDate.setDate(tDate.getDate() + daysOffset);
+
+            // Если дата задачи в далеком прошлом (и это не Финал), не создаем новую
+            if (tDate < now && typeName !== 'Финал') return;
+
+            // ИЩЕМ ЗАДАЧУ ПО ЖЕСТКОЙ ПРИВЯЗКЕ (ID Этапа + Тип задачи)
+            let existingTask = scheduleTasks.find(t => t.stageId === stage.id && t.taskType === typeName);
+
+            // Защита от дублей, если старые задачи создавались без stageId (находим по имени)
+            if (!existingTask) {
+                existingTask = scheduleTasks.find(t =>
+                    t.contractor === stage.contractor &&
+                    t.templateKey === stage.templateKey &&
+                    t.taskType === typeName
+                );
+            }
+
+            if (existingTask) {
+                // ПРИВЯЗЫВАЕМ СТАРУЮ ЗАДАЧУ К НОВОМУ ID (если она была без него)
+                existingTask.stageId = stage.id;
+
+                // ОБНОВЛЯЕМ ДАТУ, ЕСЛИ ГРАФИК СДВИНУЛСЯ (Только если задача еще не закрыта)
+                if (existingTask.status === 'pending' || existingTask.status === 'paused') {
+                    const oldDate = new Date(existingTask.date).getTime();
+                    if (oldDate !== tDate.getTime()) {
+                        existingTask.date = tDate.toISOString();
+                        existingTask.updatedAt = new Date().toISOString();
+                        updatedCount++;
+                    }
+                }
+            } else {
+                // СОЗДАЕМ НОВУЮ ЗАДАЧУ
+                // Проверка на Эталон: не запрашивать, если Акт-Эталон уже снят в базе
+                if (typeName === 'Эталон') {
+                    const hasEtalonInDb = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(e =>
+                        e.contractorName === stage.contractor && e.templateKey === stage.templateKey
+                    );
+                    if (hasEtalonInDb) return; // Эталон уже есть, пропускаем
+                }
+
+                const task = {
+                    id: 'tsk_sch_' + Date.now().toString(36) + Math.floor(Math.random() * 1000),
+                    source: 'schedule',
+                    engineerName: document.getElementById('inp-inspector')?.value.trim() || 'Инженер', // <-- ДОБАВЛЕНО
+                    stageId: stage.id, // ЖЕСТКАЯ ПРИВЯЗКА К ГРАФИКУ
+                    type: 'auto',
+                    category: catName,
+                    icon: iconName,
+                    taskType: typeName,
+                    title: title,
+                    prompt: desc,
+                    workTitle: stage.workTitle,
+                    templateKey: stage.templateKey,
+                    contractor: stage.contractor,
+                    date: tDate.toISOString(),
+                    status: 'pending',
+                    priorityLvl: 3,
+                    target: 1,
+                    done: 0,
+                    carryOverCount: 0,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                window.rbi_tasksData.push(task);
+                generatedCount++;
+            }
+        };
+
+        // ВЕХИ ГРАФИКА
+        addTaskOrUpdate(-14, 'ППР', 'Проверить ППР и ТК', 'Проверить наличие и утверждение технологической карты до выхода подрядчика.', 'ППР', 'method');
+        addTaskOrUpdate(-7, 'Инструктаж', 'Вводный инструктаж', 'Собрать бригадиров, провести инструктаж по допускам и качеству.', 'Инструктаж', 'method');
+        addTaskOrUpdate(-3, 'Эталон', 'Приемка Эталона', 'Зафиксировать эталонный участок работ с фотофиксацией.', 'Эталон', 'control');
+        addTaskOrUpdate(0, 'Старт', 'Контроль старта работ', 'Первая проверка на объекте в день начала этапа.', 'Контроль', 'control');
+
+        const finalDiff = Math.round((endD - startD) / (1000 * 60 * 60 * 24)) - 3;
+        if (finalDiff > 0) {
+            addTaskOrUpdate(finalDiff, 'Финал', 'Финальная приемка', 'Итоговая проверка перед подписанием КС.', 'Отчет', 'report');
+        }
+    });
+
+    // 3. ЧИСТИМ ОСИРОТЕВШИЕ ЗАДАЧИ (Удалили строку в Excel -> Задача исчезла)
+    const activeStageIds = window.rbi_scheduleData.filter(s => !s._deleted).map(s => s.id);
+
+    window.rbi_tasksData.forEach(t => {
+        if (t.source === 'schedule' && t.stageId && !t._deleted) {
+            if (!activeStageIds.includes(t.stageId)) {
+                // Разрешаем удалять задачу ТОЛЬКО если она еще не выполнена
+                if (t.status === 'pending' || t.status === 'paused') {
+                    t._deleted = true;
+                    t.updatedAt = new Date().toISOString();
+                    deletedCount++;
+                }
+            }
+        }
+    });
+
+    // 4. СОХРАНЯЕМ В БАЗУ ТЕЛЕФОНА
+    for (let t of window.rbi_tasksData) {
+        if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
+    }
+
+    // 5. ДАЕМ КОМАНДУ ОБЛАКУ НА СИНХРОНИЗАЦИЮ
+    if (generatedCount > 0 || updatedCount > 0 || deletedCount > 0) {
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+    }
+
+    setTimeout(() => {
+        if (!silent && (generatedCount > 0 || updatedCount > 0 || deletedCount > 0)) {
+            showToast(`✅ Задачи обновлены! Новых: ${generatedCount}, Сдвинуто: ${updatedCount}, Удалено: ${deletedCount}`);
+            // <-- НОВОЕ: Перерисовываем таймлайн Графика, чтобы сразу увидеть кружочки!
+            if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true);
+        } else if (!silent) {
+            showToast(`✅ Задачи синхронизированы с графиком`);
+            if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true);
+        }
+        // Перерисовываем список задач во вкладке Инженера
+        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    }, 500);
 };
