@@ -2395,6 +2395,7 @@
                                 <div class="text-[10px] text-indigo-600 dark:text-indigo-400 mt-1">Настройка блоков и
                                     дизайна</div>
                             </div>
+                            
                             <button onclick="window.openPdfTemplateModal()"
                                 class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md flex items-center gap-1.5">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -2545,7 +2546,7 @@
                         </div>
                     </div>
                 </details>
-
+                
                 <!-- АНАЛИТИКА И ОТЧЕТЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
@@ -2927,6 +2928,27 @@
                             class="space-y-3 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
                             <!-- Карточки фидбека будут здесь -->
                         </div>
+                    </div>
+                </details>
+
+                <!-- САМООБУЧЕНИЕ СИСТЕМЫ (AI) -->
+                <details id="ai-optimizer-settings"
+                    class="bg-[var(--card-bg)] border border-purple-200 dark:border-purple-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
+                    <summary class="p-4 font-black text-[12px] text-purple-700 dark:text-purple-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 transition-colors select-none group-open:border-b border-purple-200 dark:border-purple-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                            AI-Оптимизатор Системы
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-purple-400">▼</span>
+                    </summary>
+                    <div class="p-4 bg-white dark:bg-slate-800 rounded-b-2xl">
+                        <div class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mb-3">
+                            Система проанализирует весь накопленный массив проверок и предложит корректировку математической модели: жесткость порогов (Красная/Зеленая зоны), веса рисков и правило "Стеклянного потолка".
+                        </div>
+                        <button onclick="window.runSelfLearningAi()" class="w-full bg-purple-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Запустить анализ базы
+                        </button>
+                        <div id="ai-self-learning-result" class="hidden mt-4 p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-xl text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed font-medium whitespace-pre-wrap shadow-inner"></div>
                     </div>
                 </details>
 

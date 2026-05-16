@@ -257,5 +257,11 @@ window.RbiRoles = {
 
         document.body.setAttribute('data-rbi-role', this.getCurrentRole());
         document.body.setAttribute('data-rbi-cloud-status', this.getCloudStatus());
+    // Скрытие AI-Оптимизатора для всех, кроме руководства
+        const aiOpt = document.getElementById('ai-optimizer-settings');
+        if (aiOpt) {
+            const role = this.getCurrentRole();
+            aiOpt.style.display = ['manager', 'deputy_manager'].includes(role) ? 'block' : 'none';
+        }
     }
 };

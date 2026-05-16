@@ -48,24 +48,31 @@ function renderAnalyticsModeSwitcher() {
     const mode = window.analyticsDataMode || 'local';
     const isCloud = mode === 'cloud';
 
-    // 1. Рендерим сам переключатель в 3-й колонке
+    // Добавляем глобальную функцию для тумблера, если её нет
+    if (!window.toggleAnalyticsMode) {
+        window.toggleAnalyticsMode = function() {
+            const current = window.analyticsDataMode || 'local';
+            window.setAnalyticsDataMode(current === 'cloud' ? 'local' : 'cloud');
+            if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+        };
+    }
+
     if (container) {
         const html = `
-            <div class="w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg flex p-0.5 shadow-sm" style="height: 34px;">
-                <button onclick="setAnalyticsDataMode('local')" title="Данные с телефона" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1 ${!isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 hover:text-slate-600'}">
+            <div onclick="window.toggleAnalyticsMode()" class="w-full bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg flex p-0.5 shadow-sm cursor-pointer active:scale-95 transition-transform" style="height: 34px;">
+                <div title="Данные с телефона" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1.5 pointer-events-none ${!isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 opacity-70'}">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"></path></svg>
-                    <span class="hidden min-[380px]:inline">Телефон</span>
-                </button>
-                <button onclick="setAnalyticsDataMode('cloud')" title="Данные с сервера" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1 ${isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 hover:text-slate-600'}">
+                    <span class="hidden min-[450px]:inline">Телефон</span>
+                </div>
+                <div title="Данные с сервера" class="flex-1 rounded-md text-[9px] font-black uppercase transition-all flex items-center justify-center gap-1.5 pointer-events-none ${isCloud ? 'bg-[var(--hover-bg)] text-indigo-600 shadow-sm border border-slate-200 dark:border-slate-700' : 'text-slate-400 opacity-70'}">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"></path></svg>
-                    <span class="hidden min-[380px]:inline">Облако</span>
-                </button>
+                    <span class="hidden min-[450px]:inline">Облако</span>
+                </div>
             </div>
         `;
         container.className = "w-full";
         container.innerHTML = html;
     }
-
     // 2. Рендерим иконку в шапке панели
     if (headerIconContainer) {
         let iconHtml = '';
@@ -136,8 +143,9 @@ function switchAnalyticsSubTab(tabId, btnElement) {
 
     // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ И ГРАФИКА
     // ЖЕСТКО СКРЫВАЕМ ГЛОБАЛЬНЫЕ ФИЛЬТРЫ ДЛЯ ИСТОРИИ, ГРАФИКА И ПК СК
+  // Скрываем глобальные фильтры только для Истории и Графика. ПК СК теперь использует их!
     const filtersBlock = document.getElementById('analytics-filters-block');
-    if (tabId === 'sub-history' || tabId === 'sub-schedule' || tabId === 'sub-sk') {
+    if (tabId === 'sub-history' || tabId === 'sub-schedule') {
         if (filtersBlock) filtersBlock.style.display = 'none';
     } else {
         if (filtersBlock) filtersBlock.style.display = 'block';
@@ -2481,21 +2489,43 @@ window.openReport = async function(id) {
     const r = reportsArray.find(x => x.id === id);
     if (!r) return showToast('Файл отчета не найден');
     
-    // ПРИОРИТЕТ 1: Локальный файл (Blob). Открывается мгновенно, без интернета!
+    // 1. ПРИОРИТЕТ 1: Файл физически кэширован в браузере (Blob)
     if (r.file_blob) {
         const url = URL.createObjectURL(r.file_blob);
         window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(() => URL.revokeObjectURL(url), 5000); // Даем время на открытие
         return;
     }
 
-    // ПРИОРИТЕТ 2: Облачная ссылка (если мы сделали сброс и файла на телефоне физически нет)
+    // 2. ПРИОРИТЕТ 2: Файла локально нет (очистили кэш), пытаемся скачать по ссылке и сохранить
     if (r.file_url && r.file_url.startsWith('http')) {
-        window.open(r.file_url, '_blank');
-        return;
+        if (!navigator.onLine) {
+            return showToast('❌ Отчет не кэширован на устройстве. Нужен интернет для скачивания.');
+        }
+        showToast('⏳ Скачиваем файл из облака в память...');
+        try {
+            const response = await fetch(r.file_url);
+            if (!response.ok) throw new Error("Не удалось скачать файл");
+            const blob = await response.blob();
+            
+            // Сохраняем в кэш навсегда
+            r.file_blob = blob;
+            await dbPut(STORES.REPORTS, r);
+            
+            // Открываем
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            return;
+        } catch (e) {
+            console.error("Ошибка скачивания отчета", e);
+            // ПРИОРИТЕТ 3 (Фолбэк): Просто открываем ссылку в новой вкладке, пусть браузер сам разбирается
+            window.open(r.file_url, '_blank');
+            return;
+        }
     }
     
-    showToast('❌ Ошибка: Файл отчета еще не загружен с сервера.');
+    showToast('❌ Ошибка: Файл отчета пуст или поврежден.');
 };
 
 window.shareReport = async function(id) {

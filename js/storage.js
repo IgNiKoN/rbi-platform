@@ -761,6 +761,15 @@ window.emptyTrashBin = async function () {
 
         if (typeof updateStorageInfo === 'function') updateStorageInfo();
 
+        // --- НОВОЕ: Сбрасываем оперативную память ---
+        // Иначе удаленные из IndexedDB записи останутся висеть на экране 
+        // и при синхронизации снова запишутся в базу!
+        if (deletedRecords > 0 || deletedFiles > 0) {
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        }
+
     } catch (e) {
         console.error("Ошибка при очистке мусора:", e);
         showToast("❌ Ошибка при очистке памяти");

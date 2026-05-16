@@ -1,12 +1,12 @@
 /* Файл: js/ai.js (Модуль Искусственного Интеллекта RBI Quality) */
 
 // === ГЛОБАЛЬНАЯ ФУНКЦИЯ ВЫЗОВА DEEPSEEK AI ===
-window.callAI = async function(messages, options = {}) {
+window.callAI = async function (messages, options = {}) {
     const { temperature = 0.7, max_tokens = 2000 } = options;
     const mode = appSettings.aiAuthMode || 'corporate';   // по умолчанию corporate
-    
+
     let url, headers, body;
-    
+
     if (mode === 'personal') {
         if (!appSettings.apiKey) throw new Error('Введите ваш API-ключ в Настройках!');
         url = 'https://api.deepseek.com/chat/completions';
@@ -33,18 +33,18 @@ window.callAI = async function(messages, options = {}) {
             headers: headers,
             body: JSON.stringify(body)
         });
-        
+
         if (!response.ok) {
             let errorMsg = `Ошибка сервера: ${response.status}`;
             try {
                 const errData = await response.json();
                 if (errData.error) errorMsg = errData.error;
-            } catch(e) {}
+            } catch (e) { }
             if (response.status === 403) throw new Error("Доступ запрещен. Проверьте пароль.");
             if (response.status === 401) throw new Error("Неверный персональный API-ключ.");
             throw new Error(errorMsg);
         }
-        
+
         const data = await response.json();
         let aiText = data.choices[0].message.content;
         aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
@@ -55,22 +55,22 @@ window.callAI = async function(messages, options = {}) {
     }
 };
 // === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
-window.generateSmartComment = async function(scenario) {
+window.generateSmartComment = async function (scenario) {
     if (!currentEditingExpertKey) return;
     if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI в Настройках!");
 
     const inputField = document.getElementById('modal-expert-input');
     const originalText = inputField.value;
     inputField.value = "⏳ Нейросеть DeepSeek анализирует данные...";
-    
+
     try {
         let promptSystem = ""; let promptUser = "";
 
         if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
             const data = getFilteredAnalyticsData();
             if (data.length === 0) throw new Error("Нет данных для анализа");
-            
-            let sumB3 = 0; data.forEach(i => { if(i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
+
+            let sumB3 = 0; data.forEach(i => { if (i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
             const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
             const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
             const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
@@ -82,7 +82,7 @@ window.generateSmartComment = async function(scenario) {
             const cKey = parts[0]; const tTitle = parts[1];
             const cDataAll = contractorArray.filter(i => (i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']') === cKey && i.templateTitle === tTitle);
             const m = getContractorMetrics(cDataAll, userTemplates);
-            
+
             promptSystem = `Ты — независимый эксперт. КРАТКИЙ отчет (до 70 слов). СТАТУС, ФАКТЫ, ПРОГНОЗ, РЕКОМЕНДАЦИИ.`;
             promptUser = `Подрядчик: ${cKey.split(' [')[0]}. УрК: ${m.finalC}%. Аварий: ${m.rateB3}%. Сценарий: ${scenario}`;
         }
@@ -98,7 +98,7 @@ window.generateSmartComment = async function(scenario) {
 };
 
 // === 2. ONE-PAGER УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ ===
-window.generateOnePagerForecastAi = async function(pdcaKey) {
+window.generateOnePagerForecastAi = async function (pdcaKey) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast("Нет данных");
@@ -113,49 +113,86 @@ window.generateOnePagerForecastAi = async function(pdcaKey) {
     } catch (e) { showToast("❌ Ошибка: " + e.message); }
 };
 
-window.generatePulseAi = async function() {
+window.generatePulseAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const container = document.getElementById('pulse-ai-text');
     container.innerHTML = `<span class="animate-pulse">⏳ AI слушает пульс объекта...</span>`;
 
     const data = getFilteredAnalyticsData();
     const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
-    
+
     const promptSystem = `Ты — AI-супервизор. Дай сжатую оценку 'здоровья' стройки (1 абзац, макс 40 слов). Тон: профессиональный.`;
-    const promptUser = `ИКО: ${currIntMetrics?currIntMetrics.IKO:'0'}. В красной зоне: ${currIntMetrics?currIntMetrics.redZonePerc:'0'}%. Выявлено проблем: ${countPhotos(data)}.`;
+    const promptUser = `ИКО: ${currIntMetrics ? currIntMetrics.IKO : '0'}. В красной зоне: ${currIntMetrics ? currIntMetrics.redZonePerc : '0'}%. Выявлено проблем: ${countPhotos(data)}.`;
 
     try {
         const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 150 });
         container.innerHTML = res;
         customExpertConclusions['pulse_ai'] = res;
         scheduleSessionSave();
-    } catch(e) { container.innerHTML = "Ошибка AI"; }
+    } catch (e) { container.innerHTML = "Ошибка AI"; }
 };
 
-window.generateHeatmapAi = async function() {
+// === AI: АНАЛИЗ ТЕПЛОВОЙ КАРТЫ (МАТРИЦА РИСКОВ) ===
+window.generateHeatmapAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const container = document.getElementById('heatmap-ai-text');
     container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse">⏳ AI анализирует матрицу...</span>`;
+    container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI анализирует реальную матрицу дефектов...</span>`;
 
-    // Собираем сырые данные для ИИ (просто передаем топ-2 самые бракованные стадии)
-    const promptSystem = `Ты — риск-менеджер. Посмотри на матрицу дефектов и скажи 1 предложением: где главная просадка и какой TWI тренинг провести.`;
-    const promptUser = `На объекте чаще всего брак допускают на этапах отделки и фасада.`; // Упрощенный контекст для скорости
+    // 1. Получаем РЕАЛЬНЫЕ данные с учетом фильтров
+    const data = typeof getFilteredAnalyticsData === 'function' ? getFilteredAnalyticsData() : [];
+    if (data.length === 0) {
+        container.innerHTML = `<span class="text-slate-500">Нет данных для анализа.</span>`;
+        return;
+    }
+
+    // 2. Считаем реальные дефекты по видам работ
+    const stagesDefects = {};
+    data.forEach(check => {
+        if (check.metrics && (check.metrics.n_B2_fail > 0 || check.metrics.n_B3_fail > 0)) {
+            const stage = check.templateTitle || check.templateKey || 'Неизвестный этап';
+            stagesDefects[stage] = (stagesDefects[stage] || 0) + check.metrics.n_B2_fail + check.metrics.n_B3_fail;
+        }
+    });
+
+    // 3. Выбираем ТОП-3 самых проблемных видов работ
+    const topStages = Object.keys(stagesDefects)
+        .sort((a, b) => stagesDefects[b] - stagesDefects[a])
+        .slice(0, 3);
+
+    let promptUser = "";
+    if (topStages.length > 0) {
+        const listStr = topStages.map(s => `"${s}" (${stagesDefects[s]} дефектов)`).join(', ');
+        promptUser = `Реальная статистика (Топ проблемных этапов): ${listStr}.`;
+    } else {
+        promptUser = `Значимых дефектов B2 и B3 не зафиксировано. Все этапы в норме.`;
+    }
+
+    const promptSystem = `Ты — риск-менеджер строительного контроля. Посмотри на переданную статистику дефектов и ответь 1-2 короткими предложениями: 
+    Где главная просадка по качеству и какой обучающий TWI-тренинг (мастер-класс) стоит провести для рабочих? 
+    Если дефектов нет, просто похвали команду за идеальное качество.`;
 
     try {
-        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 100 });
+        const res = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 150 });
+
         container.innerHTML = `<b>💡 Рекомендация:</b> ${res}`;
-    } catch(e) { container.innerHTML = "Ошибка AI"; }
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'heatmap');
+    } catch (e) {
+        container.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
+    }
 };
 
-window.generateContractorForecastAi = async function(contractorName) {
+window.generateContractorForecastAi = async function (contractorName) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
     const container = document.getElementById('ai-forecast-container');
     if (!container) return;
 
     // Фильтр по старому формату
     const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
-    
+
     if (data.length < 5) {
         container.innerHTML = `<div class="text-[11px] text-slate-500 font-bold bg-slate-50 p-3 rounded-lg border border-dashed border-slate-300">Слишком мало данных для нейросети (нужно от 5 проверок). Продолжайте инспекции.</div>`;
         return;
@@ -177,12 +214,12 @@ window.generateContractorForecastAi = async function(contractorName) {
         const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 150 });
         container.innerHTML = `<div class="text-[12px] leading-relaxed text-indigo-900 dark:text-indigo-200 font-medium whitespace-pre-wrap">${res}</div>`;
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'forecast');
-    } catch(e) {
+    } catch (e) {
         container.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
     }
 };
 
-window.generateCultureAi = async function(contractorName) {
+window.generateCultureAi = async function (contractorName) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const container = document.getElementById('culture-ai-text');
     container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI оценивает культуру...</span>`;
@@ -200,13 +237,13 @@ window.generateCultureAi = async function(contractorName) {
         container.innerHTML = res;
         customExpertConclusions[`culture_${contractorName}`] = res;
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-    } catch(e) { container.innerHTML = `<span class="text-red-500">Ошибка связи с AI</span>`; }
+    } catch (e) { container.innerHTML = `<span class="text-red-500">Ошибка связи с AI</span>`; }
 };
 
 // === AI: ГЕНЕРАЦИЯ ЧЕРНОВИКА TWI КАРТЫ ===
-window.generateTwiDraftAi = async function() {
+window.generateTwiDraftAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    
+
     const title = document.getElementById('twi-title-input').value.trim();
     const norm = document.getElementById('twi-auto-norm-text').innerText;
 
@@ -247,7 +284,7 @@ window.generateTwiDraftAi = async function() {
         } else if (currentTwiType === 'WORKER') {
             document.getElementById('twi-steps-container').innerHTML = '';
             twiStepCount = 0;
-            
+
             const lines = response.split('\n').filter(l => l.includes('Шаг:'));
             lines.forEach(line => {
                 const parts = line.split('| Время:');
@@ -265,19 +302,19 @@ window.generateTwiDraftAi = async function() {
 };
 
 // === AI: ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ПРЕДПИСАНИЯ ===
-window.generatePrescriptionAi = async function(inspectionId) {
+window.generatePrescriptionAi = async function (inspectionId) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    
+
     // Находим проверку
     const inspection = contractorArray.find(i => i.id === inspectionId);
     if (!inspection) return;
 
     // Собираем список дефектов
     let defectsList = [];
-    const type = inspection.templateKey.split('_')[0]; 
+    const type = inspection.templateKey.split('_')[0];
     const key = inspection.templateKey.replace(type + '_', '');
     const checklist = type === 'sys' && SYSTEM_TEMPLATES[key] ? SYSTEM_TEMPLATES[key].groups : (userTemplates[key] ? userTemplates[key].groups : []);
-    
+
     getFlatList(checklist).forEach(i => {
         if (inspection.state[i.id] === 'fail' || inspection.state[i.id] === 'fail_escalated') {
             const comment = inspection.details && inspection.details[i.id] ? inspection.details[i.id].comment : 'Без комментария';
@@ -336,9 +373,9 @@ window.generatePrescriptionAi = async function(inspectionId) {
 };
 
 // === AI: ПРОГНОЗ РИСКОВ В КАРТОЧКЕ ЗАДАЧИ ===
-window.generateTaskRiskAi = async function(contractorName, templateKey, containerId) {
+window.generateTaskRiskAi = async function (contractorName, templateKey, containerId) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    
+
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -348,7 +385,7 @@ window.generateTaskRiskAi = async function(contractorName, templateKey, containe
     container.innerHTML = `<div class="text-center text-[10px] text-indigo-500 font-bold animate-pulse py-3">Анализирую динамику...</div>`;
 
     const m = getContractorMetrics(cData, userTemplates);
-    const urkHistory = cData.slice(-5).map(c => c.metrics.final).join('%, ') + '%'; 
+    const urkHistory = cData.slice(-5).map(c => c.metrics.final).join('%, ') + '%';
 
     const promptSystem = `Ты — аналитик качества. Оцени риск ухудшения качества подрядчика. 
     Ответь строго в формате:
@@ -382,39 +419,67 @@ window.generateTaskRiskAi = async function(contractorName, templateKey, containe
 };
 
 // === AI: МАРШРУТИЗАТОР (ПЛАН НА ДЕНЬ) ===
-window.generateAiRoutePlan = async function() {
+// === AI: МАРШРУТИЗАТОР И ПРИОРИТЕТЫ (ПЛАН НА ДЕНЬ) ===
+window.generateAiRoutePlan = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
-    if (!weeklyPlanData || !weeklyPlanData.tasks || weeklyPlanData.tasks.length === 0) return showToast("План пуст.");
+
+    // Берем задачи из глобального массива, фильтруя те, что в статусе "pending"
+    const activeTasks = window.rbi_tasksData ? window.rbi_tasksData.filter(t => t.status === 'pending' && !t._deleted) : [];
+
+    if (activeTasks.length === 0) return showToast("Нет активных задач для маршрутизации.");
 
     const container = document.getElementById('ai-route-container');
+    if (!container) return;
+
     container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse font-bold">🧠 Нейросеть прокладывает оптимальный маршрут с учетом рисков...</span>`;
+    container.innerHTML = `<span class="animate-pulse text-indigo-600 font-bold flex items-center gap-2"><svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Нейросеть прокладывает оптимальный маршрут...</span>`;
 
-    // Собираем контекст по задачам
-    const tasksContext = weeklyPlanData.tasks.map(t => 
-        `- Подрядчик: ${t.contractor}, Работа: ${t.templateTitle}, Статус: ${t.priority}, Долг: ${t.carryOverCount}`
-    ).join('\n');
+    // 1. Собираем умный контекст по каждой задаче для ИИ
+    const tasksContext = activeTasks.map(t => {
+        let riskFlag = t.priorityLvl === 4 ? " [🔴 КРИТИЧЕСКИЙ РИСК]" : "";
+        let overdueFlag = new Date(t.date) < new Date() ? " [⚠️ ПРОСРОЧЕНА]" : "";
+        let debtFlag = t.carryOverCount > 0 ? ` [🕰 Долг: ${t.carryOverCount} нед.]` : "";
 
-    const promptSystem = `Ты — AI-логист строительного контроля. Составь оптимальный маршрут на сегодня из списка задач.
-    Верни строго 2 абзаца:
-    МАРШРУТ: [краткий список из 3-4 самых критичных подрядчиков по порядку].
-    ОБОСНОВАНИЕ: [1 предложение, почему выбран такой порядок (например, из-за долгов или аварий)].`;
+        return `- ${t.taskType || t.title} | Подрядчик: ${t.contractor} | Объект: ${t.project_display_name || t.project || 'Общий'}${riskFlag}${overdueFlag}${debtFlag}. (Причина: ${t.prompt})`;
+    }).join('\n');
+
+    // 2. Инструктируем ИИ, как отвечать
+    const promptSystem = `Ты — AI-шеф-инженер строительного контроля. Твоя задача — проанализировать пулл открытых задач инженера и составить оптимальный план действий на сегодня.
+    
+    Твои приоритеты:
+    1. КРИТИЧЕСКИЙ РИСК (Аварии, B3). Это нужно решать немедленно.
+    2. ПРОСРОЧЕННЫЕ И ДОЛГОВЫЕ ЗАДАЧИ.
+    3. Системные рутинные проверки (Сбор данных, Воркшопы).
+    
+    Верни ответ СТРОГО в таком формате:
+    <b style="color:#b91c1c;">🚨 ПРИОРИТЕТ 1 (Сделать срочно):</b>
+    [Перечисли 1-2 самые горящие задачи и 1 коротким предложением объясни ПОЧЕМУ они важны, опираясь на переданные риски].
+    
+    <b style="color:#d97706;">⚠️ ПРИОРИТЕТ 2 (В течение дня):</b>
+    [Перечисли остальные важные задачи или долги, объяснив их влияние на процесс].
+    
+    <b style="color:#0f172a;">💡 СОВЕТ ИНЖЕНЕРУ:</b>
+    [1 короткое, бодрое мотивационное предложение о том, как закрытие этого плана повлияет на Индекс Здоровья Объекта].`;
 
     try {
         const response = await window.callAI([
             { role: 'system', content: promptSystem },
-            { role: 'user', content: `Задачи в пуле:\n${tasksContext}` }
-        ], { temperature: 0.2, max_tokens: 200 });
+            { role: 'user', content: `Задачи инженера на сегодня:\n${tasksContext}` }
+        ], { temperature: 0.3, max_tokens: 600 });
 
-        container.innerHTML = `<b>📍 Рекомендация маршрута:</b><br>${response.replace(/\n/g, '<br>')}`;
-        showToast("✨ Маршрут построен!");
+        container.innerHTML = `<div class="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200">${response.replace(/\n/g, '<br>')}</div>`;
+        showToast("✨ Маршрут и приоритеты расставлены!");
+
+        // Логируем в геймификацию
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'route_plan');
+
     } catch (e) {
-        container.innerHTML = `<span class="text-red-600">Ошибка: ${e.message}</span>`;
+        container.innerHTML = `<span class="text-red-600 font-bold">❌ Ошибка связи с нейросетью: ${e.message}</span>`;
     }
 };
 
 // === AI: ТЬЮТОР (СОВЕТ ПО РАЗВИТИЮ) ===
-window.generateAiTutorAdvice = async function() {
+window.generateAiTutorAdvice = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const container = document.getElementById('ai-tutor-container');
     container.classList.remove('hidden');
@@ -440,20 +505,20 @@ window.generateAiTutorAdvice = async function() {
 };
 
 // === AI-ПОДСКАЗКА ДЛЯ ПРЕДОТВРАЩЕНИЯ ДЕФЕКТОВ ===
-window.generateAiHintForDefect = async function() {
+window.generateAiHintForDefect = async function () {
     if (!appSettings.aiEnabled || !currentCommentId) return;
-    
+
     const select = document.getElementById('modal-cause-select');
     const aiHint = document.getElementById('ai-hint-block');
     const causeCode = select.value;
-    
+
     if (!causeCode) {
         aiHint.classList.add('hidden');
         return;
     }
 
     const causeName = DEFECT_CAUSES.find(c => c.code === causeCode)?.name || 'Неизвестная причина';
-    
+
     const flatList = getFlatList(currentChecklist);
     const itemData = flatList.find(x => x.id === currentCommentId);
     if (!itemData) return;
@@ -467,7 +532,7 @@ window.generateAiHintForDefect = async function() {
 
     const promptSystem = `Ты — старший наставник стройконтроля. Дай инспектору 1-2 коротких предложения: как предотвратить этот дефект прямо сейчас на площадке. 
     ОБЯЗАТЕЛЬНО учти контекст: ${twiContext}`;
-    
+
     const promptUser = `Нарушение: ${itemData.n}. Норма: ${itemData.t}. Причина: ${causeName}.`;
 
     try {
@@ -478,12 +543,12 @@ window.generateAiHintForDefect = async function() {
 
         aiHint.innerHTML = `<b>💡 AI-Совет:</b> ${response.replace(/\n/g, ' ')}`;
     } catch (e) {
-        aiHint.classList.add('hidden'); 
+        aiHint.classList.add('hidden');
     }
 };
 
 // === УТИЛИТА: ИЗВЛЕЧЕНИЕ ТЕКСТА ИЗ PDF (С УМНОЙ ПОРЦИОННОЙ ЗАГРУЗКОЙ И ЗАЩИТОЙ ВОРКЕРА) ===
-window.extractTextFromPdf = async function(pdfDataUrl) {
+window.extractTextFromPdf = async function (pdfDataUrl) {
     try {
         // Принудительно задаем путь к воркеру, чтобы он не терялся
         if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -506,15 +571,15 @@ window.extractTextFromPdf = async function(pdfDataUrl) {
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdf = await loadingTask.promise;
         let fullText = '';
-        
+
         const maxPages = Math.min(pdf.numPages, 300);
-        
+
         for (let i = 1; i <= maxPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const pageText = textContent.items.map(item => item.str).join(' ');
             fullText += pageText + ' \n';
-            
+
             if (i % 10 === 0) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
@@ -529,9 +594,9 @@ window.extractTextFromPdf = async function(pdfDataUrl) {
 };
 
 // === ГЕНЕРАТОР ТЗ ИЗ ОБРАТНОЙ СВЯЗИ ===
-window.rbi_normalizeFeedbackAi = async function(rawText) {
+window.rbi_normalizeFeedbackAi = async function (rawText) {
     if (!appSettings.aiEnabled) return null;
-    
+
     const promptSystem = `Ты — технический писатель (Product Manager). Перепиши эмоциональное или сбивчивое сообщение пользователя в формальное предложение по улучшению IT-приложения.
     Формат ответа СТРОГО:
     ПРОБЛЕМА: [одно предложение]
@@ -554,22 +619,22 @@ window.rbi_normalizeFeedbackAi = async function(rawText) {
 // === AI ЧАТ ПО НОРМАТИВАМ (RAG: Поиск контекста + DeepSeek) ===
 // ============================================================================
 
-window.openAiDocChat = function() {
+window.openAiDocChat = function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
     document.getElementById('ai-chat-modal').style.display = 'flex';
     document.body.classList.add('modal-open');
 };
 
-window.closeAiDocChat = function() {
+window.closeAiDocChat = function () {
     document.getElementById('ai-chat-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
 };
 
-window.askAiDocQuestion = async function() {
+window.askAiDocQuestion = async function () {
     const inputEl = document.getElementById('ai-chat-input');
     const chatHistory = document.getElementById('ai-chat-history');
     const btn = document.getElementById('ai-chat-send-btn');
-    
+
     const question = inputEl.value.trim();
     if (!question) return;
 
@@ -592,20 +657,20 @@ window.askAiDocQuestion = async function() {
         </div>`;
     chatHistory.insertAdjacentHTML('beforeend', loaderHtml);
     chatHistory.scrollTop = chatHistory.scrollHeight;
-    
+
     // 3. ПРОДВИНУТЫЙ ЛОКАЛЬНЫЙ ПОИСК КОНТЕКСТА (ЧАНКИРОВАНИЕ RAG)
     const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
-    
+
     // Очищаем вопрос от знаков препинания
     const cleanQuestion = question.toLowerCase().replace(/[.,?!]/g, '');
-    
+
     // БАЗОВЫЙ СТЕММИНГ ДЛЯ РУССКОГО ЯЗЫКА:
     // Берем слова длиннее 3 символов. Если слово длиннее 5 букв — отрезаем последние 2 буквы (окончание),
     // чтобы искать по корню слова (например, "арматурой" -> "арматур", найдет "арматура", "арматурный")
     const keywords = cleanQuestion.split(' ')
         .filter(w => w.length > 3)
         .map(w => w.length > 5 ? w.substring(0, w.length - 2) : w);
-    
+
     let contextArr = [];
 
     // Настройки нарезки текста (Чанки)
@@ -622,7 +687,7 @@ window.askAiDocQuestion = async function() {
             for (let i = 0; i < fullText.length; i += (CHUNK_SIZE - CHUNK_OVERLAP)) {
                 const chunk = fullText.substring(i, i + CHUNK_SIZE);
                 const chunkLow = chunk.toLowerCase();
-                
+
                 let score = titleScore;
                 let matchesCount = 0;
 
@@ -642,11 +707,11 @@ window.askAiDocQuestion = async function() {
 
                 // Добавляем кусок только если нашли хотя бы одно слово
                 if (matchesCount > 0) {
-                    contextArr.push({ 
-                        type: 'Документ', 
-                        title: doc.code, 
+                    contextArr.push({
+                        type: 'Документ',
+                        title: doc.code,
                         // Даем бонус кускам, где встретилось МНОГО РАЗНЫХ слов из запроса
-                        score: score * matchesCount, 
+                        score: score * matchesCount,
                         text: chunk.replace(/\s+/g, ' ') // Убираем лишние пробелы для экономии места
                     });
                 }
@@ -682,7 +747,7 @@ window.askAiDocQuestion = async function() {
     }
 
     // Оставляем ТОП-6 самых релевантных огромных кусков (около 9000 символов суммарно)
-    contextArr.sort((a,b) => b.score - a.score);
+    contextArr.sort((a, b) => b.score - a.score);
     const topContext = contextArr.slice(0, 6).map(c => `[ИСТОЧНИК: ${c.type} - ${c.title}]\n${c.text}`).join('\n\n');
 
     // 4. ФОРМИРУЕМ ПРОМПТ ДЛЯ DEEPSEEK
@@ -698,7 +763,7 @@ window.askAiDocQuestion = async function() {
 
     try {
         btn.disabled = true; btn.style.opacity = '0.5';
-        
+
         // ВЫЗЫВАЕМ ИИ
         let response = await window.callAI([
             { role: 'system', content: promptSystem },
@@ -715,15 +780,15 @@ window.askAiDocQuestion = async function() {
 
         let tmplScores = [];
         const allTmpls = { ...SYSTEM_TEMPLATES, ...(typeof userTemplates !== 'undefined' ? userTemplates : {}) };
-        
+
         if (strongKeywords.length > 0) {
             Object.values(allTmpls).forEach(tmpl => {
                 let score = 0;
                 const titleStr = tmpl.title.toLowerCase();
-                
+
                 // Совпадение в названии = 10 баллов
                 strongKeywords.forEach(kw => { if (titleStr.includes(kw)) score += 10; });
-                
+
                 if (tmpl.groups) {
                     tmpl.groups.forEach(g => {
                         if (g.items) {
@@ -731,13 +796,13 @@ window.askAiDocQuestion = async function() {
                                 const textToSearch = `${item.n} ${item.t}`.toLowerCase();
                                 // Упоминание внутри пунктов = 1 балл
                                 strongKeywords.forEach(kw => {
-                                    if (textToSearch.includes(kw)) score += 1; 
+                                    if (textToSearch.includes(kw)) score += 1;
                                 });
                             });
                         }
                     });
                 }
-                
+
                 // Отсекаем мусор: берем только если набралось 2 и более баллов
                 if (score >= 2) tmplScores.push({ title: tmpl.title, score: score });
             });
@@ -766,7 +831,7 @@ window.askAiDocQuestion = async function() {
         if (topChecklists.length > 0 || topTwis.length > 0) {
             let appendix = `\n\n<div class="mt-3 p-3 bg-indigo-100/50 dark:bg-indigo-900/50 rounded-xl border border-indigo-200 dark:border-indigo-800 text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">`;
             appendix += `<b class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Связанные материалы в приложении:</b><br>`;
-            
+
             if (topChecklists.length > 0) {
                 appendix += `<span class="mt-1 block">• Чек-листы: <b>${topChecklists.join(', ')}</b></span>`;
             }
@@ -774,7 +839,7 @@ window.askAiDocQuestion = async function() {
                 appendix += `<span class="mt-1 block">• TWI-карты: <b>${topTwis.join(', ')}</b></span>`;
             }
             appendix += `</div>`;
-            
+
             response += appendix;
         }
         // --- КОНЕЦ НОВОГО БЛОКА ---
@@ -809,14 +874,14 @@ window.askAiDocQuestion = async function() {
 };
 
 // ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
-window.rbi_generateMeetingMemo = async function() {
+window.rbi_generateMeetingMemo = async function () {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
+
     // СБОР ДАННЫХ ИЗ ИНТЕРАКТИВНЫХ БЛОКОВ С ЖЕСТКОЙ ГРУППИРОВКОЙ
     let agendaMap = {};
     let totalItems = 0;
     const rows = document.querySelectorAll('.meeting-agenda-row');
-    
+
     rows.forEach(row => {
         const contr = row.querySelector('.agenda-meta-contr').value;
         const defect = row.querySelector('.agenda-meta-defect').value;
@@ -838,7 +903,7 @@ window.rbi_generateMeetingMemo = async function() {
     }
 
     const extraNotes = document.getElementById('rbi-meeting-notes').value.trim();
-    
+
     if (totalItems === 0 && !extraNotes) {
         return showToast("⚠️ Укажите решение хотя бы по одному дефекту или напишите дополнительные тезисы!");
     }
@@ -872,12 +937,12 @@ window.rbi_generateMeetingMemo = async function() {
         textArea.value = response;
         textArea.classList.remove('h-32');
         textArea.classList.add('h-64');
-        
+
         // Скроллим вниз, чтобы юзер увидел результат
         setTimeout(() => {
             textArea.scrollIntoView({ behavior: "smooth", block: "end" });
         }, 100);
-        
+
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'meeting_memo');
         showToast("✨ Протокол успешно сформирован!");
     } catch (e) {
@@ -888,12 +953,12 @@ window.rbi_generateMeetingMemo = async function() {
     }
 };
 
-window.rbi_generatePracticeTitleAi = async function() {
+window.rbi_generatePracticeTitleAi = async function () {
     if (!appSettings.aiEnabled) return showToast("Включите AI в настройках!");
-    
+
     const prob = document.getElementById('rbi-prac-problem').value;
     const sol = document.getElementById('rbi-prac-solution').value;
-    
+
     showToast("⏳ Нейросеть генерирует заголовок...");
     try {
         const res = await window.callAI([
@@ -901,21 +966,21 @@ window.rbi_generatePracticeTitleAi = async function() {
             { role: 'user', content: `Проблема: ${prob}. Решение: ${sol}` }
         ], { temperature: 0.4, max_tokens: 30 });
         document.getElementById('rbi-prac-title').value = res;
-    } catch(e) { showToast("Ошибка AI"); }
+    } catch (e) { showToast("Ошибка AI"); }
 };
 
-window.rbi_beautifyPracticeAi = async function() {
+window.rbi_beautifyPracticeAi = async function () {
     if (!appSettings.aiEnabled) return showToast("Включите AI в настройках!");
-    
+
     const probEl = document.getElementById('man-prac-problem');
     const solEl = document.getElementById('man-prac-solution');
     const prob = probEl.value.trim();
     const sol = solEl.value.trim();
-    
+
     if (!prob && !sol) return showToast("Опишите хотя бы что-то, чтобы ИИ мог помочь!");
 
     showToast("⏳ Нейросеть формулирует текст...");
-    
+
     const promptSystem = `Ты — эксперт-инженер. Твоя задача — красиво, технически грамотно и лаконично переписать текст пользователя для базы 'Лучших практик' компании.
     Верни ответ СТРОГО в таком формате:
     СУТЬ (ПРОБЛЕМА): [грамотное описание проблемы]
@@ -933,7 +998,7 @@ window.rbi_beautifyPracticeAi = async function() {
         if (pMatch) probEl.value = pMatch[1].trim();
         if (sMatch) solEl.value = sMatch[1].trim();
         showToast("✨ Текст улучшен!");
-    } catch(e) { showToast("Ошибка AI: " + e.message); }
+    } catch (e) { showToast("Ошибка AI: " + e.message); }
 };
 
 // 3. АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
@@ -1001,13 +1066,13 @@ window.rbi_fillFmeaWithAi = async function () {
 };
 
 // 3. ВОРКШОП С БРИГАДОЙ (Обновленный функционал с добавлением Фото)
-window.rbi_generateWorkshop = async function(taskId) {
+window.rbi_generateWorkshop = async function (taskId) {
     if (!appSettings.aiEnabled) return showToast("Включите AI-ассистента!");
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const txtArea = document.getElementById('workshop-ai-scenario');
     txtArea.classList.remove('hidden');
     txtArea.value = "⏳ ИИ пишет сценарий...";
-    
+
     document.getElementById('workshop-actions').classList.remove('hidden');
 
     const relatedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.find(c => c.checklistKey === task.templateKey) : null;
@@ -1031,9 +1096,9 @@ window.rbi_generateWorkshop = async function(taskId) {
 /* ============================================================================ */
 
 // 1. ВВОДНЫЙ ИНСТРУКТАЖ (Сборка регламентов и TWI)
-window.rbi_generateIntroBriefing = async function(taskId) {
+window.rbi_generateIntroBriefing = async function (taskId) {
     if (!appSettings.aiEnabled) return showToast("Включите AI-ассистента в настройках!");
-    
+
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const btn = document.getElementById('btn-gen-intro');
     btn.innerHTML = '⏳ AI пишет...'; btn.disabled = true;
@@ -1044,7 +1109,7 @@ window.rbi_generateIntroBriefing = async function(taskId) {
     const key = task.templateKey.replace(tType + '_', '');
     const cl = tType === 'sys' && SYSTEM_TEMPLATES[key] ? SYSTEM_TEMPLATES[key].groups : (userTemplates[key] ? userTemplates[key].groups : []);
     const flatList = getFlatList(cl);
-    
+
     // Формируем выжимку требований для ИИ
     const requirements = flatList.slice(0, 15).map(i => `- ${i.n}. Норматив: ${i.t.replace(/<\/?[^>]+(>|$)/g, "")}`).join('\n');
 
@@ -1054,7 +1119,7 @@ window.rbi_generateIntroBriefing = async function(taskId) {
 
     try {
         const speech = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: `Вид работ: ${task.templateTitle}.\nТребования:\n${requirements}` }], { temperature: 0.3, max_tokens: 400 });
-        
+
         // Сохраняем результат в задачу для последующей печати
         task.aiData = { speech: speech, checklist: flatList };
         await dbPut(STORES.TASKS, task);
@@ -1070,30 +1135,30 @@ window.rbi_generateIntroBriefing = async function(taskId) {
 
 
 // 2. ФИНАЛЬНАЯ ПРИЕМКА (Анализ перед КС-2)
-window.rbi_generateFinalAcceptance = async function(taskId) {
+window.rbi_generateFinalAcceptance = async function (taskId) {
     if (!appSettings.aiEnabled) return showToast("Включите AI-ассистента в настройках!");
-    
+
     const task = window.rbi_tasksData.find(t => t.id === taskId);
     const btn = document.getElementById('btn-gen-final');
     btn.innerHTML = '⏳ AI пишет...'; btn.disabled = true;
 
     // Собираем ВСЕ проверки по этому подрядчику и виду работ
-    const cChecks = contractorArray.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey).sort((a,b) => new Date(a.date) - new Date(b.date));
-    
+    const cChecks = contractorArray.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey).sort((a, b) => new Date(a.date) - new Date(b.date));
+
     if (cChecks.length === 0) {
         btn.innerHTML = 'Анализ (AI)'; btn.disabled = false;
         return showToast("Нет данных проверок для анализа!");
     }
 
     const m = getContractorMetrics(cChecks, userTemplates);
-    
+
     // Собираем дефекты
     const defects = {};
     cChecks.forEach(c => {
-        if(c.state) {
+        if (c.state) {
             Object.keys(c.state).forEach(id => {
                 if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
-                    const flat = getFlatList(userTemplates[c.templateKey.replace('user_','')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_','')]?.groups);
+                    const flat = getFlatList(userTemplates[c.templateKey.replace('user_', '')]?.groups || SYSTEM_TEMPLATES[c.templateKey.replace('sys_', '')]?.groups);
                     const item = flat.find(x => String(x.id) === String(id));
                     if (item) defects[item.n] = (defects[item.n] || 0) + 1;
                 }
@@ -1101,7 +1166,7 @@ window.rbi_generateFinalAcceptance = async function(taskId) {
         }
     });
 
-    const defectStr = Object.keys(defects).sort((a,b) => defects[b] - defects[a]).map(k => `${k} (${defects[k]} раз)`).join(', ');
+    const defectStr = Object.keys(defects).sort((a, b) => defects[b] - defects[a]).map(k => `${k} (${defects[k]} раз)`).join(', ');
 
     const promptSystem = `Ты — Директор по строительству. Напиши официальную резолюцию для подписания КС-2 (Акта выполненных работ).
     Укажи:
@@ -1124,22 +1189,22 @@ window.rbi_generateFinalAcceptance = async function(taskId) {
 };
 
 // === 7. AI-МАППИНГ КОЛОНОК ===
-window.sk_aiMapColumns = async function() {
+window.sk_aiMapColumns = async function () {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
+
     const btn = document.getElementById('btn-ai-mapping');
     btn.innerHTML = `<span class="animate-pulse">⏳ ИИ думает...</span>`;
     btn.disabled = true;
 
     const headersList = window.skTempRawHeaders.map((h, i) => `${i}: "${h}"`).join(', ');
-    
+
     const promptSystem = `Ты помощник интеграции данных. Тебе даны заголовки Excel-файла (с их индексами). Твоя задача — сопоставить их с системными полями: number, text, category, date_issued, contractor, deadline, status, date_resolved, structure.
     Верни СТРОГО JSON-объект, где ключ - это системное поле, а значение - индекс (число) колонки из Excel. Если колонки нет, верни -1. Без лишнего текста и комментариев.`;
-    
+
     try {
         // Используем глобальную функцию callAI (которая у нас уже есть в ai.js)
-        const res = await window.callAI([{role: 'system', content: promptSystem}, {role: 'user', content: headersList}], {temperature: 0.1, max_tokens: 300});
-        
+        const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: headersList }], { temperature: 0.1, max_tokens: 300 });
+
         const jsonMatch = res.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const aiMap = JSON.parse(jsonMatch[0]);
@@ -1149,7 +1214,7 @@ window.sk_aiMapColumns = async function() {
             });
             showToast("✨ ИИ успешно распознал колонки!");
         }
-    } catch(e) {
+    } catch (e) {
         showToast("❌ Ошибка ИИ: " + e.message);
     } finally {
         btn.innerHTML = `🤖 Угадать через ИИ (DeepSeek)`;
@@ -1164,17 +1229,14 @@ window.sk_autoMapCategories = async function(silent = false) {
         return 0;
     }
 
-    if (!silent && !skAiRunning) showToast("🤖 ИИ в фоне обрабатывает категории...");
+    if (!silent && !skAiRunning) showToast("🤖 ИИ запускает анализ категорий...");
 
     const allowedCleanCats = [];
-    if (typeof SYSTEM_TEMPLATES !== 'undefined') {
-        Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
-    }
-    if (typeof userTemplates !== 'undefined') {
-        Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
-    }
+    if (typeof SYSTEM_TEMPLATES !== 'undefined') Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
+    if (typeof userTemplates !== 'undefined') Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
     if (allowedCleanCats.length === 0) allowedCleanCats.push("Общестроительные работы");
 
+    // Ищем записи, где категория кривая или не задана
     const recordsToFix = window.skRecords.filter(r => 
         !r.category || 
         r.category === 'Без категории' || 
@@ -1182,6 +1244,7 @@ window.sk_autoMapCategories = async function(silent = false) {
         /^\d+$/.test(r.category)
     );
     
+    // Берем только уникальные тексты, чтобы не гонять ИИ по одинаковым дефектам 100 раз
     const uniqueTexts = [...new Set(recordsToFix.map(r => r.text).filter(t => t && t.length > 5))];
     
     if (uniqueTexts.length === 0) {
@@ -1191,71 +1254,71 @@ window.sk_autoMapCategories = async function(silent = false) {
 
     const BATCH_SIZE = 50;
     let totalUpdated = 0;
-    let currentIndex = 0;
     const totalBatches = Math.ceil(uniqueTexts.length / BATCH_SIZE);
 
     for (let batchNum = 1; batchNum <= totalBatches; batchNum++) {
-        const batch = uniqueTexts.slice(currentIndex, currentIndex + BATCH_SIZE);
-        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 200)}"`).join('\n');
+        // Визуальный прогресс
+        if (!silent) showToast(`🤖 ИИ обрабатывает пакет ${batchNum} из ${totalBatches}...`);
+
+        const startIndex = (batchNum - 1) * BATCH_SIZE;
+        const batch = uniqueTexts.slice(startIndex, startIndex + BATCH_SIZE);
+        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 150)}"`).join('\n');
         
-        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты дефектов.
-Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length-1}), значение - один из видов работ: [${allowedCleanCats.join(', ')}].
-Если не уверен, верни "Без категории". Без пояснений.`;
+        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты дефектов. Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length-1}), значение - строго один из видов работ: [${allowedCleanCats.join(', ')}]. Если не уверен, верни "Без категории". Без пояснений.`;
 
         try {
-            const res = await window.callAI([
-                { role: 'system', content: promptSystem },
-                { role: 'user', content: batchStr }
-            ], { temperature: 0.1, max_tokens: 2000 });
+            const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: batchStr }], { temperature: 0.1, max_tokens: 2000 });
+            const jsonMatch = res.match(/\{[\s\S]*\}/);
             
-             const jsonMatch = res.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const aiMap = JSON.parse(jsonMatch[0]);
-                let updatedInBatch = 0;
+                let batchRecordsToUpdate = [];
+
                 for (let i = 0; i < batch.length; i++) {
                     const cleanVal = aiMap[i] || aiMap[String(i)];
                     if (cleanVal && allowedCleanCats.includes(cleanVal)) {
+                        // Находим все записи с этим текстом и обновляем
                         const targetRecords = window.skRecords.filter(r => r.text === batch[i]);
-                        for (let rec of targetRecords) {
-                            
-                            // Сохраняем в AI категорию
+                        targetRecords.forEach(rec => {
                             rec.ai_category = cleanVal;
-                            
-                            // Если ИИ исправил "Без категории" или откровенную дичь, ставим флаг
-                            if (rec.category !== cleanVal) {
-                                rec.category_corrected = true;
-                            }
-
+                            if (rec.category !== cleanVal) rec.category_corrected = true;
                             rec._updatedAt = new Date().toISOString();
-                            await dbPut(STORES.SK_RECORDS, rec);
-                            updatedInBatch++;
-                        }
+                            batchRecordsToUpdate.push(rec);
+                        });
                     }
                 }
-                totalUpdated += updatedInBatch;
+                
+                // Сохраняем пачку
+                if (batchRecordsToUpdate.length > 0) {
+                    if (typeof dbPutBatch === 'function') await dbPutBatch(STORES.SK_RECORDS, batchRecordsToUpdate);
+                    totalUpdated += batchRecordsToUpdate.length;
+                }
             }
         } catch (e) {
             console.warn("Ошибка ИИ в пакете", batchNum, e);
-            if (!silent) showToast(`⚠️ Ошибка в пакете ${batchNum}`);
+            if (!silent) showToast(`⚠️ Ошибка API на пакете ${batchNum}. Ждем и продолжаем...`);
         }
         
-        currentIndex += BATCH_SIZE;
-        if (currentIndex < uniqueTexts.length) await new Promise(r => setTimeout(r, 500));
+        // ВАЖНО: Задержка 2.5 секунды между пакетами, чтобы API DeepSeek не забанил нас за спам!
+        if (batchNum < totalBatches) {
+            await new Promise(r => setTimeout(r, 2500));
+        }
     }
 
     if (!silent && totalUpdated > 0) {
-        showToast(`✨ ИИ обработал ${totalUpdated} записей (в фоне)`);
+        showToast(`✨ ИИ успешно распределил ${totalUpdated} записей!`);
+        sk_renderDashboard(); // Перерисовываем экран
     }
     return totalUpdated;
 };
 
 // === 7. AI-СВЯЗКА ДЕФЕКТОВ EXCEL С ЧЕК-ЛИСТАМИ RBI И ГЕНЕРАЦИЯ ПИСЬМА ===
-window.sk_generateContractorAiSummary = async function(cName, safeId) {
+window.sk_generateContractorAiSummary = async function (cName, safeId) {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
 
     const btn = document.getElementById(`btn-sk-ai-${safeId}`);
     const resBox = document.getElementById(`sk-ai-res-${safeId}`);
-    
+
     btn.innerHTML = `<span class="animate-pulse">⏳ DeepSeek анализирует дефекты...</span>`;
     btn.disabled = true;
     resBox.classList.remove('hidden');
@@ -1275,7 +1338,7 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
         }
     });
 
-    const topDefects = Object.keys(defectsFreq).sort((a,b) => defectsFreq[b] - defectsFreq[a]).slice(0, 5);
+    const topDefects = Object.keys(defectsFreq).sort((a, b) => defectsFreq[b] - defectsFreq[a]).slice(0, 5);
     const defectListStr = topDefects.map(d => `- ${d} (${defectsFreq[d]} раз)`).join('\n');
 
     const availableChecklists = [];
@@ -1304,7 +1367,7 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
 
     try {
         const response = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.2, max_tokens: 800 });
-        
+
         const formattedResponse = response
             .replace(/\[ОЦЕНКА ФОРМУЛИРОВОК \(KPI\)\]/g, '<div class="text-[12px] font-black text-purple-700 uppercase mb-1 border-b border-purple-100 pb-1">📝 Качество работы инженеров СК</div>')
             .replace(/\[ПРОГНОЗ РИСКА ПРОСРОЧКИ\]/g, '<div class="text-[12px] font-black text-red-700 uppercase mt-3 mb-1 border-b border-red-100 pb-1">🔮 AI-Прогноз рисков</div>')
@@ -1330,7 +1393,7 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
                 if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
             }
         }
-    } catch(e) {
+    } catch (e) {
         resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
     } finally {
         btn.innerHTML = `🤖 AI-Анализ и Письмо прорабу`;
@@ -1339,7 +1402,7 @@ window.sk_generateContractorAiSummary = async function(cName, safeId) {
 };
 
 // === ПРЕДИКТИВНЫЙ ИИ: ПРОГНОЗ СРЫВА СРОКОВ ===
-window.sk_predictRisksAi = async function(silent = false) {
+window.sk_predictRisksAi = async function (silent = false) {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
         if (!silent) showToast("⚠️ Включите AI-ассистента в Настройках!");
         return;
@@ -1365,7 +1428,7 @@ window.sk_predictRisksAi = async function(silent = false) {
 
     for (let i = 0; i < openRecords.length; i += BATCH_SIZE) {
         const batch = openRecords.slice(i, i + BATCH_SIZE);
-        
+
         let batchContext = batch.map((r, idx) => {
             const daysLeft = r.deadline ? Math.ceil((new Date(r.deadline) - new Date()) / (1000 * 60 * 60 * 24)) : 'Не указан';
             return `ID: ${idx} | Подрядчик: ${r.contractor} | Этап: ${r.category} | Дней до дедлайна: ${daysLeft} | Текст: ${r.text}`;
@@ -1389,7 +1452,7 @@ window.sk_predictRisksAi = async function(silent = false) {
             const jsonMatch = res.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const aiResult = JSON.parse(jsonMatch[0]);
-                
+
                 for (let j = 0; j < batch.length; j++) {
                     const ans = aiResult[j] || aiResult[String(j)];
                     if (ans && ans.risk) {
@@ -1414,12 +1477,12 @@ window.sk_predictRisksAi = async function(silent = false) {
     }
 };
 
-window.rbi_generateGlobalAi = async function() {
+window.rbi_generateGlobalAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    
+
     const container = document.getElementById('global-ai-text');
     if (!container) return;
-    
+
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast("Нет данных для анализа");
 
@@ -1427,11 +1490,11 @@ window.rbi_generateGlobalAi = async function() {
 
     let sumB3 = 0;
     const projectsMap = {};
-    data.forEach(item => { 
+    data.forEach(item => {
         if (item.metrics) sumB3 += item.metrics.n_B3_fail;
-        const pName = item.projectName || 'Без объекта'; 
-        if (!projectsMap[pName]) projectsMap[pName] = []; 
-        projectsMap[pName].push(item); 
+        const pName = item.projectName || 'Без объекта';
+        if (!projectsMap[pName]) projectsMap[pName] = [];
+        projectsMap[pName].push(item);
     });
 
     const pStats = Object.keys(projectsMap).map(p => {
@@ -1445,19 +1508,167 @@ window.rbi_generateGlobalAi = async function() {
     1. Оценка ИКО по объектам (где всё хорошо, где катастрофа). 
     2. Главные риски.
     Отвечай СТРОГО в 2-3 коротких абзаца. Тон жесткий, деловой. Без воды.`;
-    
+
     const promptUser = `Объекты: ${pStats}. Всего проверок: ${data.length}. Найдено критических дефектов (Аварий B3): ${sumB3}.`;
 
     try {
         const response = await window.callAI([
-            { role: 'system', content: promptSystem }, 
+            { role: 'system', content: promptSystem },
             { role: 'user', content: promptUser }
         ], { temperature: 0.3, max_tokens: 400 });
-        
+
         container.innerHTML = response;
         customExpertConclusions['global_portfolio_ai'] = response;
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-    } catch (e) { 
-        container.innerHTML = `<span class="text-red-500">❌ Ошибка AI: ${e.message}</span>`; 
+    } catch (e) {
+        container.innerHTML = `<span class="text-red-500">❌ Ошибка AI: ${e.message}</span>`;
+    }
+};
+
+
+// === AI: САМООБУЧЕНИЕ СИСТЕМЫ (ОПТИМИЗАТОР ПАРАМЕТРОВ) ===
+window.runSelfLearningAi = async function () {
+    if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    if (!['manager', 'deputy_manager'].includes(role)) return showToast("⛔ Доступно только Администратору");
+
+    // Защита от двойного запуска
+    if (window._selfLearningRunning) return showToast("⏳ Уже выполняется...");
+    window._selfLearningRunning = true;
+
+    const container = document.getElementById('ai-self-learning-result');
+    if (!container) {
+        window._selfLearningRunning = false;
+        return showToast("Контейнер #ai-self-learning-result не найден");
+    }
+
+    const data = contractorArray.filter(c => !c._deleted && c.metrics);
+    if (data.length < 50) {
+        window._selfLearningRunning = false;
+        return showToast("Слишком мало данных. Нужно хотя бы 50 проверок для машинного анализа.");
+    }
+
+    container.classList.remove('hidden');
+    container.innerHTML = `<span class="animate-pulse text-purple-600 font-bold">🧠 ИИ сканирует массив данных и калибрует математическую модель...</span>`;
+
+    try {
+        // 1. Собираем расширенную статистику
+        let sumUrk = 0, sumKc = 0, kcAppliedCount = 0, kcritAppliedCount = 0;
+        let b1 = 0, b2 = 0, b3 = 0;
+        let redCount = 0, greenCount = 0;
+        let lastMonthRed = 0, lastMonthTotal = 0;
+        const oneMonthAgo = new Date(); oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
+
+        for (const c of data) {
+            const m = c.metrics;
+            sumUrk += m.final;
+            if (m.final < 70) redCount++;
+            if (m.final >= 85) greenCount++;
+            b1 += m.n_B1_fail; b2 += m.n_B2_fail; b3 += m.n_B3_fail;
+
+            if (m.kc < 1.0) {
+                kcAppliedCount++;
+                sumKc += m.kc;
+            }
+            if (m.kcrit < 1.0) kcritAppliedCount++;
+
+            const cDate = new Date(c.date);
+            if (cDate >= oneMonthAgo) {
+                lastMonthTotal++;
+                if (m.final < 70) lastMonthRed++;
+            }
+        }
+
+        const avgUrk = (sumUrk / data.length).toFixed(1);
+        const avgKc = kcAppliedCount ? (sumKc / kcAppliedCount).toFixed(2) : 1.0;
+        const greenPerc = (greenCount / data.length * 100).toFixed(1);
+        const redPerc = (redCount / data.length * 100).toFixed(1);
+        const recentRedPerc = lastMonthTotal ? (lastMonthRed / lastMonthTotal * 100).toFixed(1) : "0";
+
+        // 2. Промпт для ИИ (без требования JSON, просто текст)
+        const promptSystem = `Ты — Архитектор систем управления качеством (QMS) и Data Scientist. Твоя задача: адаптировать и откалибровать математическую модель приложения под реальные условия стройки.
+Текущие пороги: Зеленая зона > 85%, Красная зона < 70%. Правило Стеклянного потолка: при наличии системных дефектов балл режется до 84%.
+Штрафные коэффициенты: за частоту B2 (Kc): при >20% повторений = 0.85, при >50% = 0.70; за наличие B3 (Kcrit) = 0.50.
+
+Проанализируй полученные цифры:
+- Если зеленой зоны слишком много (> 60%) — значит требования слишком мягкие, предложи поднять пороги.
+- Если красной зоны в последний месяц выросла — модель недооценивает риск, предложи ужесточить.
+- Если средний Kc < 0.9 при редких повторениях B2 — штраф избыточен, предложи повысить.
+- Также оцени баланс дефектов B1/B2/B3.
+
+Верни ответ СТРОГО в 3 абзаца:
+1. ДИАГНОЗ: Оценка жесткости текущей модели и её адекватности.
+2. АНОМАЛИИ: Дисбаланс между типами дефектов (B1/B2/B3) и динамика красной зоны.
+3. РЕКОМЕНДАЦИЯ: Конкретные цифры. Какие пороги УрК изменить (новые значения green/red) и нужно ли изменить штрафные коэффициенты Kc и Kcrit.`;
+
+        const promptUser = `Всего проверок: ${data.length}. Средний УрК: ${avgUrk}%. 
+Попадание в зоны: Зеленая (≥85%): ${greenPerc}%, Красная (<70%): ${redPerc}% (за последний месяц красная зона: ${recentRedPerc}%).
+Штраф Kc применялся в ${kcAppliedCount} проверках (${((kcAppliedCount / data.length) * 100).toFixed(1)}%), средний Kc = ${avgKc}.
+Выявлено дефектов: B1 (${b1}), B2 (${b2}), B3 (${b3}).
+Требуется: оценить, нужно ли поднять порог зеленой зоны, опустить порог красной, изменить Kc или Kcrit.`;
+
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.2, max_tokens: 800 });
+
+        // 3. Вывод результата
+        container.innerHTML = `<div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-purple-200 shadow-sm mt-2">
+            <div class="flex justify-between items-center mb-2">
+                <b class="text-purple-700">🧠 Рекомендации ИИ (DeepSeek)</b>
+                <button onclick="document.getElementById('ai-self-learning-result').innerHTML = ''; document.getElementById('ai-self-learning-result').classList.add('hidden')" class="text-slate-400 hover:text-red-500 text-lg leading-none">✕</button>
+            </div>
+            <div class="text-sm leading-relaxed whitespace-pre-wrap">${response}</div>
+            <div class="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">ℹ️ Рекомендации носят аналитический характер. Изменить пороги можно вручную в настройках проекта (будет добавлено позже).</div>
+        </div>`;
+
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'system_optimization');
+    } catch (e) {
+        console.error("[SelfLearning AI]", e);
+        container.innerHTML = `<span class="text-red-500">❌ Ошибка: ${e.message}</span>`;
+    } finally {
+        window._selfLearningRunning = false;
+    }
+};
+
+// === ИИ-ТРЕНЕР: РАЗБОР ОШИБОК И ГАРАНТИЙНЫХ РИСКОВ ===
+window.sk_auditTemplatesAi = async function () {
+    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+
+    const resBox = document.getElementById('sk-ai-templates-res');
+    if (!resBox) return;
+
+    if (!window.skBadRemarks || window.skBadRemarks.length === 0) {
+        resBox.classList.remove('hidden');
+        resBox.innerHTML = `<div class="text-green-600 font-black flex items-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Ошибок в формулировках не найдено. Команда пишет предписания идеально!</div>`;
+        return;
+    }
+
+    resBox.classList.remove('hidden');
+    resBox.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold flex items-center gap-2"><svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> DeepSeek готовит материал для планерки...</span>`;
+
+    // Берем 3 случайных плохих замечания
+    const sample = window.skBadRemarks.sort(() => 0.5 - Math.random()).slice(0, 3).map(r => `- ${r.eng}: "${r.text}"`);
+
+    const promptSystem = `Ты — Директор по качеству. Твоя задача — провести короткий, жесткий, но конструктивный мастер-класс для инженеров стройконтроля по правильному написанию предписаний.
+    Замечание ОБЯЗАТЕЛЬНО должно содержать конкретный измеримый допуск (мм, см), либо ссылку на ГОСТ/СП/лист проекта. Общие фразы ("криво", "не по проекту") недопустимы, так как их легко оспорить в суде или при гарантийном случае через 3 года.
+
+    Сформируй ответ строго в 3 блока (используй HTML-теги <b>, <ul>, <li>, <br> для красоты, не используй Markdown-звездочки):
+    <b style="color:#b91c1c;">1. ГАРАНТИЙНЫЕ РИСКИ</b><br>[Объясни 1 абзацем, почему "отсебятина" и отсутствие цифр убьет позицию компании в суде с генподрядчиком или при жалобе дольщика.]<br><br>
+    <b style="color:#0369a1;">2. РАЗБОР РЕАЛЬНЫХ ОШИБОК ИЗ БАЗЫ</b><br>[Возьми переданные примеры инженеров. Для каждого напиши "Как написано:" и "Как нужно писать:" (придумай реалистичные оси, листы РД и цифры допусков для примера).]<br><br>
+    <b style="color:#15803d;">3. ПЛАН ДЕЙСТВИЙ</b><br>[Призыв к руководителю разобрать эти кейсы на ближайшей планерке.]`;
+
+    const promptUser = `Вот реальные ошибки моих инженеров из Стройконтроля:\n${sample.join('\n')}`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: promptUser }
+        ], { temperature: 0.3, max_tokens: 800 });
+
+        resBox.innerHTML = response;
+        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'sk_coaching');
+    } catch (e) {
+        resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
     }
 };

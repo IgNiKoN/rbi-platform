@@ -17,7 +17,8 @@ const SK_FIELDS = [
     { id: 'status', name: 'Отметка об устранении' },
     { id: 'date_resolved', name: 'Фактическая дата устранения' },
     { id: 'structure', name: 'Элемент структуры (Зона)' },
-    { id: 'inspector', name: 'Инженер (Выдал)' } // <--- НОВОЕ ПОЛЕ
+    { id: 'inspector', name: 'Инженер (Выдал)' },
+    { id: 'project_loc', name: 'Расположение в проекте' } // <--- НОВОЕ ПОЛЕ
 ];
 
 function updateSkRecordTimestamps(record) {
@@ -130,13 +131,16 @@ function sk_filterRecordsByAccess(records) {
                 r.imported_by ||
                 '';
 
+            // Если объект не распознан системой, разрешаем автору видеть свою загрузку
+            const isUnassignedProject = recProject === 'unknown' || recProject === '';
+
             const projectOk =
                 !assignedProjects ||
                 assignedProjects.length === 0 ||
-                assignedProjects.includes(recProject);
+                assignedProjects.includes(recProject) ||
+                isUnassignedProject;
 
-            const ownerOk =
-                uploadedBy === currentEngineer;
+            const ownerOk = uploadedBy === currentEngineer;
 
             return projectOk && ownerOk;
         });
@@ -224,10 +228,10 @@ window.sk_renderMainTab = async function () {
 
     // --- ПРОВЕРКА ПРАВ ДЛЯ ВКЛАДКИ HR ---
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    const isManagement = ['project_manager', 'deputy_manager', 'director', 'manager'].includes(role);
+    const canSeeHr = role !== 'guest'; // Разрешаем всем, кроме гостей
     const canUploadSk = ['engineer', 'deputy_manager', 'manager'].includes(role);
 
-    const hrBtnHtml = isManagement ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
+    const hrBtnHtml = canSeeHr ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
 
     let html = `
         <!-- ... Шапка дашборда СК (оставляем как есть, меняем только кнопки) ... -->
@@ -286,34 +290,70 @@ window.sk_renderMainTab = async function () {
 // Функция очистки данных Стройконтроля
 window.sk_clearData = async function () {
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    if (!['manager', 'deputy_manager'].includes(role)) {
-        return showToast("⛔ Недостаточно прав для очистки ПК СК");
+    
+    // Гостям, подрядчикам, директорам и РП очистка недоступна
+    if (['guest', 'contractor', 'project_manager', 'director'].includes(role)) {
+        return showToast("⛔ У вашей роли нет прав для очистки базы ПК СК");
     }
-    if (!confirm("Удалить ВСЕ загруженные замечания Стройконтроля? (Справочник объемов и настройки колонок сохранятся)")) return;
+
+    const isManager = ['manager', 'deputy_manager'].includes(role);
+    const confirmText = isManager 
+        ? "Удалить ВСЕ загруженные замечания Стройконтроля? (Справочник объемов сохранится)" 
+        : "Удалить ВСЕ ВАШИ загруженные замечания Стройконтроля? (Чужие записи останутся)";
+
+    if (!confirm(confirmText)) return;
+
+    let deletedCount = 0;
+    const currentUser = sk_getCurrentUserName();
 
     for (let rec of window.skRecords) {
-        rec._deleted = true;
-        rec._updatedAt = new Date().toISOString();
-        await dbPut(STORES.SK_RECORDS, rec);
+        const owner = rec.uploaded_by || rec.sk_uploaded_by || rec.imported_by || '';
+        
+        // Менеджер удаляет всё. Инженер — только своё.
+        if (isManager || owner === currentUser) {
+            rec._deleted = true;
+            rec._updatedAt = new Date().toISOString();
+            rec.updated_at = rec._updatedAt;
+            rec.source = 'local';
+            rec.syncStatus = 'not_synced';
+            rec.sync_status = 'not_synced';
+            await dbPut(STORES.SK_RECORDS, rec);
+            deletedCount++;
+        }
     }
-    window.skRecords = [];
-    localStorage.setItem('rbi_cloud_dirty', '1');
-    if (typeof triggerSync === 'function') triggerSync('silent');
-    showToast("🗑️ База Стройконтроля помечена на удаление. Синхронизируйтесь, чтобы очистить у команды.");
-    sk_renderMainTab();
+
+    if (deletedCount > 0) {
+        window.skRecords = window.skRecords.filter(r => !r._deleted);
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        showToast(`🗑️ Удалено замечаний: ${deletedCount}`);
+        sk_renderMainTab();
+    } else {
+        showToast("⚠️ Нет замечаний для удаления (или нет прав на удаление чужих).");
+    }
 };
 
 window.sk_switchView = function (view) {
-    document.getElementById('sk-view-dashboard').classList.add('hidden');
-    document.getElementById('sk-view-volumes').classList.add('hidden');
-    document.getElementById('sk-view-hr').classList.add('hidden');
+    // --- НОВОЕ: Безопасное скрытие вкладок (защита от Crash) ---
+    const vDash = document.getElementById('sk-view-dashboard');
+    const vVol = document.getElementById('sk-view-volumes');
+    const vHr = document.getElementById('sk-view-hr');
+
+    if (vDash) vDash.classList.add('hidden');
+    if (vVol) vVol.classList.add('hidden');
+    if (vHr) vHr.classList.add('hidden');
+    // ------------------------------------------------------------
 
     const defaultBtnClass = "shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
     const activeBtnClass = "shrink-0 px-4 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5";
 
-    document.getElementById('sk-btn-dashboard').className = defaultBtnClass;
-    document.getElementById('sk-btn-volumes').className = defaultBtnClass;
-    document.getElementById('sk-btn-hr').className = defaultBtnClass;
+    const btnDash = document.getElementById('sk-btn-dashboard');
+    const btnVol = document.getElementById('sk-btn-volumes');
+    const btnHr = document.getElementById('sk-btn-hr');
+
+    if (btnDash) btnDash.className = defaultBtnClass;
+    if (btnVol) btnVol.className = defaultBtnClass;
+    if (btnHr) btnHr.className = defaultBtnClass;
 
     document.getElementById(`sk-view-${view}`).classList.remove('hidden');
     document.getElementById(`sk-btn-${view}`).className = activeBtnClass;
@@ -427,31 +467,48 @@ window.sk_handleExcelImport = async function (event) {
     event.target.value = '';
 };
 
-// === 6. МОДАЛКА МАППИНГА КОЛОНОК (С ИИ) ===
+// === 6. МАППИНГ КОЛОНОК (С АВТОПРОПУСКОМ) ===
+// === 6. МАППИНГ КОЛОНОК (С АВТОПРОПУСКОМ) ===
+// === 6. МАППИНГ КОЛОНОК (С АВТОПРОПУСКОМ) ===
 window.sk_showMappingModal = function (fileHeaders, sampleRow) {
     const modal = document.getElementById('modal-overlay');
 
-    // Базовая эвристика (если ИИ отключен)
-    const heuristics = {
-        'number': ['замечания', 'номер', 'id', '№'],
-        'text': ['замечание', 'текст', 'описание', 'дефект', 'нарушение'],
-        'category': ['категория', 'вид работ', 'тип работ', 'раздел'],
-        'date_issued': ['дата выдачи', 'выдано', 'создано', 'дата создания'],
-        'contractor': ['ответственная организация', 'подрядчик', 'исполнитель', 'организация'],
-        'deadline': ['требуемый срок', 'срок устранения', 'дедлайн', 'срок'],
-        'status': ['отметка об устранении', 'статус', 'состояние'],
-        'date_resolved': ['фактическая дата', 'дата устранения', 'устранено'],
-        'structure': ['элемент структуры', 'зона', 'место', 'расположение'],
-        'inspector': ['инспектор', 'инженер', 'выдал', 'автор', 'представитель'] // <--- НОВОЕ
+    // Функция очистки заголовков из Excel (убивает переносы строк и двойные пробелы)
+    const cleanHeader = (str) => {
+        if (!str) return '';
+        return str.toLowerCase().replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
     };
+
+    // ТОЧНЫЕ названия колонок из выгрузки Стройконтроля
+    const exactMatch = {
+        'number': '№ замечания',
+        'text': 'замечание',
+        'category': 'категория замечания',
+        'date_issued': 'дата выдачи',
+        'contractor': 'ответственная организация',
+        'deadline': 'требуемый срок устранения',
+        'status': 'отметка об устранении',
+        'date_resolved': 'фактическая дата устранения',
+        'inspector': 'представитель организации выдавший предписание',
+        'structure': 'элемент структуры',
+        'project_loc': 'расположение в проекте'
+    };
+
+    const currentMapping = {};
+    let allFound = true; 
 
     let mappingHtml = SK_FIELDS.map(field => {
         let bestMatchIdx = -1;
-        if (window.skMapping && window.skMapping[field.id] !== undefined) {
-            bestMatchIdx = window.skMapping[field.id];
-        } else {
-            const keywords = heuristics[field.id] || [];
-            bestMatchIdx = fileHeaders.findIndex(h => keywords.some(kw => h.toLowerCase().includes(kw)));
+        const targetStr = exactMatch[field.id];
+
+        // Сравниваем ИДЕАЛЬНО ОЧИЩЕННЫЕ заголовки
+        bestMatchIdx = fileHeaders.findIndex(h => cleanHeader(h) === targetStr);
+        
+        currentMapping[field.id] = bestMatchIdx;
+
+        if (bestMatchIdx === -1) {
+            allFound = false;
+            console.warn(`[Маппинг] Не найдена колонка: "${targetStr}"`); // Если что-то не совпадет, мы увидим это в консоли F12
         }
 
         let options = '<option value="-1">-- Пропустить (Не загружать) --</option>';
@@ -465,30 +522,31 @@ window.sk_showMappingModal = function (fileHeaders, sampleRow) {
         return `
             <div class="mb-3 bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)] shadow-sm">
                 <div class="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase mb-1">${field.name}</div>
-                <select class="sk-mapping-select input-base !py-1.5 text-[11px]" data-field="${field.id}">
-                    ${options}
-                </select>
-            </div>
-        `;
+                <select class="sk-mapping-select input-base !py-1.5 text-[11px]" data-field="${field.id}">${options}</select>
+            </div>`;
     }).join('');
 
+    // АВТОМАТИЗАЦИЯ: Если стандартный шаблон ПК СК совпал на 100%
+    if (allFound) {
+        showToast("✨ Стандартный файл распознан! Начинаем загрузку...");
+        window.skMapping = currentMapping;
+        // ПЕРЕДАЕМ CURRENT MAPPING ПРЯМО В ФУНКЦИЮ, ЧТОБЫ ОНА НЕ ИСКАЛА HTML
+        setTimeout(() => { sk_executeImport(currentMapping); }, 300);
+        return; 
+    }
+
+    // Если шаблон нестандартный — открываем ручную настройку
     document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-2xl mx-auto mb-2 border border-indigo-200">🔗</div>`;
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Связь колонок</div>`;
     document.getElementById('modal-body').innerHTML = `
-        <div class="text-center text-[10px] text-slate-500 mb-2 leading-relaxed">
-            Система угадала назначение колонок. Проверьте правильность и нажмите "Загрузить".
-        </div>
+        <div class="text-center text-[10px] text-slate-500 mb-2 leading-relaxed">Система не смогла автоматически распознать все колонки. Проверьте связь вручную.</div>
         <button onclick="sk_aiMapColumns()" id="btn-ai-mapping" class="w-full bg-slate-100 text-indigo-600 border border-indigo-200 py-2 rounded-lg font-bold text-[10px] uppercase mb-4 active:scale-95 transition-colors flex justify-center items-center gap-1.5">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Угадать через ИИ (DeepSeek)
         </button>
-        <div class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1 mb-4">
-            ${mappingHtml}
-        </div>
+        <div class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1 mb-4">${mappingHtml}</div>
         <div class="flex gap-2">
-            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 transition-colors border border-[var(--card-border)]">Отмена</button>
-            <button onclick="sk_executeImport()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 flex justify-center items-center gap-2">
-                ▶ Загрузить
-            </button>
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 border">Отмена</button>
+            <button onclick="sk_executeImport()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">▶ Загрузить</button>
         </div>
     `;
 
@@ -596,17 +654,45 @@ function sk_similarity(s1, s2) {
 }
 
 // === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
-window.sk_executeImport = async function () {
-    // Сохраняем маппинг колонок
-    const currentMapping = {};
-    document.querySelectorAll('.sk-mapping-select').forEach(select => {
-        currentMapping[select.dataset.field] = parseInt(select.value);
+// === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
+// === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
+window.sk_executeImport = async function (autoMapping = null) {
+    // Сохраняем маппинг колонок (Если передали autoMapping - берем его, иначе собираем из HTML)
+    let currentMapping = autoMapping;
+
+    if (!currentMapping) {
+        currentMapping = {};
+        document.querySelectorAll('.sk-mapping-select').forEach(select => {
+            currentMapping[select.dataset.field] = parseInt(select.value);
+        });
+    }
+
+    // --- ЗАЩИТА ОТ ДУРАКА ---
+    // Проверяем, не выбрал ли юзер "Пропустить" (-1) для критически важных колонок
+    const criticalFields = ['number', 'contractor', 'status', 'date_issued'];
+    let hasError = false;
+    
+    criticalFields.forEach(field => {
+        if (currentMapping[field] === -1 || isNaN(currentMapping[field])) {
+            hasError = true;
+        }
     });
+
+    if (hasError) {
+        return showToast("⛔ ОШИБКА: Колонки '№ замечания', 'Ответственная организация', 'Дата выдачи' и 'Отметка об устранении' ОБЯЗАТЕЛЬНЫ! Назначьте их.");
+    }
+    // ------------------------
+
     window.skMapping = currentMapping;
-    await dbPut(STORES.SK_MAPPING, { id: 'main', data: currentMapping });
+    if (typeof dbPut === 'function') {
+        await dbPut(STORES.SK_MAPPING, { id: 'main', data: currentMapping });
+    }
 
     const rows = window.skTempRawRows;
     const contrIdx = currentMapping['contractor'];
+    
+    // 1. Вытаскиваем всех уникальных подрядчиков из загружаемого файла
+    // ... (дальше код остается без изменений: const rawContractorsInFile = new Set(); и т.д.)
 
     // 1. Вытаскиваем всех уникальных подрядчиков из загружаемого файла
     const rawContractorsInFile = new Set();
@@ -730,15 +816,15 @@ window.sk_resolvePair = function (idx, isMatch) {
     }
 };
 
-// === 12. ФИНАЛЬНОЕ СОХРАНЕНИЕ ДАННЫХ В БД ===
 window.sk_finalizeImport = async function () {
-    showToast("⏳ Сохраняем данные в базу...");
+    showToast("⏳ Извлекаем объекты и сохраняем данные (может занять пару минут при больших объемах)...");
 
     await dbPut(STORES.SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap });
 
     const rows = window.skTempRawRows;
     let newRecordsCount = 0;
     let updatedRecordsCount = 0;
+    let recordsToSaveBatch = []; // Массив для супер-быстрого пакетного сохранения
 
     for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
@@ -759,8 +845,22 @@ window.sk_finalizeImport = async function () {
         const rawContractor = getVal('contractor') ? String(getVal('contractor')).trim() : 'Неизвестно';
         const cleanContractor = window.skTempContractorMatches[rawContractor] || rawContractor;
 
+        // --- УМНОЕ ИЗВЛЕЧЕНИЕ ОБЪЕКТА ИЗ СТРОКИ "Строящиеся объекты/Лиговский/..." ---
+        const rawProjLoc = getVal('project_loc') ? String(getVal('project_loc')).trim() : '';
+        let extractedProject = '';
+        if (rawProjLoc) {
+            const pathParts = rawProjLoc.split('/');
+            // Если есть слэши, берем вторую часть (Лиговский 240). Иначе берем всю строку.
+            extractedProject = pathParts.length > 1 ? pathParts[1].trim() : pathParts[0].trim();
+        }
+
+        // Прогоняем извлеченный объект через наш Справочник (для админки)
+        let parsedLoc = { canonical_key: 'unknown', display_name: extractedProject || 'Не указан' };
+        if (extractedProject && typeof ObjectDirectory !== 'undefined') {
+            parsedLoc = await ObjectDirectory.normalizeProjectName(extractedProject);
+        }
+
         const rawLoc = getVal('structure') ? String(getVal('structure')).trim() : '';
-        const parsedLoc = await sk_parseLocation(rawLoc);
 
         // ИЗВЛЕЧЕНИЕ НОРМАТИВОВ
         const rawText = getVal('text') ? String(getVal('text')).trim() : '';
@@ -778,16 +878,15 @@ window.sk_finalizeImport = async function () {
             deadline: sk_parseExcelDate(getVal('deadline')),
             status: getVal('status') ? String(getVal('status')).trim() : '',
             date_resolved: sk_parseExcelDate(getVal('date_resolved')),
-
             standards: extractedStandards,
 
-            // Новые поля для пространственного анализа
             structure: rawLoc,
             raw_location: rawLoc,
+            // ПРИВЯЗЫВАЕМ К ИЗВЛЕЧЕННОМУ ОБЪЕКТУ
             canonical_key: parsedLoc.canonical_key,
             display_name: parsedLoc.display_name,
-            block: parsedLoc.block,
-            floor: parsedLoc.floor,
+            block: rawLoc, 
+            floor: '?',
             uploaded_by: sk_getCurrentUserName(),
             sk_uploaded_by: sk_getCurrentUserName(),
             imported_by: sk_getCurrentUserName(),
@@ -802,93 +901,92 @@ window.sk_finalizeImport = async function () {
             _deleted: false
         };
 
-        const existingIdx = window.skRecords.findIndex(r => r.id === record.id);
+        // Ищем СТРОГО по уникальному № замечания из Excel
+        const existingIdx = window.skRecords.findIndex(r => String(r.number) === String(record.number));
 
-if (existingIdx !== -1) {
-    const existing = window.skRecords[existingIdx];
+        if (existingIdx !== -1) {
+            const existing = window.skRecords[existingIdx];
+            
+            // Если статус, дедлайн и дата закрытия не изменились — игнорируем строку (защита от лишних операций БД)
+            if (existing.status === record.status && existing.date_resolved === record.date_resolved && existing.deadline === record.deadline) {
+                continue; 
+            }
 
-    const existingOwner =
-        existing.uploaded_by ||
-        existing.sk_uploaded_by ||
-        existing.imported_by ||
-        '';
+            const existingOwner = existing.uploaded_by || existing.sk_uploaded_by || '';
+            const role = sk_getCurrentRole();
+            const isAdminSk = ['manager', 'deputy_manager'].includes(role);
 
-    const role = sk_getCurrentRole();
-    const isAdminSk = ['manager', 'deputy_manager'].includes(role);
+            // Инженер не может перезаписать чужую запись
+            if (!isAdminSk && existingOwner && existingOwner !== sk_getCurrentUserName()) continue;
 
-    // Инженер не может перезаписать запись, которую загрузил другой пользователь.
-    // Заместитель и администратор могут.
-    if (!isAdminSk && existingOwner && existingOwner !== sk_getCurrentUserName()) {
-        continue;
+            record.id = existing.id; // ЖЕСТКО сохраняем старый ID базы
+            record.uploaded_by = existingOwner || sk_getCurrentUserName();
+            record.sk_uploaded_by = existingOwner || sk_getCurrentUserName();
+            
+            // Сохраняем ИИ-категорию, если она уже была определена ранее
+            record.ai_category = existing.ai_category;
+            record.category_corrected = existing.category_corrected;
+
+            window.skRecords[existingIdx] = record;
+            recordsToSaveBatch.push(record);
+            updatedRecordsCount++;
+        } else {
+            // Только если номера замечания нет в базе - создаем новую
+            window.skRecords.push(record);
+            recordsToSaveBatch.push(record);
+            newRecordsCount++;
+        }
     }
 
-    const existingTime = existing._updatedAt ? new Date(existing._updatedAt).getTime() : 0;
-    const newTime = new Date(record._updatedAt).getTime();
-
-    if (newTime > existingTime || isAdminSk) {
-        // Если запись уже имела владельца — сохраняем его.
-        // Если записи владельца не было — ставим текущего загрузившего.
-        record.uploaded_by = existingOwner || sk_getCurrentUserName();
-        record.sk_uploaded_by = existingOwner || sk_getCurrentUserName();
-        record.imported_by = existingOwner || sk_getCurrentUserName();
-
-        window.skRecords[existingIdx] = record;
-        updatedRecordsCount++;
-    } else {
-        continue;
-    }
-} else {
-    window.skRecords.push(record);
-    newRecordsCount++;
-}
-
-        await dbPut(STORES.SK_RECORDS, record);
+    // БЫСТРОЕ ПАКЕТНОЕ СОХРАНЕНИЕ В БАЗУ ТЕЛЕФОНА (Защита от зависаний)
+    if (recordsToSaveBatch.length > 0 && typeof dbPutBatch === 'function') {
+        await dbPutBatch(STORES.SK_RECORDS, recordsToSaveBatch);
+    } else if (recordsToSaveBatch.length > 0) {
+        // Резервный вариант, если dbPutBatch вдруг не найден
+        for(let rec of recordsToSaveBatch) {
+            await dbPut(STORES.SK_RECORDS, rec);
+        }
     }
 
     const importLog = { id: 'imp_' + Date.now(), date: new Date().toISOString(), added: newRecordsCount, updated: updatedRecordsCount };
     await dbPut(STORES.SK_IMPORTS, importLog);
 
-    // Геймификация: Начисляем очки за своевременную сверку!
     if (typeof gameLogAction === 'function') gameLogAction('sk_import_done', importLog.id);
-    // Закрываем задачу на загрузку ПК СК
+    
     if (typeof window.rbi_tasksData !== 'undefined') {
-        const skTask = window.rbi_tasksData.find(t =>
-            t.title === 'Загрузить выгрузку ПК СК' && t.status === 'pending'
-        );
+        const skTask = window.rbi_tasksData.find(t => t.title === 'Загрузить выгрузку ПК СК' && t.status === 'pending');
         if (skTask) {
-            skTask.status = 'done';
-            skTask.done = 1;
-            skTask.resultComment = 'Файл загружен';
-            skTask.updatedAt = new Date().toISOString();
+            skTask.status = 'done'; skTask.done = 1; skTask.resultComment = 'Файл загружен'; skTask.updatedAt = new Date().toISOString();
             if (typeof dbPut === 'function') dbPut(STORES.TASKS, skTask);
         }
     }
 
-    showToast(`✅ Импорт завершен! Добавлено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}.`);
+    showToast(`✅ Загружено: ${newRecordsCount}, Обновлено: ${updatedRecordsCount}. ИИ начинает обработку...`);
 
-    // Запускаем синхронизацию сразу, не дожидаясь ИИ
     if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
         localStorage.setItem('rbi_cloud_dirty', '1');
         setTimeout(() => triggerSync('manual'), 500);
     }
 
-    // Запускаем ИИ в фоне (без await) – только если ещё не запущен
-    if (typeof sk_autoMapCategories === 'function' && !skAiRunning) {
-        skAiRunning = true;
-        sk_autoMapCategories(false).finally(() => {
-            skAiRunning = false;
-            // После обработки ИИ – снова помечаем dirty и тихо синхронизируем, чтобы подтянуть категории в облако
-            if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
-                localStorage.setItem('rbi_cloud_dirty', '1');
-                setTimeout(() => triggerSync('silent'), 1000);
-            }
-        });
+    // Запускаем ИИ в фоне ТОЛЬКО если были загружены новые дефекты
+    if (newRecordsCount > 0) {
+        if (typeof sk_autoMapCategories === 'function' && !skAiRunning) {
+            skAiRunning = true;
+            sk_autoMapCategories(false).finally(() => {
+                skAiRunning = false;
+                if (typeof triggerSync === 'function' && window.isSyncEnabled && window.isSyncEnabled()) {
+                    localStorage.setItem('rbi_cloud_dirty', '1');
+                    setTimeout(() => triggerSync('silent'), 1000);
+                }
+                sk_renderDashboard(); // Перерисовываем после работы ИИ
+            });
+        }
+    } else {
+        console.log("Новых записей нет, фоновый ИИ не запускается.");
     }
 
     closeModal();
     sk_renderDashboard();
-    // Убедитесь, что внизу нет повторного вызова sk_autoMapCategories()
-
 };
 
 
@@ -920,9 +1018,20 @@ window.sk_renderDashboard = function () {
         });
     }
 
+    // Фильтрация по Подрядчикам (из глобальной шапки)
     if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics && activeMultiFilters.analytics.contractor.length > 0) {
         const allowedContrs = activeMultiFilters.analytics.contractor.map(c => c.toLowerCase());
         activeRecords = activeRecords.filter(r => allowedContrs.includes(r.contractor.toLowerCase()));
+    }
+
+    // НОВОЕ: Фильтрация по Объектам (из глобальной шапки)
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics && activeMultiFilters.analytics.project.length > 0) {
+        const allowedProjs = activeMultiFilters.analytics.project;
+        activeRecords = activeRecords.filter(r => {
+            const recProj = r.canonical_key || r.display_name || '';
+            // Проверяем, входит ли системный ключ объекта в список выбранных
+            return allowedProjs.includes(recProj);
+        });
     }
 
     if (activeRecords.length === 0) {
@@ -1138,7 +1247,13 @@ window.sk_renderDashboard = function () {
             }
             matrixRows += `
                 <tr class="border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                    <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[120px]" title="${mData.category}">↳ ${mData.category} ${aiBadge}</td>
+                    <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[150px]" title="${mData.category}">
+                        <div class="flex items-center gap-1.5">
+                            <span class="truncate">↳ ${mData.category}</span>
+                            ${!isLinkedContr || mData.category === 'Без категории' ? '' : `<button onclick="sk_openCategoryLinkModal('${mData.category.replace(/'/g, "\\'")}')" class="text-indigo-400 hover:text-indigo-600" title="Привязать к другому виду работ">🔗</button>`}
+                            ${aiBadge}
+                        </div>
+                    </td>
                     <td class="p-2.5 text-center text-[10px]"><span class="font-black text-indigo-600">${mData.total}</span> / ${expectedHtml}</td>
                     <td class="p-2.5 text-center align-middle">${isdHtml}</td>
                     <td class="p-2.5 text-center align-middle">${statusBadge}</td>
@@ -1314,15 +1429,18 @@ window.sk_renderDashboard = function () {
         const newTask = {
             id: 'tsk_sk_cons_' + Date.now().toString(36),
             type: 'auto', category: 'meeting',
-            engineerName: document.getElementById('inp-inspector')?.value.trim() || 'Инженер', // <-- ДОБАВЛЕНО
+            engineerName: sk_getCurrentUserName(), // <-- ИСПРАВЛЕНО: Точное имя
+            inspectorName: sk_getCurrentUserName(),
             icon: 'Совещание', taskType: 'Аналитика СК',
-            contractor: 'Служебная', project: document.getElementById('inp-project')?.value || "Все",
+            contractor: 'Системная', 
+            project: document.getElementById('inp-project')?.value || "Все",
             templateKey: '', workTitle: 'Аналитика СК',
             title: taskTitle, prompt: fullPrompt,
             status: 'pending', priorityLvl: 3, date: new Date().toISOString(),
             target: 1, done: 0, carryOverCount: 0,
             history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана модулем ПК СК.`],
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            _deleted: false
         };
         window.rbi_tasksData.push(newTask);
         if (typeof dbPut === 'function') dbPut('rbi_tasks', newTask);
@@ -1588,14 +1706,14 @@ function sk_extractStandards(text) {
 
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
+// === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК (С РЕЙТИНГОМ И ТОЧНОСТЬЮ) ===
 window.sk_renderHrTab = function () {
     const container = document.getElementById('sk-view-hr');
     if (!container) return;
-    // --- ПРОВЕРКА РОЛИ ---
+    
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    const isManagement = ['project_manager', 'deputy_manager', 'director', 'manager'].includes(role);
-    if (!isManagement) {
-        container.innerHTML = `<div class="text-center py-6 text-red-500 text-[11px] font-bold uppercase border border-red-200 bg-red-50 rounded-xl">Доступно только руководству</div>`;
+    if (role === 'guest') {
+        container.innerHTML = `<div class="text-center py-6 text-red-500 text-[11px] font-bold uppercase border border-red-200 bg-red-50 rounded-xl">Доступно только авторизованным сотрудникам</div>`;
         return;
     }
 
@@ -1606,12 +1724,14 @@ window.sk_renderHrTab = function () {
 
     // Собираем статистику по инженерам СК
     const engMap = {};
+    window.skBadRemarks = []; // Глобальный массив для ИИ-тренера
+
     window.skRecords.forEach(r => {
-        let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан в выгрузке';
+        let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан';
         const engName = baseName.toLowerCase().includes('технадзор') ? baseName : `${baseName} (Технадзор)`;
 
         if (!engMap[engName]) {
-            engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, closingTimes: [], contractors: new Set() };
+            engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, matched: 0, closingTimes: [], contractors: new Set() };
         }
 
         const data = engMap[engName];
@@ -1622,6 +1742,20 @@ window.sk_renderHrTab = function () {
         if (isOpen) data.open++;
 
         if (r.category && r.category !== 'Без категории') data.withCategory++;
+
+        // --- НОВАЯ ЛОГИКА: Оценка точности формулировок ---
+        const textLower = r.text ? r.text.toLowerCase() : '';
+        const hasNormative = /(сп\s*\d|гост|ПУЭ|снип|шифр|тр\s|тк\s|ппр|\d+\s*(мм|см|м|%|град)|(лист|л\.|узел|уз\.|пункт|п\.|приказ[а-я]*)\s*(№\s*|от\s*)?\d+)/i.test(textLower);
+        
+        if (hasNormative) {
+            data.matched++;
+        } else {
+            // Если формулировка плохая, сохраняем для ИИ (если текст больше 10 символов)
+            if (r.text && r.text.length > 10) {
+                window.skBadRemarks.push({ eng: engName, text: r.text });
+            }
+        }
+        // ---------------------------------------------------
 
         const issued = r.date_issued ? new Date(r.date_issued) : null;
         const deadline = r.deadline ? new Date(r.deadline) : null;
@@ -1639,16 +1773,13 @@ window.sk_renderHrTab = function () {
         }
     });
 
-    // Расчет корреляции с RBI (выявляем проблемных подрядчиков из RBI)
     const rbiBadContractors = new Set();
     const groupedRBI = {};
     contractorArray.forEach(c => { groupedRBI[c.contractorName] = groupedRBI[c.contractorName] || []; groupedRBI[c.contractorName].push(c); });
 
     for (let cName in groupedRBI) {
         const m = getContractorMetrics(groupedRBI[cName], typeof userTemplates !== 'undefined' ? userTemplates : {});
-        if (m && (m.finalC < 85 || m.n_изделий_с_B3 > 0)) {
-            rbiBadContractors.add(cName.toLowerCase()); // Подрядчик в желтой или красной зоне
-        }
+        if (m && (m.finalC < 85 || m.n_изделий_с_B3 > 0)) rbiBadContractors.add(cName.toLowerCase());
     }
 
     const engArray = Object.keys(engMap).map(name => {
@@ -1656,8 +1787,8 @@ window.sk_renderHrTab = function () {
         const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a, b) => a + b, 0) / d.closingTimes.length) : 0;
         const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
         const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
+        const accuracyPerc = d.total > 0 ? Math.round((d.matched / d.total) * 100) : 0; // Точность
 
-        // Корреляция с RBI (сколько выданных замечаний приходится на проблемных подрядчиков)
         let rbiHits = 0;
         d.contractors.forEach(c => {
             const linkedName = window.skContractorMap[c] || c;
@@ -1666,13 +1797,15 @@ window.sk_renderHrTab = function () {
         const correlation = d.contractors.size > 0 ? Math.round((rbiHits / d.contractors.size) * 100) : 0;
 
         let kpi = Math.max(0, 100 - overduePerc + (catPerc === 100 ? 10 : 0));
-        return { name, total: d.total, open: d.open, overduePerc, catPerc, avgTime, kpi, correlation };
+        return { name, total: d.total, open: d.open, overduePerc, accuracyPerc, avgTime, kpi, correlation };
     });
 
     engArray.sort((a, b) => b.kpi - a.kpi);
 
     const rowsHtml = engArray.map((e, idx) => {
         const rankColor = idx === 0 ? 'bg-yellow-400 text-white' : 'bg-slate-100 text-slate-500';
+        const accColor = e.accuracyPerc >= 80 ? 'text-green-600' : (e.accuracyPerc >= 50 ? 'text-orange-500' : 'text-red-600');
+
         return `
         <tr class="border-b border-[var(--card-border)] hover:bg-[var(--hover-bg)]">
             <td class="p-2 flex items-center gap-2">
@@ -1681,6 +1814,7 @@ window.sk_renderHrTab = function () {
             </td>
             <td class="p-2 text-center text-[11px] font-black text-indigo-600">${e.total}</td>
             <td class="p-2 text-center text-[11px] font-bold ${e.overduePerc > 20 ? 'text-red-600' : 'text-green-600'}">${e.overduePerc}%</td>
+            <td class="p-2 text-center text-[11px] font-black ${accColor}">${e.accuracyPerc}%</td>
             <td class="p-2 text-center text-[11px] font-bold text-slate-600">${e.avgTime} дн.</td>
             <td class="p-2 text-center text-[11px] font-bold ${e.correlation >= 70 ? 'text-green-600' : (e.correlation >= 40 ? 'text-orange-500' : 'text-red-500')}">${e.correlation}%</td>
             <td class="p-2 text-center text-[12px] font-black ${e.kpi >= 80 ? 'text-green-600' : 'text-red-500'}">${e.kpi}</td>
@@ -1689,31 +1823,47 @@ window.sk_renderHrTab = function () {
 
     container.innerHTML = `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4">
-            <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex items-center justify-between">
-                <div>
-                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white flex items-center gap-1">Рейтинг инженеров СК (KPI)</div>
-                    <div class="text-[9px] text-slate-500 mt-1">
-                        Оценка на основе официальных предписаний: <br>
-                        <b>KPI = 100 - %Просрочки + Бонусы.</b><br>
-                        Колонка <b>"Связь с RBI"</b> показывает, насколько фокус инженера СК совпадает с "красными зонами", которые выявила ваша система аудитов.
-                    </div>
+            <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)]">
+                <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white mb-1">Рейтинг инженеров СК (KPI)</div>
+                <div class="text-[9px] text-slate-500 leading-snug">
+                    <b>KPI = 100 - %Просрочки + Бонусы.</b><br>
+                    <b>Точность</b>: доля замечаний с указанием конкретных допусков (мм, см) или ссылок на РД/ГОСТ.
                 </div>
             </div>
             <div class="overflow-x-auto custom-scrollbar">
                 <table class="w-full text-left whitespace-nowrap">
-                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase">
+                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase tracking-wider">
                         <tr>
                             <th class="p-2.5">Инженер</th>
-                            <th class="p-2.5 text-center" title="Сколько всего замечаний выдал">Выдал</th>
-                            <th class="p-2.5 text-center" title="Доля просроченных замечаний">Просрочка</th>
+                            <th class="p-2.5 text-center" title="Выдано замечаний">Выдал</th>
+                            <th class="p-2.5 text-center" title="Доля просроченных">Просрочка</th>
+                            <th class="p-2.5 text-center text-indigo-600 font-black" title="Наличие нормативов/допусков">Точность</th>
                             <th class="p-2.5 text-center" title="В среднем дней на устранение">Ср. Время</th>
-                            <th class="p-2.5 text-center" title="Насколько совпадает фокус инженера СК с риск-зонами, которые выявила система RBI">Связь с RBI</th>
-                            <th class="p-2.5 text-center text-indigo-600">Оценка KPI</th>
+                            <th class="p-2.5 text-center" title="Совпадение с зонами риска RBI">Связь RBI</th>
+                            <th class="p-2.5 text-center text-indigo-600 font-black">KPI</th>
                         </tr>
                     </thead>
                     <tbody>${rowsHtml}</tbody>
                 </table>
             </div>
+        </div>
+
+        <!-- НОВЫЙ БЛОК: ИИ-ТРЕНЕР -->
+        <div class="bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 rounded-xl p-4 shadow-sm">
+            <div class="flex justify-between items-start mb-3">
+                <div>
+                    <div class="text-[12px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Тренер (Разбор ошибок)
+                    </div>
+                    <div class="text-[10px] text-indigo-600/80 dark:text-indigo-400/80 leading-snug pr-4">
+                        Нейросеть выберет несколько реальных предписаний без нормативов, объяснит гарантийные риски и покажет, как нужно было написать правильно. Идеально для планерки!
+                    </div>
+                </div>
+                <button onclick="window.sk_auditTemplatesAi()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform shrink-0">
+                    Разобрать
+                </button>
+            </div>
+            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium"></div>
         </div>
     `;
 };
@@ -1829,4 +1979,56 @@ window.sk_deleteRecord = async function(recordId) {
     }
 
     showToast("🗑️ Замечание ПК СК удалено");
+};
+
+// === 15. РУЧНАЯ ПРИВЯЗКА КАТЕГОРИЙ (СИНОНИМЫ) ===
+window.sk_openCategoryLinkModal = function(rawCategory) {
+    let optionsHtml = '<option value="">-- Выберите правильный вид работ --</option>';
+    
+    // Собираем все доступные чек-листы
+    if (typeof SYSTEM_TEMPLATES !== 'undefined') {
+        Object.keys(SYSTEM_TEMPLATES).forEach(k => optionsHtml += `<option value="${SYSTEM_TEMPLATES[k].title}">${SYSTEM_TEMPLATES[k].title}</option>`);
+    }
+    if (typeof userTemplates !== 'undefined') {
+        Object.keys(userTemplates).forEach(k => optionsHtml += `<option value="${userTemplates[k].title}">${userTemplates[k].title}</option>`);
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = `<div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-2xl mx-auto mb-2 border border-indigo-200">🔗</div>`;
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Связь видов работ</div>`;
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-[11px] text-slate-600 text-center mb-4">
+            Объедините категорию из ПК СК с правильным названием чек-листа в RBI.
+        </div>
+        <div class="bg-red-50 text-red-600 p-2 rounded-lg border border-red-200 text-center text-[11px] font-bold mb-3">
+            Из ПК СК: "${rawCategory}"
+        </div>
+        <div class="text-center text-slate-400 mb-3">⬇️ будет считаться как ⬇️</div>
+        <select id="sk-category-link-select" class="input-base !py-2 text-[11px] font-bold mb-4">
+            ${optionsHtml}
+        </select>
+        <div class="flex gap-2">
+            <button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-bold text-[11px] uppercase active:scale-95 border">Отмена</button>
+            <button onclick="sk_saveCategoryLink('${rawCategory.replace(/'/g, "\\'")}')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Связать</button>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.sk_saveCategoryLink = async function(rawCategory) {
+    const targetCategory = document.getElementById('sk-category-link-select').value;
+    if (!targetCategory) return showToast("⚠️ Выберите вид работ из списка!");
+
+    // Сохраняем в словарь синонимов
+    window.skCategoryMap[rawCategory] = targetCategory;
+    if (typeof dbPut === 'function') {
+        await dbPut(STORES.SK_CATEGORY_MAP, { id: 'main', data: window.skCategoryMap });
+    }
+
+    closeModal();
+    showToast("✅ Связь установлена! Пересчитываем матрицу...");
+    
+    // Перерисовываем дашборд с новыми правилами
+    setTimeout(() => { sk_renderDashboard(); }, 300);
 };

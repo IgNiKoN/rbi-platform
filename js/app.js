@@ -110,19 +110,29 @@ const audioFail = new Audio("data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwM
 // Таймер для дебаунса сохранений (оптимизация)
 let __saveSessionTimer = null;
 // --- Глобальный отлов ошибок для разработчика ---
-window.addEventListener('unhandledrejection', async event => {
-    const err = event.reason;
+async function sendErrorLogToCloud(message, stack) {
     if (!window.supabaseClient || !window.syncConfig || !window.syncConfig.enabled) return;
     try {
-        await window.supabaseClient.from('rbi_error_logs').insert({
+        // Оборачиваем объект в массив [] - это надежнее для Supabase
+        await window.supabaseClient.from('rbi_error_logs').insert([{
             device_id: window.syncConfig.deviceId,
             project_code: window.syncConfig.projectCode || 'N/A',
-            message: String(err?.message || err).slice(0, 300),
-            stack: String(err?.stack || '').slice(0, 500),
+            message: String(message).slice(0, 300),
+            stack: String(stack || '').slice(0, 500),
             app_version: 'v17.8.188',
             created_at: new Date().toISOString()
-        });
+        }]);
     } catch (e) { console.error('Ошибка записи лога', e); }
+}
+
+// Ловим ошибки промисов (асинхронные)
+window.addEventListener('unhandledrejection', event => {
+    sendErrorLogToCloud(event.reason?.message || event.reason, event.reason?.stack);
+});
+
+// Ловим обычные ошибки интерфейса (синхронные)
+window.addEventListener('error', event => {
+    sendErrorLogToCloud(event.message, event.error?.stack);
 });
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -1934,7 +1944,7 @@ function changeTemplate(val) {
         // Умный сброс (Инспектор остается, а Защищенные поля не трогаем)
         const pInp = document.getElementById('inp-project');
         const cInp = document.getElementById('inp-contractor');
-        if (pInp && !pInp.hasAttribute('readonly')) pInp.value = '';
+        if (pInp && !pInp.hasAttribute('readonly') && !pInp.disabled) pInp.value = '';
         if (cInp && !cInp.hasAttribute('readonly')) cInp.value = '';
         if (document.getElementById('inp-location')) document.getElementById('inp-location').value = '';
 
@@ -1972,7 +1982,7 @@ function changeTemplate(val) {
     // НЕ стираем Защищенные поля (readonly)
     const pInp2 = document.getElementById('inp-project');
     const cInp2 = document.getElementById('inp-contractor');
-    if (pInp2 && !pInp2.hasAttribute('readonly')) pInp2.value = '';
+    if (pInp2 && !pInp2.hasAttribute('readonly') && !pInp2.disabled) pInp2.value = '';
     if (cInp2 && !cInp2.hasAttribute('readonly')) cInp2.value = '';
     if (document.getElementById('inp-location')) document.getElementById('inp-location').value = '';
 
@@ -8514,7 +8524,11 @@ window.rbi_handleMeetingPhotoUpload = function (event) {
         const box = document.getElementById('meeting-photo-preview');
         box.dataset.photo = localUrl;
         box.classList.remove('hidden');
-        box.innerHTML = `<img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
+        
+        // Ждем получения реальной ссылки-blob из памяти
+        const realSrc = await PhotoManager.getAsyncUrl(localUrl) || window.getPhotoSrc(localUrl);
+        
+        box.innerHTML = `<img src="${realSrc}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
         event.target.value = '';
     });
 };

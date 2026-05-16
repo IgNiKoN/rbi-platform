@@ -3193,7 +3193,8 @@ window.printCurrentTwi = async function (mode = 'browser') {
         `;
 
         // ВАЖНО: Используем for...of вместо forEach, чтобы await работал
-        for (let step of card.steps) {
+        const safeSteps = card.steps || []; // Защита от краша, если инженер забыл добавить шаги
+        for (let step of safeSteps) {
             let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
 
             content += `

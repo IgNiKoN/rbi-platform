@@ -189,41 +189,31 @@ window.gameForceUpdatePlan = async function (silent = false) {
 window.isPlanGenerating = false;
 
 window.gameGenerateWeeklyPlan = async function (force = false) {
-    if (window.isPlanGenerating) return; // Если уже генерируем - отменяем повторный вызов
+    if (window.isPlanGenerating) return; 
     window.isPlanGenerating = true;
 
     try {
-        // --- НОВОЕ: Задачи генерируются ТОЛЬКО для роли "Инженер" ---
         const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-        if (currentRole !== 'engineer') {
+        
+        // Гостям и подрядчикам авто-задачи не нужны
+        if (['guest', 'contractor'].includes(currentRole)) {
             window.isPlanGenerating = false;
-            return; // Руководителям, подрядчикам и гостям авто-задачи не нужны
-        }
-        // ----------------------------------------------------------------
-
-        const currentInspector = document.getElementById('inp-inspector')?.value.trim();
-
-        // ИСПРАВЛЕНИЕ: Если инспектор не указан или стоит дефолтное имя - прерываем генерацию плана!
-        if (!currentInspector || currentInspector === 'Инженер' || currentInspector === 'Неизвестный инспектор') {
-            return;
+            return; 
         }
 
+        const myName = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : (typeof appSettings !== 'undefined' ? appSettings.engineerName : 'Инженер');
+        
         if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) return;
 
         const now = new Date();
         const currentWeekId = getWeekId(now);
         const startOfThisWeek = getStartOfWeek(now);
 
-        // АВТО-ОЧИСТКА: Если наступила новая неделя, принудительно чистим старые авто-задачи
-        if (weeklyPlanData.weekId && weeklyPlanData.weekId !== currentWeekId) {
-            force = true;
-        }
+        // АВТО-ОЧИСТКА
+        if (weeklyPlanData.weekId && weeklyPlanData.weekId !== currentWeekId) force = true;
 
-        // ОБНОВЛЕНИЕ ПЛАНА (Сборка долгов и умная очистка)
         if (force) {
             const nowTime = new Date().setHours(0, 0, 0, 0);
-
-            // 1. Начисляем "Долг" (carryOverCount) всем просроченным задачам
             window.rbi_tasksData.forEach(t => {
                 if (t.status === 'pending') {
                     const tDate = new Date(t.date).setHours(0, 0, 0, 0);
@@ -233,13 +223,8 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
                 }
             });
 
-            // 2. Удаляем ТОЛЬКО рядовые инспекции (Аудиты), к которым не приступали.
-            // Эталоны, Отчеты, Плакаты, Совещания и Воркшопы — НЕ УДАЛЯЕМ, они переходят в Долг!
             const tasksToDelete = window.rbi_tasksData.filter(t =>
-                t.type === 'auto' &&
-                t.status === 'pending' &&
-                (!t.done || t.done === 0) &&
-                t.taskType === 'Аудит' // Удаляем только рутину
+                t.type === 'auto' && t.status === 'pending' && (!t.done || t.done === 0) && t.taskType === 'Аудит'
             );
 
             for (let t of tasksToDelete) {
@@ -252,254 +237,254 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
 
         let newTasksCount = 0;
 
-        const addTask = (idSuffix, cat, icon, title, workTitle, contractor, prompt, lvl, tDate, tmplKey = '', taskType = '', targetCount = 1) => {
-            // БРОНЕБОЙНЫЙ ПОИСК ДУБЛИКАТОВ
-            let existingTask = window.rbi_tasksData.find(t => {
-                if (t._deleted) return false;
+        // Определяем, для кого генерируем задачи
+        let engineersToProcess = [myName];
+        if (['manager', 'deputy_manager'].includes(currentRole)) {
+            const allEngs = [...new Set(contractorArray.map(c => c.inspectorName).filter(Boolean))];
+            if (allEngs.length > 0) engineersToProcess = allEngs;
+            if (!engineersToProcess.includes(myName)) engineersToProcess.push(myName);
+        } else if (currentRole === 'project_manager') {
+             const allEngs = [...new Set(contractorArray.map(c => c.inspectorName).filter(Boolean))];
+             engineersToProcess = allEngs;
+        }
 
-                // --- НОВОЕ: Проверяем, что задача принадлежит ТЕКУЩЕМУ инженеру ---
-                const taskEng = t.engineerName || t.inspectorName || '';
-                // Системные задачи общие, остальные - строго личные
-                if (contractor !== 'Системная' && taskEng !== currentInspector) return false;
-                // ------------------------------------------------------------------
+        // Обходим каждого инженера
+        for (let targetEngineer of engineersToProcess) {
+            if (!targetEngineer || targetEngineer === 'Неизвестный инспектор') continue;
 
-                // 1. Системные отчеты: ищем по точному названию в активных
-                if (contractor === 'Системная' && (t.status === 'pending' || t.status === 'paused')) {
-                    return t.title === title;
-                }
+            const addTask = (idSuffix, cat, icon, title, workTitle, contractor, prompt, lvl, tDate, tmplKey = '', taskType = '', targetCount = 1) => {
+                let existingTask = window.rbi_tasksData.find(t => {
+                    if (t._deleted) return false;
+                    const taskEng = t.engineerName || t.inspectorName || '';
+                    if (contractor !== 'Системная' && taskEng !== targetEngineer) return false;
+                    if (contractor === 'Системная' && taskEng !== targetEngineer) return false; // Системные тоже персональные
 
-                // 2. Обычные задачи: сверяем Подрядчик + Шаблон + ТИП ЗАДАЧИ!
-                if (t.status === 'pending' || t.status === 'paused') {
-                    return t.contractor === contractor && t.templateKey === tmplKey && t.taskType === taskType;
-                }
+                    if (t.status === 'pending' || t.status === 'paused') {
+                        if (contractor === 'Системная') return t.title === title;
+                        return t.contractor === contractor && t.templateKey === tmplKey && t.taskType === taskType;
+                    }
 
-                // 3. Завершенные
-                const taskWeek = getWeekId(new Date(t.createdAt || t.date || Date.now()));
-                if (taskWeek === currentWeekId) {
-                    return t.contractor === contractor && t.templateKey === tmplKey && t.taskType === taskType;
-                }
+                    const taskWeek = getWeekId(new Date(t.createdAt || t.date || Date.now()));
+                    if (taskWeek === currentWeekId) {
+                        if (contractor === 'Системная') return t.title === title;
+                        return t.contractor === contractor && t.templateKey === tmplKey && t.taskType === taskType;
+                    }
+                    return false;
+                });
 
-                return false;
-            });
-
-            if (existingTask) {
-                // ЗАДАЧА УЖЕ СУЩЕСТВУЕТ (ИЛИ ВЫПОЛНЕНА НА ЭТОЙ НЕДЕЛЕ)
-                // Если это активный Аудит, и мы обновляем план - плюсуем квоту
-                if (force && existingTask.status === 'pending') {
-                    if (taskType === 'Аудит') {
-                        const deficit = existingTask.target - (existingTask.done || 0);
-                        if (deficit > 0) {
-                            existingTask.target = deficit + targetCount;
+                if (existingTask) {
+                    if (force && existingTask.status === 'pending') {
+                        if (taskType === 'Аудит') {
+                            const deficit = existingTask.target - (existingTask.done || 0);
+                            if (deficit > 0) {
+                                existingTask.target = deficit + targetCount;
+                                existingTask.date = tDate.toISOString();
+                                if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingTask);
+                            }
+                        } else {
                             existingTask.date = tDate.toISOString();
                             if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingTask);
                         }
-                    } else {
-                        existingTask.date = tDate.toISOString();
-                        if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingTask);
                     }
+                    return; 
                 }
-                return; // ПРЕРЫВАЕМ ФУНКЦИЮ, НОВУЮ ЗАДАЧУ НЕ СОЗДАЕМ
-            }
 
-            // ЕСЛИ ЗАДАЧИ НЕТ — СОЗДАЕМ
-            const task = {
-                id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random() * 1000),
-                source: 'ai', type: 'auto', category: cat, icon: icon, taskType: taskType,
-                contractor: contractor, project: document.getElementById('inp-project')?.value || "Все",
-                engineerName: currentInspector, // <-- ДОБАВЬ ЭТУ СТРОКУ
-                templateKey: tmplKey, workTitle: workTitle,
-                title: title, prompt: prompt,
-                status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
-                target: targetCount, done: 0, carryOverCount: 0,
-                history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана системой.`],
-                updatedAt: new Date().toISOString(),
-                createdAt: new Date().toISOString()
+                // ПОЛУЧАЕМ ИМЯ ПРОЕКТА ДЛЯ ЗАДАЧИ
+                let projName = "Все";
+                if (contractor !== 'Системная') {
+                    const sampleCheck = contractorArray.find(c => c.inspectorName === targetEngineer && c.contractorName === contractor && c.templateKey === tmplKey);
+                    if (sampleCheck) projName = sampleCheck.project_display_name || sampleCheck.projectName || "Все";
+                }
+
+                const task = {
+                    id: 'tsk_' + Date.now().toString(36) + idSuffix + Math.floor(Math.random() * 1000),
+                    source: 'ai', type: 'auto', category: cat, icon: icon, taskType: taskType,
+                    contractor: contractor, project: projName,
+                    project_canonical_key: projName === 'Все' ? '' : projName,
+                    project_display_name: projName,
+                    engineerName: targetEngineer,
+                    inspectorName: targetEngineer,
+                    templateKey: tmplKey, workTitle: workTitle,
+                    title: title, prompt: prompt,
+                    status: 'pending', priorityLvl: lvl, date: tDate.toISOString(),
+                    target: targetCount, done: 0, carryOverCount: 0,
+                    history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана системой.`],
+                    updatedAt: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
+                    _deleted: false
+                };
+                window.rbi_tasksData.push(task);
+                if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
+                newTasksCount++;
             };
-            window.rbi_tasksData.push(task);
-            if (typeof dbPut === 'function') dbPut(STORES.TASKS, task);
-            newTasksCount++;
-        };
 
-        const allMyChecks = contractorArray.filter(c => c.inspectorName === currentInspector);
-        const pairMap = {};
+            const allMyChecks = contractorArray.filter(c => c.inspectorName === targetEngineer);
+            const pairMap = {};
 
-        allMyChecks.forEach(c => {
-            if (c.templateKey === 'sys_etalon_act') return;
-            let key = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
-            if (!pairMap[key]) {
-                pairMap[key] = { project: c.projectName, contractor: c.contractorName, templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [], allTimeCount: 0, checksThisWeek: 0, lastCheckDate: new Date(0) };
-            }
-            pairMap[key].checks.push(c);
-            pairMap[key].allTimeCount++;
-            const cDate = new Date(c.date);
-            if (cDate > pairMap[key].lastCheckDate) pairMap[key].lastCheckDate = cDate;
-            if (cDate >= startOfThisWeek) pairMap[key].checksThisWeek++;
-        });
+            allMyChecks.forEach(c => {
+                if (c.templateKey === 'sys_etalon_act') return;
+                let key = `${c.projectName}::${c.contractorName}::${c.templateKey}`;
+                if (!pairMap[key]) {
+                    pairMap[key] = { project: c.projectName, contractor: c.contractorName, templateKey: c.templateKey, templateTitle: c.templateTitle, checks: [], allTimeCount: 0, checksThisWeek: 0, lastCheckDate: new Date(0) };
+                }
+                pairMap[key].checks.push(c);
+                pairMap[key].allTimeCount++;
+                const cDate = new Date(c.date);
+                if (cDate > pairMap[key].lastCheckDate) pairMap[key].lastCheckDate = cDate;
+                if (cDate >= startOfThisWeek) pairMap[key].checksThisWeek++;
+            });
 
-        for (let key in pairMap) {
-            const pair = pairMap[key];
+            for (let key in pairMap) {
+                const pair = pairMap[key];
 
-            const hasEtalon = etalonActsArray.some(c =>
-                c.contractorName === pair.contractor &&
-                c.templateKey === 'sys_etalon_act' &&
-                c.templateTitle === pair.templateTitle &&
-                c.projectName === pair.project // <-- НОВОЕ УСЛОВИЕ: ПРИВЯЗКА К ПРОЕКТУ
-            );
-            if (!hasEtalon) {
-                addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролем проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, 'Эталон');
-            }
+                const hasEtalon = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(c =>
+                    (c.inspectorName === targetEngineer || c.owner === targetEngineer) &&
+                    c.contractorName === pair.contractor &&
+                    c.templateKey === 'sys_etalon_act' &&
+                    c.templateTitle === pair.templateTitle
+                );
+                
+                if (!hasEtalon) {
+                    addTask('etalon', 'control', 'Эталон', `Приемка Эталона`, pair.templateTitle, pair.contractor, `Отсутствует Акт-Эталон. Перед массовым контролям проведите совместную приемку эталонного узла.`, 4, now, pair.templateKey, 'Эталон');
+                }
 
-            const m = pair.allTimeCount > 0 ? getContractorMetrics(pair.checks, userTemplates) : null;
-            let targetCount = 1;
-            let promptText = "🟢 Плановый поддерживающий контроль (Зеленая зона). Подрядчик работает стабильно, достаточно 1 инспекции в неделю.";
-            let lvl = 1;
-            let deadlineDays = 7; // По умолчанию даем неделю на выполнение задачи
+                const m = pair.allTimeCount > 0 ? getContractorMetrics(pair.checks, typeof userTemplates !== 'undefined' ? userTemplates : {}) : null;
+                let targetCount = 1;
+                let promptText = "🟢 Плановый поддерживающий контроль (Зеленая зона). Подрядчик работает стабильно, достаточно 1 инспекции в неделю.";
+                let lvl = 1;
+                let deadlineDays = 7;
 
-            if (pair.allTimeCount < 7) {
-                targetCount = 7;
-                deadlineDays = 14; // ДАЕМ 2 НЕДЕЛИ НА СБОР БАЗЫ
-                promptText = "🔵 Новый подрядчик (Сбор данных). В базе менее 7 проверок. Необходимо набрать базу для расчета достоверного рейтинга надежности.";
-                lvl = 3;
-            } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
-                targetCount = 5; deadlineDays = 7;
-                promptText = "🔴 Подрядчик в красной зоне (или допустил дефект B3). Согласно риск-матрице, требуется усиленный контроль: минимум 5 проверок на этой неделе. При наличии B3 — останавливайте приемку.";
-                lvl = 4;
-            } else if (m && m.finalC >= 70 && m.finalC <= 84) {
-                targetCount = 2; deadlineDays = 7;
-                promptText = "🟡 Подрядчик в желтой зоне (Системный брак). Качество нестабильно. Необходимо провести 2 проверки контроля ранее выданных предписаний.";
-                lvl = 3;
-            }
+                if (pair.allTimeCount < 7) {
+                    targetCount = 7; deadlineDays = 14; 
+                    promptText = "🔵 Новый подрядчик (Сбор данных). В базе менее 7 проверок. Необходимо набрать базу для расчета достоверного рейтинга.";
+                    lvl = 3;
+                } else if (m && (m.finalC < 70 || m.n_изделий_с_B3 > 0)) {
+                    targetCount = 5; deadlineDays = 7;
+                    promptText = "🔴 Подрядчик в красной зоне (или допустил дефект B3). Требуется усиленный контроль: минимум 5 проверок на этой неделе.";
+                    lvl = 4;
+                } else if (m && m.finalC >= 70 && m.finalC <= 84) {
+                    targetCount = 2; deadlineDays = 7;
+                    promptText = "🟡 Подрядчик в желтой зоне (Системный брак). Необходимо провести 2 проверки контроля ранее выданных предписаний.";
+                    lvl = 3;
+                }
 
-            const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
-            if (pair.allTimeCount >= 7 && daysSinceLastCheck > 14) {
-                promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите внеплановый аудит.`;
-                lvl = 4;
-                targetCount = Math.max(targetCount, 2);
-                deadlineDays = 2; // Даем всего 2 дня на срочный аудит
-            }
+                const daysSinceLastCheck = pair.lastCheckDate.getTime() > 0 ? (now - pair.lastCheckDate) / (1000 * 60 * 60 * 24) : 0;
+                if (pair.allTimeCount >= 7 && daysSinceLastCheck > 14) {
+                    promptText = `⚠️ ПОДРЯДЧИК ЗАБРОШЕН! Последняя проверка была ${Math.floor(daysSinceLastCheck)} дней назад. Срочно проведите внеплановый аудит.`;
+                    lvl = 4;
+                    targetCount = Math.max(targetCount, 2);
+                    deadlineDays = 2;
+                }
 
-            // УМНЫЙ ПОДСЧЕТ ДЕФИЦИТА ПРОВЕРОК
-            let validChecksDone = 0;
-            if (targetCount >= 7) {
-                // Для новичков: считаем все исторические проверки (где проверено >= 3 пунктов)
-                validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
-            } else {
-                // Для рутины: считаем только проверки на ЭТОЙ неделе
-                validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek).length;
-            }
+                let validChecksDone = 0;
+                if (targetCount >= 7) {
+                    validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
+                } else {
+                    validChecksDone = pair.checks.filter(c => c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek).length;
+                }
 
-            const deficit = targetCount - validChecksDone;
+                const deficit = targetCount - validChecksDone;
+                const activeAuditTask = window.rbi_tasksData.find(t =>
+                    t.engineerName === targetEngineer && t.contractor === pair.contractor && t.templateKey === pair.templateKey && t.taskType === 'Аудит' && (t.status === 'pending' || t.status === 'paused')
+                );
 
-            // Ищем, есть ли уже активная задача ИМЕННО АУДИТА 
-            const activeAuditTask = window.rbi_tasksData.find(t =>
-                t.contractor === pair.contractor &&
-                t.templateKey === pair.templateKey &&
-                t.taskType === 'Аудит' &&
-                (t.status === 'pending' || t.status === 'paused')
-            );
-
-            // Создаем задачу ТОЛЬКО если есть РЕАЛЬНЫЙ ДЕФИЦИТ проверок И нет активной задачи
-            if (deficit > 0 && !activeAuditTask && targetCount > 0) {
-                let taskDate = new Date(now);
-                taskDate.setDate(now.getDate() + deadlineDays);
-
-                addTask(`aud_multi`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, 'Аудит', targetCount);
-            } else if (deficit > 0 && activeAuditTask) {
-                // Если задача уже есть, просто обновляем ей цель (на случай, если логика изменила требуемое кол-во)
-                if (activeAuditTask.target !== targetCount) {
+                if (deficit > 0 && !activeAuditTask && targetCount > 0) {
+                    let taskDate = new Date(now); taskDate.setDate(now.getDate() + deadlineDays);
+                    addTask(`aud_multi`, 'control', 'Контроль', `Инспекция: ${pair.contractor}`, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, 'Аудит', targetCount);
+                } else if (deficit > 0 && activeAuditTask && activeAuditTask.target !== targetCount) {
                     activeAuditTask.target = targetCount;
                     if (typeof dbPut === 'function') dbPut(STORES.TASKS, activeAuditTask);
                 }
-            }
 
-            if (m) {
-                if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now, pair.templateKey, 'Совещание');
-                if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
-                    addTask('workshop', 'dev', 'Развитие', `Воркшоп с бригадой`, pair.templateTitle, pair.contractor, `Системный брак B2 повторяется часто. Проведите обучение на объекте.`, 3, now, pair.templateKey, 'Воркшоп');
+                if (m) {
+                    if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now, pair.templateKey, 'Совещание');
+                    if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
+                        addTask('workshop', 'dev', 'Развитие', `Воркшоп с бригадой`, pair.templateTitle, pair.contractor, `Системный брак B2 повторяется часто. Проведите обучение на объекте.`, 3, now, pair.templateKey, 'Воркшоп');
+                    }
                 }
             }
-        }
-        // --- ЗАДАЧА: МАГИЯ TWI ---
-        const magicCandidates = window.getMagicTwiCandidates ? window.getMagicTwiCandidates() : [];
-        if (magicCandidates.length > 0) {
-            let existingMagicTask = window.rbi_tasksData.find(t => t.taskType === 'Магия TWI' && t.status === 'pending');
-            if (existingMagicTask) {
-                // Если задача уже есть, просто обновляем её цель (вдруг нашлись новые пары)
-                existingMagicTask.target = existingMagicTask.done + magicCandidates.length;
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingMagicTask);
-            } else {
-                addTask('magic', 'method', 'Развитие', 'Создать карту TWI', 'База Знаний', 'Системная', 'Система нашла пару OK и FAIL. Подключите ИИ и закончите формирование карточки.', 3, now, '', 'Магия TWI', magicCandidates.length);
-            }
-        }
-        // --- ЛОГИКА 2: РУТИНА И ОТЧЕТНОСТЬ (Будущие даты) ---
-        const getNextTargetDate = (targetDayNumStr) => {
-            const targetDay = parseInt(targetDayNumStr) === 0 ? 7 : parseInt(targetDayNumStr);
-            const d = new Date(now);
-            const currentDay = d.getDay() === 0 ? 7 : d.getDay();
-            let diff = targetDay - currentDay;
-            if (diff < 0) diff += 7;
-            d.setDate(d.getDate() + diff);
-            d.setHours(12, 0, 0, 0);
-            return d;
-        };
 
-        // Умная задача FMEA (Создается только если есть неразобранные системные дефекты)
-        const fmeaDate = getNextTargetDate(appSettings.taskFmeaDay || '5');
-        const recentFmeaChecks = contractorArray.filter(c => new Date(c.date) >= startOfThisWeek);
-        const defectCounts = {};
-
-        recentFmeaChecks.forEach(c => {
-            if (c.state) {
-                Object.keys(c.state).forEach(id => {
-                    if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
-                        const tType = c.templateKey ? c.templateKey.split('_')[0] : '';
-                        const tKey = c.templateKey ? c.templateKey.replace(tType + '_', '') : '';
-                        const cl = tType === 'sys' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
-                        const flat = getFlatList(cl);
-                        const item = flat.find(x => String(x.id) === String(id));
-                        if (item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
-                            const dKey = `${c.contractorName}_${item.n}`;
-                            defectCounts[dKey] = (defectCounts[dKey] || 0) + 1;
-                        }
+            // МАГИЯ TWI
+            if (targetEngineer === myName && typeof window.getMagicTwiCandidates === 'function') {
+                const magicCandidates = window.getMagicTwiCandidates();
+                if (magicCandidates.length > 0) {
+                    let existingMagicTask = window.rbi_tasksData.find(t => t.engineerName === myName && t.taskType === 'Магия TWI' && t.status === 'pending');
+                    if (existingMagicTask) {
+                        existingMagicTask.target = existingMagicTask.done + magicCandidates.length;
+                        if (typeof dbPut === 'function') dbPut(STORES.TASKS, existingMagicTask);
+                    } else {
+                        addTask('magic', 'method', 'Развитие', 'Создать карту TWI', 'База Знаний', 'Системная', 'Система нашла пару OK и FAIL. Подключите ИИ и закончите формирование карточки.', 3, now, '', 'Магия TWI', magicCandidates.length);
                     }
-                });
+                }
             }
-        });
 
-        let needsFmea = false;
-        for (let k in defectCounts) {
-            if (defectCounts[k] >= 3) {
-                const isAnalyzed = window.rbi_fmeaRecords && window.rbi_fmeaRecords.some(f => f.defects && f.defects.some(d => `${d.contractor}_${d.defectName}` === k));
-                if (!isAnalyzed) { needsFmea = true; break; }
+            // РУТИНА
+            const getNextTargetDate = (targetDayNumStr) => {
+                const targetDay = parseInt(targetDayNumStr) === 0 ? 7 : parseInt(targetDayNumStr);
+                const d = new Date(now);
+                const currentDay = d.getDay() === 0 ? 7 : d.getDay();
+                let diff = targetDay - currentDay;
+                if (diff < 0) diff += 7;
+                d.setDate(d.getDate() + diff);
+                d.setHours(12, 0, 0, 0);
+                return d;
+            };
+
+            const fmeaDate = getNextTargetDate(typeof appSettings !== 'undefined' ? appSettings.taskFmeaDay : '5');
+            const recentFmeaChecks = contractorArray.filter(c => c.inspectorName === targetEngineer && new Date(c.date) >= startOfThisWeek);
+            const defectCounts = {};
+            
+            recentFmeaChecks.forEach(c => {
+                if (c.state) {
+                    Object.keys(c.state).forEach(id => {
+                        if (c.state[id] === 'fail' || c.state[id] === 'fail_escalated') {
+                            const tType = c.templateKey ? c.templateKey.split('_')[0] : '';
+                            const tKey = c.templateKey ? c.templateKey.replace(tType + '_', '') : '';
+                            const cl = tType === 'sys' && typeof SYSTEM_TEMPLATES !== 'undefined' && SYSTEM_TEMPLATES[tKey] ? SYSTEM_TEMPLATES[tKey].groups : (typeof userTemplates !== 'undefined' && userTemplates[tKey] ? userTemplates[tKey].groups : []);
+                            const item = getFlatList(cl).find(x => String(x.id) === String(id));
+                            if (item && (item.w === 3 || item.w === 2 || c.state[id] === 'fail_escalated')) {
+                                const dKey = `${c.contractorName}_${item.n}`;
+                                defectCounts[dKey] = (defectCounts[dKey] || 0) + 1;
+                            }
+                        }
+                    });
+                }
+            });
+
+            let needsFmea = false;
+            for (let k in defectCounts) {
+                if (defectCounts[k] >= 3) {
+                    const isAnalyzed = typeof window.rbi_fmeaRecords !== 'undefined' && window.rbi_fmeaRecords.some(f => f.author === targetEngineer && f.defects && f.defects.some(d => `${d.contractor}_${d.defectName}` === k));
+                    if (!isAnalyzed) { needsFmea = true; break; }
+                }
             }
-        }
 
-        if (needsFmea) {
-            addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Накопились системные дефекты (>3 повторений), требующие анализа коренных причин.', 3, fmeaDate, '', 'Отчет');
-        }
+            if (needsFmea) addTask('fmea_w', 'method', 'ППР', 'Заполнить FMEA таблицу', 'Аналитика', 'Системная', 'Накопились системные дефекты (>3 повторений), требующие анализа коренных причин.', 3, fmeaDate, '', 'Отчет');
 
-        const posterDate = getNextTargetDate(appSettings.taskFmeaDay || '5');
-        addTask('post_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте плакат А3 и повесьте в штабе подрядчиков.', 2, posterDate, '', 'Отчет');
+            const posterDate = getNextTargetDate(typeof appSettings !== 'undefined' ? appSettings.taskFmeaDay : '5');
+            addTask('post_w', 'report', 'Отчет', 'Распечатать Плакат качества', 'Отчетность', 'Системная', 'Сформируйте плакат А3 и повесьте в штабе подрядчиков.', 2, posterDate, '', 'Отчет');
 
-        const meetingDate = getNextTargetDate(appSettings.taskMeetingDay || '1');
-        addTask('meet_w', 'meeting', 'Совещание', 'Еженедельный разбор качества', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку.', 4, meetingDate, '', 'Совещание');
+            const meetingDate = getNextTargetDate(typeof appSettings !== 'undefined' ? appSettings.taskMeetingDay : '1');
+            addTask('meet_w', 'meeting', 'Совещание', 'Еженедельный разбор качества', 'Коммуникация', 'Системная', 'Откройте вкладку Совещания. Система уже собрала повестку.', 4, meetingDate, '', 'Совещание');
 
-        const reportDay = parseInt(appSettings.taskMonthReportDay || '1');
-        const monthlyReportDate = new Date(now.getFullYear(), now.getMonth(), reportDay, 12, 0, 0, 0);
-        if (now > monthlyReportDate) monthlyReportDate.setMonth(monthlyReportDate.getMonth() + 1);
-        addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса.', 3, monthlyReportDate, '', 'Отчет');
-        // Задача на выгрузку ПК СК (Ставим на 1-е и 15-е число каждого месяца)
-        const skDay1 = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0);
-        const skDay2 = new Date(now.getFullYear(), now.getMonth(), 15, 12, 0, 0, 0);
-        let nextSkDate = now < skDay1 ? skDay1 : (now < skDay2 ? skDay2 : new Date(now.getFullYear(), now.getMonth() + 1, 1, 12, 0, 0, 0));
-        addTask('sk_imp', 'method', 'ППР', 'Загрузить выгрузку ПК СК', 'Аналитика СК', 'Системная', 'Регулярная сверка: скачайте свежий Excel из Стройконтроля и загрузите в систему.', 3, nextSkDate, '', 'Отчет');
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        let qDayDate = new Date(now.getFullYear(), now.getMonth(), daysInMonth - 2, 12, 0, 0, 0);
-        if (now > qDayDate) {
-            const daysInNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate();
-            qDayDate = new Date(now.getFullYear(), now.getMonth() + 1, daysInNextMonth - 2, 12, 0, 0, 0);
-        }
-        addTask('qd_m', 'report', 'Отчет', 'Отчет: День Качества', 'Аналитика', 'Системная', 'Приближается дата Дня Качества. Система сгенерирует мега-отчет за месяц.', 4, qDayDate, '', 'Отчет');
+            const reportDay = parseInt(typeof appSettings !== 'undefined' ? appSettings.taskMonthReportDay : '1');
+            const monthlyReportDate = new Date(now.getFullYear(), now.getMonth(), reportDay, 12, 0, 0, 0);
+            if (now > monthlyReportDate) monthlyReportDate.setMonth(monthlyReportDate.getMonth() + 1);
+            addTask('op_m', 'report', 'Отчет', 'Ежемесячный One-Pager', 'Отчетность', 'Системная', 'Отправьте руководителю выгрузку Сводного статуса.', 3, monthlyReportDate, '', 'Отчет');
+            
+            const skDay1 = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0);
+            const skDay2 = new Date(now.getFullYear(), now.getMonth(), 15, 12, 0, 0, 0);
+            let nextSkDate = now < skDay1 ? skDay1 : (now < skDay2 ? skDay2 : new Date(now.getFullYear(), now.getMonth() + 1, 1, 12, 0, 0, 0));
+            addTask('sk_imp', 'method', 'ППР', 'Загрузить выгрузку ПК СК', 'Аналитика СК', 'Системная', 'Регулярная сверка: скачайте свежий Excel из Стройконтроля и загрузите в систему.', 3, nextSkDate, '', 'Отчет');
+            
+            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            let qDayDate = new Date(now.getFullYear(), now.getMonth(), daysInMonth - 2, 12, 0, 0, 0);
+            if (now > qDayDate) {
+                const daysInNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate();
+                qDayDate = new Date(now.getFullYear(), now.getMonth() + 1, daysInNextMonth - 2, 12, 0, 0, 0);
+            }
+            addTask('qd_m', 'report', 'Отчет', 'Отчет: День Качества', 'Аналитика', 'Системная', 'Приближается дата Дня Качества. Система сгенерирует мега-отчет за месяц.', 4, qDayDate, '', 'Отчет');
+        } // Конец цикла по инженерам
 
         weeklyPlanData = { weekId: currentWeekId, tasks: window.rbi_tasksData, completed: false };
         if (typeof saveWeeklyPlan === 'function') saveWeeklyPlan();
@@ -527,20 +512,32 @@ window.rbi_renderTasksList = async function () {
     const container = document.getElementById('rbi-tasks-container');
     if (!container) return;
 
-    // ИСПРАВЛЕНИЕ: Объявляем переменную только один раз через let
-    let activeTasks = window.rbi_tasksData;
+    // ЗАЩИТА: Не перерисовываем задачи, если вкладка скрыта (убирает мерцание)
+    const tasksTab = document.getElementById('eng-sub-tasks');
+    if (tasksTab && tasksTab.classList.contains('hidden')) return;
 
-    // --- НОВОЕ: Фильтр по инженерам для руководителей ---
+    let activeTasks = window.rbi_tasksData;
     const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
     const currentEng = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
+    const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+    
     let managerFilterHtml = '';
 
-    if (['manager', 'deputy_manager'].includes(currentRole)) {
-        // Собираем всех инженеров, у которых есть задачи
-        const allEngsInTasks = [...new Set(window.rbi_tasksData.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
-        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = currentEng; // По умолчанию показываем свои
+    // Гости и подрядчики вообще не видят план
+    if (['guest', 'contractor'].includes(currentRole)) {
+        container.innerHTML = `<div class="text-center py-10 bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] text-[var(--text-muted)] font-bold text-[11px] uppercase shadow-sm">План недоступен для вашей роли</div>`;
+        return;
+    }
 
-        // Фильтруем массив задач перед рендером
+    if (['manager', 'deputy_manager', 'director', 'project_manager'].includes(currentRole)) {
+        // Для руководства фильтруем сначала по объектам (РП видит только свои)
+        if (currentRole === 'project_manager' && assignedProjects.length > 0) {
+            activeTasks = activeTasks.filter(t => assignedProjects.includes(t.project_canonical_key || t.project));
+        }
+
+        const allEngsInTasks = [...new Set(activeTasks.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
+        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = currentEng;
+
         if (window.taskEngineerFilter !== 'ALL') {
             activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === window.taskEngineerFilter);
         }
@@ -555,7 +552,7 @@ window.rbi_renderTasksList = async function () {
             </div>
         `;
     } else {
-        // Защита для рядовых инженеров: оставляем только их задачи
+        // Инженер видит только свои задачи и системные рассылки
         activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === currentEng || t.contractor === 'Системная');
     }
     // -----------------------------------------------------
@@ -1010,6 +1007,13 @@ window.rbi_openTaskAction = async function (taskId) {
             </div>
         `;
     }
+
+    // --- НОВОЕ: ЗАЩИТА ПРАВ ДОСТУПА ПЕРЕД ОТРИСОВКОЙ ---
+    const canEditTasks = window.RbiRoles ? window.RbiRoles.canCreate() : true;
+    if (!canEditTasks) {
+        actionButtonsHtml = `<div class="text-[11px] text-slate-500 font-bold text-center p-3 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 mt-2">У вашей роли нет прав для выполнения и изменения задач.</div>`;
+    }
+    // ---------------------------------------------------
 
     footer.innerHTML = actionButtonsHtml;
     document.getElementById('task-details-modal').style.display = 'flex';

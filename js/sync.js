@@ -871,7 +871,6 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             expires_at: null // Пока не используем
         };
         } else if (objectType === 'assistant_kb') {
-        // НОВОЕ: Специфичный формат для Базы Знаний ИИ
         payload = {
             id: id,
             project_code: window.syncConfig.projectCode || 'local',
@@ -884,8 +883,32 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
         };
+     } else if (objectType === 'project_object') {
+        // Строгий реляционный формат для Справочника объектов
+        payload = {
+            id: id,
+            project_code: window.syncConfig.projectCode,
+            canonical_key: data.canonical_key || '',
+            display_name: data.display_name || '',
+            synonyms: data.synonyms || [],
+            created_by: data.created_by || iName,
+            _deleted: isDeleted,
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else if (objectType === 'object_alias') {
+        // Строгий реляционный формат для Алиасов
+        payload = {
+            id: id,
+            project_code: window.syncConfig.projectCode,
+            raw_name: data.raw_name || '',
+            canonical_key: data.canonical_key || '',
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
     } else {
-        // Стандартный формат для остальных объектов (TWI, Узлы, НД и т.д.)
+        // Стандартный формат (всё складываем в JSONB колонку 'data')
         payload = {
             id: id,
             data: uploadedData,
@@ -895,7 +918,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         };
     }
 
-    if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb') {
+    if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb' && objectType !== 'project_object' && objectType !== 'object_alias') {
         if (isShared) {
             payload.owner = data.owner || iName;
         } else {
@@ -1278,6 +1301,12 @@ window.triggerSync = async function (mode = 'silent') {
 
                     if (typeof renderSyncUI === 'function') renderSyncUI();
                     if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
+                    
+                    // --- НОВОЕ: Очистка кэша и перерисовка интерфейса при смене роли ---
+                    if (typeof window.clearMetricsCache === 'function') window.clearMetricsCache();
+                    if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true);
+                    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+                    // ------------------------------------------------------------------
                 }
             }
         } else {
@@ -1855,8 +1884,8 @@ window.triggerSync = async function (mode = 'silent') {
                 { type: 'custom_node', store: 'custom_nodes', memory: 'customNodes' },
                 { type: 'custom_twi_card', store: 'twi_cards', memory: 'customTwiCards' },
                 { type: 'feedback', store: 'feedback_list', memory: 'rbi_feedbackData' },
-                { type: 'project_object', store: 'project_objects', memory: 'null' }, // <-- ДОБАВЛЕНО
-                { type: 'object_alias', store: 'object_aliases', memory: 'null' },     // <-- ДОБАВЛЕНО
+                { type: 'project_object', store: 'project_objects', memory: '_sys_obj_dummy' }, 
+                { type: 'object_alias', store: 'object_aliases', memory: '_sys_alias_dummy' },
                 { type: 'report', store: 'app_reports', memory: 'reportsArray' },
                 { type: 'report_template', store: 'report_templates', memory: 'userReportTemplates' },
                 { type: 'assistant_kb', store: 'app_assistant_kb', memory: 'appAssistantData' }
@@ -1884,9 +1913,12 @@ window.triggerSync = async function (mode = 'silent') {
                             else window[cType.memory].push(obj);
                         }
                     }
+                
                 }
+               
             } // конец цикла cloudTypes
-
+             // Перезагружаем Справочник объектов в память, если он прилетел из облака
+            if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
             // ИСПРАВЛЕНИЕ: ЖЕСТКАЯ СИНХРОНИЗАЦИЯ ПАМЯТИ ОТЧЕТОВ
             // Достаем свежие данные из БД в оперативную память, чтобы экран их увидел
             if (typeof dbGetAll === 'function') {
@@ -2242,12 +2274,17 @@ window.triggerSync = async function (mode = 'silent') {
                     const draftPhotos = {};
 
                     for (const itemId of Object.keys(currentSession.photos || {})) {
-                        draftPhotos[itemId] = await window.rbiUploadAsset(
-                            currentSession.photos[itemId],
-                            'inspection-photos',
-                            `${pCode}/drafts/${stableInspectorId}/${itemId}`,
-                            'photo'
-                        );
+                        // Защита: загружаем только если это реально локальное фото
+                        if (currentSession.photos[itemId] && !currentSession.photos[itemId].startsWith('http')) {
+                            draftPhotos[itemId] = await window.rbiUploadAsset(
+                                currentSession.photos[itemId],
+                                'inspection-photos',
+                                `${pCode}/drafts/${stableInspectorId}/${itemId}`,
+                                'photo'
+                            );
+                        } else {
+                            draftPhotos[itemId] = currentSession.photos[itemId];
+                        }
                     }
 
                     await window.supabaseClient
@@ -2561,6 +2598,8 @@ window.triggerSync = async function (mode = 'silent') {
                     await syncTableData('custom_docs', 'customDocs', 'custom_doc');
                     await syncTableData('custom_nodes', 'customNodes', 'custom_node');
                     await syncTableData('twi_cards', 'customTwiCards', 'custom_twi_card');
+                    await syncTableData('project_objects', '_sys_obj_dummy', 'project_object');
+                    await syncTableData('object_aliases', '_sys_alias_dummy', 'object_alias');
                     await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
                     await syncTableData('report_templates', 'userReportTemplates', 'report_template'); // <-- ДОБАВИЛИ
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
@@ -2743,14 +2782,12 @@ window.triggerSync = async function (mode = 'silent') {
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
         // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
         if (typeof window.rbi_generateAutoTasks === 'function') {
-            await window.rbi_generateAutoTasks(true); // true = silent (без тостов)
+            await window.rbi_generateAutoTasks(true); 
         }
 
-        // 2. Если синхронизация прошла, а рутинных задач всё еще 0 (новый телефон) - генерируем план
+        // 2. Пересчитываем рутинные задачи (Аудиты, Эталоны) после получения свежей истории из облака
         if (typeof gameGenerateWeeklyPlan === 'function') {
-            if (typeof window.rbi_tasksData !== 'undefined' && window.rbi_tasksData.length === 0) {
-                await gameGenerateWeeklyPlan(true);
-            }
+            await gameGenerateWeeklyPlan(true);
         }
 
         if (mode === 'manual') {

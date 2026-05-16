@@ -381,13 +381,19 @@ async function saveWeeklyPlan() {
 
 function calculateImpactScore(inspector, contractor, template) {
     const checks = contractorArray.filter(c => c.inspectorName === inspector && c.contractorName === contractor && c.templateKey === template).sort((a, b) => new Date(a.date) - new Date(b.date));
-    if (checks.length < 6) return { score: 0, trend: 'Недостаточно данных', color: 'text-slate-500' };
 
-    const baseChecks = checks.slice(0, 3);
-    const currentChecks = checks.slice(-3);
+    // --- ИСПРАВЛЕНИЕ ЛОГИКИ IMPACT SCORE ---
+    // Формируем надежную базу (первые 7 проверок), затем сравниваем с текущим срезом (последние 3)
+    // Итого нужно минимум 10 проверок для объективной оценки влияния.
+    if (checks.length < 10) return { score: 0, trend: 'Сбор базы (нужно 10)', color: 'text-slate-500' };
 
-    const baseMetrics = getContractorMetrics(baseChecks, userTemplates);
-    const currMetrics = getContractorMetrics(currentChecks, userTemplates);
+    const baseChecks = checks.slice(0, 7); // Фундамент (Базовый рейтинг)
+    const currentChecks = checks.slice(-3); // Текущее состояние после работы инженера
+
+    // ВАЖНО: Третий параметр (false) отключает "скользящее окно", 
+    // чтобы брались именно указанные нами срезы массивов.
+    const baseMetrics = getContractorMetrics(baseChecks, userTemplates, false);
+    const currMetrics = getContractorMetrics(currentChecks, userTemplates, false);
 
     if (!baseMetrics || !currMetrics) return { score: 0, trend: 'Ошибка расчета', color: 'text-slate-500' };
 
@@ -785,36 +791,45 @@ window.gameRenderDashboard = function () {
     // РЕНДЕР HTML (БЕЗ БЛОКА ЗАДАЧ И БЕЗ ЭМОДЗИ)
     let html = `
         <div class="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-center">
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl p-3 sm:p-5 shadow-sm relative overflow-hidden flex flex-col justify-between">
+                <!-- Декоративный круг -->
                 <div class="absolute -top-10 -right-10 w-40 h-40 bg-gradient-to-br ${myProfile.levelObj.color} opacity-10 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <!-- НОВАЯ ГИБКАЯ ШАПКА: Аватар + Имя + Стрик -->
-                <div class="flex justify-between items-start mb-4 sm:mb-5 relative z-10 w-full gap-2">
-                    <div class="flex items-center gap-2.5 sm:gap-4 min-w-0 flex-1">
-                        <div class="w-10 h-10 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-lg sm:text-2xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
-                            ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0, 1).toUpperCase()}
-                        </div>
-                        <div class="min-w-0 flex-1">
-                            <div class="text-[13px] sm:text-[16px] font-black text-slate-800 dark:text-white leading-tight truncate cursor-pointer" 
-                                 onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
-                                ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
-                            </div>
-                            <div class="text-[9px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-1 truncate">${myProfile.levelObj.name} <span class="text-slate-400">Ур. ${myProfile.levelObj.level}</span></div>
-                        </div>
+                <!-- ШАПКА: Аватар + Имя (Сбалансированный перенос) -->
+                <div class="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-5 relative z-10 w-full">
+                    <!-- АВАТАР: Оптимальный размер (чуть больше оригинала) -->
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br ${myProfile.levelObj.color} text-white flex items-center justify-center font-black text-2xl sm:text-3xl shrink-0 shadow-md border-2 border-white ring-2 ${myProfile.levelObj.ring}">
+                        ${myProfile.name === 'Неизвестный инспектор' ? '?' : myProfile.name.substring(0, 1).toUpperCase()}
                     </div>
-                    
-                    <div class="text-right shrink-0">
-                        <div class="text-[7px] sm:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Стрик</div>
-                        <div class="text-[12px] sm:text-[14px] font-black text-slate-800 dark:text-white leading-tight">${myProfile.currentStreak} нед.</div>
+                    <div class="flex-1 min-w-0">
+                        <!-- ИМЯ: Перенос максимум на 2 строки -->
+                        <div class="text-[13px] sm:text-[15px] font-black text-slate-800 dark:text-white leading-tight break-words whitespace-normal line-clamp-2 cursor-pointer" 
+                             onmousedown="profileNameLockStart(event)" ontouchstart="profileNameLockStart(event)" onmouseup="profileNameLockCancel()" onmouseleave="profileNameLockCancel()" ontouchend="profileNameLockCancel()" title="Удерживайте, чтобы изменить имя">
+                            ${myProfile.name === 'Неизвестный инспектор' ? 'Имя не задано' : myProfile.name}
+                        </div>
+                        <!-- УРОВЕНЬ: Компактный перенос -->
+                        <div class="text-[9px] sm:text-[10px] font-bold bg-clip-text text-transparent bg-gradient-to-r ${myProfile.levelObj.color} uppercase tracking-widest mt-1 break-words whitespace-normal leading-tight">
+                            ${myProfile.levelObj.name} <span class="text-slate-400 whitespace-nowrap">Ур. ${myProfile.levelObj.level}</span>
+                        </div>
                     </div>
                 </div>
 
+                <!-- ПРОГРЕСС И СТРИК (Внизу) -->
                 <div class="relative z-10 cursor-pointer active:scale-[0.98] transition-transform" onclick="gameShowLevelsModal()">
-                    <div class="flex justify-between text-[8px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1 sm:mb-2 uppercase tracking-wider">
-                        <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
-                        <span>След: ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
+                    <div class="flex justify-between items-end text-[9px] sm:text-[10px] font-bold text-[var(--text-muted)] mb-1.5 uppercase tracking-wider">
+                        <div>
+                            <span class="text-slate-800 dark:text-white font-black">${myProfile.pi} XP</span>
+                            <span class="lowercase text-slate-400 ml-1">/ ${myProfile.levelObj.xpMax === 999999 ? 'MAX' : myProfile.levelObj.xpMax}</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-indigo-500 font-black flex items-center gap-1">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z"></path></svg>
+    ${myProfile.currentStreak} нед.
+</span>
+                        </div>
                     </div>
-                    <div class="w-full h-1.5 sm:h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
+                    <!-- ПОЛОСКА XP: Золотая середина (h-2) -->
+                    <div class="w-full h-2 sm:h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 shadow-inner">
                         <div class="h-full bg-gradient-to-r ${myProfile.levelObj.color} transition-all duration-1000" style="width: ${piProgress}%"></div>
                     </div>
                 </div>
@@ -921,6 +936,13 @@ window.gameRenderDashboard = function () {
 let profileLockTimer = null;
 window.profileNameLockStart = function (e) {
     if (e) e.preventDefault();
+
+    // Блокируем смену имени, если облако подключено и роль подтверждена
+    if (window.syncConfig && window.syncConfig.enabled && typeof appSettings !== 'undefined' && appSettings.cloudStatus === 'approved') {
+        if (typeof showToast === 'function') showToast("Имя заблокировано администратором (Облако активно)");
+        return;
+    }
+
     profileLockTimer = setTimeout(() => {
         document.getElementById('profile-name-edit-container').classList.remove('hidden');
         document.getElementById('profile-title-text').classList.add('hidden');
@@ -1116,23 +1138,28 @@ function gameInjectManagerModals() {
                 </button>
             </div>
             
-            <!-- Навигация (Тумблеры iOS Style) -->
-            <div class="p-3 bg-[var(--bg-main)] z-10 shrink-0">
-                <div class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)]">
-                    <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400 flex flex-col items-center gap-1 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>HR Аналитика
+            <!-- Навигация (Тумблеры iOS Style - Адаптивные) -->
+            <div class="p-2 sm:p-3 bg-[var(--bg-main)] z-10 shrink-0 border-b border-[var(--card-border)]">
+                <div class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm">
+                    <button onclick="switchManagerTab('hr')" id="btn-man-hr" class="manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400 flex flex-col items-center gap-1 transition-all active">
+                        <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        <span class="tab-text inline sm:inline">HR Аналитика</span>
                     </button>
-                    <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>Аудиты
+                    <button onclick="switchManagerTab('audit')" id="btn-man-audit" class="manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        <span class="tab-text hidden sm:inline">Аудиты</span>
                     </button>
-                    <button onclick="switchManagerTab('team')" id="btn-man-team" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>Команда и Объекты
+                    <button onclick="switchManagerTab('team')" id="btn-man-team" class="manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        <span class="tab-text hidden sm:inline">Объекты / Роли</span>
                     </button>
-                    <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>Бэклог
+                    <button onclick="switchManagerTab('dev')" id="btn-man-dev" class="manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+                        <span class="tab-text hidden sm:inline">Бэклог</span>
                     </button>
-                    <button onclick="switchManagerTab('ai')" id="btn-man-ai" class="flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>База ИИ
+                    <button onclick="switchManagerTab('ai')" id="btn-man-ai" class="manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all">
+                        <svg class="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        <span class="tab-text hidden sm:inline">База ИИ</span>
                     </button>
                 </div>
             </div>
@@ -1148,53 +1175,61 @@ function gameInjectManagerModals() {
                     <div class="flex justify-between items-center mb-4 bg-[var(--card-bg)] p-4 rounded-xl border border-[var(--card-border)] shadow-sm">
                         <div>
                             <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white mb-1">Маршрут Перекрестных Проверок</h2>
-                            <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Алгоритм отбирает аномальные проверки инженеров (быстрые или подозрительные) для выезда и перепроверки на месте.</p>
+                            <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Алгоритм отбирает аномальные проверки.</p>
                         </div>
-                        <button onclick="gameGenerateAuditPlan()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 shrink-0 whitespace-nowrap transition-transform">Сформировать План</button>
+                        <button onclick="gameGenerateAuditPlan()" class="bg-indigo-600 text-white px-4 py-3 rounded-xl font-black text-[10px] uppercase shadow-md active:scale-95 shrink-0 whitespace-nowrap transition-transform">Сформировать</button>
                     </div>
                     <div id="manager-audit-list">
-                        <div class="text-center py-10 text-[var(--text-muted)] font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать План"</div>
+                        <div class="text-center py-10 text-[var(--text-muted)] font-bold text-xs uppercase tracking-widest">Нажмите "Сформировать"</div>
                     </div>
                 </div>
 
-                <!-- Вкладка 3: КОМАНДА И ОБЪЕКТЫ (НОВАЯ ОБЪЕДИНЕННАЯ) -->
+                <!-- Вкладка 3: КОМАНДА И ОБЪЕКТЫ (РЕДИЗАЙН) -->
                 <div id="manager-tab-team" class="hidden space-y-4">
-                    <!-- Блок: Заявки на объекты -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+
+                    <!-- НОВЫЙ БЛОК: ЗАЯВКИ НА ОБЪЕКТЫ -->
+                    <div class="bg-[var(--card-bg)] border border-orange-200 dark:border-orange-800 p-3 sm:p-4 rounded-xl shadow-sm">
                         <div class="flex justify-between items-center mb-3">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-orange-600 dark:text-orange-400 mb-1">Новые заявки на объекты</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Инженеры запрашивают доступ к новым объектам.</p>
+                                <h2 class="text-[13px] font-black uppercase text-orange-600 dark:text-orange-400 mb-1">Заявки на Объекты</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Новые объекты из ПК СК или ручного ввода инженеров.</p>
                             </div>
-                            <button onclick="ObjectDirectory.loadRequests()" class="bg-[var(--hover-bg)] text-orange-600 dark:text-orange-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
+                            <button onclick="ObjectDirectory.loadRequests()" class="bg-orange-50 text-orange-600 border border-orange-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Проверить</button>
                         </div>
-                        <div id="obj-requests-list" class="max-h-[35vh] overflow-y-auto custom-scrollbar pr-1"></div>
+                        <div id="obj-requests-list" class="max-h-[30vh] overflow-y-auto custom-scrollbar pr-1">
+                            <div class="text-center py-4 text-xs text-[var(--text-muted)]">Нажмите "Проверить"</div>
+                        </div>
+                    </div>
+                    <!-- Блок 1: Справочник объектов (Теперь сверху) -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
+                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-blue-600 dark:text-blue-400 mb-1">Справочник Объектов</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Создайте объект, чтобы выдавать к нему доступ инженерам.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Компактный инлайн-ввод нового объекта -->
+                        <div class="flex gap-2 mb-4 bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
+                            <input type="text" id="inline-new-obj-name" class="input-base !py-2 text-[11px]" placeholder="Название нового объекта (напр: ЖК Легенда)">
+                            <button onclick="ObjectDirectory.addNewObjectInline()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 shrink-0 transition-transform">Создать</button>
+                        </div>
+
+                        <div id="manager-objects-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
                     </div>
 
-                    <!-- Блок: Роли -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
+                    <!-- Блок 2: Роли (Управление командой) -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
                         <div class="flex justify-between items-center mb-3">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1">Управление командой (Роли)</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Управление доступом, статусами и привязка объектов.</p>
+                                <h2 class="text-[13px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1">Управление командой</h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Выдайте инженерам доступы к созданным выше объектам.</p>
                             </div>
                             <button onclick="gameLoadRoles()" class="bg-[var(--hover-bg)] text-indigo-600 dark:text-indigo-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
                         </div>
                         <div id="manager-roles-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
                             <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
                         </div>
-                    </div>
-
-                    <!-- Блок: Справочник объектов -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-4 rounded-xl shadow-sm">
-                        <div class="flex justify-between items-center mb-4">
-                            <div>
-                                <h2 class="text-[13px] font-black uppercase text-blue-600 dark:text-blue-400 mb-1">Справочник Объектов компании</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Эталонная база объектов и синонимы (алиасы для Excel).</p>
-                            </div>
-                            <button onclick="ObjectDirectory.openAddObjectModal()" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 shrink-0 transition-transform">Новый объект</button>
-                        </div>
-                        <div id="manager-objects-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
                     </div>
                 </div>
 
@@ -1258,16 +1293,16 @@ window.gameVerifyManagerPin = function () {
     const pin = document.getElementById('manager-pin-input').value;
     if (hashString(pin) === MANAGER_PIN_HASH) {
         document.getElementById('manager-auth-modal').style.display = 'none';
-        
+
         const overlay = document.getElementById('manager-panel-overlay');
         overlay.style.display = 'flex';
         document.body.classList.add('modal-open');
-        
+
         // Плавное появление
         setTimeout(() => {
             overlay.classList.remove('opacity-0');
         }, 10);
-        
+
         gameRenderManagerAnalytics();
     } else {
         showToast('❌ Неверный ПИН-код');
@@ -1275,57 +1310,55 @@ window.gameVerifyManagerPin = function () {
 };
 
 window.switchManagerTab = function (tab) {
-    const btnHr = document.getElementById('btn-man-hr');
-    const btnAudit = document.getElementById('btn-man-audit');
-    const btnTeam = document.getElementById('btn-man-team');
-    const btnDev = document.getElementById('btn-man-dev');
-    const btnAi = document.getElementById('btn-man-ai');
+    // 1. Собираем все кнопки и вкладки
+    const tabs = ['hr', 'audit', 'team', 'dev', 'ai'];
+    const colors = {
+        'hr': 'text-indigo-600 dark:text-indigo-400',
+        'audit': 'text-indigo-600 dark:text-indigo-400',
+        'team': 'text-indigo-600 dark:text-indigo-400',
+        'dev': 'text-emerald-600 dark:text-emerald-400',
+        'ai': 'text-indigo-600 dark:text-indigo-400'
+    };
 
-    const tabHr = document.getElementById('manager-tab-hr');
-    const tabAudit = document.getElementById('manager-tab-audit');
-    const tabTeam = document.getElementById('manager-tab-team');
-    const tabDev = document.getElementById('manager-tab-dev');
-    const tabAi = document.getElementById('manager-tab-ai');
+    // 2. Проходим циклом по всем вкладкам
+    tabs.forEach(t => {
+        const btn = document.getElementById(`btn-man-${t}`);
+        const content = document.getElementById(`manager-tab-${t}`);
+        if (!btn || !content) return;
 
-    // Сбрасываем стили у всех кнопок
-     [btnHr, btnAudit, btnTeam, btnDev, btnAi].forEach(btn => {
-        if(btn) {
-            btn.className = "flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all bg-transparent shadow-none";
+        const textSpan = btn.querySelector('.tab-text');
+
+        if (t === tab) {
+            // АКТИВНАЯ ВКЛАДКА
+            content.classList.remove('hidden');
+            btn.className = `manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm flex flex-col items-center gap-1 transition-all active ${colors[t]}`;
+            // Показываем текст на активной вкладке всегда
+            if (textSpan) {
+                textSpan.classList.remove('hidden');
+                textSpan.classList.add('inline');
+            }
+        } else {
+            // НЕАКТИВНАЯ ВКЛАДКА
+            content.classList.add('hidden');
+            btn.className = `manager-tab-btn flex-1 min-w-[40px] sm:min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1 transition-all bg-transparent shadow-none`;
+            // Прячем текст на мобилках
+            if (textSpan) {
+                textSpan.classList.add('hidden');
+                textSpan.classList.remove('inline');
+            }
         }
     });
 
-    // Скрываем все вкладки
-    if(tabHr) tabHr.classList.add('hidden'); 
-    if(tabAudit) tabAudit.classList.add('hidden'); 
-    if(tabTeam) tabTeam.classList.add('hidden'); 
-    if(tabDev) tabDev.classList.add('hidden');
-    if(tabAi) tabAi.classList.add('hidden');
-
-    const activeClass = "flex-1 min-w-[70px] py-2 text-[10px] font-bold uppercase rounded-md bg-white dark:bg-slate-800 shadow-sm flex flex-col items-center gap-1 transition-all ";
-
-    if (tab === 'hr') {
-        btnHr.className = activeClass + "text-indigo-600 dark:text-indigo-400";
-        tabHr.classList.remove('hidden');
-    } else if (tab === 'audit') {
-        btnAudit.className = activeClass + "text-indigo-600 dark:text-indigo-400";
-        tabAudit.classList.remove('hidden');
-    } else if (tab === 'team') {
-        btnTeam.className = activeClass + "text-indigo-600 dark:text-indigo-400";
-        tabTeam.classList.remove('hidden');
-        // Загружаем все три блока последовательно
-        ObjectDirectory.loadRequests();
+    // 3. Загружаем данные для специфичных вкладок
+    if (tab === 'team') {
         gameLoadRoles();
         ObjectDirectory.renderManagerPanel();
     } else if (tab === 'dev') {
-        btnDev.className = activeClass + "text-emerald-600 dark:text-emerald-400";
-        tabDev.classList.remove('hidden');
         rbi_renderDevFeedbackTab();
-    } else if (tab === 'ai') { // <-- НОВЫЙ БЛОК
-        btnAi.className = activeClass + "text-indigo-600 dark:text-indigo-400";
-        tabAi.classList.remove('hidden');
+        ObjectDirectory.loadRequests();
+    } else if (tab === 'ai') {
         gameLoadAiKb();
     }
-
 }
 
 
@@ -3015,7 +3048,7 @@ window.gameLoadRoles = async function () {
         }
 
         const pendingUsers = data.filter(u => u.cloud_status === 'pending');
-        const activeUsers = data.filter(u => u.cloud_status !== 'pending').sort((a,b) => (a.engineer_name || '').localeCompare(b.engineer_name || ''));
+        const activeUsers = data.filter(u => u.cloud_status !== 'pending').sort((a, b) => (a.engineer_name || '').localeCompare(b.engineer_name || ''));
 
         const renderUserRow = (user) => {
             const inspectorId = user.inspector_id || '';
@@ -3095,14 +3128,14 @@ window.gameLoadRoles = async function () {
             html += `<div class="text-[10px] font-black uppercase text-orange-500 mb-2 pl-1">Новые заявки на доступ (${pendingUsers.length})</div>`;
             html += pendingUsers.map(renderUserRow).join('');
         }
-        
+
         if (activeUsers.length > 0) {
             html += `<div class="text-[10px] font-black uppercase text-slate-500 mb-2 pl-1 mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">Активные пользователи (${activeUsers.length})</div>`;
             html += activeUsers.map(renderUserRow).join('');
         }
 
         container.innerHTML = html;
-        
+
     } catch (e) {
         container.innerHTML = '<div class="text-center py-4 text-xs text-red-500 font-bold">Ошибка загрузки из БД</div>';
     }
@@ -3142,7 +3175,7 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
         const projectCode = userData?.project_code || window.syncConfig?.projectCode || 'RBI';
 
         let requestedProjects = Array.isArray(currentSettings.requestedProjects) ? currentSettings.requestedProjects : [];
-        let remainingRequests = []; 
+        let remainingRequests = [];
 
         for (let i = 0; i < requestedProjects.length; i++) {
             const req = requestedProjects[i];
@@ -3172,7 +3205,7 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
                             await window.supabaseClient.from('project_objects').update({
                                 synonyms: [...oldSynonyms, req.raw_name], updated_at: new Date().toISOString()
                             }).eq('id', objRows[0].id);
-                            
+
                             await window.supabaseClient.from('object_aliases').upsert({
                                 project_code: projectCode, raw_name: req.raw_name, canonical_key: canonicalKey, updated_at: new Date().toISOString()
                             }, { onConflict: 'project_code,raw_name' });
@@ -3184,7 +3217,7 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
             if (action === 'create') {
                 // Создание абсолютно нового объекта
                 const newKey = (typeof ObjectDirectory !== 'undefined') ? ObjectDirectory.cleanString(req.raw_name) : req.raw_name.toLowerCase().replace(/\s+/g, '_');
-                
+
                 // Создаем в БД Supabase
                 await window.supabaseClient.from('project_objects').upsert({
                     id: 'obj_' + Date.now().toString(36),
@@ -3204,7 +3237,7 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
         currentSettings = {
             ...currentSettings,
             assignedProjects: projectsArray,
-            requestedProjects: remainingRequests, 
+            requestedProjects: remainingRequests,
             role: role,
             cloudStatus: cloudStatus,
             assignedContractor: contr,
@@ -3242,15 +3275,15 @@ window.gameLoadAiKb = async function () {
     const container = document.getElementById('manager-ai-kb-list');
     const searchInput = document.getElementById('admin-ai-search')?.value.toLowerCase() || '';
     if (!container) return;
-    
+
     try {
         const kbItems = await dbGetAll('app_assistant_kb') || window.appAssistantData || [];
         let activeItems = kbItems.filter(i => !i._deleted && !i.is_deleted);
-        
+
         // Фильтрация поиска
         if (searchInput) {
-            activeItems = activeItems.filter(i => 
-                (i.question && i.question.toLowerCase().includes(searchInput)) || 
+            activeItems = activeItems.filter(i =>
+                (i.question && i.question.toLowerCase().includes(searchInput)) ||
                 (i.answer && i.answer.toLowerCase().includes(searchInput))
             );
         }
@@ -3259,9 +3292,9 @@ window.gameLoadAiKb = async function () {
             container.innerHTML = '<div class="text-center py-6 text-slate-400 text-[10px] font-bold uppercase bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">База знаний пуста или ничего не найдено</div>';
             return;
         }
-        
+
         // Сортировка: новые сверху
-        activeItems.sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        activeItems.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
         container.innerHTML = activeItems.map(item => {
             // Обрезаем длинный текст для превью (ОПТИМИЗАЦИЯ!)
@@ -3285,9 +3318,9 @@ window.gameLoadAiKb = async function () {
     }
 };
 
-window.gameOpenAiKbModal = async function(editId = null) {
+window.gameOpenAiKbModal = async function (editId = null) {
     let q = '', a = '', tags = '';
-    
+
     if (editId) {
         const kbItems = await dbGetAll('app_assistant_kb') || [];
         const item = kbItems.find(i => i.id === editId);
@@ -3297,7 +3330,7 @@ window.gameOpenAiKbModal = async function(editId = null) {
             tags = (item.tags || []).join(', ');
         }
     }
-    
+
     const html = `
     <div id="ai-kb-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4 backdrop-blur-sm" onclick="this.remove()">
         <div class="bg-[var(--card-bg)] w-full max-w-md p-6 rounded-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
@@ -3327,19 +3360,19 @@ window.gameOpenAiKbModal = async function(editId = null) {
             </div>
         </div>
     </div>`;
-    
+
     document.body.insertAdjacentHTML('beforeend', html);
 };
 
-window.gameSaveAiKb = async function(editId) {
+window.gameSaveAiKb = async function (editId) {
     const q = document.getElementById('ai-kb-q').value.trim();
     const a = document.getElementById('ai-kb-a').value.trim();
     const tagsStr = document.getElementById('ai-kb-tags').value.trim();
-    
+
     if (!q || !a) return showToast('⚠️ Заполните вопрос и ответ!');
-    
+
     const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
-    
+
     const record = {
         id: editId || 'kb_' + Date.now().toString(36),
         project_code: window.syncConfig?.projectCode || 'local',
@@ -3354,20 +3387,20 @@ window.gameSaveAiKb = async function(editId) {
         source: 'local',
         sync_status: 'not_synced'
     };
-    
+
     // Сохраняем локально и даем флаг синхронизатору
     await dbPut('app_assistant_kb', record);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     document.getElementById('ai-kb-modal').remove();
     showToast('✅ База знаний обновлена');
     gameLoadAiKb();
 };
 
-window.gameDeleteAiKb = async function(id) {
+window.gameDeleteAiKb = async function (id) {
     if (!confirm('Удалить эту запись из базы ИИ?')) return;
-    
+
     const record = await dbGet('app_assistant_kb', id);
     if (record) {
         record._deleted = true;
@@ -3375,10 +3408,10 @@ window.gameDeleteAiKb = async function(id) {
         record.updated_at = new Date().toISOString();
         record.sync_status = 'not_synced';
         await dbPut('app_assistant_kb', record);
-        
+
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
-        
+
         showToast('🗑️ Запись удалена');
         gameLoadAiKb();
     }
