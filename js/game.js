@@ -1227,12 +1227,70 @@ function gameInjectManagerModals() {
                             </div>
                             <button onclick="gameLoadRoles()" class="bg-[var(--hover-bg)] text-indigo-600 dark:text-indigo-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
                         </div>
-                        <div id="manager-roles-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                        <div class="mb-4">
+    <div class="text-[10px] font-black uppercase text-orange-500 mb-2">
+        Заявки на доступ
+    </div>
+    <div id="manager-access-requests-list" class="space-y-2">
+        <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+    </div>
+</div>
+
+<div>
+    <div class="text-[10px] font-black uppercase text-slate-500 mb-2 border-t border-[var(--card-border)] pt-3">
+        Активные пользователи
+    </div>
+    <div id="manager-team-list" class="space-y-2">
+        <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+    </div>
+</div>
+
+<!-- Старый контейнер оставляем скрытым для совместимости -->
+<div id="manager-roles-list" class="hidden"></div>
+                    </div>
+                                        <!-- Блок 3: Справочник подрядчиков -->
+                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">
+                                    Справочник подрядчиков
+                                </h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">
+                                    Нормализованные подрядчики для осмотров и ПК СК.
+                                </p>
+                            </div>
+                            <button onclick="gameLoadContractorDirectory()"
+                                class="bg-[var(--hover-bg)] text-emerald-600 dark:text-emerald-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">
+                                Обновить
+                            </button>
+                        </div>
+                        <div id="manager-contractor-directory-list" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
+                            <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+                        </div>
+                    </div>
+
+                    <!-- Блок 4: Заявки на подрядчиков -->
+                    <div class="bg-[var(--card-bg)] border border-yellow-200 dark:border-yellow-800 p-3 sm:p-4 rounded-xl shadow-sm">
+                        <div class="flex justify-between items-center mb-3">
+                            <div>
+                                <h2 class="text-[13px] font-black uppercase text-yellow-600 dark:text-yellow-400 mb-1">
+                                    Заявки на подрядчиков
+                                </h2>
+                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">
+                                    Ненормализованные подрядчики из осмотров и ПК СК.
+                                </p>
+                            </div>
+                            <button onclick="gameLoadContractorRequests()"
+                                class="bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">
+                                Проверить
+                            </button>
+                        </div>
+                        <div id="manager-contractor-requests-list" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
                             <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
                         </div>
                     </div>
                 </div>
-
+                
                 <!-- Вкладка 4: БЭКЛОГ И ПЛАНЫ (Бывшая вкладка Разработчика) -->
                 <div id="manager-tab-dev" class="hidden">
                     <!-- ПЛАНЫ РАЗРАБОТЧИКА -->
@@ -1352,7 +1410,19 @@ window.switchManagerTab = function (tab) {
     // 3. Загружаем данные для специфичных вкладок
     if (tab === 'team') {
         gameLoadRoles();
-        ObjectDirectory.renderManagerPanel();
+
+        if (typeof ObjectDirectory !== 'undefined') {
+            ObjectDirectory.renderManagerPanel();
+            ObjectDirectory.loadRequests();
+        }
+
+        if (typeof gameLoadContractorDirectory === 'function') {
+            gameLoadContractorDirectory();
+        }
+
+        if (typeof gameLoadContractorRequests === 'function') {
+            gameLoadContractorRequests();
+        }
     } else if (tab === 'dev') {
         rbi_renderDevFeedbackTab();
         ObjectDirectory.loadRequests();
@@ -3019,128 +3089,810 @@ window.rbi_createEmptyFmea = function () {
     // Скроллим к рабочей области
     workspace.scrollIntoView({ behavior: 'smooth' });
 };
+window.gameAddAssignedProjectFromSelect = function (domId, canonicalKey) {
+    if (!canonicalKey) return;
 
+    const input = document.getElementById(`proj_input_${domId}`);
+    if (!input) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    if (!arr.includes(canonicalKey)) arr.push(canonicalKey);
+
+    input.value = arr.join(', ');
+    window.gameRenderAssignedProjectChips(domId);
+};
+
+window.gameRemoveAssignedProjectChip = function (domId, canonicalKey) {
+    const input = document.getElementById(`proj_input_${domId}`);
+    if (!input) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    input.value = arr.filter(v => v !== canonicalKey).join(', ');
+    window.gameRenderAssignedProjectChips(domId);
+};
+
+window.gameRenderAssignedProjectChips = function (domId) {
+    const input = document.getElementById(`proj_input_${domId}`);
+    const box = document.getElementById(`proj_chips_${domId}`);
+    if (!input || !box) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    if (!arr.length) {
+        box.innerHTML = '<span class="text-[8px] text-slate-400 font-bold">Объекты не назначены</span>';
+        return;
+    }
+
+    box.innerHTML = arr.map(key => `
+        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black">
+            ${key}
+            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${key}')" class="text-red-500 font-black">×</button>
+        </span>
+    `).join('');
+};
+
+window.gameLoadContractorDirectory = async function () {
+    const container = document.getElementById('manager-contractor-directory-list');
+    if (!container) return;
+
+    if (!window.supabaseClient) {
+        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500">Облако не подключено</div>';
+        return;
+    }
+
+    const pCode = window.syncConfig?.projectCode || 'RBI';
+
+    container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Загрузка подрядчиков...</div>';
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('canonical_key, display_name, synonyms, inn, is_deleted, updated_at')
+            .eq('project_code', pCode)
+            .or('is_deleted.is.null,is_deleted.eq.false')
+            .order('display_name', { ascending: true });
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Справочник подрядчиков пуст</div>';
+            return;
+        }
+
+        const esc = (v) => String(v || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+        container.innerHTML = data.map(c => `
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-2">
+                <div class="flex justify-between gap-2">
+                    <div class="min-w-0">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">
+                            ${esc(c.display_name)}
+                        </div>
+                        <div class="text-[9px] text-slate-400 font-mono truncate">
+                            ${esc(c.canonical_key)}
+                        </div>
+                        ${Array.isArray(c.synonyms) && c.synonyms.length
+                ? `<div class="text-[9px] text-slate-500 mt-1">Синонимы: ${esc(c.synonyms.join(', '))}</div>`
+                : ''
+            }
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('[gameLoadContractorDirectory]', e);
+        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500">Ошибка загрузки подрядчиков</div>';
+    }
+};
+
+window.gameLoadContractorRequests = async function () {
+    const container = document.getElementById('manager-contractor-requests-list');
+    if (!container) return;
+
+    if (!window.supabaseClient) {
+        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500">Облако не подключено</div>';
+        return;
+    }
+
+    const pCode = window.syncConfig?.projectCode || 'RBI';
+
+    container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Загрузка заявок подрядчиков...</div>';
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('contractor_normalization_queue')
+            .select('id, project_code, raw_name, cleaned_name, suggested_canonical_key, created_by, status, admin_comment, updated_at')
+            .eq('project_code', pCode)
+            .neq('status', 'linked')
+            .neq('status', 'resolved')
+            .neq('status', 'rejected')
+            .order('updated_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Заявок на подрядчиков нет</div>';
+            return;
+        }
+
+        const esc = (v) => String(v || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
+        container.innerHTML = data.map(q => `
+            <div class="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 mb-2">
+                <div class="text-[12px] font-black text-slate-800 dark:text-white">
+                    ${esc(q.raw_name)}
+                </div>
+                <div class="text-[9px] text-slate-400 mt-1">
+                    Предложенный ключ: <span class="font-mono">${esc(q.suggested_canonical_key)}</span>
+                </div>
+                <div class="text-[9px] text-slate-400 mt-1">
+                    Автор: ${esc(q.created_by || 'не указан')} · Статус: ${esc(q.status || 'pending')}
+                </div>
+                <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button onclick="gameCreateContractorFromRequest('${esc(q.id)}')"
+                        class="bg-emerald-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+                        Создать
+                    </button>
+                    <button onclick="gameRejectContractorRequest('${esc(q.id)}')"
+                        class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+                        Отклонить
+                    </button>
+                    <button onclick="gameDeleteContractorRequest('${esc(q.id)}')"
+    class="bg-slate-100 text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+    Удалить
+</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('[gameLoadContractorRequests]', e);
+        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500">Ошибка загрузки заявок подрядчиков</div>';
+    }
+};
+
+// === Панель руководителя: создать подрядчика из заявки ===
+window.gameCreateContractorFromRequest = async function (requestId) {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+
+    const pCode = window.syncConfig?.projectCode || 'RBI';
+
+    try {
+        const { data: req, error: reqErr } = await window.supabaseClient
+            .from('contractor_normalization_queue')
+            .select('*')
+            .eq('id', requestId)
+            .single();
+
+        if (reqErr) throw reqErr;
+        if (!req) return showToast('⚠️ Заявка не найдена');
+
+        const rawName = String(req.raw_name || '').trim();
+        if (!rawName) return showToast('⚠️ В заявке нет названия подрядчика');
+
+        let canonicalKey = String(req.suggested_canonical_key || '').trim();
+
+        if (!canonicalKey && window.ContractorDirectory && typeof window.ContractorDirectory.makeCanonicalKey === 'function') {
+            canonicalKey = window.ContractorDirectory.makeCanonicalKey(rawName);
+        }
+
+        if (!canonicalKey) {
+            canonicalKey = rawName
+                .toLowerCase()
+                .replace(/ё/g, 'е')
+                .replace(/["'«»]/g, '')
+                .replace(/\b(ооо|оао|зао|пао|ао|ип)\b/gi, '')
+                .replace(/[^a-zа-я0-9]+/gi, '_')
+                .replace(/^_+|_+$/g, '');
+        }
+
+        const nowIso = new Date().toISOString();
+        const currentUser = window.syncConfig?.engineerName || 'Админ';
+
+        const contractorPayload = {
+            project_code: pCode,
+            canonical_key: canonicalKey,
+            display_name: rawName,
+            synonyms: [rawName],
+            inn: '',
+            created_by: currentUser,
+            is_deleted: false,
+            created_at: nowIso,
+            updated_at: nowIso
+        };
+
+        const aliasPayload = {
+            project_code: pCode,
+            raw_name: rawName,
+            canonical_key: canonicalKey,
+            created_by: currentUser,
+            created_at: nowIso,
+            updated_at: nowIso
+        };
+
+        const { error: contractorErr } = await window.supabaseClient
+            .from('contractor_directory')
+            .upsert(contractorPayload, { onConflict: 'project_code,canonical_key' });
+
+        if (contractorErr) throw contractorErr;
+
+        const { error: aliasErr } = await window.supabaseClient
+            .from('contractor_aliases')
+            .upsert(aliasPayload, { onConflict: 'project_code,raw_name' });
+
+        if (aliasErr) throw aliasErr;
+
+        const { error: queueErr } = await window.supabaseClient
+            .from('contractor_normalization_queue')
+            .update({
+                status: 'linked',
+                suggested_canonical_key: canonicalKey,
+                admin_comment: 'Создан подрядчик из панели руководителя',
+                updated_at: nowIso
+            })
+            .eq('id', requestId);
+
+        if (queueErr) throw queueErr;
+
+        await window.supabaseClient
+            .from('sk_records')
+            .update({
+                contractor_name: rawName,
+                contractor_canonical_key: canonicalKey,
+                contractor_normalization_status: 'matched',
+                updated_at: nowIso
+            })
+            .eq('project_code', pCode)
+            .eq('contractor_raw', rawName);
+
+        showToast('✅ Подрядчик создан и связан');
+
+        if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
+        if (typeof gameLoadContractorDirectory === 'function') gameLoadContractorDirectory();
+
+    } catch (e) {
+        console.error('[gameCreateContractorFromRequest]', e);
+        showToast('❌ Не удалось создать подрядчика: ' + (e.message || 'ошибка'));
+    }
+};
+
+// === Панель руководителя: отклонить заявку подрядчика ===
+window.gameRejectContractorRequest = async function (requestId) {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+
+    if (!confirm('Отклонить заявку на подрядчика?')) return;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('contractor_normalization_queue')
+            .update({
+                status: 'rejected',
+                admin_comment: 'Отклонено администратором',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', requestId);
+
+        if (error) throw error;
+
+        showToast('🗑️ Заявка подрядчика отклонена');
+        if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
+
+    } catch (e) {
+        console.error('[gameRejectContractorRequest]', e);
+        showToast('❌ Не удалось отклонить заявку');
+    }
+};
+
+// === Панель руководителя: удалить заявку подрядчика ===
+window.gameDeleteContractorRequest = async function (requestId) {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+
+    if (!confirm('Удалить заявку подрядчика из очереди?')) return;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('contractor_normalization_queue')
+            .delete()
+            .eq('id', requestId);
+
+        if (error) throw error;
+
+        showToast('🗑️ Заявка подрядчика удалена');
+        if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
+
+    } catch (e) {
+        console.error('[gameDeleteContractorRequest]', e);
+        showToast('❌ Не удалось удалить заявку');
+    }
+};
+
+// === Панель руководителя: чипы закреплённых объектов ===
+window.gameAddAssignedProjectFromSelect = function (domId, canonicalKey) {
+    if (!canonicalKey) return;
+
+    const input = document.getElementById(`proj_input_${domId}`);
+    if (!input) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    if (!arr.includes(canonicalKey)) {
+        arr.push(canonicalKey);
+    }
+
+    input.value = arr.join(', ');
+    window.gameRenderAssignedProjectChips(domId);
+};
+
+window.gameRemoveAssignedProjectChip = function (domId, canonicalKey) {
+    const input = document.getElementById(`proj_input_${domId}`);
+    if (!input) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    input.value = arr.filter(v => v !== canonicalKey).join(', ');
+    window.gameRenderAssignedProjectChips(domId);
+};
+
+window.gameRenderAssignedProjectChips = function (domId) {
+    const input = document.getElementById(`proj_input_${domId}`);
+    const box = document.getElementById(`proj_chips_${domId}`);
+
+    if (!input || !box) return;
+
+    const arr = input.value
+        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
+        : [];
+
+    if (!arr.length) {
+        box.innerHTML = '<span class="text-[8px] text-slate-400 font-bold">Объекты не назначены</span>';
+        return;
+    }
+
+    box.innerHTML = arr.map(key => `
+        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black">
+            ${key}
+            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${key}')"
+                class="text-red-500 font-black leading-none">×</button>
+        </span>
+    `).join('');
+};
 window.gameLoadRoles = async function () {
     if (!window.supabaseClient) return showToast("Облако не подключено");
 
     const pCode = window.syncConfig?.projectCode || 'RBI';
-    const container = document.getElementById('manager-roles-list');
 
-    if (!container) return;
+    const oldContainer = document.getElementById('manager-roles-list');
+    const accessContainer = document.getElementById('manager-access-requests-list') || oldContainer;
+    const teamContainer = document.getElementById('manager-team-list') || oldContainer;
 
-    container.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка пользователей...</div>';
+    if (!accessContainer && !teamContainer) return;
 
-    const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    if (accessContainer) {
+        accessContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка заявок...</div>';
+    }
+
+    if (teamContainer && teamContainer !== accessContainer) {
+        teamContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400 animate-pulse">Загрузка команды...</div>';
+    }
+
+    if (oldContainer && oldContainer !== accessContainer && oldContainer !== teamContainer) {
+        oldContainer.innerHTML = '';
+    }
+
+    const esc = (v) => String(v || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const escJs = (v) => String(v || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\n/g, ' ');
+
     const safeId = (v) => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     try {
+        // 1. Справочник объектов для выбора закреплённых объектов
+        const { data: projectObjectsRaw, error: objErr } = await window.supabaseClient
+            .from('project_objects')
+            .select('canonical_key, display_name, is_deleted')
+            .eq('project_code', pCode)
+            .or('is_deleted.is.null,is_deleted.eq.false')
+            .order('display_name', { ascending: true });
+
+        if (objErr) throw objErr;
+
+        const projectObjects = Array.isArray(projectObjectsRaw) ? projectObjectsRaw : [];
+
+        // 2. Справочник подрядчиков для назначения роли contractor
+        const { data: contractorDirectoryRaw, error: contrErr } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('canonical_key, display_name, is_deleted')
+            .eq('project_code', pCode)
+            .or('is_deleted.is.null,is_deleted.eq.false')
+            .order('display_name', { ascending: true });
+
+        if (contrErr) throw contrErr;
+
+        const contractorDirectory = Array.isArray(contractorDirectoryRaw) ? contractorDirectoryRaw : [];
+
+        // 3. Пользователи + settings, чтобы видеть заявки на объекты
         const { data, error } = await window.supabaseClient
             .from('rbi_engineer_profiles')
-            .select('inspector_id, inspector_name, engineer_name, role, cloud_status, assigned_contractor, contractor_name, assigned_projects')
+            .select('inspector_id, inspector_name, engineer_name, role, cloud_status, assigned_contractor, contractor_name, assigned_projects, settings, created_at')
             .eq('project_code', pCode)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        if (!data || data.length === 0) {
-            container.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Нет пользователей</div>';
+        const users = Array.isArray(data) ? data : [];
+
+        if (users.length === 0) {
+            if (accessContainer) accessContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Заявок на доступ нет</div>';
+            if (teamContainer) teamContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Активных пользователей нет</div>';
             return;
         }
 
-        const pendingUsers = data.filter(u => u.cloud_status === 'pending');
-        const activeUsers = data.filter(u => u.cloud_status !== 'pending').sort((a, b) => (a.engineer_name || '').localeCompare(b.engineer_name || ''));
+        const pendingUsers = users.filter(u => (u.cloud_status || 'pending') === 'pending');
+        const activeUsers = users
+            .filter(u => (u.cloud_status || 'pending') !== 'pending')
+            .sort((a, b) => (a.engineer_name || a.inspector_name || '').localeCompare(b.engineer_name || b.inspector_name || ''));
 
-        const renderUserRow = (user) => {
+        const renderUserRow = (user, mode = 'active') => {
             const inspectorId = user.inspector_id || '';
             const domId = safeId(inspectorId);
             const engineerName = user.engineer_name || user.inspector_name || 'Без имени';
             const role = user.role || 'guest';
             const cloudStatus = user.cloud_status || 'pending';
-            const contrName = user.contractor_name || user.assigned_contractor || '';
-            const projectsStr = Array.isArray(user.assigned_projects) ? user.assigned_projects.join(', ') : '';
+
+            const contrName =
+                user.assigned_contractor ||
+                user.contractor_name ||
+                user.settings?.assignedContractor ||
+                user.settings?.contractorName ||
+                '';
+
+            const projectsArray = Array.isArray(user.assigned_projects)
+                ? user.assigned_projects
+                : Array.isArray(user.settings?.assignedProjects)
+                    ? user.settings.assignedProjects
+                    : [];
+
+            const projectsStr = projectsArray.join(', ');
+
+            const currentSettings = user.settings || {};
+            const requestedProjects = Array.isArray(currentSettings.requestedProjects)
+                ? currentSettings.requestedProjects.filter(r => r.source !== 'sk_import' && r.request_type !== 'directory')
+                : [];
 
             let statusBadge = '';
-            if (cloudStatus === 'pending') statusBadge = '<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Ожидает</span>';
-            else if (cloudStatus === 'approved') statusBadge = '<span class="bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Активен</span>';
-            else statusBadge = '<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Заблок.</span>';
+            if (cloudStatus === 'pending') {
+                statusBadge = '<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Ожидает</span>';
+            } else if (cloudStatus === 'approved') {
+                statusBadge = '<span class="bg-green-100 text-green-700 border border-green-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Активен</span>';
+            } else {
+                statusBadge = '<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase">Заблок.</span>';
+            }
 
             const isNoObjectsRole = ['guest', 'director', 'deputy_manager', 'manager'].includes(role);
-            const displayObjects = isNoObjectsRole ? 'hidden' : 'block';
+            const displayObjects = isNoObjectsRole ? 'none' : 'block';
 
-            return `
-                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm mb-3">
-                    <div class="flex justify-between items-start mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-                        <div>
-                            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase leading-tight flex items-center gap-2">
-                                ${esc(engineerName)} ${statusBadge}
-                            </div>
-                            <div class="text-[8px] text-slate-400 font-mono mt-0.5 break-all">${esc(inspectorId)}</div>
-                        </div>
-                        <button onclick="gameSaveUserAccess('${esc(inspectorId)}', '${esc(engineerName)}')" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform shrink-0 h-fit">
-                            Сохранить
-                        </button>
+            const requestedProjectsHtml = requestedProjects.length ? `
+                <div class="mt-3 bg-orange-50 border border-orange-200 rounded-xl p-2">
+                    <div class="text-[9px] font-black text-orange-700 uppercase mb-2">
+                        Заявки на объекты (${requestedProjects.length})
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                    ${requestedProjects.map((req, idx) => `
+                        <div class="mb-2 p-2 bg-white rounded-lg border border-orange-100">
+                            <div class="text-[10px] font-black text-slate-700 mb-1">
+                                ${esc(req.raw_name || req.display_name || 'Без названия')}
+                            </div>
+
+                            <select id="req_action_${domId}_${idx}" class="input-base !py-1.5 !text-[10px]">
+                                <option value="ignore">Оставить в ожидании</option>
+                                ${projectObjects.map(o => `
+                                    <option value="link_${esc(o.canonical_key)}">
+                                        Связать с: ${esc(o.display_name)}
+                                    </option>
+                                `).join('')}
+                                <option value="create">Создать новый объект</option>
+                                <option value="reject">Отклонить</option>
+                            </select>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            return `
+                <div class="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 mb-3"
+                    id="user_card_${domId}">
+
+                    <div class="flex justify-between items-start gap-2 mb-3">
+                        <div class="min-w-0">
+                            <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase truncate">
+                                ${esc(engineerName)}
+                            </div>
+                            <div class="text-[9px] text-slate-400 font-mono truncate">
+                                ${esc(inspectorId)}
+                            </div>
+                        </div>
+                        ${statusBadge}
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Роль</label>
-                            <select id="role_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold" onchange="
-                                const role = this.value;
-                                const objBlock = document.getElementById('obj_block_${domId}');
-                                if(['guest', 'director', 'deputy_manager', 'manager'].includes(role)) objBlock.style.display='none';
-                                else objBlock.style.display='block';
-                            ">
-                                <option value="guest" ${role === 'guest' ? 'selected' : ''}>Гость (Чтение)</option>
+                            <select id="role_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold">
+                                <option value="guest" ${role === 'guest' ? 'selected' : ''}>Гость</option>
                                 <option value="contractor" ${role === 'contractor' ? 'selected' : ''}>Подрядчик</option>
-                                <option value="engineer" ${role === 'engineer' ? 'selected' : ''}>Инженер (Аудитор)</option>
+                                <option value="engineer" ${role === 'engineer' ? 'selected' : ''}>Инженер СК</option>
                                 <option value="project_manager" ${role === 'project_manager' ? 'selected' : ''}>Руководитель проекта</option>
+                                <option value="director" ${role === 'director' ? 'selected' : ''}>Директор</option>
                                 <option value="deputy_manager" ${role === 'deputy_manager' ? 'selected' : ''}>Зам. руководителя</option>
                                 <option value="manager" ${role === 'manager' ? 'selected' : ''}>Админ</option>
                             </select>
                         </div>
+
                         <div>
                             <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Доступ</label>
                             <select id="status_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold">
-                                <option value="pending" ${cloudStatus === 'pending' ? 'selected' : ''}>Ожидает (Pending)</option>
-                                <option value="approved" ${cloudStatus === 'approved' ? 'selected' : ''}>Разрешен (Approved)</option>
-                                <option value="blocked" ${cloudStatus === 'blocked' ? 'selected' : ''}>Заблокирован (Blocked)</option>
+                                <option value="pending" ${cloudStatus === 'pending' ? 'selected' : ''}>Ожидает</option>
+                                <option value="approved" ${cloudStatus === 'approved' ? 'selected' : ''}>Разрешён</option>
+                                <option value="blocked" ${cloudStatus === 'blocked' ? 'selected' : ''}>Заблокирован</option>
                             </select>
                         </div>
+
                         <div class="col-span-2">
-                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Имя подрядчика (Только для Подрядчиков)</label>
-                            <input type="text" id="contr_input_${domId}" class="input-base !py-1.5 !text-[10px]" placeholder="Введите название..." value="${esc(contrName)}">
+                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">
+                                Подрядчик из справочника
+                            </label>
+                            <select id="contr_input_${domId}" class="input-base !py-1.5 !text-[10px]">
+                                <option value="">— Не назначен —</option>
+                                ${contractorDirectory.map(c => `
+                                    <option value="${esc(c.canonical_key)}"
+                                        data-display="${esc(c.display_name)}"
+                                        ${contrName === c.canonical_key || contrName === c.display_name ? 'selected' : ''}>
+                                        ${esc(c.display_name)}
+                                    </option>
+                                `).join('')}
+                            </select>
+                            <div class="text-[8px] text-slate-400 mt-1">
+                                Для роли «Подрядчик» выбираем нормализованного подрядчика из справочника.
+                            </div>
                         </div>
                     </div>
 
                     <div id="obj_block_${domId}" style="display: ${displayObjects};">
-                        <div class="flex justify-between items-center mb-0.5 mt-2">
-                            <label class="text-[8px] font-bold text-slate-400 uppercase block">Закрепленные объекты (ID через запятую)</label>
-                            <button onclick="document.getElementById('proj_input_${domId}').value=''" class="text-[8px] text-red-500 font-bold hover:underline">Очистить всё</button>
+                        <div class="flex justify-between items-center mb-0.5 mt-3">
+                            <label class="text-[8px] font-bold text-slate-400 uppercase block">
+                                Закреплённые объекты
+                            </label>
+                            <button onclick="document.getElementById('proj_input_${domId}').value=''; gameRenderAssignedProjectChips('${domId}')"
+                                class="text-[8px] text-red-500 font-bold hover:underline">
+                                Очистить всё
+                            </button>
                         </div>
-                        <input type="text" id="proj_input_${domId}" class="input-base !py-1.5 !text-[10px]" placeholder="Напр: ligovsky_240, moskovsky_12" value="${esc(projectsStr)}">
+
+                        <input type="hidden" id="proj_input_${domId}" value="${esc(projectsStr)}">
+
+                        <select class="input-base !py-1.5 !text-[10px] mb-2"
+                            onchange="gameAddAssignedProjectFromSelect('${domId}', this.value); this.value='';">
+                            <option value="">+ Добавить объект из справочника</option>
+                            ${projectObjects.map(o => `
+                                <option value="${esc(o.canonical_key)}">
+                                    ${esc(o.display_name)} (${esc(o.canonical_key)})
+                                </option>
+                            `).join('')}
+                        </select>
+
+                        <div id="proj_chips_${domId}" class="flex flex-wrap gap-1"></div>
+                    </div>
+
+                    ${requestedProjectsHtml}
+
+                    <div class="grid grid-cols-2 gap-2 mt-3">
+                        <button onclick="gameSaveUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')"
+                            class="bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">
+                            Сохранить
+                        </button>
+
+                        <button onclick="gameDeleteUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')"
+                            class="bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform">
+                            Удалить
+                        </button>
                     </div>
                 </div>
             `;
         };
 
-        let html = '';
-        if (pendingUsers.length > 0) {
-            html += `<div class="text-[10px] font-black uppercase text-orange-500 mb-2 pl-1">Новые заявки на доступ (${pendingUsers.length})</div>`;
-            html += pendingUsers.map(renderUserRow).join('');
+        if (accessContainer) {
+            if (pendingUsers.length > 0) {
+                accessContainer.innerHTML = pendingUsers.map(u => renderUserRow(u, 'pending')).join('');
+            } else {
+                accessContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Заявок на доступ нет</div>';
+            }
         }
 
-        if (activeUsers.length > 0) {
-            html += `<div class="text-[10px] font-black uppercase text-slate-500 mb-2 pl-1 mt-4 border-t border-slate-200 dark:border-slate-700 pt-3">Активные пользователи (${activeUsers.length})</div>`;
-            html += activeUsers.map(renderUserRow).join('');
+        if (teamContainer) {
+            if (activeUsers.length > 0) {
+                teamContainer.innerHTML = activeUsers.map(u => renderUserRow(u, 'active')).join('');
+            } else {
+                teamContainer.innerHTML = '<div class="text-center py-4 text-[10px] text-slate-400">Активных пользователей нет</div>';
+            }
         }
 
-        container.innerHTML = html;
+        users.forEach(user => {
+            const domId = safeId(user.inspector_id || '');
+            if (typeof gameRenderAssignedProjectChips === 'function') {
+                gameRenderAssignedProjectChips(domId);
+            }
+        });
 
     } catch (e) {
-        container.innerHTML = '<div class="text-center py-4 text-xs text-red-500 font-bold">Ошибка загрузки из БД</div>';
+        console.error('[gameLoadRoles]', e);
+
+        if (accessContainer) {
+            accessContainer.innerHTML = '<div class="text-center py-4 text-xs text-red-500 font-bold">Ошибка загрузки заявок</div>';
+        }
+
+        if (teamContainer && teamContainer !== accessContainer) {
+            teamContainer.innerHTML = '<div class="text-center py-4 text-xs text-red-500 font-bold">Ошибка загрузки команды</div>';
+        }
     }
 };
+window.gameDeleteUserAccess = async function (inspectorId, engineerName) {
+    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
 
+    if (!confirm(`Удалить пользователя "${engineerName}" из команды?`)) return;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .delete()
+            .eq('inspector_id', inspectorId);
+
+        if (error) throw error;
+
+        showToast('✅ Пользователь удалён');
+        if (typeof gameLoadRoles === 'function') gameLoadRoles();
+    } catch (e) {
+        console.error('[gameDeleteUserAccess]', e);
+        showToast('❌ Не удалось удалить пользователя');
+    }
+};
+// === Панель руководителя: свернуть карточку пользователя после сохранения ===
+window.gameCollapseUserCard = function (inspectorId, engineerName) {
+    const safeDomId = String(inspectorId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const card =
+        document.getElementById(`user_card_${safeDomId}`) ||
+        document.getElementById(`user_card_${inspectorId}`);
+
+    if (!card) return;
+
+    const roleEl =
+        document.getElementById(`role_select_${safeDomId}`) ||
+        document.getElementById(`role_select_${inspectorId}`);
+
+    const statusEl =
+        document.getElementById(`status_select_${safeDomId}`) ||
+        document.getElementById(`status_select_${inspectorId}`);
+
+    const contrEl =
+        document.getElementById(`contr_input_${safeDomId}`) ||
+        document.getElementById(`contr_input_${inspectorId}`);
+
+    const projEl =
+        document.getElementById(`proj_input_${safeDomId}`) ||
+        document.getElementById(`proj_input_${inspectorId}`);
+
+    const role = roleEl?.value || 'guest';
+    const status = statusEl?.value || 'pending';
+
+    const contractorKey = contrEl?.value || '';
+    const contractorName =
+        contrEl?.selectedOptions?.[0]?.dataset?.display ||
+        contrEl?.selectedOptions?.[0]?.textContent?.trim() ||
+        contractorKey ||
+        'Не назначен';
+
+    const projects = projEl?.value || '';
+
+    const roleLabelMap = {
+        guest: 'Гость',
+        contractor: 'Подрядчик',
+        engineer: 'Инженер СК',
+        project_manager: 'Руководитель проекта',
+        director: 'Директор',
+        deputy_manager: 'Зам. руководителя',
+        manager: 'Админ'
+    };
+
+    const statusLabelMap = {
+        pending: 'Ожидает',
+        approved: 'Разрешён',
+        blocked: 'Заблокирован'
+    };
+
+    const statusClass =
+        status === 'approved'
+            ? 'bg-green-100 text-green-700 border-green-200'
+            : status === 'blocked'
+                ? 'bg-red-100 text-red-700 border-red-200'
+                : 'bg-yellow-100 text-yellow-700 border-yellow-200';
+
+    card.innerHTML = `
+        <div class="flex justify-between items-start gap-3">
+            <div class="min-w-0 flex-1">
+                <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase truncate">
+                    ${String(engineerName || 'Без имени')}
+                </div>
+
+                <div class="text-[9px] text-slate-400 font-mono truncate mt-0.5">
+                    ${String(inspectorId || '')}
+                </div>
+
+                <div class="flex flex-wrap gap-1 mt-2">
+                    <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-full text-[8px] font-black uppercase">
+                        ${roleLabelMap[role] || role}
+                    </span>
+
+                    <span class="${statusClass} border px-2 py-1 rounded-full text-[8px] font-black uppercase">
+                        ${statusLabelMap[status] || status}
+                    </span>
+                </div>
+
+                <div class="mt-2 text-[9px] text-slate-500 font-bold leading-snug">
+                    <div>
+                        <span class="text-slate-400 uppercase">Объекты:</span>
+                        ${projects || 'не назначены'}
+                    </div>
+
+                    <div>
+                        <span class="text-slate-400 uppercase">Подрядчик:</span>
+                        ${contractorName}
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-1 shrink-0">
+                <button onclick="gameLoadRoles()"
+                    class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+                    Изменить
+                </button>
+
+                <button onclick="gameDeleteUserAccess('${String(inspectorId || '').replace(/'/g, "\\'")}', '${String(engineerName || '').replace(/'/g, "\\'")}')"
+                    class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+                    Удалить
+                </button>
+            </div>
+        </div>
+    `;
+};
 
 window.gameSaveUserAccess = async function (inspectorId, engineerName) {
     if (!window.supabaseClient) return showToast("❌ Облако не подключено");
@@ -3149,7 +3901,9 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
 
     const role = document.getElementById(`role_select_${domId}`)?.value || 'guest';
     const cloudStatus = document.getElementById(`status_select_${domId}`)?.value || 'pending';
-    const contr = document.getElementById(`contr_input_${domId}`)?.value.trim() || '';
+    const contrSelect = document.getElementById(`contr_input_${domId}`);
+    const contr = contrSelect?.value?.trim() || '';
+    const contrDisplay = contrSelect?.selectedOptions?.[0]?.dataset?.display || contr;
     const projStr = document.getElementById(`proj_input_${domId}`)?.value.trim() || '';
 
     // Если роль не требует объектов, очищаем массив
@@ -3174,7 +3928,12 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
         let currentSettings = userData?.settings || {};
         const projectCode = userData?.project_code || window.syncConfig?.projectCode || 'RBI';
 
-        let requestedProjects = Array.isArray(currentSettings.requestedProjects) ? currentSettings.requestedProjects : [];
+        let requestedProjects = Array.isArray(currentSettings.requestedProjects)
+            ? currentSettings.requestedProjects.filter(r =>
+                r.source !== 'sk_import' &&
+                r.request_type !== 'directory'
+            )
+            : [];
         let remainingRequests = [];
 
         for (let i = 0; i < requestedProjects.length; i++) {
@@ -3250,7 +4009,7 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
                 role: role,
                 cloud_status: cloudStatus,
                 assigned_contractor: contr,
-                contractor_name: contr,
+                contractor_name: contrDisplay,
                 assigned_projects: projectsArray,
                 settings: currentSettings,
                 updated_at: new Date().toISOString()
@@ -3260,7 +4019,10 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
         if (error) throw error;
 
         showToast(`✅ Права успешно сохранены!`);
-        if (typeof gameLoadRoles === 'function') gameLoadRoles();
+
+        if (typeof gameCollapseUserCard === 'function') {
+            gameCollapseUserCard(inspectorId, engineerName);
+        }
 
     } catch (e) {
         console.error('[gameSaveUserAccess]', e);

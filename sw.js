@@ -1,6 +1,9 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const CACHE_NAME = 'rbi-quality-v17.91'; 
+// ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
+const APP_VERSION = '17.8.188';
+const SW_VERSION = '17.96';
+const CACHE_NAME = `rbi-quality-v${SW_VERSION}`; 
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
 const urlsToCache = [
@@ -11,6 +14,8 @@ const urlsToCache = [
   './data/system_nodes.js',
   './data/system_twi.js',
   './js/config.js',
+  './js/contractorDirectory.js',
+  './js/objectDirectory.js',
   './js/sync.js',
   './js/storage.js',
   './js/templates.js',

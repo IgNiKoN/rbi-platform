@@ -460,6 +460,110 @@ document.addEventListener("DOMContentLoaded", () => {
     initSmartInput('inp-room', 'room');
 });
 // === КОНЕЦ ЗАМЕНЫ 1 ===
+// === Подгрузка нормализованных подрядчиков в поле "Подрядчик" на осмотре ===
+window.loadContractorDirectoryToInspectionInput = async function () {
+    const input = document.getElementById('inp-contractor');
+
+    if (!input) return;
+    if (!window.supabaseClient) return;
+    if (!window.syncConfig?.projectCode) return;
+
+    const listId = 'contractor-directory-datalist';
+    let datalist = document.getElementById(listId);
+
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = listId;
+        document.body.appendChild(datalist);
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('canonical_key, display_name')
+            .eq('project_code', window.syncConfig.projectCode)
+            .or('is_deleted.is.null,is_deleted.eq.false')
+            .order('display_name', { ascending: true });
+
+        if (error) throw error;
+
+        datalist.innerHTML = (data || []).map(c => `
+            <option value="${String(c.display_name || '').replace(/"/g, '&quot;')}"></option>
+        `).join('');
+
+        input.setAttribute('list', listId);
+
+        console.log('[Осмотр] Справочник подрядчиков загружен:', data?.length || 0);
+    } catch (e) {
+        console.warn('[Осмотр] Не удалось загрузить справочник подрядчиков:', e);
+    }
+};
+// Автоматически подгружаем подрядчиков после запуска приложения
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if (typeof window.loadContractorDirectoryToInspectionInput === 'function') {
+            window.loadContractorDirectoryToInspectionInput();
+        }
+    }, 1500);
+});
+
+// === Нормализация подрядчика перед сохранением осмотра ===
+window.normalizeInspectionContractorBeforeSave = async function () {
+    const input = document.getElementById('inp-contractor');
+
+    if (!input) {
+        return {
+            contractor_raw_name: '',
+            contractor_name: '',
+            contractor_canonical_key: '',
+            contractor_normalization_status: 'empty'
+        };
+    }
+
+    const rawName = input.value.trim();
+
+    if (!rawName) {
+        return {
+            contractor_raw_name: '',
+            contractor_name: '',
+            contractor_canonical_key: '',
+            contractor_normalization_status: 'empty'
+        };
+    }
+
+    // Если справочник подрядчиков подключен — пробуем нормализовать
+    if (window.ContractorDirectory && typeof window.ContractorDirectory.normalizeContractorName === 'function') {
+        const result = await window.ContractorDirectory.normalizeContractorName(rawName);
+
+        // Нашли подрядчика в справочнике / алиасах / синонимах
+        if (result && result.canonical_key && result.display_name) {
+            input.value = result.display_name;
+
+            return {
+                contractor_raw_name: rawName,
+                contractor_name: result.display_name,
+                contractor_canonical_key: result.canonical_key,
+                contractor_normalization_status: 'matched'
+            };
+        }
+
+        // Не нашли — ContractorDirectory сам создаст заявку в очередь
+        return {
+            contractor_raw_name: rawName,
+            contractor_name: rawName,
+            contractor_canonical_key: '',
+            contractor_normalization_status: 'pending'
+        };
+    }
+
+    // Если справочник не загрузился — просто сохраняем как текст
+    return {
+        contractor_raw_name: rawName,
+        contractor_name: rawName,
+        contractor_canonical_key: '',
+        contractor_normalization_status: 'pending'
+    };
+};
 
 // === КАСТОМНЫЕ DROPDOWN АВТОЗАПОЛНЕНИЯ (БЕЗ DATALIST) ===
 let _smartInputMemoryCache = null;
@@ -2587,14 +2691,14 @@ async function saveProductToArray() {
     // Если облако включено, пользователь Инженер, и поле объекта было введено от руки (не из списка)
     const isCloudConnected = window.syncConfig && window.syncConfig.enabled && window.syncConfig.projectCode;
     const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    
+
     if (isCloudConnected && currentRole === 'engineer' && projInput.tagName.toLowerCase() === 'input') {
         const newObjName = projInput.value.trim();
-        
+
         // Проверяем, нет ли уже такой заявки локально
         if (!appSettings.pendingAssignedProjects) appSettings.pendingAssignedProjects = [];
         const exists = appSettings.pendingAssignedProjects.some(p => p.raw_name === newObjName);
-        
+
         if (!exists) {
             appSettings.pendingAssignedProjects.push({
                 raw_name: newObjName,
@@ -2602,11 +2706,11 @@ async function saveProductToArray() {
                 created_at: new Date().toISOString()
             });
             dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
-            
+
             // Если мы онлайн, кидаем заявку в профиль Supabase для админа
             if (window.supabaseClient) {
                 const stableInspectorId = `${window.syncConfig.projectCode}_${appSettings.engineerName}`.replace(/\s+/g, '_');
-                window.supabaseClient.from('rbi_engineer_profiles').select('settings').eq('inspector_id', stableInspectorId).single().then(({data}) => {
+                window.supabaseClient.from('rbi_engineer_profiles').select('settings').eq('inspector_id', stableInspectorId).single().then(({ data }) => {
                     if (data) {
                         const s = data.settings || {};
                         const reqs = s.requestedProjects || [];
@@ -2744,7 +2848,14 @@ async function saveProductToArray() {
     if (!projectCanonicalKey) {
         projectCanonicalKey = rawProjectValue || rawProjectName;
     }
-
+    const contractorNormalized = typeof window.normalizeInspectionContractorBeforeSave === 'function'
+        ? await window.normalizeInspectionContractorBeforeSave()
+        : {
+            contractor_raw_name: contrInput.value.trim(),
+            contractor_name: contrInput.value.trim(),
+            contractor_canonical_key: '',
+            contractor_normalization_status: 'pending'
+        };
     const newItem = {
         id: String(Date.now() + Math.floor(Math.random() * 1000)),
         date: new Date().toISOString(),
@@ -2757,7 +2868,11 @@ async function saveProductToArray() {
         project_display_name: projectDisplayName,
 
         inspectorName: inspInput.value.trim(),
-        contractorName: contrInput.value.trim(),
+        contractorName: contractorNormalized.contractor_name || contrInput.value.trim(),
+        contractor_name: contractorNormalized.contractor_name || contrInput.value.trim(),
+        contractor_raw_name: contractorNormalized.contractor_raw_name || contrInput.value.trim(),
+        contractor_canonical_key: contractorNormalized.contractor_canonical_key || '',
+        contractor_normalization_status: contractorNormalized.contractor_normalization_status || 'pending',
         templateKey: currentTemplateKey,
         templateTitle: tTitle,
         section: secInput.value.trim(),
@@ -2790,13 +2905,16 @@ async function saveProductToArray() {
     }
 
     updateSmartInputCache('projectName', projInput.value.trim());
-    updateSmartInputCache('contractorName', contrInput.value.trim());
+    updateSmartInputCache('contractorName', contractorNormalized.contractor_name || contrInput.value.trim());
     updateSmartInputCache('section', secInput.value.trim());
     updateSmartInputCache('floor', floorInput.value.trim());
     updateSmartInputCache('room', roomInput.value.trim());
 
     // Обновляем план, если появилась новая связка
-    const pastChecks = contractorArray.filter(c => c.contractorName === contrInput.value.trim() && c.templateKey === currentTemplateKey);
+    const pastChecks = contractorArray.filter(c =>
+        c.contractorName === (contractorNormalized.contractor_name || contrInput.value.trim()) &&
+        c.templateKey === currentTemplateKey
+    );
     if (pastChecks.length === 1 && typeof gameGenerateWeeklyPlan === 'function') {
         gameGenerateWeeklyPlan(true);
     } else if (typeof gameUpdatePlanProgress === 'function') {
@@ -3018,7 +3136,7 @@ function applyHistoryFilters() {
     if (periodSelect && periodLabel) {
         periodLabel.querySelector('.truncate').innerText = periodSelect.options[periodSelect.selectedIndex].text;
     }
-    
+
     // Если открыты отчеты - рендерим отчеты, если проверки - проверки
     if (window.currentHistoryViewMode === 'reports') {
         renderReportsList();
@@ -7250,7 +7368,7 @@ function unlockSmartField(inputId) {
 }
 
 function applySmartLocks() {
-    if (isDemoMode) return; 
+    if (isDemoMode) return;
 
     const inspInput = document.getElementById('inp-inspector');
 
@@ -8524,10 +8642,10 @@ window.rbi_handleMeetingPhotoUpload = function (event) {
         const box = document.getElementById('meeting-photo-preview');
         box.dataset.photo = localUrl;
         box.classList.remove('hidden');
-        
+
         // Ждем получения реальной ссылки-blob из памяти
         const realSrc = await PhotoManager.getAsyncUrl(localUrl) || window.getPhotoSrc(localUrl);
-        
+
         box.innerHTML = `<img src="${realSrc}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
         event.target.value = '';
     });
@@ -10065,47 +10183,108 @@ window.removeBrandLogo = function () {
     showToast("🗑️ Логотип удален");
 };
 
-window.publishCorporateBranding = async function() {
+window.publishCorporateBranding = async function () {
     if (!window.supabaseClient) return showToast("❌ Облако не подключено!");
     showToast("⏳ Публикация корпоративного стиля...");
     try {
         const pCode = window.syncConfig?.projectCode;
         let logoUrl = appSettings.brandLogo;
-        
+
         // Если логотип локальный, грузим его в облако в общую папку
         if (logoUrl && (logoUrl.startsWith('data:') || logoUrl.startsWith('local://'))) {
             logoUrl = await window.rbiUploadAsset(logoUrl, 'custom-assets', `${pCode}/branding/logo`, 'photo');
         }
-        
+
         const payload = {
             project_code: pCode,
             logo_url: logoUrl || '',
             brand_color: appSettings.brandColor || '#1c2b39',
             updated_at: new Date().toISOString()
         };
-        
+
         const { error } = await window.supabaseClient.from('project_settings').upsert(payload, { onConflict: 'project_code' });
         if (error) throw error;
-        
+
         // Сбрасываем свой флаг кастомизации, так как мы теперь сами сидим на стандарте
         appSettings.isBrandingCustomized = false;
         saveSettings('isBrandingCustomized', false);
-        
+
         showToast("✅ Корпоративный стиль опубликован для всех!");
         renderSettingsTab();
-    } catch(e) {
+    } catch (e) {
         console.error(e);
         showToast("❌ Ошибка публикации");
     }
 };
 
-window.resetToCorporateBranding = function() {
+window.resetToCorporateBranding = function () {
     appSettings.isBrandingCustomized = false;
     saveSettings('isBrandingCustomized', false);
     // Сразу вызываем синхронизацию, чтобы подтянуть стиль из облака
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('manual');
     showToast("⏳ Запрос корпоративного стиля...");
+};
+
+// === Применить связь подрядчика ко всей истории осмотров ===
+window.applyContractorAliasToInspectionHistory = async function (rawName, canonicalKey, displayName) {
+    if (!rawName || !canonicalKey || !displayName) return 0;
+    if (typeof dbGetAll !== 'function' || typeof dbPut !== 'function') return 0;
+
+    const records = await dbGetAll(STORES.HISTORY) || [];
+
+    const rawClean = String(rawName || '').trim().toLowerCase();
+    const nowIso = new Date().toISOString();
+
+    let updated = 0;
+
+    for (const rec of records) {
+        if (!rec || rec._deleted || rec.is_deleted) continue;
+
+        const recName = String(
+            rec.contractor_raw_name ||
+            rec.contractorName ||
+            rec.contractor_name ||
+            ''
+        ).trim().toLowerCase();
+
+        if (recName === rawClean) {
+            rec.contractor_raw_name = rec.contractor_raw_name || rec.contractorName || rec.contractor_name || rawName;
+
+            rec.contractorName = displayName;
+            rec.contractor_name = displayName;
+            rec.contractor_canonical_key = canonicalKey;
+            rec.contractor_normalization_status = 'matched';
+
+            rec.source = 'local';
+            rec.syncStatus = 'not_synced';
+            rec.sync_status = 'not_synced';
+            rec.syncBlockReason = '';
+            rec.sync_block_reason = '';
+
+            rec.updatedAt = nowIso;
+            rec.updated_at = nowIso;
+            rec._updatedAt = nowIso;
+
+            await dbPut(STORES.HISTORY, rec);
+            updated++;
+        }
+    }
+
+    if (updated > 0) {
+        // Обновляем рабочий массив истории
+        contractorArray = (await dbGetAll(STORES.HISTORY) || []).filter(x => !x._deleted && !x.is_deleted);
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+
+        if (typeof updateAllDynamicFilters === 'function') {
+            updateAllDynamicFilters();
+        }
+    }
+
+    console.log(`[Подрядчики] История обновлена по алиасу "${rawName}" → "${displayName}". Записей: ${updated}`);
+
+    return updated;
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

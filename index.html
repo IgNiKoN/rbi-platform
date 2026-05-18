@@ -2395,7 +2395,7 @@
                                 <div class="text-[10px] text-indigo-600 dark:text-indigo-400 mt-1">Настройка блоков и
                                     дизайна</div>
                             </div>
-                            
+
                             <button onclick="window.openPdfTemplateModal()"
                                 class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md flex items-center gap-1.5">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -2546,7 +2546,7 @@
                         </div>
                     </div>
                 </details>
-                
+
                 <!-- АНАЛИТИКА И ОТЧЕТЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
@@ -2934,21 +2934,34 @@
                 <!-- САМООБУЧЕНИЕ СИСТЕМЫ (AI) -->
                 <details id="ai-optimizer-settings"
                     class="bg-[var(--card-bg)] border border-purple-200 dark:border-purple-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
-                    <summary class="p-4 font-black text-[12px] text-purple-700 dark:text-purple-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 transition-colors select-none group-open:border-b border-purple-200 dark:border-purple-800 rounded-2xl group-open:rounded-b-none">
+                    <summary
+                        class="p-4 font-black text-[12px] text-purple-700 dark:text-purple-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 transition-colors select-none group-open:border-b border-purple-200 dark:border-purple-800 rounded-2xl group-open:rounded-b-none">
                         <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z">
+                                </path>
+                            </svg>
                             AI-Оптимизатор Системы
                         </span>
                         <span class="transition-transform group-open:rotate-180 text-purple-400">▼</span>
                     </summary>
                     <div class="p-4 bg-white dark:bg-slate-800 rounded-b-2xl">
                         <div class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mb-3">
-                            Система проанализирует весь накопленный массив проверок и предложит корректировку математической модели: жесткость порогов (Красная/Зеленая зоны), веса рисков и правило "Стеклянного потолка".
+                            Система проанализирует весь накопленный массив проверок и предложит корректировку
+                            математической модели: жесткость порогов (Красная/Зеленая зоны), веса рисков и правило
+                            "Стеклянного потолка".
                         </div>
-                        <button onclick="window.runSelfLearningAi()" class="w-full bg-purple-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Запустить анализ базы
+                        <button onclick="window.runSelfLearningAi()"
+                            class="w-full bg-purple-600 text-white py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z">
+                                </path>
+                            </svg> Запустить анализ базы
                         </button>
-                        <div id="ai-self-learning-result" class="hidden mt-4 p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-xl text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed font-medium whitespace-pre-wrap shadow-inner"></div>
+                        <div id="ai-self-learning-result"
+                            class="hidden mt-4 p-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-xl text-[11px] text-slate-800 dark:text-slate-200 leading-relaxed font-medium whitespace-pre-wrap shadow-inner">
+                        </div>
                     </div>
                 </details>
 
@@ -3185,7 +3198,13 @@
     </nav>
 
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
-
+    <script>
+        window.RBI_APP_VERSION = {
+            app: '17.8.188',
+            sw: '17.96',
+            buildDate: '2026-05-18'
+        };
+    </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <!-- 1. Сначала облако и конфигурация -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -3194,6 +3213,7 @@
     <!-- ДОБАВЛЕНО: Роли и Справочник объектов -->
     <script src="js/roles.js"></script>
     <script src="js/objectDirectory.js"></script>
+    <script src="js/contractorDirectory.js"></script>
 
     <!-- 2. Потом локальные данные -->
     <script src="data/system_docs.js"></script>
@@ -4147,12 +4167,14 @@
             </div>
             <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50"
                 id="faq-list-container"></div>
-               <!-- Кнопка вызова Помощника в FAQ -->
-            <div class="p-4 border-t border-slate-200 dark:border-slate-700 bg-indigo-50 dark:bg-indigo-900/30 shrink-0 rounded-b-3xl sm:rounded-b-2xl">
-                <button onclick="openAppAssistantChat()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
+            <!-- Кнопка вызова Помощника в FAQ -->
+            <div
+                class="p-4 border-t border-slate-200 dark:border-slate-700 bg-indigo-50 dark:bg-indigo-900/30 shrink-0 rounded-b-3xl sm:rounded-b-2xl">
+                <button onclick="openAppAssistantChat()"
+                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2">
                     🤖 Спросить AI-Помощника
                 </button>
-            </div> 
+            </div>
         </div>
     </div>
 
@@ -4197,37 +4219,56 @@
 
 
     <!-- === МОДАЛКА AI-ПОМОЩНИКА ПО ПРИЛОЖЕНИЮ === -->
-    <div id="app-assistant-modal" class="fixed inset-0 bg-slate-900/80 z-[8500] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="closeAppAssistantChat()">
-        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col h-[85vh] sm:h-[75vh] border border-[var(--card-border)]" onclick="event.stopPropagation()">
-            <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-600 rounded-t-3xl sm:rounded-t-2xl shrink-0">
+    <div id="app-assistant-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[8500] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
+        onclick="closeAppAssistantChat()">
+        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col h-[85vh] sm:h-[75vh] border border-[var(--card-border)]"
+            onclick="event.stopPropagation()">
+            <div
+                class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-600 rounded-t-3xl sm:rounded-t-2xl shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-white text-indigo-600 rounded-xl flex items-center justify-center text-xl shadow-md">🤖</div>
+                    <div
+                        class="w-10 h-10 bg-white text-indigo-600 rounded-xl flex items-center justify-center text-xl shadow-md">
+                        🤖</div>
                     <div>
                         <div class="font-black text-[13px] uppercase tracking-tight text-white">AI-Гид RBI Quality</div>
                         <div class="text-[10px] text-indigo-200 font-bold">Отвечаю на вопросы по работе приложения</div>
                     </div>
                 </div>
-                <button onclick="closeAppAssistantChat()" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white active:scale-90 shadow-sm border border-indigo-400">✕</button>
+                <button onclick="closeAppAssistantChat()"
+                    class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white active:scale-90 shadow-sm border border-indigo-400">✕</button>
             </div>
 
-            <div id="app-assistant-history" class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50 space-y-4">
+            <div id="app-assistant-history"
+                class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50 space-y-4">
                 <div class="flex gap-2 w-full max-w-[85%]">
-                    <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
-                    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 dark:text-slate-300 shadow-sm font-medium leading-relaxed">
-                        Привет! Я встроенный ассистент. Не знаешь, как выгрузить отчет, добавить TWI-карту или как считается УрК? Спроси меня!
+                    <div
+                        class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">
+                        🤖</div>
+                    <div
+                        class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 dark:text-slate-300 shadow-sm font-medium leading-relaxed">
+                        Привет! Я встроенный ассистент. Не знаешь, как выгрузить отчет, добавить TWI-карту или как
+                        считается УрК? Спроси меня!
                     </div>
                 </div>
             </div>
 
-            <div class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-3xl sm:rounded-b-2xl shrink-0 flex gap-2">
-                <textarea id="app-assistant-input" class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] outline-none resize-none h-12 text-slate-800 dark:text-white" placeholder="Напиши свой вопрос..."></textarea>
-                <button onclick="askAppAssistant()" id="app-assistant-send-btn" class="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 transition-transform">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+            <div
+                class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-3xl sm:rounded-b-2xl shrink-0 flex gap-2">
+                <textarea id="app-assistant-input"
+                    class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] outline-none resize-none h-12 text-slate-800 dark:text-white"
+                    placeholder="Напиши свой вопрос..."></textarea>
+                <button onclick="askAppAssistant()" id="app-assistant-send-btn"
+                    class="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 transition-transform">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8">
+                        </path>
+                    </svg>
                 </button>
             </div>
         </div>
     </div>
-    
+
 </body>
 
 </html>

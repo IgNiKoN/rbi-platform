@@ -1,8 +1,11 @@
 /* Файл: js/storage.js */
 
 const DB_NAME = 'RBI_QUALITY_DB';
-// Повышаем версию для новой таблицы очереди объектов
-const DB_VERSION = 14;
+// Повышаем версию только при изменении структуры IndexedDB
+const DB_VERSION = 15;
+
+// Глобально отдаём версию БД в интерфейс диагностики
+window.RBI_DB_VERSION = DB_VERSION;
 
 const STORES = {
     OBJECT_QUEUE: 'object_normalization_queue', // <-- ВСТАВИТЬ СЮДА
@@ -22,12 +25,22 @@ const STORES = {
     ETALON_DRAFT: 'rbi_etalon_draft',
     FMEA: 'rbi_fmea',
     SK_IMPORTS: 'sk_imports',
+
+    // ПК СК: единый реестр замечаний и журнал загрузок
     SK_RECORDS: 'sk_records',
+    SK_IMPORT_BATCHES: 'sk_import_batches',
+
+    // Старые справочники ПК СК — оставляем для совместимости
     SK_CONTRACTOR_MAP: 'sk_contractor_map',
     SK_VOLUMES: 'sk_volumes',
     SK_ISD_HISTORY: 'sk_isd_history',
-    SK_CATEGORY_MAP: 'sk_category_map', // <-- НОВОЕ
-    SK_MAPPING: 'sk_mapping',           // <-- НОВОЕ
+    SK_CATEGORY_MAP: 'sk_category_map',
+    SK_MAPPING: 'sk_mapping',
+
+    // Новый справочник подрядчиков
+    CONTRACTOR_DIRECTORY: 'contractor_directory',
+    CONTRACTOR_ALIASES: 'contractor_aliases',
+    CONTRACTOR_QUEUE: 'contractor_normalization_queue',      // <-- НОВОЕ
     PROJECT_OBJECTS: 'project_objects',
     OBJECT_ALIASES: 'object_aliases',   // <-- НОВОЕ
     BACKUP_LOGS: 'backup_logs',
@@ -159,7 +172,7 @@ async function dbPutBatch(storeName, itemsArray) {
 
         itemsArray.forEach(item => {
             const normalizedItem = normalizeSystemKeys(item);
-        store.put(normalizedItem);
+            store.put(normalizedItem);
         });
 
         tx.oncomplete = () => resolve(true);
@@ -403,7 +416,22 @@ async function updateStorageInfo() {
             const notSyncedCount = typeof contractorArray !== 'undefined' ? contractorArray.filter(c => c.syncStatus !== 'synced').length : 0;
             const lastSync = localStorage.getItem('rbi_sync_last_push_at');
             const syncText = lastSync ? new Date(lastSync).toLocaleString('ru-RU') : 'Никогда';
-            diagBlock.innerHTML = `<b>Диагностика системы:</b><br>Версия: v17.8.188 | БД: v12<br>База проверок: ${histCount} шт.<br>Ожидают отправки: ${notSyncedCount} шт.<br>Последний контакт с облаком:<br>${syncText}`;
+            const versionInfo = window.RBI_APP_VERSION || {};
+            const appVersion = versionInfo.app || '—';
+            const swVersion = versionInfo.sw || '—';
+            const dbVersion = window.RBI_DB_VERSION || '—';
+            const buildDate = versionInfo.buildDate || '—';
+
+            diagBlock.innerHTML = `
+    <b>Диагностика системы:</b><br>
+    Версия приложения: v${appVersion}<br>
+    Service Worker: v${swVersion}<br>
+    БД IndexedDB: v${dbVersion}<br>
+    Сборка: ${buildDate}<br>
+    База проверок: ${histCount} шт.<br>
+    Ожидают отправки: ${notSyncedCount} шт.<br>
+    Последний контакт с облаком:<br>${syncText}
+`;
         }
     } catch (e) {
         sUsed.innerText = 'н/д';
