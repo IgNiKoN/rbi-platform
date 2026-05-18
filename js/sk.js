@@ -325,6 +325,20 @@ async function sk_renderContractorQueueBanner() {
 }
 // === 2. ГЛАВНЫЙ РЕНДЕР ВКЛАДКИ ===
 window.skCurrentPeriodFilter = 'ALL'; // Глобальная переменная для фильтра
+window.skHrSortBy = 'kpi'; // По умолчанию сортируем по KPI
+window.skHrSortDesc = true; // По убыванию (от лучшего к худшему)
+
+window.sk_sortHrTable = function(column) {
+    if (window.skHrSortBy === column) {
+        window.skHrSortDesc = !window.skHrSortDesc; // Меняем направление сортировки
+    } else {
+        window.skHrSortBy = column;
+        window.skHrSortDesc = true; // При клике на новый столбец - сортируем по убыванию
+    }
+    sk_renderHrTab(); // Перерисовываем таблицу
+};
+
+// Глобальная переменная для фильтра
 
 window.sk_renderMainTab = async function () {
     await sk_loadData();
@@ -920,7 +934,40 @@ function sk_similarity(s1, s2) {
     }
     return (longerLength - costs[shorter.length]) / parseFloat(longerLength);
 }
+// === УМНАЯ НОРМАЛИЗАЦИЯ ВИДОВ РАБОТ ===
+function sk_getCleanCategoryName(rawCat) {
+    if (!rawCat) return 'Без категории';
+    const raw = String(rawCat).toLowerCase().trim();
+    
+    // 1. Отсекаем то, что не входит в контур Отдела Качества (группируем)
+    if (raw.includes('электр') || raw.includes('вентил') || raw.includes('отоплен') || raw.includes('водоснаб') || raw.includes('канализ') || raw.includes('слаботоч') || raw.includes('сеть') || raw.includes('сети')) return 'Инженерные сети (ПК СК)';
+    if (raw.includes('охрана труда') || raw.includes('безопасност') || raw.includes('тб') || raw.includes('пожар')) return 'Охрана труда и ПБ (ПК СК)';
+    if (raw.includes('эколог') || raw.includes('мусор') || raw.includes('бытов')) return 'Организация стройплощадки (ПК СК)';
 
+    // 2. Ищем сходство с нашими чек-листами (эталонной структурой)
+    let bestMatch = null;
+    let highestScore = 0;
+    const allTemplates = { ...SYSTEM_TEMPLATES, ...(typeof userTemplates !== 'undefined' ? userTemplates : {}) };
+    
+    Object.values(allTemplates).forEach(tmpl => {
+        const tmplName = tmpl.title;
+        // Используем встроенную функцию Левенштейна из sk.js
+        const score = sk_similarity(raw, tmplName.toLowerCase());
+        if (score > highestScore) {
+            highestScore = score;
+            bestMatch = tmplName;
+        }
+    });
+
+    // Если сходство больше 55% - привязываем к нашему чек-листу
+    if (highestScore > 0.55) {
+        return bestMatch;
+    }
+
+    // 3. Если алгоритм не распознал вид работ, принудительно ставим "Без категории". 
+    // Это станет триггером для запуска нейросети DeepSeek, которая прочитает текст самого замечания.
+    return 'Без категории';
+}
 // === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
 // === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
 // === 10. ЗАПУСК ИМПОРТА И ПОИСК СХОДСТВ ===
@@ -1150,8 +1197,16 @@ window.sk_finalizeImport = async function () {
             ? 'matched'
             : 'pending';
 
-        const rawProjectLoc = getVal('project_loc') ? String(getVal('project_loc')).trim() : '';
+        const rawStructure = getVal('structure') ? String(getVal('structure')).trim() : '';
+        let rawProjectLoc = getVal('project_loc') ? String(getVal('project_loc')).trim() : '';
+        
+        // УМНАЯ ПОДСТРАХОВКА: Если "Расположение" пустое, берем данные из "Элемента структуры"
+        if (!rawProjectLoc && rawStructure) {
+            rawProjectLoc = rawStructure;
+        }
+        
         const parsedLoc = await sk_parseLocation(rawProjectLoc);
+        // Если объект из ПК СК не распознан — НЕ отправляем сразу.
         // Если объект из ПК СК не распознан — отправляем заявку администратору
         // Если объект из ПК СК не распознан — НЕ отправляем сразу.
         // Только добавляем в карту уникальных заявок, чтобы не было сотен дублей.
@@ -1183,7 +1238,7 @@ window.sk_finalizeImport = async function () {
                 }
             }
         }
-        const rawStructure = getVal('structure') ? String(getVal('structure')).trim() : '';
+        // rawStructure мы уже объявили выше, поэтому здесь её удалили, чтобы не было дубля
         const rawText = getVal('text') ? String(getVal('text')).trim() : '';
         const extractedStandards = sk_extractStandards(rawText);
 
@@ -1206,7 +1261,8 @@ window.sk_finalizeImport = async function () {
 
             // Данные замечания
             text: rawText,
-            category: getVal('category') ? String(getVal('category')).trim() : 'Без категории',
+            // Прогоняем категорию из Excel через наш умный фильтр
+            category: getVal('category') ? sk_getCleanCategoryName(getVal('category')) : 'Без категории',
             date_issued: sk_parseExcelDate(getVal('date_issued')),
 
             // Подрядчик: старые и новые поля
@@ -1303,30 +1359,18 @@ window.sk_finalizeImport = async function () {
         // Проверяем, есть ли смысл запускать AI по этой записи.
         // Если обновились только сроки, статус или фактическая дата устранения —
         // AI не нужен.
-        const needsAiCategory = sk_needsAiCategoryMapping(record);
-        const aiRelevantChanged = sk_hasAiRelevantChange(existing, record);
-
-        if (needsAiCategory && aiRelevantChanged) {
-            record.needs_ai_category = true;
-            aiCandidateCount++;
-        } else {
-            record.needs_ai_category = false;
-        }
-
-        // Сохраняем прежние AI/ручные правки, если запись уже была
+        // 1. СНАЧАЛА восстанавливаем старые данные (Категории от ИИ или ручные правки)
         if (existing) {
-            // Сохраняем прежнюю AI/ручную классификацию.
-            // Если обновились только даты/статусы, AI-категорию не сбрасываем.
             record.ai_category = existing.ai_category;
             record.category_corrected = existing.category_corrected;
             record.predicted_risk = existing.predicted_risk;
 
-            if (existing.ai_category || existing.category_corrected) {
-                record.needs_ai_category = false;
+            if (existing.category_corrected || existing.ai_category) {
+                // Если ИИ или инженер уже правили категорию, сохраняем её!
+                record.category = existing.category; 
             }
 
-            // Инженер не может перезаписать чужую запись.
-            // Админ и зам могут.
+            // Инженер не может перезаписать чужую запись
             const role = sk_getCurrentRole();
             const isAdminSk = ['manager', 'deputy_manager'].includes(role);
             const existingOwner = existing.uploaded_by || existing.sk_uploaded_by || '';
@@ -1339,6 +1383,18 @@ window.sk_finalizeImport = async function () {
             updatedRecordsCount++;
         } else {
             newRecordsCount++;
+        }
+
+        // 2. И ТОЛЬКО ТЕПЕРЬ проверяем, нужен ли ИИ 
+        // (когда пустая категория из Excel уже перезаписана старой правильной)
+        const needsAiCategory = sk_needsAiCategoryMapping(record);
+        const aiRelevantChanged = sk_hasAiRelevantChange(existing, record);
+
+        if (needsAiCategory && aiRelevantChanged) {
+            record.needs_ai_category = true;
+            aiCandidateCount++;
+        } else {
+            record.needs_ai_category = false;
         }
 
         existingMap.set(skUniqueKey, record);
@@ -1464,8 +1520,32 @@ window.sk_renderDashboard = function () {
         return;
     }
 
-    // --- 0. ПРИМЕНЕНИЕ ФИЛЬТРОВ ---
+    // --- 0. ПРИМЕНЕНИЕ ФИЛЬТРОВ (ГЛОБАЛЬНЫЕ + ЛОКАЛЬНЫЕ) ---
     let activeRecords = window.skRecords;
+
+    // 1. Глобальный фильтр по Периоду (из шапки)
+    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    const now = new Date();
+    
+    if (selPeriod === 'DAY') {
+        activeRecords = activeRecords.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
+    } else if (selPeriod === 'WEEK') {
+        const w = new Date(); w.setDate(now.getDate() - 7);
+        activeRecords = activeRecords.filter(r => r.date_issued && new Date(r.date_issued) >= w);
+    } else if (selPeriod === 'MONTH') {
+        const m = new Date(); m.setDate(now.getDate() - 30);
+        activeRecords = activeRecords.filter(r => r.date_issued && new Date(r.date_issued) >= m);
+    } else if (selPeriod === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        if (dFrom) activeRecords = activeRecords.filter(r => r.date_issued && new Date(r.date_issued) >= new Date(dFrom));
+        if (dTo) {
+            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
+            activeRecords = activeRecords.filter(r => r.date_issued && new Date(r.date_issued) <= tDate);
+        }
+    }
+
+    // 2. Локальный фильтр (из выпадающего списка внутри вкладки СК)
     if (window.skCurrentPeriodFilter !== 'ALL') {
         const days = parseInt(window.skCurrentPeriodFilter);
         const cutoffDate = new Date();
@@ -1480,22 +1560,39 @@ window.sk_renderDashboard = function () {
         });
     }
 
-    // Фильтрация по Подрядчикам (из глобальной шапки)
-    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics && activeMultiFilters.analytics.contractor.length > 0) {
-        const allowedContrs = activeMultiFilters.analytics.contractor.map(c => c.toLowerCase());
-        activeRecords = activeRecords.filter(r => allowedContrs.includes(r.contractor.toLowerCase()));
+    // 3. Глобальный фильтр Объектов (Учитываем эталонные имена)
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.project.length > 0) {
+        const fProj = activeMultiFilters.analytics.project;
+        activeRecords = activeRecords.filter(r => 
+            fProj.includes(r.project_display_name) || 
+            fProj.includes(r.project_canonical_key) ||
+            fProj.includes(r.display_name)
+        );
     }
 
-    // НОВОЕ: Фильтрация по Объектам (из глобальной шапки)
-    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics && activeMultiFilters.analytics.project.length > 0) {
-        const allowedProjs = activeMultiFilters.analytics.project;
-        activeRecords = activeRecords.filter(r => {
-            const recProj = r.canonical_key || r.display_name || '';
-            // Проверяем, входит ли системный ключ объекта в список выбранных
-            return allowedProjs.includes(recProj);
-        });
+    // 4. Глобальный фильтр Подрядчиков (Учитываем эталонные имена)
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.contractor.length > 0) {
+        const fContr = activeMultiFilters.analytics.contractor;
+        activeRecords = activeRecords.filter(r => 
+            fContr.includes(r.contractor_name) || 
+            fContr.includes(r.contractor_canonical_key) ||
+            fContr.includes(r.contractor)
+        );
     }
 
+    // 5. Глобальный фильтр Инспекторов
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.inspector.length > 0) {
+        const fInsp = activeMultiFilters.analytics.inspector;
+        activeRecords = activeRecords.filter(r => 
+            fInsp.includes(r.issued_by) || 
+            fInsp.includes(r.inspector)
+        );
+    }
+    // 6. Глобальный фильтр по Видам работ (Категориям)
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.template.length > 0) {
+        const fTmpl = activeMultiFilters.analytics.template.map(t => t.toLowerCase());
+        activeRecords = activeRecords.filter(r => fTmpl.includes((r.category || '').toLowerCase()));
+    }
     if (activeRecords.length === 0) {
         container.innerHTML = `<div class="text-center py-10 bg-[var(--card-bg)] rounded-xl border border-dashed border-slate-300 text-slate-400 text-[11px] font-bold uppercase tracking-widest shadow-sm">За выбранный период и фильтрам замечаний нет.</div>`;
         return;
@@ -1632,107 +1729,121 @@ window.sk_renderDashboard = function () {
     });
 
     // --- РЕНДЕР МАТРИЦЫ ИСД (УМНАЯ ГРУППИРОВКА) ---
-    let matrixRows = '';
+    // --- РЕНДЕР МАТРИЦЫ ИСД (ГРУППИРОВКА ПО ОБЪЕКТАМ) ---
+    let matrixRows = ''; // В этой переменной теперь будет лежать готовый HTML аккордеонов
 
-    // Группируем данные матрицы по подрядчикам для красивого вывода
-    const matrixByContr = {};
+    // 1. Группируем сначала по Объекту, затем по Подрядчику
+    const matrixByProject = {};
     Object.keys(matrixMap).forEach(key => {
         const mData = matrixMap[key];
-        if (!matrixByContr[mData.contractor]) matrixByContr[mData.contractor] = [];
-        matrixByContr[mData.contractor].push(mData);
+        // Находим имя объекта из исходных записей
+        const sampleRecord = activeRecords.find(r => r.contractor === mData.contractor && r.category === mData.category);
+        const pName = sampleRecord ? (sampleRecord.project_display_name || sampleRecord.projectName || 'Объект не определен') : 'Объект не определен';
+        
+        if (!matrixByProject[pName]) matrixByProject[pName] = {};
+        if (!matrixByProject[pName][mData.contractor]) matrixByProject[pName][mData.contractor] = [];
+        matrixByProject[pName][mData.contractor].push(mData);
     });
 
-    const sortedMatrixContrs = Object.keys(matrixByContr).sort();
-
-    sortedMatrixContrs.forEach(contrName => {
+    // 2. Отрисовываем аккордеоны по Объектам
+    Object.keys(matrixByProject).sort().forEach(projName => {
         matrixRows += `
-            <tr class="bg-[var(--hover-bg)] border-b border-t border-[var(--card-border)]">
-                <td colspan="5" class="p-2 pl-3 text-[11px] font-black text-slate-800 dark:text-white uppercase">${contrName}</td>
-            </tr>
+        <details class="bg-white dark:bg-slate-800 mb-3 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm group/matrix [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 bg-indigo-50 dark:bg-indigo-900/30 cursor-pointer font-black text-[12px] uppercase tracking-widest text-indigo-700 dark:text-indigo-400 flex justify-between items-center select-none group-open/matrix:border-b border-indigo-200 dark:border-indigo-800">
+                <span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg> Объект: ${projName}</span>
+                <span class="transition-transform duration-300 group-open/matrix:rotate-180 text-indigo-500">▼</span>
+            </summary>
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left whitespace-nowrap">
+                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase shadow-sm font-bold">
+                        <tr>
+                            <th class="p-2.5 pl-4 border-b border-[var(--card-border)]">Подрядчик / Вид работ</th>
+                            <th class="p-2.5 text-center border-b border-[var(--card-border)]" title="Сколько выдали СК / Сколько ожидаем по статистике">Факт / Ожидание</th>
+                            <th class="p-2.5 text-center border-b border-[var(--card-border)]">ИСД</th>
+                            <th class="p-2.5 text-center border-b border-[var(--card-border)]">Вывод</th>
+                            <th class="p-2.5 text-center border-b border-[var(--card-border)]" title="О: Открыто | П: Просрочено | С: Ср.дней закрытия">Статус исполнения</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         `;
 
-        // Проверяем, связан ли подрядчик с базой RBI (строгая нормализация)
-        const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) ||
-            Object.values(window.skContractorMap).map(v => v.toLowerCase().trim()).includes(contrName.toLowerCase().trim());
-
-        matrixByContr[contrName].sort((a, b) => b.total - a.total).forEach(mData => {
-            let isdHtml = '<span class="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">Объем не задан</span>';
-            let statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Недостаточно данных</span>';
-            let expectedHtml = '<span class="text-slate-400">-</span>';
-
-            if (mData.category !== 'Без категории') {
-                if (!isLinkedContr) {
-                    // Если подрядчик не связан с RBI, расчет не производим
-                    isdHtml = '<span class="text-[9px] text-slate-400 font-bold uppercase border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded bg-white dark:bg-slate-800">Нет базы RBI</span>';
-                    statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Не связан</span>';
-                } else if (window.skVolumes) {
-                    const volKey = Object.keys(window.skVolumes).find(k => k.toLowerCase().trim() === mData.category.toLowerCase().trim());
-                    if (volKey) {
-                        // Если связан и есть объемы - считаем!
-                        const vol = window.skVolumes[volKey].amount;
-                        const rbiRate = getRbiDefectRate(mData.contractor, mData.category);
-
-                        let expected = Math.round(vol * rbiRate);
-                        if (expected < 1) expected = 1;
-                    }
-                    expectedHtml = `<span class="text-slate-700 dark:text-slate-300 font-black">${expected}</span>`;
-
-                    let isd = Math.round((mData.total / expected) * 100);
-
-                    let colorClass = 'text-green-600 bg-green-50 border-green-200';
-                    statusBadge = '<span class="text-green-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Прозрачно</span>';
-
-                    if (isd < 20) {
-                        colorClass = 'text-red-600 bg-red-50 border-red-200';
-                        statusBadge = '<span class="text-red-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Скрывают брак</span>';
-                        skIssues.isd.push(`${mData.contractor} (${mData.category})`);
-                    }
-                    else if (isd < 60) {
-                        colorClass = 'text-orange-500 bg-orange-50 border-orange-200';
-                        statusBadge = '<span class="text-orange-500 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Подозрительно</span>';
-                    }
-
-                    if (isd > 100) {
-                        isdHtml = `<span class="font-black ${colorClass} px-2 py-0.5 rounded border text-[11px]">100% <span class="text-[8px] opacity-70">(Избыточно)</span></span>`;
-                    } else {
-                        isdHtml = `<span class="font-black ${colorClass} px-2 py-0.5 rounded border text-[12px]">${isd}%</span>`;
-                    }
-                }
-            }
-
-            // Вычисляем среднее время
-            const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a, b) => a + b, 0) / mData.closingDays.length) : 0;
-            const overColor = mData.overdue > 0 ? 'text-red-600' : 'text-slate-500';
-            const avgColor = avgClose > 14 ? 'text-orange-500' : 'text-slate-500';
-            // Ищем наихудший прогноз ИИ для этой группы
-            const groupRecords = activeRecords.filter(r => r.contractor === mData.contractor && r.category === mData.category && r.predicted_risk);
-            let aiBadge = '';
-            if (groupRecords.length > 0) {
-                const hasHigh = groupRecords.some(r => r.predicted_risk === 'High');
-                const hasMed = groupRecords.some(r => r.predicted_risk === 'Medium');
-                if (hasHigh) aiBadge = `<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1" title="ИИ прогнозирует срыв сроков">🔮 Риск</span>`;
-                else if (hasMed) aiBadge = `<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1">🔮 Внимание</span>`;
-            }
+        const projContractors = matrixByProject[projName];
+        Object.keys(projContractors).sort().forEach(contrName => {
             matrixRows += `
-                <tr class="border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
-                    <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[150px]" title="${mData.category}">
-                        <div class="flex items-center gap-1.5">
-                            <span class="truncate">↳ ${mData.category}</span>
-                            ${!isLinkedContr || mData.category === 'Без категории' ? '' : `<button onclick="sk_openCategoryLinkModal('${mData.category.replace(/'/g, "\\'")}')" class="text-indigo-400 hover:text-indigo-600" title="Привязать к другому виду работ">🔗</button>`}
-                            ${aiBadge}
-                        </div>
-                    </td>
-                    <td class="p-2.5 text-center text-[10px]"><span class="font-black text-indigo-600">${mData.total}</span> / ${expectedHtml}</td>
-                    <td class="p-2.5 text-center align-middle">${isdHtml}</td>
-                    <td class="p-2.5 text-center align-middle">${statusBadge}</td>
-                    <td class="p-2.5 text-center text-[10px] font-bold align-middle whitespace-nowrap">
-                        <span class="text-slate-500" title="Открыто">О: ${mData.open}</span> | 
-                        <span class="${overColor}" title="Просрочено">П: ${mData.overdue}</span> | 
-                        <span class="${avgColor}" title="Ср. дней на закрытие">С: ${avgClose}</span>
-                    </td>
+                <tr class="bg-[var(--hover-bg)] border-b border-[var(--card-border)]">
+                    <td colspan="5" class="p-2 pl-3 text-[11px] font-black text-slate-800 dark:text-white uppercase">${contrName}</td>
                 </tr>
             `;
+
+            const isLinkedContr = rbiContractors.includes(contrName.toLowerCase().trim()) || Object.values(window.skContractorMap).map(v => v.toLowerCase().trim()).includes(contrName.toLowerCase().trim());
+
+            projContractors[contrName].sort((a, b) => b.total - a.total).forEach(mData => {
+                let isdHtml = '<span class="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">Объем не задан</span>';
+                let statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Недостаточно данных</span>';
+                let expectedHtml = '<span class="text-slate-400">-</span>';
+
+                if (mData.category !== 'Без категории') {
+                    if (!isLinkedContr) {
+                        isdHtml = '<span class="text-[9px] text-slate-400 font-bold uppercase border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded bg-white dark:bg-slate-800">Нет базы RBI</span>';
+                        statusBadge = '<span class="text-slate-400 text-[10px] font-bold">Не связан</span>';
+                    } else if (window.skVolumes) {
+                        const volKey = Object.keys(window.skVolumes).find(k => k.toLowerCase().trim() === mData.category.toLowerCase().trim());
+                        if (volKey) {
+                            const vol = window.skVolumes[volKey].amount;
+                            const rbiRate = getRbiDefectRate(mData.contractor, mData.category);
+                            let expected = Math.round(vol * rbiRate);
+                            if (expected < 1) expected = 1;
+                            
+                            expectedHtml = `<span class="text-slate-700 dark:text-slate-300 font-black">${expected}</span>`;
+                            let isd = Math.round((mData.total / expected) * 100);
+                            let colorClass = 'text-green-600 bg-green-50 border-green-200';
+                            statusBadge = '<span class="text-green-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Прозрачно</span>';
+
+                            if (isd < 20) {
+                                colorClass = 'text-red-600 bg-red-50 border-red-200';
+                                statusBadge = '<span class="text-red-600 font-bold text-[9px] uppercase flex items-center justify-center gap-1 animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> Скрывают брак</span>';
+                                skIssues.isd.push(`${mData.contractor} (${mData.category})`);
+                            } else if (isd < 60) {
+                                colorClass = 'text-orange-500 bg-orange-50 border-orange-200';
+                                statusBadge = '<span class="text-orange-500 font-bold text-[9px] uppercase flex items-center justify-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Подозрительно</span>';
+                            }
+                            isdHtml = isd > 100 ? `<span class="font-black ${colorClass} px-2 py-0.5 rounded border text-[11px]">100% <span class="text-[8px] opacity-70">(Избыточно)</span></span>` : `<span class="font-black ${colorClass} px-2 py-0.5 rounded border text-[12px]">${isd}%</span>`;
+                        }
+                    }
+                }
+
+                const avgClose = mData.closingDays.length > 0 ? Math.round(mData.closingDays.reduce((a, b) => a + b, 0) / mData.closingDays.length) : 0;
+                const overColor = mData.overdue > 0 ? 'text-red-600' : 'text-slate-500';
+                const avgColor = avgClose > 14 ? 'text-orange-500' : 'text-slate-500';
+                
+                const groupRecords = activeRecords.filter(r => r.contractor === mData.contractor && r.category === mData.category && r.predicted_risk);
+                let aiBadge = '';
+                if (groupRecords.length > 0) {
+                    if (groupRecords.some(r => r.predicted_risk === 'High')) aiBadge = `<span class="bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1" title="ИИ прогнозирует срыв сроков">🔮 Риск</span>`;
+                    else if (groupRecords.some(r => r.predicted_risk === 'Medium')) aiBadge = `<span class="bg-yellow-100 text-yellow-700 border border-yellow-200 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shadow-sm ml-1">🔮 Внимание</span>`;
+                }
+
+                matrixRows += `
+                    <tr class="border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                        <td class="p-2.5 pl-4 text-[10px] font-bold ${mData.category === 'Без категории' ? 'text-slate-400 italic' : 'text-slate-600 dark:text-slate-300'} truncate max-w-[150px]" title="${mData.category}">
+                            <div class="flex items-center gap-1.5">
+                                <span class="truncate">↳ ${mData.category}</span>
+                                ${!isLinkedContr || mData.category === 'Без категории' ? '' : `<button onclick="sk_openCategoryLinkModal('${mData.category.replace(/'/g, "\\'")}')" class="text-indigo-400 hover:text-indigo-600" title="Привязать к другому виду работ">🔗</button>`}
+                                ${aiBadge}
+                            </div>
+                        </td>
+                        <td class="p-2.5 text-center text-[10px]"><span class="font-black text-indigo-600">${mData.total}</span> / ${expectedHtml}</td>
+                        <td class="p-2.5 text-center align-middle">${isdHtml}</td>
+                        <td class="p-2.5 text-center align-middle">${statusBadge}</td>
+                        <td class="p-2.5 text-center text-[10px] font-bold align-middle whitespace-nowrap">
+                            <span class="text-slate-500" title="Открыто">О: ${mData.open}</span> | 
+                            <span class="${overColor}" title="Просрочено">П: ${mData.overdue}</span> | 
+                            <span class="${avgColor}" title="Ср. дней на закрытие">С: ${avgClose}</span>
+                        </td>
+                    </tr>`;
+            });
         });
+        matrixRows += `</tbody></table></div></details>`;
     });
 
     let linkedHtml = '';
@@ -2009,24 +2120,17 @@ window.sk_renderDashboard = function () {
         </div>
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3.5 bg-[var(--hover-bg)] cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)]">
-                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Матрица Рисков (ИСД) <button onclick="event.stopPropagation(); sk_showInfoModal('isd')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-transform ml-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button></span>
+                <span class="font-bold text-[11px] uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> 
+                    Матрица Рисков (ИСД) 
+                    <button onclick="event.stopPropagation(); sk_showInfoModal('isd')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-transform ml-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button>
+                </span>
                 <span class="text-slate-400 transition-transform duration-300 group-open:rotate-180">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                 </span>
             </summary>
-            <div class="overflow-x-auto custom-scrollbar max-h-[60vh]">
-                <table class="w-full text-left whitespace-nowrap">
-                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase sticky top-0 shadow-sm z-10 font-bold">
-                        <tr>
-                            <th class="p-2.5 pl-4">Подрядчик / Вид работ</th>
-                            <th class="p-2.5 text-center" title="Сколько выдали СК / Сколько ожидаем по статистике">Факт / Ожидание</th>
-                            <th class="p-2.5 text-center">ИСД</th>
-                            <th class="p-2.5 text-center">Вывод</th>
-                            <th class="p-2.5 text-center" title="О: Открыто | П: Просрочено | С: Ср.дней закрытия">Статус исполнения</th>
-                        </tr>
-                    </thead>
-                    <tbody>${matrixRows}</tbody>
-                </table>
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/50">
+                ${matrixRows || '<div class="text-center p-4 bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] text-slate-400 text-[10px] uppercase font-bold">Нет данных для матрицы</div>'}
             </div>
         </details>
         
@@ -2175,6 +2279,7 @@ function sk_extractStandards(text) {
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК ===
 // === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК (С РЕЙТИНГОМ И ТОЧНОСТЬЮ) ===
+// === HR-ПАНЕЛЬ ИНЖЕНЕРОВ СК (С РЕЙТИНГОМ, ТОЧНОСТЬЮ И ТРЕНДАМИ) ===
 window.sk_renderHrTab = function () {
     const container = document.getElementById('sk-view-hr');
     if (!container) return;
@@ -2190,141 +2295,188 @@ window.sk_renderHrTab = function () {
         return;
     }
 
-    // Собираем статистику по инженерам СК
-    const engMap = {};
     window.skBadRemarks = []; // Глобальный массив для ИИ-тренера
 
-    window.skRecords.forEach(r => {
-        let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан';
-        const engName = baseName.toLowerCase().includes('технадзор') ? baseName : `${baseName} (Технадзор)`;
+    // Вспомогательная функция для расчета статистики за переданный массив записей
+    const calculateEngStats = (recordsArray) => {
+        const engMap = {};
+        recordsArray.forEach(r => {
+            let baseName = r.inspector && r.inspector.trim() !== '' ? r.inspector.trim() : 'Не указан';
+            const engName = baseName.toLowerCase().includes('технадзор') ? baseName : `${baseName} (Технадзор)`;
 
-        if (!engMap[engName]) {
-            engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, matched: 0, closingTimes: [], contractors: new Set() };
-        }
+            if (!engMap[engName]) engMap[engName] = { total: 0, open: 0, overdue: 0, withCategory: 0, matched: 0, closingTimes: [], contractors: new Set() };
+            
+            const data = engMap[engName];
+            data.total++;
+            if (r.contractor) data.contractors.add(r.contractor);
 
-        const data = engMap[engName];
-        data.total++;
-        if (r.contractor) data.contractors.add(r.contractor);
+            const isOpen = !(r.is_verified_closed === true || r.status_normalized === 'verified' || String(r.status || '').toLowerCase().trim() === 'проверено');
+            if (isOpen) data.open++;
+            if (r.category && r.category !== 'Без категории') data.withCategory++;
 
-        const isOpen = r.status && r.status.toLowerCase().includes('не устран');
-        if (isOpen) data.open++;
+            // Оценка точности формулировок
+            const textLower = r.text ? r.text.toLowerCase() : '';
+            const hasNormative = /(сп\s*\d|гост|ПУЭ|снип|шифр|тр\s|тк\s|ппр|\d+\s*(мм|см|м|%|град)|(лист|л\.|узел|уз\.|пункт|п\.|приказ[а-я]*)\s*(№\s*|от\s*)?\d+)/i.test(textLower);
 
-        if (r.category && r.category !== 'Без категории') data.withCategory++;
-
-        // --- НОВАЯ ЛОГИКА: Оценка точности формулировок ---
-        const textLower = r.text ? r.text.toLowerCase() : '';
-        const hasNormative = /(сп\s*\d|гост|ПУЭ|снип|шифр|тр\s|тк\s|ппр|\d+\s*(мм|см|м|%|град)|(лист|л\.|узел|уз\.|пункт|п\.|приказ[а-я]*)\s*(№\s*|от\s*)?\d+)/i.test(textLower);
-
-        if (hasNormative) {
-            data.matched++;
-        } else {
-            // Если формулировка плохая, сохраняем для ИИ (если текст больше 10 символов)
-            if (r.text && r.text.length > 10) {
-                window.skBadRemarks.push({ eng: engName, text: r.text });
+            if (hasNormative) {
+                data.matched++;
+            } else {
+                if (r.text && r.text.length > 10) window.skBadRemarks.push({ eng: engName, text: r.text });
             }
-        }
-        // ---------------------------------------------------
 
-        const issued = r.date_issued ? new Date(r.date_issued) : null;
-        const deadline = r.deadline ? new Date(r.deadline) : null;
-        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
-        const now = new Date();
+            const issued = r.date_issued ? new Date(r.date_issued) : null;
+            const deadline = r.deadline ? new Date(r.deadline) : null;
+            const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+            const now = new Date();
 
-        if (deadline) {
-            if (isOpen && now > deadline) data.overdue++;
-            else if (!isOpen && resolved && resolved > deadline) data.overdue++;
-        }
+            if (deadline) {
+                if (isOpen && now > deadline) data.overdue++;
+                else if (!isOpen && resolved && resolved > deadline) data.overdue++;
+            }
 
-        if (!isOpen && issued && resolved) {
-            const daysToClose = Math.ceil((resolved - issued) / (1000 * 60 * 60 * 24));
-            if (daysToClose >= 0) data.closingTimes.push(daysToClose);
-        }
-    });
+            if (!isOpen && issued && resolved) {
+                const daysToClose = Math.ceil((resolved - issued) / (1000 * 60 * 60 * 24));
+                if (daysToClose >= 0) data.closingTimes.push(daysToClose);
+            }
+        });
 
-    const rbiBadContractors = new Set();
-    const groupedRBI = {};
-    contractorArray.forEach(c => { groupedRBI[c.contractorName] = groupedRBI[c.contractorName] || []; groupedRBI[c.contractorName].push(c); });
+        // Конвертируем в массив с готовыми %
+        return Object.keys(engMap).map(name => {
+            const d = engMap[name];
+            const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a, b) => a + b, 0) / d.closingTimes.length) : 0;
+            const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
+            const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
+            const accuracyPerc = d.total > 0 ? Math.round((d.matched / d.total) * 100) : 0;
+            let kpi = Math.max(0, 100 - overduePerc + (catPerc === 100 ? 10 : 0));
+            return { name, total: d.total, open: d.open, overduePerc, accuracyPerc, avgTime, kpi };
+        });
+    };
 
-    for (let cName in groupedRBI) {
-        const m = getContractorMetrics(groupedRBI[cName], typeof userTemplates !== 'undefined' ? userTemplates : {});
-        if (m && (m.finalC < 85 || m.n_изделий_с_B3 > 0)) rbiBadContractors.add(cName.toLowerCase());
+    // 1. Применяем глобальный фильтр по Объекту
+    let baseRecords = window.skRecords;
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.project.length > 0) {
+        const fProj = activeMultiFilters.analytics.project;
+        baseRecords = baseRecords.filter(r => 
+            fProj.includes(r.project_display_name) || 
+            fProj.includes(r.project_canonical_key) ||
+            fProj.includes(r.display_name)
+        );
     }
 
-    const engArray = Object.keys(engMap).map(name => {
-        const d = engMap[name];
-        const avgTime = d.closingTimes.length > 0 ? Math.round(d.closingTimes.reduce((a, b) => a + b, 0) / d.closingTimes.length) : 0;
-        const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
-        const catPerc = d.total > 0 ? Math.round((d.withCategory / d.total) * 100) : 0;
-        const accuracyPerc = d.total > 0 ? Math.round((d.matched / d.total) * 100) : 0; // Точность
+    // 2. Разбиваем данные на ТЕКУЩИЙ период и ПРОШЛЫЙ период (для трендов)
+    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    let currentRecords = baseRecords;
+    let prevRecords = [];
+    const now = new Date();
 
-        let rbiHits = 0;
-        d.contractors.forEach(c => {
-            const linkedName = window.skContractorMap[c] || c;
-            if (rbiBadContractors.has(linkedName.toLowerCase())) rbiHits++;
-        });
-        const correlation = d.contractors.size > 0 ? Math.round((rbiHits / d.contractors.size) * 100) : 0;
+    if (selPeriod === 'WEEK') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
+        currentRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
+        prevRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
+    } else if (selPeriod === 'MONTH') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
+        currentRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
+        prevRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
+    } else {
+        // Если период не задан, просто считаем все данные как текущие, без трендов
+        currentRecords = window.skRecords;
+    }
 
-        let kpi = Math.max(0, 100 - overduePerc + (catPerc === 100 ? 10 : 0));
-        return { name, total: d.total, open: d.open, overduePerc, accuracyPerc, avgTime, kpi, correlation };
+    const currentStats = calculateEngStats(currentRecords);
+    const prevStats = calculateEngStats(prevRecords);
+
+    // Умная сортировка по выбранному столбцу
+    currentStats.sort((a, b) => {
+        let valA = a[window.skHrSortBy];
+        let valB = b[window.skHrSortBy];
+        
+        if (valA < valB) return window.skHrSortDesc ? 1 : -1;
+        if (valA > valB) return window.skHrSortDesc ? -1 : 1;
+        return 0;
     });
 
-    engArray.sort((a, b) => b.kpi - a.kpi);
+    // Функция отрисовки маленького тренда (стрелочки)
 
-    const rowsHtml = engArray.map((e, idx) => {
-        const rankColor = idx === 0 ? 'bg-yellow-400 text-white' : 'bg-slate-100 text-slate-500';
+    // Функция отрисовки маленького тренда (стрелочки)
+    const renderTrend = (curr, prev, inverse = false) => {
+        if (prev === undefined) return '';
+        const diff = curr - prev;
+        if (diff === 0) return '<span class="text-[9px] text-slate-300 ml-1 font-black">▬</span>';
+        const isGood = inverse ? diff < 0 : diff > 0;
+        const color = isGood ? 'text-green-500' : 'text-red-500';
+        const sign = diff > 0 ? '▲' : '▼';
+        return `<span class="text-[9px] ${color} ml-1 font-black">${sign}${Math.abs(diff)}</span>`;
+    };
+
+    const rowsHtml = currentStats.map((e, idx) => {
+        const rankColor = idx === 0 ? 'bg-yellow-400 text-white shadow-sm' : 'bg-slate-100 text-slate-500 dark:bg-slate-800';
         const accColor = e.accuracyPerc >= 80 ? 'text-green-600' : (e.accuracyPerc >= 50 ? 'text-orange-500' : 'text-red-600');
+        
+        // Ищем инженера в прошлом периоде для сравнения
+        const prevE = prevStats.find(p => p.name === e.name);
+        const prevKpi = prevE ? prevE.kpi : undefined;
+        const prevAcc = prevE ? prevE.accuracyPerc : undefined;
+        const prevOver = prevE ? prevE.overduePerc : undefined;
 
         return `
-        <tr class="border-b border-[var(--card-border)] hover:bg-[var(--hover-bg)]">
-            <td class="p-2 flex items-center gap-2">
+        <tr class="border-b border-[var(--card-border)] hover:bg-[var(--hover-bg)] transition-colors">
+            <td class="p-2.5 flex items-center gap-2">
                 <div class="w-6 h-6 rounded flex items-center justify-center text-[10px] font-black ${rankColor} shrink-0">${idx + 1}</div>
                 <div class="font-bold text-[11px] text-slate-800 dark:text-white truncate max-w-[120px]" title="${e.name}">${e.name}</div>
             </td>
-            <td class="p-2 text-center text-[11px] font-black text-indigo-600">${e.total}</td>
-            <td class="p-2 text-center text-[11px] font-bold ${e.overduePerc > 20 ? 'text-red-600' : 'text-green-600'}">${e.overduePerc}%</td>
-            <td class="p-2 text-center text-[11px] font-black ${accColor}">${e.accuracyPerc}%</td>
-            <td class="p-2 text-center text-[11px] font-bold text-slate-600">${e.avgTime} дн.</td>
-            <td class="p-2 text-center text-[11px] font-bold ${e.correlation >= 70 ? 'text-green-600' : (e.correlation >= 40 ? 'text-orange-500' : 'text-red-500')}">${e.correlation}%</td>
-            <td class="p-2 text-center text-[12px] font-black ${e.kpi >= 80 ? 'text-green-600' : 'text-red-500'}">${e.kpi}</td>
+            <td class="p-2.5 text-center text-[11px] font-black text-slate-600 dark:text-slate-400">${e.total}</td>
+            <td class="p-2.5 text-center text-[12px] font-bold ${e.overduePerc > 20 ? 'text-red-600' : 'text-green-600'}">
+                ${e.overduePerc}% ${renderTrend(e.overduePerc, prevOver, true)}
+            </td>
+            <td class="p-2.5 text-center text-[12px] font-black ${accColor}">
+                ${e.accuracyPerc}% ${renderTrend(e.accuracyPerc, prevAcc)}
+            </td>
+            <td class="p-2.5 text-center text-[11px] font-bold text-slate-500">${e.avgTime} дн.</td>
+            <td class="p-2.5 text-center text-[13px] font-black ${e.kpi >= 80 ? 'text-green-600' : 'text-red-500'} bg-slate-50 dark:bg-slate-900/50 rounded-r-lg">
+                ${e.kpi} ${renderTrend(e.kpi, prevKpi)}
+            </td>
         </tr>`;
     }).join('');
 
     container.innerHTML = `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4">
-            <div class="p-3 bg-[var(--hover-bg)] border-b border-[var(--card-border)]">
-                <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white mb-1">Рейтинг инженеров СК (KPI)</div>
-                <div class="text-[9px] text-slate-500 leading-snug">
-                    <b>KPI = 100 - %Просрочки + Бонусы.</b><br>
-                    <b>Точность</b>: доля замечаний с указанием конкретных допусков (мм, см) или ссылок на РД/ГОСТ.
+            <div class="p-3.5 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex justify-between items-center">
+                <div>
+                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white mb-0.5">Рейтинг инженеров СК (KPI)</div>
+                    <div class="text-[9px] text-[var(--text-muted)] leading-snug font-medium">
+                        KPI = 100 - %Просрочки + Бонусы.<br>
+                        Тренд (▲▼) показывает динамику по сравнению с предыдущим периодом.
+                    </div>
                 </div>
             </div>
             <div class="overflow-x-auto custom-scrollbar">
                 <table class="w-full text-left whitespace-nowrap">
-                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase tracking-wider">
+                    <thead class="bg-slate-50 dark:bg-slate-900 text-[9px] text-[var(--text-muted)] uppercase tracking-wider select-none">
                         <tr>
-                            <th class="p-2.5">Инженер</th>
-                            <th class="p-2.5 text-center" title="Выдано замечаний">Выдал</th>
-                            <th class="p-2.5 text-center" title="Доля просроченных">Просрочка</th>
-                            <th class="p-2.5 text-center text-indigo-600 font-black" title="Наличие нормативов/допусков">Точность</th>
-                            <th class="p-2.5 text-center" title="В среднем дней на устранение">Ср. Время</th>
-                            <th class="p-2.5 text-center" title="Совпадение с зонами риска RBI">Связь RBI</th>
-                            <th class="p-2.5 text-center text-indigo-600 font-black">KPI</th>
+                            <th class="p-3 cursor-pointer hover:text-indigo-500 transition-colors" onclick="window.sk_sortHrTable('name')">Инженер СК <span class="text-indigo-500">${window.skHrSortBy === 'name' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
+                            <th class="p-3 text-center cursor-pointer hover:text-indigo-500 transition-colors" title="Выдано замечаний за период" onclick="window.sk_sortHrTable('total')">Выдал <span class="text-indigo-500">${window.skHrSortBy === 'total' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
+                            <th class="p-3 text-center cursor-pointer hover:text-indigo-500 transition-colors" title="Доля просроченных" onclick="window.sk_sortHrTable('overduePerc')">Просрочка <span class="text-indigo-500">${window.skHrSortBy === 'overduePerc' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
+                            <th class="p-3 text-center text-indigo-600 font-black cursor-pointer hover:text-indigo-800 transition-colors" title="Наличие нормативов/допусков" onclick="window.sk_sortHrTable('accuracyPerc')">Точность <span class="text-indigo-800">${window.skHrSortBy === 'accuracyPerc' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
+                            <th class="p-3 text-center cursor-pointer hover:text-indigo-500 transition-colors" title="В среднем дней на устранение" onclick="window.sk_sortHrTable('avgTime')">Ср. Время <span class="text-indigo-500">${window.skHrSortBy === 'avgTime' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
+                            <th class="p-3 text-center text-indigo-600 font-black cursor-pointer hover:text-indigo-800 transition-colors" onclick="window.sk_sortHrTable('kpi')">KPI <span class="text-indigo-800">${window.skHrSortBy === 'kpi' ? (window.skHrSortDesc ? '▼' : '▲') : ''}</span></th>
                         </tr>
                     </thead>
-                    <tbody>${rowsHtml}</tbody>
+                    <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center p-4 text-slate-400 text-xs">Нет данных за период</td></tr>'}</tbody>
                 </table>
             </div>
         </div>
 
-        <!-- НОВЫЙ БЛОК: ИИ-ТРЕНЕР -->
+        <!-- ИИ-ТРЕНЕР -->
         <div class="bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 rounded-xl p-4 shadow-sm">
             <div class="flex justify-between items-start mb-3">
                 <div>
                     <div class="text-[12px] font-black text-indigo-700 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Тренер (Разбор ошибок)
                     </div>
-                    <div class="text-[10px] text-indigo-600/80 dark:text-indigo-400/80 leading-snug pr-4">
-                        Нейросеть выберет несколько реальных предписаний без нормативов, объяснит гарантийные риски и покажет, как нужно было написать правильно. Идеально для планерки!
+                    <div class="text-[10px] text-indigo-600/80 dark:text-indigo-400/80 leading-snug pr-4 font-medium">
+                        Нейросеть выберет несколько реальных предписаний без нормативов, объяснит гарантийные риски и покажет, как нужно было написать правильно.
                     </div>
                 </div>
                 <button onclick="window.sk_auditTemplatesAi()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform shrink-0">

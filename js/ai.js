@@ -1223,7 +1223,8 @@ window.sk_aiMapColumns = async function () {
 };
 
 // === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
-window.sk_autoMapCategories = async function(silent = false) {
+// === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
+window.sk_autoMapCategories = async function (silent = false) {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
         if (!silent) showToast("⚠️ Включите AI для авто-распределения категорий!");
         return 0;
@@ -1237,22 +1238,23 @@ window.sk_autoMapCategories = async function(silent = false) {
     if (allowedCleanCats.length === 0) allowedCleanCats.push("Общестроительные работы");
 
     // Ищем записи, где категория кривая или не задана
-    const recordsToFix = window.skRecords.filter(r => 
-        !r.category || 
-        r.category === 'Без категории' || 
-        r.category.trim() === '' || 
+    const recordsToFix = window.skRecords.filter(r =>
+        !r.category ||
+        r.category === 'Без категории' ||
+        r.category.trim() === '' ||
         /^\d+$/.test(r.category)
     );
-    
-    // Берем только уникальные тексты, чтобы не гонять ИИ по одинаковым дефектам 100 раз
-    const uniqueTexts = [...new Set(recordsToFix.map(r => r.text).filter(t => t && t.length > 5))];
-    
+
+    // ВАЖНО: Оставляем старое название переменной (uniqueTexts), чтобы не ломать код ниже, 
+    // но кладем в нее связку "Подрядчик + Текст", чтобы ИИ был умнее.
+    const uniqueTexts = [...new Set(recordsToFix.map(r => `${r.contractor} ||| ${r.text}`).filter(t => t && t.length > 5))];
+
     if (uniqueTexts.length === 0) {
         if (!silent) showToast("✅ Все замечания уже распределены по категориям.");
         return 0;
     }
 
-    const BATCH_SIZE = 50;
+    const BATCH_SIZE = 200;
     let totalUpdated = 0;
     const totalBatches = Math.ceil(uniqueTexts.length / BATCH_SIZE);
 
@@ -1262,14 +1264,19 @@ window.sk_autoMapCategories = async function(silent = false) {
 
         const startIndex = (batchNum - 1) * BATCH_SIZE;
         const batch = uniqueTexts.slice(startIndex, startIndex + BATCH_SIZE);
-        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 150)}"`).join('\n');
-        
-        const promptSystem = `Ты — инженер стройконтроля. Прочитай тексты дефектов. Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length-1}), значение - строго один из видов работ: [${allowedCleanCats.join(', ')}]. Если не уверен, верни "Без категории". Без пояснений.`;
+        const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 200)}"`).join('\n');
+
+        const promptSystem = `Ты — эксперт строительного контроля. Тебе передан список дефектов в формате "Имя подрядчика ||| Текст замечания".
+Твоя задача — классифицировать каждый дефект. Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length - 1}), значение - строго один из видов работ: [${allowedCleanCats.join(', ')}]. 
+ПРАВИЛА:
+1. Внимательно смотри на имя подрядчика. Если большинство его дефектов относятся к отделке, то спорные дефекты (например, "мусор" или "царапины") тоже относи к отделке.
+2. Избегай ответа "Без категории". Логика: "арматура" - это Монолит; "пена" - Окна.
+Без пояснений.`;
 
         try {
-            const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: batchStr }], { temperature: 0.1, max_tokens: 2000 });
+            const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: batchStr }], { temperature: 0.1, max_tokens: 5000 });
             const jsonMatch = res.match(/\{[\s\S]*\}/);
-            
+
             if (jsonMatch) {
                 const aiMap = JSON.parse(jsonMatch[0]);
                 let batchRecordsToUpdate = [];
@@ -1277,17 +1284,26 @@ window.sk_autoMapCategories = async function(silent = false) {
                 for (let i = 0; i < batch.length; i++) {
                     const cleanVal = aiMap[i] || aiMap[String(i)];
                     if (cleanVal && allowedCleanCats.includes(cleanVal)) {
-                        // Находим все записи с этим текстом и обновляем
-                        const targetRecords = window.skRecords.filter(r => r.text === batch[i]);
+                        // Разбираем строку обратно на Подрядчика и Текст
+                        const parts = batch[i].split(' ||| ');
+                        const cName = parts[0];
+                        const tText = parts[1];
+
+                        // Находим все записи и обновляем
+                        const targetRecords = window.skRecords.filter(r => r.contractor === cName && r.text === tText);
                         targetRecords.forEach(rec => {
                             rec.ai_category = cleanVal;
-                            if (rec.category !== cleanVal) rec.category_corrected = true;
+                            // Жестко заменяем категорию
+                            if (rec.category !== cleanVal) {
+                                rec.category = cleanVal;
+                                rec.category_corrected = true;
+                            }
                             rec._updatedAt = new Date().toISOString();
                             batchRecordsToUpdate.push(rec);
                         });
                     }
                 }
-                
+
                 // Сохраняем пачку
                 if (batchRecordsToUpdate.length > 0) {
                     if (typeof dbPutBatch === 'function') await dbPutBatch(STORES.SK_RECORDS, batchRecordsToUpdate);
@@ -1298,8 +1314,8 @@ window.sk_autoMapCategories = async function(silent = false) {
             console.warn("Ошибка ИИ в пакете", batchNum, e);
             if (!silent) showToast(`⚠️ Ошибка API на пакете ${batchNum}. Ждем и продолжаем...`);
         }
-        
-        // ВАЖНО: Задержка 2.5 секунды между пакетами, чтобы API DeepSeek не забанил нас за спам!
+
+        // ВАЖНО: Задержка 2.5 секунды между пакетами, чтобы API DeepSeek не забанил нас за спам
         if (batchNum < totalBatches) {
             await new Promise(r => setTimeout(r, 2500));
         }
@@ -1308,6 +1324,9 @@ window.sk_autoMapCategories = async function(silent = false) {
     if (!silent && totalUpdated > 0) {
         showToast(`✨ ИИ успешно распределил ${totalUpdated} записей!`);
         sk_renderDashboard(); // Перерисовываем экран
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
     }
     return totalUpdated;
 };
@@ -1670,5 +1689,132 @@ window.sk_auditTemplatesAi = async function () {
         if (typeof gameLogAction === 'function') gameLogAction('ai_generate', 'sk_coaching');
     } catch (e) {
         resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
+    }
+};
+
+// === Панель руководителя: Добавить синоним подрядчику ВРУЧНУЮ ===
+window.gameAddContractorAliasInline = async function (canonicalKey, predefinedValue = null) {
+    const inputEl = document.getElementById(`alias_contr_input_${canonicalKey}`);
+    const aliasName = predefinedValue || (inputEl ? inputEl.value.trim() : '');
+
+    if (!aliasName) return showToast("⚠️ Введите синоним!");
+
+    showToast("⏳ Сохранение синонима...");
+
+    try {
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        const currentUser = window.syncConfig?.engineerName || 'Админ';
+        const nowIso = new Date().toISOString();
+
+        // 1. Получаем текущие данные подрядчика
+        const { data: primaryData } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('synonyms')
+            .eq('project_code', pCode)
+            .eq('canonical_key', canonicalKey)
+            .single();
+
+        let newSynonyms = Array.isArray(primaryData?.synonyms) ? primaryData.synonyms : [];
+
+        // Защита от дублей
+        if (newSynonyms.includes(aliasName)) {
+            if (!predefinedValue) showToast("⚠️ Такой синоним уже есть");
+            return;
+        }
+        newSynonyms.push(aliasName);
+
+        // 2. Обновляем массив синонимов у основного подрядчика
+        await window.supabaseClient
+            .from('contractor_directory')
+            .update({ synonyms: newSynonyms, updated_at: nowIso })
+            .eq('project_code', pCode)
+            .eq('canonical_key', canonicalKey);
+
+        // 3. Создаем запись в таблице алиасов
+        await window.supabaseClient.from('contractor_aliases').upsert({
+            project_code: pCode, raw_name: aliasName, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+        }, { onConflict: 'project_code,raw_name' });
+
+        // Если это ручной ввод, очищаем инпут и показываем тост
+        if (!predefinedValue) {
+            if (inputEl) inputEl.value = '';
+            showToast("✅ Синоним добавлен!");
+            gameLoadContractorDirectory(); // Перерисовываем список
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            if (typeof triggerSync === 'function') triggerSync('silent');
+        }
+
+    } catch (e) {
+        console.error('[gameAddContractorAliasInline]', e);
+        if (!predefinedValue) showToast("❌ Ошибка при добавлении синонима");
+    }
+};
+
+// === Панель руководителя: ИИ ГЕНЕРАЦИЯ СИНОНИМОВ ===
+// === Панель руководителя: ИИ ГЕНЕРАЦИЯ СИНОНИМОВ (Пакетное сохранение) ===
+window.gameGenerateContractorSynonymsAI = async function (canonicalKey, displayName) {
+    if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+
+    showToast("🧠 DeepSeek придумывает возможные опечатки...");
+
+    const promptSystem = `Ты — эксперт по строительному документообороту. Твоя задача — сгенерировать 5-6 самых вероятных вариантов, как инженеры могут написать название компании "${displayName}" в отчетах (сокращения, без кавычек, без формы собственности, частые опечатки).
+    Верни СТРОГО список через запятую. Никаких других слов, нумерации или приветствий.`;
+
+    try {
+        const response = await window.callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: `Сгенерируй синонимы для: ${displayName}` }
+        ], { temperature: 0.4, max_tokens: 150 });
+
+        const aiSynonyms = response.split(',').map(s => s.trim().replace(/['"«»]/g, '')).filter(Boolean);
+        if (aiSynonyms.length === 0) throw new Error("ИИ вернул пустой список");
+
+        showToast(`✨ ИИ придумал ${aiSynonyms.length} синонимов. Сохраняем...`);
+
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        const currentUser = window.syncConfig?.engineerName || 'Админ';
+        const nowIso = new Date().toISOString();
+
+        // 1. Получаем текущие данные подрядчика из облака
+        const { data: primaryData } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('synonyms')
+            .eq('project_code', pCode)
+            .eq('canonical_key', canonicalKey)
+            .single();
+
+        let newSynonyms = Array.isArray(primaryData?.synonyms) ? primaryData.synonyms : [];
+        let addedCount = 0;
+
+        for (let syn of aiSynonyms) {
+            if (!newSynonyms.includes(syn)) {
+                newSynonyms.push(syn);
+
+                // Добавляем в облако алиас (без вызова тостов)
+                await window.supabaseClient.from('contractor_aliases').upsert({
+                    project_code: pCode, raw_name: syn, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+                }, { onConflict: 'project_code,raw_name' });
+                addedCount++;
+            }
+        }
+
+        if (addedCount > 0) {
+            // Обновляем массив синонимов у основного подрядчика
+            await window.supabaseClient
+                .from('contractor_directory')
+                .update({ synonyms: newSynonyms, updated_at: nowIso })
+                .eq('project_code', pCode)
+                .eq('canonical_key', canonicalKey);
+        }
+
+        showToast("✅ Синонимы от ИИ успешно привязаны!");
+        gameLoadContractorDirectory();
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+
+    } catch (e) {
+        console.error('[gameGenerateContractorSynonymsAI]', e);
+        showToast("❌ Ошибка ИИ: " + e.message);
     }
 };

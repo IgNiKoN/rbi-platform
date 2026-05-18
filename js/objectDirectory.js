@@ -331,48 +331,67 @@ window.ObjectDirectory = {
             return;
         }
 
-        // Если объекты есть - ЖЕСТКО делаем выпадающий список (даже без интернета)
-        const optionsHtml = assignedObjects.map(obj => {
-            const selected = (currentValue === obj.canonical_key || currentValue === obj.display_name) ? 'selected' : '';
-            return `<option value="${obj.canonical_key}" data-display-name="${obj.display_name}" ${selected}>${obj.display_name}</option>`;
-        }).join('');
+        // Если объекты есть - Создаем кастомный Dropdown
+        let displayValue = currentValue;
+        const matched = assignedObjects.find(obj => obj.canonical_key === currentValue || obj.display_name === currentValue);
+        if (matched) displayValue = matched.display_name;
+        if (assignedObjects.length === 1) displayValue = assignedObjects[0].display_name;
 
-        const selectHtml = `
-            <select id="inp-project" class="input-base text-center transition-colors appearance-none font-bold text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800" style="text-align-last:center;"
-                onchange="
-                    const opt = this.options[this.selectedIndex];
-                    this.dataset.displayName = opt ? opt.dataset.displayName : this.value;
+        const optionsHtml = assignedObjects.map(obj => {
+            return `
+            <div class="p-3 text-[12px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors text-slate-800 dark:text-slate-200"
+                onmousedown="
+                    const inp = document.getElementById('inp-project');
+                    inp.value = '${obj.display_name}';
+                    inp.dataset.displayName = '${obj.display_name}';
+                    inp.dataset.canonicalKey = '${obj.canonical_key}';
+                    document.getElementById('dd_inp-project-custom').classList.add('hidden');
                     if(typeof updateLocationFromStructured === 'function') updateLocationFromStructured();
                     if(typeof updateDataSummary === 'function') updateDataSummary();
                 ">
-                <option value="" disabled ${currentValue ? '' : 'selected'}>Выберите объект...</option>
-                ${optionsHtml}
-            </select>
+                ${obj.display_name}
+            </div>`;
+        }).join('');
+
+        // Формируем чистый HTML
+        const selectHtml = `
+            <input type="text" id="inp-project" 
+                class="input-base text-center pr-7 transition-colors cursor-pointer font-bold text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800" 
+                placeholder="Выберите объект..." autocomplete="off" value="${displayValue}" readonly
+                data-display-name="${displayValue}"
+                data-canonical-key="${matched ? matched.canonical_key : ''}"
+                onmousedown="document.getElementById('dd_inp-project-custom').classList.toggle('hidden')">
             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
             </span>
+            <div id="dd_inp-project-custom" class="absolute top-full left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-xl mt-1 z-[5000] hidden max-h-48 overflow-y-auto custom-scrollbar text-left">
+                ${optionsHtml}
+            </div>
         `;
 
-        if (projectEl.tagName.toLowerCase() === 'input') {
-            projInputContainer.innerHTML = selectHtml;
-        } else {
-            projectEl.outerHTML = selectHtml;
-        }
+        // ЖЕСТКАЯ ОЧИСТКА: просто заменяем всё содержимое контейнера разом, чтобы не было дублей
+        projInputContainer.innerHTML = selectHtml;
 
-        const sel = document.getElementById('inp-project');
-        if (!sel) return;
-
-        const matched = assignedObjects.find(obj => obj.canonical_key === currentValue || obj.display_name === currentValue);
-        if (matched) {
-            sel.value = matched.canonical_key;
-            sel.dataset.displayName = matched.display_name;
-        }
-
+        // Если объект только один, блокируем меню выбора
         if (assignedObjects.length === 1) {
-            sel.value = assignedObjects[0].canonical_key;
-            sel.dataset.displayName = assignedObjects[0].display_name;
-            sel.setAttribute('disabled', 'true');
-            sel.classList.add('opacity-80');
+            const newInp = document.getElementById('inp-project');
+            if (newInp) {
+                newInp.classList.add('opacity-80');
+                newInp.onmousedown = null; // Отключаем клик
+                newInp.dataset.canonicalKey = assignedObjects[0].canonical_key;
+                newInp.dataset.displayName = assignedObjects[0].display_name;
+            }
+        }
+
+        // Вешаем глобальный слушатель клика, чтобы меню закрывалось, если кликнуть мимо
+        if (!window._ddProjectListenerAdded) {
+            document.addEventListener('mousedown', function _closeDd(e) {
+                const dd = document.getElementById('dd_inp-project-custom');
+                if (dd && !dd.classList.contains('hidden') && !e.target.closest('#dd_inp-project-custom') && e.target.id !== 'inp-project') {
+                    dd.classList.add('hidden');
+                }
+            });
+            window._ddProjectListenerAdded = true;
         }
     },
 
@@ -394,36 +413,49 @@ window.ObjectDirectory = {
             this.objects.forEach(obj => {
                 const objAliases = Object.keys(this.aliases).filter(k => this.aliases[k] === obj.canonical_key);
 
-                // Рендерим синонимы с кнопкой удаления крестиком (если потребуется)
+                // Рендерим синонимы
                 const aliasTags = objAliases.map(a => `
                     <span class="bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px] mr-1 mb-1 inline-flex items-center gap-1">
                         ${a}
                     </span>
                 `).join('');
 
+                // Безопасное имя для кнопок (замена кавычек)
+                const safeName = String(obj.display_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
                 html += `
-                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 sm:p-4 shadow-sm mb-3">
-                    <div class="flex justify-between items-start mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-                        <div class="min-w-0 pr-2">
-                            <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase truncate">${obj.display_name}</div>
-                            <div class="text-[9px] font-mono text-slate-400 mt-0.5 truncate">Ключ: <span class="text-indigo-500 font-bold">${obj.canonical_key}</span></div>
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl mb-2 shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary class="p-2 sm:p-3 cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)] bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] rounded-xl group-open:rounded-b-none">
+                        <div class="flex items-center gap-3 min-w-0 pr-2">
+                            <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-black text-sm shrink-0 border border-blue-100 dark:border-blue-800 shadow-sm">
+                                🏢
+                            </div>
+                            <div class="min-w-0 flex flex-col justify-center">
+                                <div class="font-black text-[11px] sm:text-[12px] text-slate-800 dark:text-white uppercase truncate leading-tight">${obj.display_name}</div>
+                                <div class="text-[8px] font-mono text-slate-400 mt-1 truncate">ID: ${obj.canonical_key} | Синонимов: ${objAliases.length}</div>
+                            </div>
                         </div>
-                        <div class="shrink-0">
-                            <button onclick="ObjectDirectory.deleteObject('${obj.id}')" class="text-[9px] font-bold text-red-600 bg-red-50 px-2 py-1.5 rounded-lg border border-red-200 active:scale-95 shadow-sm transition-colors">Удалить</button>
+                        <div class="shrink-0 text-slate-400 transition-transform duration-300 group-open:rotate-180 bg-slate-50 dark:bg-slate-800 p-1.5 rounded-full border border-slate-200 dark:border-slate-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
                         </div>
-                    </div>
+                    </summary>
                     
-                    <div class="mb-3">
-                        <div class="text-[9px] font-bold text-slate-500 uppercase mb-1.5">Привязанные синонимы (Excel):</div>
-                        <div class="flex flex-wrap gap-1 mb-2">${aliasTags || '<span class="text-[9px] italic text-slate-400">Нет синонимов</span>'}</div>
-                        
-                        <!-- Инлайн добавление синонима -->
-                        <div class="flex gap-1.5">
-                            <input type="text" id="alias_input_${obj.canonical_key}" class="input-base !py-1.5 text-[10px] flex-1" placeholder="Напр: Ромашка 1 оч">
-                            <button onclick="ObjectDirectory.addAliasInline('${obj.canonical_key}')" class="bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase border border-slate-200 dark:border-slate-600 active:scale-95 transition-transform shrink-0">+ Синоним</button>
+                    <div class="p-3 bg-[var(--hover-bg)] rounded-b-xl">
+                        <div class="bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--card-border)] mb-3 shadow-sm">
+                            <div class="flex justify-between items-center mb-1.5">
+                                <span class="text-[8px] font-bold text-slate-500 uppercase">Привязанные синонимы:</span>
+                                <button onclick="ObjectDirectory.generateObjectSynonymsAI('${obj.canonical_key}', '${safeName}')" class="text-indigo-500 hover:text-indigo-700 font-black flex items-center gap-1 active:scale-95 transition-transform bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-200 text-[8px] uppercase"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Генерация</button>
+                            </div>
+                            <div class="flex flex-wrap gap-1 mb-2">${aliasTags || '<span class="text-[9px] italic text-slate-400">Нет синонимов</span>'}</div>
+                            
+                            <div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                <input type="text" id="alias_input_${obj.canonical_key}" class="input-base !py-1.5 text-[10px] flex-1 bg-slate-50 dark:bg-slate-900" placeholder="Напр: Ромашка 1 оч">
+                                <button onclick="ObjectDirectory.addAliasInline('${obj.canonical_key}')" class="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-blue-200 dark:border-blue-800 active:scale-95 transition-transform shrink-0">+ Добавить</button>
+                            </div>
                         </div>
+                        <button onclick="ObjectDirectory.deleteObject('${obj.id}')" class="w-full bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm transition-transform">Удалить объект</button>
                     </div>
-                </div>`;
+                </details>`;
             });
         }
 
@@ -521,14 +553,16 @@ window.ObjectDirectory = {
 
         try {
             const pCode = window.syncConfig?.projectCode || 'RBI';
-            const { data, error } = await window.supabaseClient
+
+            // 1. Получаем профили (заявки от инженеров на доступ)
+            const { data: usersData, error: usersError } = await window.supabaseClient
                 .from('rbi_engineer_profiles')
                 .select('inspector_id, engineer_name, settings')
                 .eq('project_code', pCode);
 
-            if (error) throw error;
-                        // 1. Заявки на добавление объектов в справочник из ПК СК.
-            // Эти заявки не принадлежат пользователю и не должны выдавать доступ.
+            if (usersError) throw usersError;
+
+            // 2. Получаем заявки из ПК СК (на добавление в справочник)
             const { data: directoryQueue, error: queueError } = await window.supabaseClient
                 .from('object_normalization_queue')
                 .select('id, project_code, raw_name, suggested_canonical_key, source_table, created_by, status, admin_comment, created_at, updated_at')
@@ -541,108 +575,89 @@ window.ObjectDirectory = {
             if (queueError) throw queueError;
 
             let requestsHtml = '';
-                        if (Array.isArray(directoryQueue) && directoryQueue.length > 0) {
-                requestsHtml += `
-                    <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 shadow-sm mb-3">
-                        <div class="text-[10px] font-black text-indigo-700 uppercase mb-2 border-b border-indigo-200 pb-1">
-                            Заявки из ПК СК на добавление в справочник объектов
-                        </div>
 
-                        ${directoryQueue.map(q => {
-                            const raw = String(q.raw_name || '').replace(/"/g, '&quot;');
-                            const qid = String(q.id || '').replace(/"/g, '&quot;');
-                            const selectId = `obj_queue_action_${qid}`;
-
-                            return `
-                                <div class="mb-2 bg-white p-3 rounded-xl border border-indigo-200 shadow-sm">
-                                    <div class="text-[12px] font-black text-slate-800 mb-1">
-                                        Объект: <span class="text-indigo-600">"${raw}"</span>
-                                    </div>
-                                    <div class="text-[9px] text-slate-400 mb-2">
-                                        Источник: ${q.source_table || 'ПК СК'} · Автор загрузки: ${q.created_by || 'не указан'}
-                                    </div>
-
-                                    <div class="flex gap-2 items-center">
-                                        <select id="${selectId}" class="input-base !py-1.5 !text-[10px] font-bold flex-1">
-                                            <option value="create">Создать новый объект в справочнике</option>
-                                            ${allObjsOptions}
-                                            <option value="reject">Отклонить</option>
-                                        </select>
-
-                                        <button onclick="
-                                            const action = document.getElementById('${selectId}').value;
-                                            ObjectDirectory.resolveDirectoryRequest('${qid}', '${raw}', action);
-                                        " class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 shrink-0 transition-transform">
-                                            Сохранить
-                                        </button>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `;
-            }
-            // Формируем список существующих объектов для привязки (Без эмодзи!)
+            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Формируем опции селекта ДО того, как их используем!
             let allObjsOptions = this.objects.map(o => `<option value="link_${o.canonical_key}">Связать с: ${o.display_name}</option>`).join('');
 
-            data.forEach(user => {
-                const reqs = user.settings?.requestedProjects || [];
-                if (reqs.length === 0) return;
-
-                const safeEng = String(user.engineer_name || user.inspector_id).replace(/"/g, '&quot;');
-
+            // --- РЕНДЕР ЗАЯВОК ИЗ ПК СК ---
+            if (Array.isArray(directoryQueue) && directoryQueue.length > 0) {
                 requestsHtml += `
-                <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 shadow-sm mb-3">
-                    <div class="text-[10px] font-black text-slate-800 uppercase mb-2 border-b border-orange-200 pb-1 flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        Автор заявки: ${safeEng}
+                    <div class="text-[10px] font-black text-indigo-700 dark:text-indigo-400 uppercase mb-2 mt-2 flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> 
+                        Заявки из ПК СК (Excel)
                     </div>
-                    ${reqs.map((req, idx) => {
-                    const raw = String(req.raw_name || '').replace(/"/g, '&quot;');
-                    const selectId = `req_action_${user.inspector_id}_${idx}`;
+                    ${directoryQueue.map(q => {
+                    const raw = String(q.raw_name || '').replace(/"/g, '&quot;');
+                    const qid = String(q.id || '').replace(/"/g, '&quot;');
+                    const selectId = 'obj_queue_action_' + qid;
                     return `
-                            <div class="mb-2 bg-white p-3 rounded-xl border border-orange-200 shadow-sm">
-                                <div class="text-[12px] font-black text-slate-800 mb-3 border-b border-slate-100 pb-2">
-                                    Объект: <span class="text-indigo-600">"${raw}"</span>
-                                </div>
-                                
-                                <div class="flex gap-2 mb-3">
-                                    <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'create')" class="flex-1 bg-green-500 text-white py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">✨ Создать как новый</button>
-                                    <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'reject')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">❌ Отклонить</button>
-                                </div>
-                                
-                                <div class="bg-slate-50 p-2 rounded-lg border border-slate-200">
-                                    <div class="text-[9px] font-bold text-slate-500 uppercase mb-1">Или связать с существующим:</div>
-                                    <div class="flex gap-2 items-center">
-                                        <select id="${selectId}" class="input-base !py-1.5 !text-[10px] font-bold flex-1">
-                                            <option value="" disabled selected>-- Выберите объект --</option>
-                                            ${allObjsOptions}
-                                        </select>
-                                        <button onclick="
-                                            const sel = document.getElementById('${selectId}').value;
-                                            if(!sel) return showToast('Выберите объект из списка!');
-                                            ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', sel);
-                                        " class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 shrink-0 transition-transform">🔗 Связать</button>
-                                    </div>
+                            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2">
+                                <div class="text-[11px] font-black text-slate-800 dark:text-white mb-1 uppercase truncate">${raw}</div>
+                                <div class="text-[8px] text-slate-400 mb-2 font-bold">Автор загрузки: ${q.created_by || 'Система'}</div>
+                                <div class="flex flex-col gap-2">
+                                    <select id="${selectId}" class="input-base !py-1.5 !text-[10px] font-bold w-full bg-[var(--hover-bg)]">
+                                        <option value="create">✨ Создать новый объект</option>
+                                        <optgroup label="Связать со справочником:">${allObjsOptions}</optgroup>
+                                        <option value="reject">❌ Отклонить</option>
+                                    </select>
+                                    <button onclick="const action = document.getElementById('${selectId}').value; ObjectDirectory.resolveDirectoryRequest('${qid}', '${raw}', action);" class="bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform w-full">Сохранить решение</button>
                                 </div>
                             </div>
                         `;
                 }).join('')}
-                </div>`;
-            });
+                `;
+            }
+
+            // --- РЕНДЕР ЗАЯВОК ОТ ИНЖЕНЕРОВ ---
+            if (usersData && usersData.length > 0) {
+                usersData.forEach(user => {
+                    const reqs = user.settings?.requestedProjects || [];
+                    if (reqs.length === 0) return;
+
+                    const safeEng = String(user.engineer_name || user.inspector_id).replace(/"/g, '&quot;');
+
+                    requestsHtml += `
+                    <div class="text-[10px] font-black text-orange-600 dark:text-orange-400 uppercase mb-2 mt-4 flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> 
+                        Заявки на доступ: ${safeEng}
+                    </div>
+                    ${reqs.map((req, idx) => {
+                        const raw = String(req.raw_name || '').replace(/"/g, '&quot;');
+                        const selectId = 'req_action_' + user.inspector_id + '_' + idx;
+                        return `
+                            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2">
+                                <div class="text-[11px] font-black text-slate-800 dark:text-white mb-2 uppercase truncate">${raw}</div>
+                                <div class="flex gap-2 mb-2">
+                                    <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'create')" class="flex-1 bg-green-50 text-green-700 border border-green-200 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">Создать новый</button>
+                                    <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'reject')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">Отклонить</button>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <select id="${selectId}" class="input-base !py-1.5 !text-[9px] font-bold flex-1 bg-[var(--hover-bg)]">
+                                        <option value="" disabled selected>Или связать с...</option>
+                                        ${allObjsOptions}
+                                    </select>
+                                    <button onclick="const sel = document.getElementById('${selectId}').value; if(!sel) return showToast('Выберите объект!'); ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', sel);" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 shrink-0 transition-transform">Связать</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}`;
+                });
+            }
 
             if (!requestsHtml) {
-                listEl.innerHTML = '<div class="text-slate-500 text-[10px] font-bold text-center bg-white p-4 rounded-xl border border-dashed border-slate-300">Новых заявок на объекты нет</div>';
+                listEl.innerHTML = '<div class="text-slate-500 text-[10px] font-bold text-center bg-[var(--card-bg)] p-4 rounded-xl border border-dashed border-[var(--card-border)]">Новых заявок на объекты нет</div>';
             } else {
                 listEl.innerHTML = requestsHtml;
             }
+
         } catch (e) {
-            console.error(e);
+            console.error('[ObjectDirectory] Ошибка loadRequests:', e);
             listEl.innerHTML = '<div class="text-red-500 text-[10px] font-bold text-center">Ошибка загрузки заявок</div>';
         }
     },
-        // Применение решения Админа по справочной заявке из ПК СК.
+    // Применение решения Админа по справочной заявке из ПК СК.
     // ВАЖНО: не закрепляет объект ни за кем, только добавляет/связывает справочник.
+    // Применение решения Админа по справочной заявке из ПК СК.
     async resolveDirectoryRequest(queueId, rawName, action) {
         if (!queueId || !rawName) return showToast('Некорректная заявка');
         if (action === 'ignore') return showToast('Заявка оставлена в ожидании');
@@ -656,114 +671,101 @@ window.ObjectDirectory = {
             if (action === 'create') {
                 const newKey = this.cleanString(rawName);
 
-                await window.supabaseClient.from('project_objects').upsert({
+                // 1. Создаем объект ЛОКАЛЬНО
+                const newObj = {
+                    id: 'obj_' + Date.now().toString(36),
                     project_code: pCode,
                     canonical_key: newKey,
                     display_name: rawName,
                     synonyms: [],
                     created_by: window.syncConfig?.engineerName || '',
                     updated_at: nowIso,
-                    is_deleted: false
-                }, {
-                    onConflict: 'project_code,canonical_key'
-                });
+                    is_deleted: false,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
 
-                await window.supabaseClient.from('object_aliases').upsert({
+                this.objects.push(newObj);
+                if (typeof dbPut === 'function') await dbPut('project_objects', newObj);
+
+                // 2. Создаем алиас ЛОКАЛЬНО
+                const newAlias = {
+                    id: 'alias_' + Date.now().toString(36),
                     project_code: pCode,
                     raw_name: rawName,
                     canonical_key: newKey,
-                    updated_at: nowIso
-                }, {
-                    onConflict: 'project_code,raw_name'
-                });
-
-                await window.supabaseClient
-                    .from('object_normalization_queue')
-                    .update({
-                        status: 'linked',
-                        suggested_canonical_key: newKey,
-                        admin_comment: 'Создан объект в справочнике из заявки ПК СК',
-                        updated_at: nowIso
-                    })
-                    .eq('id', queueId);
+                    updated_at: nowIso,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
+                this.aliases[rawName] = newKey;
+                if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
 
                 showToast('✅ Объект добавлен в справочник');
             }
-
             else if (action.startsWith('link_')) {
                 const canonicalKey = action.replace('link_', '');
 
-                const { data: objRows } = await window.supabaseClient
-                    .from('project_objects')
-                    .select('id, synonyms')
-                    .eq('project_code', pCode)
-                    .eq('canonical_key', canonicalKey)
-                    .limit(1);
-
-                if (objRows && objRows.length > 0) {
-                    const oldSynonyms = Array.isArray(objRows[0].synonyms) ? objRows[0].synonyms : [];
-
-                    if (!oldSynonyms.includes(rawName)) {
-                        await window.supabaseClient.from('project_objects').update({
-                            synonyms: [...oldSynonyms, rawName],
-                            updated_at: nowIso
-                        }).eq('id', objRows[0].id);
+                // Обновляем синонимы ЛОКАЛЬНО
+                const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
+                if (objIndex > -1) {
+                    if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
+                    if (!this.objects[objIndex].synonyms.includes(rawName)) {
+                        this.objects[objIndex].synonyms.push(rawName);
+                        this.objects[objIndex].updated_at = nowIso;
+                        this.objects[objIndex].sync_status = 'not_synced';
+                        if (typeof dbPut === 'function') await dbPut('project_objects', this.objects[objIndex]);
                     }
                 }
 
-                await window.supabaseClient.from('object_aliases').upsert({
+                // Добавляем алиас ЛОКАЛЬНО
+                const newAlias = {
+                    id: 'alias_' + Date.now().toString(36),
                     project_code: pCode,
                     raw_name: rawName,
                     canonical_key: canonicalKey,
-                    updated_at: nowIso
-                }, {
-                    onConflict: 'project_code,raw_name'
-                });
-
-                await window.supabaseClient
-                    .from('object_normalization_queue')
-                    .update({
-                        status: 'linked',
-                        suggested_canonical_key: canonicalKey,
-                        admin_comment: 'Связано с существующим объектом',
-                        updated_at: nowIso
-                    })
-                    .eq('id', queueId);
+                    updated_at: nowIso,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
+                this.aliases[rawName] = canonicalKey;
+                if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
 
                 showToast('✅ Объект связан со справочником');
             }
 
-            else if (action === 'reject') {
-                await window.supabaseClient
-                    .from('object_normalization_queue')
-                    .update({
-                        status: 'rejected',
-                        admin_comment: 'Отклонено администратором',
-                        updated_at: nowIso
-                    })
-                    .eq('id', queueId);
-
-                showToast('❌ Заявка отклонена');
+            // 3. Обновляем статус самой заявки в облаке (тут прямой запрос допустим, так как таблица простая)
+            if (window.supabaseClient) {
+                let qStatus = action === 'reject' ? 'rejected' : 'linked';
+                await window.supabaseClient.from('object_normalization_queue').update({
+                    status: qStatus,
+                    admin_comment: action === 'reject' ? 'Отклонено' : 'Обработано',
+                    updated_at: nowIso
+                }).eq('id', queueId);
             }
 
-            await this.init();
+            // Перерисовываем интерфейс
             this.renderManagerPanel();
             this.loadRequests();
 
+            // Даем команду синхронизатору выгрузить наши локальные правки
             localStorage.setItem('rbi_cloud_dirty', '1');
+            if (typeof triggerSync === 'function') triggerSync('silent');
 
         } catch (e) {
             console.error('[ObjectDirectory.resolveDirectoryRequest]', e);
             showToast('❌ Ошибка обработки справочной заявки');
         }
-    }, 
+    },
     // НОВАЯ ФУНКЦИЯ: Применение решения Админа по заявке
+    // НОВАЯ ФУНКЦИЯ: Применение решения Админа по заявке от Инженера
     async resolveRequest(inspectorId, reqIdx, rawName, action) {
         if (action === 'ignore') return showToast('Заявка оставлена в ожидании');
 
         showToast('Обработка заявки...');
         try {
             const pCode = window.syncConfig?.projectCode || 'RBI';
+            const nowIso = new Date().toISOString();
 
             // 1. Получаем профиль инженера
             const { data: user, error: fetchErr } = await window.supabaseClient
@@ -782,17 +784,22 @@ window.ObjectDirectory = {
             if (action === 'create') {
                 const newKey = this.cleanString(rawName);
 
-                // Создаем в общей базе Supabase
-                await window.supabaseClient.from('project_objects').upsert({
+                // Создаем ЛОКАЛЬНО
+                const newObj = {
                     id: 'obj_' + Date.now().toString(36),
                     project_code: pCode,
                     canonical_key: newKey,
                     display_name: rawName,
                     synonyms: [],
-                    created_by: window.syncConfig.engineerName,
-                    updated_at: new Date().toISOString(),
-                    is_deleted: false
-                });
+                    created_by: window.syncConfig?.engineerName || '',
+                    updated_at: nowIso,
+                    is_deleted: false,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
+
+                this.objects.push(newObj);
+                if (typeof dbPut === 'function') await dbPut('project_objects', newObj);
 
                 if (!assigned.includes(newKey)) assigned.push(newKey);
                 showToast('Создан новый объект и выдан доступ!');
@@ -801,20 +808,29 @@ window.ObjectDirectory = {
                 const canonicalKey = action.replace('link_', '');
                 if (!assigned.includes(canonicalKey)) assigned.push(canonicalKey);
 
-                // Добавляем Синоним к эталонному объекту
-                const { data: objRows } = await window.supabaseClient.from('project_objects').select('id, synonyms').eq('project_code', pCode).eq('canonical_key', canonicalKey).limit(1);
-                if (objRows && objRows.length > 0) {
-                    const oldSynonyms = Array.isArray(objRows[0].synonyms) ? objRows[0].synonyms : [];
-                    if (!oldSynonyms.includes(rawName)) {
-                        await window.supabaseClient.from('project_objects').update({
-                            synonyms: [...oldSynonyms, rawName], updated_at: new Date().toISOString()
-                        }).eq('id', objRows[0].id);
-
-                        await window.supabaseClient.from('object_aliases').upsert({
-                            project_code: pCode, raw_name: rawName, canonical_key: canonicalKey, updated_at: new Date().toISOString()
-                        }, { onConflict: 'project_code,raw_name' });
+                // Обновляем ЛОКАЛЬНО
+                const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
+                if (objIndex > -1) {
+                    if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
+                    if (!this.objects[objIndex].synonyms.includes(rawName)) {
+                        this.objects[objIndex].synonyms.push(rawName);
+                        this.objects[objIndex].updated_at = nowIso;
+                        this.objects[objIndex].sync_status = 'not_synced';
+                        if (typeof dbPut === 'function') await dbPut('project_objects', this.objects[objIndex]);
                     }
                 }
+                const newAlias = {
+                    id: 'alias_' + Date.now().toString(36),
+                    project_code: pCode,
+                    raw_name: rawName,
+                    canonical_key: canonicalKey,
+                    updated_at: nowIso,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
+                this.aliases[rawName] = canonicalKey;
+                if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
+
                 showToast('Объект связан, доступ выдан!');
             }
             else if (action === 'reject') {
@@ -829,12 +845,15 @@ window.ObjectDirectory = {
             await window.supabaseClient.from('rbi_engineer_profiles').update({
                 assigned_projects: assigned,
                 settings: settings,
-                updated_at: new Date().toISOString()
+                updated_at: nowIso
             }).eq('inspector_id', inspectorId);
 
             // Обновляем панель
-            await this.init(); // Подтягиваем обновления справочника
             this.renderManagerPanel();
+            this.loadRequests();
+
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            if (typeof triggerSync === 'function') triggerSync('silent');
 
         } catch (e) {
             console.error(e);
@@ -875,33 +894,150 @@ window.ObjectDirectory = {
         this.renderManagerPanel();
     },
 
-    // Новое добавление синонима (Инлайн)
-    async addAliasInline(canonicalKey) {
+    // Новое добавление синонима (Инлайн + Поддержка ИИ)
+    async addAliasInline(canonicalKey, predefinedValue = null) {
         const inputEl = document.getElementById(`alias_input_${canonicalKey}`);
-        const alias = inputEl ? inputEl.value.trim() : '';
+        const alias = predefinedValue || (inputEl ? inputEl.value.trim() : '');
+
         if (!alias) return showToast("⚠️ Введите текст синонима!");
 
         // Проверяем, не занят ли синоним
         if (this.aliases[alias]) {
-            return showToast("⚠️ Такой синоним уже привязан к другому объекту!");
+            if (!predefinedValue) showToast("⚠️ Такой синоним уже привязан к другому объекту!");
+            return;
         }
 
-        this.aliases[alias] = canonicalKey;
+        if (!predefinedValue) showToast("⏳ Сохранение синонима...");
 
-        const newAlias = {
-            id: 'alias_' + Date.now().toString(36),
-            raw_name: alias,
-            canonical_key: canonicalKey,
-            project_code: window.syncConfig?.projectCode || ''
-        };
+        try {
+            const pCode = window.syncConfig?.projectCode || 'RBI';
+            const currentUser = window.syncConfig?.engineerName || 'Админ';
+            const nowIso = new Date().toISOString();
 
-        if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
+            // 1. Обновляем локальные словари
+            this.aliases[alias] = canonicalKey;
 
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
+            const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
+            if (objIndex > -1) {
+                if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
+                this.objects[objIndex].synonyms.push(alias);
+            }
 
-        showToast("🔗 Синоним привязан!");
-        this.renderManagerPanel();
+            // 2. Отправляем в Supabase (Обновляем массив синонимов у объекта)
+            if (window.supabaseClient) {
+                const { data: primaryData } = await window.supabaseClient
+                    .from('project_objects')
+                    .select('synonyms')
+                    .eq('project_code', pCode)
+                    .eq('canonical_key', canonicalKey)
+                    .single();
+
+                let newSynonyms = Array.isArray(primaryData?.synonyms) ? primaryData.synonyms : [];
+                if (!newSynonyms.includes(alias)) newSynonyms.push(alias);
+
+                await window.supabaseClient
+                    .from('project_objects')
+                    .update({ synonyms: newSynonyms, updated_at: nowIso })
+                    .eq('project_code', pCode)
+                    .eq('canonical_key', canonicalKey);
+
+                // 3. Создаем запись в таблице алиасов
+                await window.supabaseClient.from('object_aliases').upsert({
+                    project_code: pCode, raw_name: alias, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+                }, { onConflict: 'project_code,raw_name' });
+            }
+
+            // 4. Локальное сохранение
+            const newAlias = {
+                id: 'alias_' + Date.now().toString(36),
+                raw_name: alias,
+                canonical_key: canonicalKey,
+                project_code: pCode
+            };
+            if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
+
+            // Если это ручной ввод, очищаем инпут и показываем тост
+            if (!predefinedValue) {
+                if (inputEl) inputEl.value = '';
+                showToast("🔗 Синоним привязан!");
+                this.renderManagerPanel();
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                if (typeof triggerSync === 'function') triggerSync('silent');
+            }
+        } catch (e) {
+            console.error('[addAliasInline]', e);
+            if (!predefinedValue) showToast("❌ Ошибка при добавлении синонима");
+        }
+    },
+
+    // ИИ Генерация синонимов для объекта
+    // ИИ Генерация синонимов для объекта (Пакетное сохранение)
+    async generateObjectSynonymsAI(canonicalKey, displayName) {
+        if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в настройках!");
+
+        showToast("🧠 DeepSeek придумывает возможные опечатки...");
+
+        const promptSystem = `Ты — эксперт по строительному документообороту. Твоя задача — сгенерировать 5-6 самых вероятных вариантов, как инженеры могут сократить или написать с опечаткой название строительного объекта (ЖК) "${displayName}" в отчетах. (например, без слова ЖК, сокращенно, слитное написание очередей).
+        Верни СТРОГО список через запятую. Никаких других слов, нумерации или приветствий.`;
+
+        try {
+            const response = await window.callAI([
+                { role: 'system', content: promptSystem },
+                { role: 'user', content: `Сгенерируй синонимы для объекта: ${displayName}` }
+            ], { temperature: 0.4, max_tokens: 150 });
+
+            const aiSynonyms = response.split(',').map(s => s.trim().replace(/['"«»]/g, '')).filter(Boolean);
+
+            if (aiSynonyms.length === 0) throw new Error("ИИ вернул пустой список");
+
+            showToast(`✨ ИИ придумал ${aiSynonyms.length} синонимов. Сохраняем...`);
+
+            const pCode = window.syncConfig?.projectCode || 'RBI';
+            const currentUser = window.syncConfig?.engineerName || 'Админ';
+            const nowIso = new Date().toISOString();
+
+            // Получаем объект
+            const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
+            if (objIndex > -1) {
+                if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
+                
+                let addedCount = 0;
+                for (let syn of aiSynonyms) {
+                    if (!this.aliases[syn]) {
+                        this.aliases[syn] = canonicalKey;
+                        this.objects[objIndex].synonyms.push(syn);
+
+                        // Сохраняем локально
+                        const newAlias = { id: 'alias_' + Date.now().toString(36) + Math.random().toString(36).substring(2,5), raw_name: syn, canonical_key: canonicalKey, project_code: pCode };
+                        if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
+                        
+                        // Сохраняем в облако
+                        if (window.supabaseClient) {
+                            await window.supabaseClient.from('object_aliases').upsert({
+                                project_code: pCode, raw_name: syn, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+                            }, { onConflict: 'project_code,raw_name' });
+                            addedCount++;
+                        }
+                    }
+                }
+
+                // Обновляем массив синонимов самого объекта в облаке
+                if (window.supabaseClient && addedCount > 0) {
+                    await window.supabaseClient.from('project_objects')
+                        .update({ synonyms: this.objects[objIndex].synonyms, updated_at: nowIso })
+                        .eq('project_code', pCode).eq('canonical_key', canonicalKey);
+                }
+
+                showToast("✅ Синонимы от ИИ успешно привязаны!");
+                this.renderManagerPanel();
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                if (typeof triggerSync === 'function') triggerSync('silent');
+            }
+
+        } catch (e) {
+            console.error('[generateObjectSynonymsAI]', e);
+            showToast("❌ Ошибка ИИ: " + e.message);
+        }
     },
 
     async deleteObject(id) {

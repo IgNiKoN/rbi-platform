@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.8.188';
-const SW_VERSION = '17.96';
+const APP_VERSION = '17.8.190';
+const SW_VERSION = '17.98';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`; 
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -16,6 +16,7 @@ const urlsToCache = [
   './js/config.js',
   './js/contractorDirectory.js',
   './js/objectDirectory.js',
+  './js/roles.js', // <-- ДОБАВИЛИ РОЛИ (КРИТИЧНО ДЛЯ ОФЛАЙНА!)
   './js/sync.js',
   './js/storage.js',
   './js/templates.js',
@@ -39,7 +40,7 @@ const urlsToCache = [
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
   'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
-  'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js' // <-- ДОБАВИЛИ
+  'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js'
 ];
 
 // 2. УСТАНОВКА: Безопасное скачивание файлов в память

@@ -399,36 +399,21 @@ window.renderSyncUI = function () {
             ? appSettings.assignedProjects
             : [];
 
-        const pendingProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.pendingAssignedProjects))
-            ? appSettings.pendingAssignedProjects
-            : [];
-
+        // Исключаем заявки, которые сгенерировал импорт Стройконтроля или Справочник
         let projectsHtml = '';
 
-        if (myProjects.length === 0 && pendingProjects.length === 0) {
+        if (myProjects.length === 0) {
             projectsHtml = '<div class="text-[10px] text-slate-400 italic text-center mb-2 border border-dashed border-slate-300 rounded p-2">Объекты не добавлены. Шапка осмотра разблокирована для ручного ввода.</div>';
         } else {
-            const approvedHtml = myProjects.map(p => `
-        <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 rounded-lg mb-1.5 shadow-sm">
-            <div>
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</div>
-                <div class="text-[8px] font-black uppercase text-green-600">Подтверждён</div>
-            </div>
-            <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
-        </div>
-    `).join('');
-
-            const pendingHtml = pendingProjects.map(p => `
-        <div class="flex justify-between items-center bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-2 rounded-lg mb-1.5 shadow-sm">
-            <div>
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p.display_name || p.raw_name}</div>
-                <div class="text-[8px] font-black uppercase text-yellow-600">Ожидает подтверждения</div>
-                ${p.canonical_key ? `<div class="text-[8px] text-slate-400 mt-0.5">Найден ключ: ${p.canonical_key}</div>` : `<div class="text-[8px] text-slate-400 mt-0.5">Нужно связать со справочником</div>`}
-            </div>
-        </div>
-    `).join('');
-
-            projectsHtml = approvedHtml + pendingHtml;
+            projectsHtml = myProjects.map(p => `
+                <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 rounded-lg mb-1.5 shadow-sm">
+                    <div>
+                        <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</div>
+                        <div class="text-[8px] font-black uppercase text-green-600">Подтверждён</div>
+                    </div>
+                    <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
+                </div>
+            `).join('');
         }
         // --- НОВОЕ: Готовим блок выбора режима синхронизации в зависимости от роли ---
         const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
@@ -469,8 +454,12 @@ window.renderSyncUI = function () {
 
         let syncModeHtml = '';
         if (isManagerRole) {
-            // Руководителям жестко блокируем интерфейс на "Вся команда"
             syncModeHtml = `
+            <button onclick="gameOpenManagerPanelAuth()" class="w-full bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400 border-b border-[var(--card-border)] py-3 font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-colors hover:bg-orange-100">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> 
+                Панель Руководителя
+                <span id="admin-badge-count" class="hidden bg-orange-500 text-white px-1.5 py-0.5 rounded-full text-[8px] animate-pulse shadow-sm ml-1"></span>
+            </button>
             <div class="p-3 bg-[var(--card-bg)] border-b border-[var(--card-border)] flex justify-between items-center">
                 <div>
                     <div class="font-bold text-[11px] uppercase text-slate-700 dark:text-slate-300">Обмен данными</div>
@@ -480,6 +469,61 @@ window.renderSyncUI = function () {
                     Вся команда
                 </div>
             </div>`;
+            
+            // Запускаем асинхронный подсчет заявок НАПРЯМУЮ из облака
+            setTimeout(async () => {
+                let totalReqs = 0;
+                try {
+                    if (window.supabaseClient) {
+                        const pCode = window.syncConfig?.projectCode || 'RBI';
+                        
+                        // 1. Считаем заявки на подрядчиков (статус pending)
+                        const { count: contrCount } = await window.supabaseClient
+                            .from('contractor_normalization_queue')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('project_code', pCode)
+                            .eq('status', 'pending');
+                        if (contrCount) totalReqs += contrCount;
+
+                        // 2. Считаем заявки на объекты из ПК СК (статус pending)
+                        const { count: objCount } = await window.supabaseClient
+                            .from('object_normalization_queue')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('project_code', pCode)
+                            .eq('status', 'pending');
+                        if (objCount) totalReqs += objCount;
+
+                        // 3. Считаем заявки на доступы от инженеров
+                        const { data: profiles } = await window.supabaseClient
+                            .from('rbi_engineer_profiles')
+                            .select('cloud_status, settings')
+                            .eq('project_code', pCode);
+                            
+                        if (profiles) {
+                            profiles.forEach(p => {
+                                if (p.cloud_status === 'pending') {
+                                    totalReqs++; // Заявка на доступ в систему
+                                } else if (p.settings && Array.isArray(p.settings.requestedProjects)) {
+                                    totalReqs += p.settings.requestedProjects.length; // Заявки на объекты
+                                }
+                            });
+                        }
+                    }
+                } catch(e) {
+                    console.warn('[Sync] Ошибка подсчета заявок для бейджа', e);
+                }
+                
+                // Отрисовываем бейдж
+                const badge = document.getElementById('admin-badge-count');
+                if (badge) {
+                    if (totalReqs > 0) {
+                        badge.innerText = `+${totalReqs}`;
+                        badge.classList.remove('hidden');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+                }
+            }, 500);
         } else {
             // Инженерам оставляем выпадающий список
             syncModeHtml = `
@@ -565,21 +609,29 @@ window.pushObjectRequestToCloud = async function (requestedProject) {
     ) {
         return false;
     }
-        // ВАЖНО:
-    // Объекты из ПК СК — это НЕ заявка на доступ пользователя.
-    // Это заявка на пополнение справочника объектов.
-    // Поэтому пишем её в object_normalization_queue, а не в профиль админа/инженера.
+
+    const pCode = window.syncConfig.projectCode;
+    const iName = window.syncConfig.engineerName;
+    const nowIso = new Date().toISOString();
+
+    // 1. ЗАЯВКИ ИЗ ПК СК (На пополнение глобального справочника объектов)
     if (requestedProject.source === 'sk_import' || requestedProject.request_type === 'directory') {
-        const pCode = window.syncConfig.projectCode;
-        const nowIso = new Date().toISOString();
+        const rawNameStr = String(requestedProject.raw_name || requestedProject.display_name || '').trim();
+        if (!rawNameStr) return false;
+
+        // КРИТИЧЕСКИЙ ФИКС: Делаем ID постоянным на основе имени. 
+        // Теперь при повторной загрузке локальная база просто перезапишет старую заявку, а не создаст дубль!
+        const safeIdPart = rawNameStr.toLowerCase().replace(/[^a-zа-я0-9]/gi, '').substring(0, 20);
+        const deterministicId = 'req_obj_' + pCode + '_' + safeIdPart;
 
         const payload = {
+            id: deterministicId,
             project_code: pCode,
-            raw_name: String(requestedProject.raw_name || requestedProject.display_name || '').trim(),
+            raw_name: rawNameStr,
             suggested_canonical_key: requestedProject.canonical_key || '',
             source_table: 'sk_records',
             source_record_id: requestedProject.source_record_id || '',
-            created_by: window.syncConfig.engineerName || '',
+            created_by: iName,
             status: 'pending',
             admin_comment: 'Новый объект найден при загрузке ПК СК',
             created_at: requestedProject.created_at || nowIso,
@@ -588,157 +640,54 @@ window.pushObjectRequestToCloud = async function (requestedProject) {
 
         if (!payload.raw_name) return false;
 
-        const { error } = await window.supabaseClient
-            .from('object_normalization_queue')
-            .upsert(payload, {
-                onConflict: 'project_code,raw_name'
-            });
+        // СНАЧАЛА Отправляем в облако (чтобы локальная БД не добавила лишние поля _deleted)
+        const { error } = await window.supabaseClient.from('object_normalization_queue').upsert(payload, { onConflict: 'project_code,raw_name' });
+        if (error) console.warn('Ошибка отправки заявки на объект:', error);
 
-        if (error) throw error;
-
-        console.log('[Objects] Заявка на объект ПК СК отправлена в object_normalization_queue:', payload);
+        // ПОСЛЕ отправки сохраняем локально
+        if (typeof dbPut === 'function') {
+            const localPayload = { ...payload }; // Клонируем от греха подальше
+            await dbPut('object_normalization_queue', localPayload);
+        }
 
         return true;
     }
 
-    const pCode = window.syncConfig.projectCode;
-    const iName = window.syncConfig.engineerName;
+    // 2. ЗАЯВКИ ОТ ИНЖЕНЕРА (На привязку инженера к объекту)
     const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
 
-    const { data: profileRows, error: profileError } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .select('inspector_id, settings, assigned_projects, role, cloud_status')
-        .eq('inspector_id', stableInspectorId)
-        .limit(1);
-
-    if (profileError) throw profileError;
-
-    const existingProfile = profileRows && profileRows.length > 0 ? profileRows[0] : null;
-    const currentSettings = existingProfile?.settings || {};
-
-    const oldRequests = Array.isArray(currentSettings.requestedProjects)
-        ? currentSettings.requestedProjects
-        : [];
-
-    const existsCloud = oldRequests.some(p =>
-        p.raw_name === requestedProject.raw_name ||
-        (
-            requestedProject.canonical_key &&
-            p.canonical_key === requestedProject.canonical_key
-        )
-    );
-
-    const newRequests = existsCloud
-        ? oldRequests
-        : [...oldRequests, requestedProject];
-
-    const newSettings = {
-        ...currentSettings,
-        requestedProjects: newRequests
-    };
-
-    const payload = {
-        inspector_id: stableInspectorId,
-        inspector_name: iName,
-        engineer_name: iName,
-        project_code: pCode,
-        role: existingProfile?.role || appSettings?.userRole || 'guest',
-        cloud_status: existingProfile?.cloud_status || appSettings?.cloudStatus || 'pending',
-        assigned_projects: existingProfile?.assigned_projects || appSettings?.assignedProjects || [],
-        settings: newSettings,
-        updated_at: new Date().toISOString(),
-        last_seen_at: new Date().toISOString()
-    };
-
-    const { error: upsertError } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .upsert(payload, {
-            onConflict: 'inspector_id'
-        });
-
-    if (upsertError) throw upsertError;
-
-    return true;
-};
-
-// === Объекты: надёжная отправка заявки на объект в профиль пользователя ===
-window.pushObjectRequestToCloud = async function (requestedProject) {
-    if (
-        !requestedProject ||
-        !window.supabaseClient ||
-        !window.syncConfig ||
-        !window.syncConfig.enabled ||
-        !window.syncConfig.projectCode ||
-        !window.syncConfig.engineerName
-    ) {
-        console.warn('[Objects] Заявка не отправлена: нет облака, projectCode или engineerName');
-        return false;
-    }
-
-    const pCode = window.syncConfig.projectCode;
-    const iName = window.syncConfig.engineerName;
-    const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
-    const nowIso = new Date().toISOString();
-
-    const { data: profileRows, error: profileError } = await window.supabaseClient
+    const { data: profileRows } = await window.supabaseClient
         .from('rbi_engineer_profiles')
         .select('inspector_id, inspector_name, engineer_name, project_code, settings, assigned_projects, role, cloud_status')
         .eq('inspector_id', stableInspectorId)
         .limit(1);
 
-    if (profileError) throw profileError;
-
     const existingProfile = profileRows && profileRows.length > 0 ? profileRows[0] : null;
-
     const currentSettings = existingProfile?.settings || {};
-
-    const oldRequests = Array.isArray(currentSettings.requestedProjects)
-        ? currentSettings.requestedProjects
-        : [];
+    const oldRequests = Array.isArray(currentSettings.requestedProjects) ? currentSettings.requestedProjects : [];
 
     const existsCloud = oldRequests.some(p =>
         p.raw_name === requestedProject.raw_name ||
-        (
-            requestedProject.canonical_key &&
-            p.canonical_key === requestedProject.canonical_key
-        )
+        (requestedProject.canonical_key && p.canonical_key === requestedProject.canonical_key)
     );
 
-    const newRequests = existsCloud
-        ? oldRequests
-        : [...oldRequests, requestedProject];
-
-    const newSettings = {
-        ...currentSettings,
-        requestedProjects: newRequests
-    };
+    const newRequests = existsCloud ? oldRequests : [...oldRequests, requestedProject];
+    const newSettings = { ...currentSettings, requestedProjects: newRequests };
 
     const payload = {
         inspector_id: stableInspectorId,
         inspector_name: existingProfile?.inspector_name || iName,
         engineer_name: existingProfile?.engineer_name || iName,
         project_code: pCode,
-
         role: existingProfile?.role || appSettings?.userRole || 'guest',
         cloud_status: existingProfile?.cloud_status || appSettings?.cloudStatus || 'pending',
-
         assigned_projects: existingProfile?.assigned_projects || appSettings?.assignedProjects || [],
-
         settings: newSettings,
         updated_at: nowIso,
         last_seen_at: nowIso
     };
 
-    const { error: upsertError } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .upsert(payload, {
-            onConflict: 'inspector_id'
-        });
-
-    if (upsertError) throw upsertError;
-
-    console.log('[Objects] Заявка на объект отправлена в профиль:', requestedProject);
-
+    await window.supabaseClient.from('rbi_engineer_profiles').upsert(payload, { onConflict: 'inspector_id' });
     return true;
 };
 

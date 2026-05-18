@@ -357,17 +357,7 @@ async function restoreSession() {
     } catch (e) {
         console.error('Ошибка восстановления:', e);
     }
-    // Адаптивный глобальный фильтр Объектов
-    const uniqueProjs = [...new Set(contractorArray.map(i =>
-        i.project_display_name || i.projectName || i.project_canonical_key
-    ).filter(Boolean))];
-    if (uniqueProjs.length === 1) {
-        activeMultiFilters.analytics.project = [uniqueProjs[0]];
-        activeMultiFilters.history.project = [uniqueProjs[0]];
-    } else {
-        activeMultiFilters.analytics.project = [];
-        activeMultiFilters.history.project = [];
-    }
+    // Принудительный сброс фильтров удален, чтобы у админа всегда было "Все объекты"
     updateAllDynamicFilters();
     setTimeout(() => {
         if (typeof checkScheduledBackups === 'function') checkScheduledBackups();
@@ -452,7 +442,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    initSmartInput('inp-project', 'projectName');
     initSmartInput('inp-inspector', 'inspectorName');
     initSmartInput('inp-contractor', 'contractorName');
     initSmartInput('inp-section', 'section');
@@ -632,6 +621,7 @@ function initSmartInput(inputId, dataField) {
 
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ) ===
+// === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ С ПРАВАМИ ДОСТУПА) ===
 function openMultiFilterModal(type, title, context) {
     currentFilterType = type;
     currentFilterContext = context;
@@ -643,19 +633,78 @@ function openMultiFilterModal(type, title, context) {
 
     document.getElementById('multi-filter-search').value = '';
 
-    let field = '';
-    if (type === 'contractor') field = 'contractorName';
-    if (type === 'inspector') field = 'inspectorName';
-    if (type === 'template') field = 'templateKey';
+    // 1. ОПРЕДЕЛЯЕМ РОЛЬ И ДОСТУПЫ ПОЛЬЗОВАТЕЛЯ
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
+    const isManager = ['director', 'deputy_manager', 'manager'].includes(role);
+
+    // 2. БАЗЫ ДАННЫХ (RBI и ПК СК)
+    let accessibleRbi = contractorArray || [];
+    let accessibleSk = window.skRecords || [];
+
+    // 3. ПРИМЕНЯЕМ ПРАВА ДОСТУПА (Если не админ — режем массивы по закрепленным объектам)
+    if (!isManager && role !== 'guest') {
+        if (assignedProjects.length > 0) {
+            accessibleRbi = accessibleRbi.filter(i => {
+                const p = i.project_canonical_key || i.project_display_name || i.projectName;
+                return assignedProjects.includes(p);
+            });
+            accessibleSk = accessibleSk.filter(r => {
+                const p = r.project_canonical_key || r.project_display_name || r.display_name;
+                return assignedProjects.includes(p);
+            });
+        }
+    }
 
     let uniqueValues = [];
+    let field = '';
 
+    // 4. КАСКАДНАЯ ФИЛЬТРАЦИЯ (Связываем Объект, Подрядчика и Инспектора)
+    let filteredRbi = accessibleRbi;
+    let filteredSk = accessibleSk;
+
+    // Если открыт НЕ фильтр Объектов, но Объект уже выбран — сужаем базу
+    if (type !== 'project' && activeMultiFilters[context].project && activeMultiFilters[context].project.length > 0) {
+        const fProj = activeMultiFilters[context].project;
+        filteredRbi = filteredRbi.filter(i => fProj.includes(i.project_display_name) || fProj.includes(i.project_canonical_key) || fProj.includes(i.projectName));
+        filteredSk = filteredSk.filter(r => fProj.includes(r.project_display_name) || fProj.includes(r.project_canonical_key) || fProj.includes(r.display_name));
+    }
+
+    // Если открыт НЕ фильтр Подрядчиков, но Подрядчик уже выбран — сужаем базу
+    if (type !== 'contractor' && activeMultiFilters[context].contractor && activeMultiFilters[context].contractor.length > 0) {
+        const fContr = activeMultiFilters[context].contractor;
+        filteredRbi = filteredRbi.filter(i => fContr.includes(i.contractorName));
+        filteredSk = filteredSk.filter(r => fContr.includes(r.contractor_name) || fContr.includes(r.contractor));
+    }
+
+    // Если открыт НЕ фильтр Инспекторов, но Инспектор уже выбран — сужаем базу
+    if (type !== 'inspector' && activeMultiFilters[context].inspector && activeMultiFilters[context].inspector.length > 0) {
+        const fInsp = activeMultiFilters[context].inspector;
+        filteredRbi = filteredRbi.filter(i => fInsp.includes(i.inspectorName));
+        filteredSk = filteredSk.filter(r => fInsp.includes(r.issued_by) || fInsp.includes(r.inspector));
+    }
+
+    // 5. СОБИРАЕМ ДАННЫЕ ИЗ УЖЕ ОТФИЛЬТРОВАННОЙ БАЗЫ
     if (type === 'project') {
-        uniqueValues = [...new Set(contractorArray.map(i =>
-            i.project_display_name || i.projectName || i.project_canonical_key
-        ).filter(Boolean))].sort();
-    } else {
-        uniqueValues = [...new Set(contractorArray.map(i => i[field]).filter(Boolean))].sort();
+        const rbiProjs = filteredRbi.map(i => i.project_display_name || i.projectName || i.project_canonical_key);
+        const skProjs = filteredSk.map(r => r.project_display_name || r.display_name || r.canonical_key);
+        uniqueValues = [...new Set([...rbiProjs, ...skProjs].filter(Boolean))].sort();
+    } 
+    else if (type === 'contractor') {
+        const rbiContrs = filteredRbi.map(i => i.contractorName);
+        const skContrs = filteredSk.map(r => r.contractor_name || r.contractor);
+        uniqueValues = [...new Set([...rbiContrs, ...skContrs].filter(Boolean))].sort();
+    } 
+    else if (type === 'inspector') {
+        // ТЕПЕРЬ БЕРЕМ И ИНЖЕНЕРОВ СК ТОЖЕ!
+        const rbiEngs = filteredRbi.map(i => i.inspectorName);
+        const skEngs = filteredSk.map(r => r.issued_by || r.inspector);
+        uniqueValues = [...new Set([...rbiEngs, ...skEngs].filter(name => name && name !== 'Система' && name !== 'Системная'))].sort();
+    } 
+    else if (type === 'template') {
+        const rbiTmpls = filteredRbi.map(i => i.templateTitle);
+        const skTmpls = filteredSk.map(r => r.category && r.category !== 'Без категории' ? r.category : null);
+        uniqueValues = [...new Set([...rbiTmpls, ...skTmpls].filter(Boolean))].sort();
     }
 
     const currentSelected = activeMultiFilters[context][type] || [];
@@ -667,11 +716,6 @@ function openMultiFilterModal(type, title, context) {
         listEl.innerHTML = uniqueValues.map(val => {
             const isChecked = currentSelected.length === 0 || currentSelected.includes(val);
             let displayVal = val;
-
-            if (type === 'template') {
-                const sample = contractorArray.find(i => i[field] === val);
-                displayVal = sample ? sample.templateTitle : val;
-            }
 
             return `
             <label class="filter-item-label flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98] transition-all hover:border-indigo-300 dark:hover:border-indigo-600">

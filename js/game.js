@@ -1187,109 +1187,103 @@ function gameInjectManagerModals() {
                 <!-- Вкладка 3: КОМАНДА И ОБЪЕКТЫ (РЕДИЗАЙН) -->
                 <div id="manager-tab-team" class="hidden space-y-4">
 
-                    <!-- НОВЫЙ БЛОК: ЗАЯВКИ НА ОБЪЕКТЫ -->
-                    <div class="bg-[var(--card-bg)] border border-orange-200 dark:border-orange-800 p-3 sm:p-4 rounded-xl shadow-sm">
-                        <div class="flex justify-between items-center mb-3">
+                    <!-- 1. ЗАЯВКИ НА ОБЪЕКТЫ -->
+                    <details class="bg-[var(--card-bg)] border border-orange-200 dark:border-orange-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                        <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none bg-orange-50 dark:bg-orange-900/20 rounded-xl group-open:rounded-b-none group-open:border-b border-orange-200 dark:border-orange-800">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-orange-600 dark:text-orange-400 mb-1">Заявки на Объекты</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Новые объекты из ПК СК или ручного ввода инженеров.</p>
+                                <h2 class="text-[11px] font-black uppercase text-orange-600 dark:text-orange-400 mb-0.5">Заявки на Объекты</h2>
+                                <p class="text-[9px] text-orange-700/70 dark:text-orange-500 font-bold leading-snug">Из ПК СК и от инженеров</p>
                             </div>
-                            <button onclick="ObjectDirectory.loadRequests()" class="bg-orange-50 text-orange-600 border border-orange-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Проверить</button>
-                        </div>
-                        <div id="obj-requests-list" class="max-h-[30vh] overflow-y-auto custom-scrollbar pr-1">
+                            <button onclick="event.preventDefault(); ObjectDirectory.loadRequests(); this.closest('details').open = true;" class="bg-white dark:bg-slate-800 text-orange-600 border border-orange-200 dark:border-orange-700 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm">Проверить</button>
+                        </summary>
+                        <div id="obj-requests-list" class="p-2 max-h-[40vh] overflow-y-auto custom-scrollbar bg-[var(--hover-bg)] rounded-b-xl">
                             <div class="text-center py-4 text-xs text-[var(--text-muted)]">Нажмите "Проверить"</div>
                         </div>
-                    </div>
-                    <!-- Блок 1: Справочник объектов (Теперь сверху) -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
-                        <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
+                    </details>
+
+                    <!-- 2. СПРАВОЧНИК ОБЪЕКТОВ -->
+                    <details class="bg-[var(--card-bg)] border border-blue-200 dark:border-blue-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                        <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none bg-blue-50 dark:bg-blue-900/20 rounded-xl group-open:rounded-b-none group-open:border-b border-blue-200 dark:border-blue-800">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-blue-600 dark:text-blue-400 mb-1">Справочник Объектов</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Создайте объект, чтобы выдавать к нему доступ инженерам.</p>
+                                <h2 class="text-[11px] font-black uppercase text-blue-600 dark:text-blue-400 mb-0.5">Справочник Объектов</h2>
+                                <p class="text-[9px] text-blue-700/70 dark:text-blue-500 font-bold leading-snug">База эталонных названий</p>
                             </div>
+                            <span class="text-blue-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>
+                        </summary>
+                        <div class="p-2 bg-[var(--hover-bg)] rounded-b-xl">
+                            <div class="flex gap-2 mb-3">
+                                <input type="text" id="inline-new-obj-name" class="input-base !py-2 text-[10px] bg-white dark:bg-slate-800" placeholder="Новый объект (напр: ЖК Легенда)">
+                                <button onclick="ObjectDirectory.addNewObjectInline()" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 shrink-0">Создать</button>
+                            </div>
+                            <div id="manager-objects-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar"></div>
                         </div>
-                        
-                        <!-- Компактный инлайн-ввод нового объекта -->
-                        <div class="flex gap-2 mb-4 bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
-                            <input type="text" id="inline-new-obj-name" class="input-base !py-2 text-[11px]" placeholder="Название нового объекта (напр: ЖК Легенда)">
-                            <button onclick="ObjectDirectory.addNewObjectInline()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 shrink-0 transition-transform">Создать</button>
-                        </div>
+                    </details>
 
-                        <div id="manager-objects-list" class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-1"></div>
-                    </div>
-
-                    <!-- Блок 2: Роли (Управление командой) -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
-                        <div class="flex justify-between items-center mb-3">
+                    <!-- 3. УПРАВЛЕНИЕ КОМАНДОЙ (РОЛИ) -->
+                    <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
+                        <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none bg-slate-50 dark:bg-slate-800/50 rounded-xl group-open:rounded-b-none group-open:border-b border-[var(--card-border)]">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-1">Управление командой</h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">Выдайте инженерам доступы к созданным выше объектам.</p>
+                                <h2 class="text-[11px] font-black uppercase text-slate-800 dark:text-white mb-0.5">Команда (Доступы)</h2>
+                                <p class="text-[9px] text-slate-500 font-bold leading-snug">Назначение ролей и объектов</p>
                             </div>
-                            <button onclick="gameLoadRoles()" class="bg-[var(--hover-bg)] text-indigo-600 dark:text-indigo-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Обновить</button>
+                            <button onclick="event.preventDefault(); gameLoadRoles(); this.closest('details').open = true;" class="bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 border border-[var(--card-border)] px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm">Обновить</button>
+                        </summary>
+                        <div class="p-2 bg-[var(--hover-bg)] rounded-b-xl">
+                            <details class="mb-2 group/sub [&_summary::-webkit-details-marker]:hidden" open>
+                                <summary class="text-[10px] font-black uppercase text-orange-500 mb-2 cursor-pointer flex justify-between items-center select-none bg-orange-50 dark:bg-orange-900/20 p-2 rounded-lg border border-orange-100 dark:border-orange-800">
+                                    <span>Заявки на доступ</span>
+                                    <span class="text-orange-400 transition-transform duration-300 group-open/sub:rotate-180">▼</span>
+                                </summary>
+                                <div id="manager-access-requests-list" class="space-y-2">
+                                    <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+                                </div>
+                            </details>
+                            
+                            <details class="group/sub [&_summary::-webkit-details-marker]:hidden" open>
+                                <summary class="text-[10px] font-black uppercase text-slate-500 mb-2 cursor-pointer flex justify-between items-center select-none bg-slate-100 dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                                    <span>Активные пользователи</span>
+                                    <span class="text-slate-400 transition-transform duration-300 group-open/sub:rotate-180">▼</span>
+                                </summary>
+                                <div id="manager-team-list" class="space-y-2">
+                                    <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
+                                </div>
+                            </details>
+                            <div id="manager-roles-list" class="hidden"></div>
                         </div>
-                        <div class="mb-4">
-    <div class="text-[10px] font-black uppercase text-orange-500 mb-2">
-        Заявки на доступ
-    </div>
-    <div id="manager-access-requests-list" class="space-y-2">
-        <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
-    </div>
-</div>
+                    </details>
 
-<div>
-    <div class="text-[10px] font-black uppercase text-slate-500 mb-2 border-t border-[var(--card-border)] pt-3">
-        Активные пользователи
-    </div>
-    <div id="manager-team-list" class="space-y-2">
-        <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
-    </div>
-</div>
-
-<!-- Старый контейнер оставляем скрытым для совместимости -->
-<div id="manager-roles-list" class="hidden"></div>
-                    </div>
-                                        <!-- Блок 3: Справочник подрядчиков -->
-                    <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 sm:p-4 rounded-xl shadow-sm">
-                        <div class="flex justify-between items-center mb-3">
+                    <!-- 4. ЗАЯВКИ НА ПОДРЯДЧИКОВ -->
+                    <details class="bg-[var(--card-bg)] border border-yellow-200 dark:border-yellow-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                        <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none bg-yellow-50 dark:bg-yellow-900/20 rounded-xl group-open:rounded-b-none group-open:border-b border-yellow-200 dark:border-yellow-800">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-1">
-                                    Справочник подрядчиков
-                                </h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">
-                                    Нормализованные подрядчики для осмотров и ПК СК.
-                                </p>
+                                <h2 class="text-[11px] font-black uppercase text-yellow-600 dark:text-yellow-400 mb-0.5">Заявки на Подрядчиков</h2>
+                                <p class="text-[9px] text-yellow-700/70 dark:text-yellow-500 font-bold leading-snug">Из ПК СК и ручного ввода</p>
                             </div>
-                            <button onclick="gameLoadContractorDirectory()"
-                                class="bg-[var(--hover-bg)] text-emerald-600 dark:text-emerald-400 border border-[var(--card-border)] px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">
-                                Обновить
-                            </button>
-                        </div>
-                        <div id="manager-contractor-directory-list" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
+                            <button onclick="event.preventDefault(); gameLoadContractorRequests(); this.closest('details').open = true;" class="bg-white dark:bg-slate-800 text-yellow-600 border border-yellow-200 dark:border-yellow-700 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm">Проверить</button>
+                        </summary>
+                        <div id="manager-contractor-requests-list" class="p-2 max-h-[40vh] overflow-y-auto custom-scrollbar bg-[var(--hover-bg)] rounded-b-xl">
                             <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
                         </div>
-                    </div>
+                    </details>
 
-                    <!-- Блок 4: Заявки на подрядчиков -->
-                    <div class="bg-[var(--card-bg)] border border-yellow-200 dark:border-yellow-800 p-3 sm:p-4 rounded-xl shadow-sm">
-                        <div class="flex justify-between items-center mb-3">
+                    <!-- 5. СПРАВОЧНИК ПОДРЯДЧИКОВ -->
+                    <details class="bg-[var(--card-bg)] border border-emerald-200 dark:border-emerald-800 rounded-xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                        <summary class="p-3 cursor-pointer flex justify-between items-center transition-colors select-none bg-emerald-50 dark:bg-emerald-900/20 rounded-xl group-open:rounded-b-none group-open:border-b border-emerald-200 dark:border-emerald-800">
                             <div>
-                                <h2 class="text-[13px] font-black uppercase text-yellow-600 dark:text-yellow-400 mb-1">
-                                    Заявки на подрядчиков
-                                </h2>
-                                <p class="text-[10px] text-[var(--text-muted)] font-bold leading-snug">
-                                    Ненормализованные подрядчики из осмотров и ПК СК.
-                                </p>
+                                <h2 class="text-[11px] font-black uppercase text-emerald-600 dark:text-emerald-400 mb-0.5">Справочник Подрядчиков</h2>
+                                <p class="text-[9px] text-emerald-700/70 dark:text-emerald-500 font-bold leading-snug">База эталонных названий</p>
                             </div>
-                            <button onclick="gameLoadContractorRequests()"
-                                class="bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">
-                                Проверить
-                            </button>
-                        </div>
-                        <div id="manager-contractor-requests-list" class="max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
+                            <div class="flex gap-1.5 shrink-0">
+                                <button onclick="event.preventDefault(); gameFindContractorDuplicates();" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-md flex items-center gap-1">🤖 Поиск дублей</button>
+                                <button onclick="event.preventDefault(); gameLoadContractorDirectory(); this.closest('details').open = true;" class="bg-white dark:bg-slate-800 text-emerald-600 border border-emerald-200 dark:border-emerald-700 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm">Обновить</button>
+                            </div>
+                        </summary>
+                        <div id="manager-contractor-directory-list" class="p-2 max-h-[40vh] overflow-y-auto custom-scrollbar bg-[var(--hover-bg)] rounded-b-xl">
                             <div class="text-center py-4 text-xs text-[var(--text-muted)]">Загрузка...</div>
                         </div>
+                    </details>
                     </div>
-                </div>
+                
                 
                 <!-- Вкладка 4: БЭКЛОГ И ПЛАНЫ (Бывшая вкладка Разработчика) -->
                 <div id="manager-tab-dev" class="hidden">
@@ -1413,6 +1407,9 @@ window.switchManagerTab = function (tab) {
 
         if (typeof ObjectDirectory !== 'undefined') {
             ObjectDirectory.renderManagerPanel();
+            // Сразу показываем индикатор и запускаем автозагрузку
+            const reqList = document.getElementById('obj-requests-list');
+            if (reqList) reqList.innerHTML = '<div class="text-center py-4 text-xs text-[var(--text-muted)] animate-pulse">Загрузка заявок...</div>';
             ObjectDirectory.loadRequests();
         }
 
@@ -3139,6 +3136,7 @@ window.gameRenderAssignedProjectChips = function (domId) {
     `).join('');
 };
 
+// === Панель руководителя: Справочник подрядчиков (Отрисовка) ===
 window.gameLoadContractorDirectory = async function () {
     const container = document.getElementById('manager-contractor-directory-list');
     if (!container) return;
@@ -3149,8 +3147,7 @@ window.gameLoadContractorDirectory = async function () {
     }
 
     const pCode = window.syncConfig?.projectCode || 'RBI';
-
-    container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Загрузка подрядчиков...</div>';
+    container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400 animate-pulse">Загрузка подрядчиков...</div>';
 
     try {
         const { data, error } = await window.supabaseClient
@@ -3167,27 +3164,41 @@ window.gameLoadContractorDirectory = async function () {
             return;
         }
 
-        const esc = (v) => String(v || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '\\\'');
 
         container.innerHTML = data.map(c => `
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-2">
-                <div class="flex justify-between gap-2">
-                    <div class="min-w-0">
+            <div class="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 mb-3 shadow-sm flex flex-col">
+                <div class="flex justify-between items-start gap-2 mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+                    <div class="min-w-0 flex-1">
                         <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">
                             ${esc(c.display_name)}
                         </div>
-                        <div class="text-[9px] text-slate-400 font-mono truncate">
-                            ${esc(c.canonical_key)}
+                        <div class="text-[9px] text-slate-400 font-mono truncate mt-0.5">
+                            ID: ${esc(c.canonical_key)}
                         </div>
-                        ${Array.isArray(c.synonyms) && c.synonyms.length
-                ? `<div class="text-[9px] text-slate-500 mt-1">Синонимы: ${esc(c.synonyms.join(', '))}</div>`
-                : ''
-            }
+                    </div>
+                    <div class="flex gap-1.5 shrink-0">
+                        <button onclick="gameEditContractor('${esc(c.canonical_key)}', '${esc(c.display_name)}')" class="bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 px-3 py-1.5 rounded-lg text-[9px] font-bold active:scale-95 transition-transform shadow-sm">Изменить</button>
+                        <button onclick="gameDeleteContractor('${esc(c.canonical_key)}')" class="bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 px-3 py-1.5 rounded-lg text-[9px] font-bold active:scale-95 transition-transform shadow-sm">Удалить</button>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                    <div class="text-[8px] font-bold text-slate-500 uppercase mb-1.5 flex justify-between items-center">
+                        <span>Синонимы для ПК СК:</span>
+                        <button onclick="gameGenerateContractorSynonymsAI('${esc(c.canonical_key)}', '${esc(c.display_name)}')" class="text-indigo-500 hover:text-indigo-700 font-black flex items-center gap-1 active:scale-95 transition-transform bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-200"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Генерация</button>
+                    </div>
+                    
+                    <div class="flex flex-wrap gap-1 mb-2">
+                        ${Array.isArray(c.synonyms) && c.synonyms.length > 0
+                            ? c.synonyms.map(s => `<span class="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px] font-medium inline-flex items-center gap-1">${esc(s)}</span>`).join('')
+                            : '<span class="text-[9px] text-slate-400 italic">Синонимов пока нет</span>'
+                        }
+                    </div>
+                    
+                    <div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <input type="text" id="alias_contr_input_${esc(c.canonical_key)}" class="input-base !py-1.5 text-[10px] flex-1 bg-white dark:bg-slate-800 shadow-inner" placeholder="Напр: СК Ромашка">
+                        <button onclick="gameAddContractorAliasInline('${esc(c.canonical_key)}')" class="bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase border border-emerald-200 dark:border-emerald-800 active:scale-95 transition-transform shrink-0">+ Добавить</button>
                     </div>
                 </div>
             </div>
@@ -3195,6 +3206,102 @@ window.gameLoadContractorDirectory = async function () {
     } catch (e) {
         console.error('[gameLoadContractorDirectory]', e);
         container.innerHTML = '<div class="text-center py-4 text-xs text-red-500">Ошибка загрузки подрядчиков</div>';
+    }
+};
+
+// === Панель руководителя: Изменить название подрядчика ===
+window.gameEditContractor = async function (canonicalKey, currentName) {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+    
+    // Спрашиваем новое имя
+    const newName = prompt('Введите новое корректное название подрядчика:', currentName);
+    if (!newName || newName.trim() === '' || newName === currentName) return;
+
+    showToast('⏳ Обновление справочника...');
+
+    try {
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        const nowIso = new Date().toISOString();
+        
+        // 1. Обновляем в облаке Supabase
+        const { error } = await window.supabaseClient
+            .from('contractor_directory')
+            .update({ display_name: newName.trim(), updated_at: nowIso })
+            .eq('project_code', pCode)
+            .eq('canonical_key', canonicalKey);
+
+        if (error) throw error;
+
+        // 2. Обновляем локально на устройстве (IndexedDB)
+        if (typeof dbGetAll === 'function') {
+            const localDirs = await dbGetAll('contractor_directory') || [];
+            const item = localDirs.find(c => c.canonical_key === canonicalKey && c.project_code === pCode);
+            if (item) {
+                item.display_name = newName.trim();
+                item.updated_at = nowIso;
+                item.sync_status = 'not_synced';
+                await dbPut('contractor_directory', item);
+            }
+        }
+
+        showToast('✏️ Название подрядчика успешно обновлено');
+        gameLoadContractorDirectory(); // Перерисовываем список
+        
+        // Обновляем локальный кэш
+        if (window.ContractorDirectory) await window.ContractorDirectory.init();
+
+    } catch (e) {
+        console.error('[gameEditContractor]', e);
+        showToast('❌ Ошибка при обновлении названия');
+    }
+};
+
+// === Панель руководителя: Удалить подрядчика из справочника ===
+window.gameDeleteContractor = async function (canonicalKey) {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+    
+    if (!confirm('Вы уверены, что хотите удалить подрядчика из справочника?\n\nНовые заявки от него снова будут падать в очередь на подтверждение.')) return;
+
+    showToast('⏳ Удаление из справочника...');
+
+    try {
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        const nowIso = new Date().toISOString();
+        
+        // 1. Мягкое удаление в облаке Supabase (is_deleted = true)
+        const { error } = await window.supabaseClient
+            .from('contractor_directory')
+            .update({ is_deleted: true, updated_at: nowIso })
+            .eq('project_code', pCode)
+            .eq('canonical_key', canonicalKey);
+
+        if (error) throw error;
+
+        // 2. Удаляем локально на устройстве
+        if (typeof dbGetAll === 'function') {
+            const localDirs = await dbGetAll('contractor_directory') || [];
+            const item = localDirs.find(c => c.canonical_key === canonicalKey && c.project_code === pCode);
+            if (item) {
+                item._deleted = true;
+                item.is_deleted = true;
+                item.updated_at = nowIso;
+                await dbPut('contractor_directory', item);
+            }
+        }
+
+        showToast('🗑️ Подрядчик удален из справочника');
+        gameLoadContractorDirectory(); // Перерисовываем список
+        
+        // Обновляем локальный кэш, чтобы система забыла этого подрядчика
+        if (window.ContractorDirectory) await window.ContractorDirectory.init();
+
+        // Запускаем фоновую синхронизацию, чтобы другие инженеры тоже получили сигнал об удалении
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+
+    } catch (e) {
+        console.error('[gameDeleteContractor]', e);
+        showToast('❌ Ошибка при удалении подрядчика');
     }
 };
 
@@ -3208,10 +3315,10 @@ window.gameLoadContractorRequests = async function () {
     }
 
     const pCode = window.syncConfig?.projectCode || 'RBI';
-
     container.innerHTML = '<div class="text-center py-4 text-xs text-slate-400">Загрузка заявок подрядчиков...</div>';
 
     try {
+        // 1. Получаем саму очередь заявок
         const { data, error } = await window.supabaseClient
             .from('contractor_normalization_queue')
             .select('id, project_code, raw_name, cleaned_name, suggested_canonical_key, created_by, status, admin_comment, updated_at')
@@ -3228,37 +3335,47 @@ window.gameLoadContractorRequests = async function () {
             return;
         }
 
-        const esc = (v) => String(v || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        // 2. Получаем текущий справочник подрядчиков для выпадающего списка
+        const { data: dirData } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('canonical_key, display_name')
+            .eq('project_code', pCode)
+            .or('is_deleted.is.null,is_deleted.eq.false')
+            .order('display_name', { ascending: true });
+            
+        const directory = dirData || [];
+        const dirOptions = directory.map(c => `<option value="link_${c.canonical_key}">Связать с: ${c.display_name}</option>`).join('');
+
+        const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 
         container.innerHTML = data.map(q => `
-            <div class="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 mb-2">
+            <div class="bg-white dark:bg-slate-800 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 mb-2 shadow-sm">
                 <div class="text-[12px] font-black text-slate-800 dark:text-white">
                     ${esc(q.raw_name)}
                 </div>
                 <div class="text-[9px] text-slate-400 mt-1">
-                    Предложенный ключ: <span class="font-mono">${esc(q.suggested_canonical_key)}</span>
+                    Автор: ${esc(q.created_by || 'не указан')} · Статус: ${esc(q.status || 'ожидает')}
                 </div>
-                <div class="text-[9px] text-slate-400 mt-1">
-                    Автор: ${esc(q.created_by || 'не указан')} · Статус: ${esc(q.status || 'pending')}
-                </div>
-                <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <button onclick="gameCreateContractorFromRequest('${esc(q.id)}')"
-                        class="bg-emerald-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
-                        Создать
-                    </button>
-                    <button onclick="gameRejectContractorRequest('${esc(q.id)}')"
-                        class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
-                        Отклонить
-                    </button>
-                    <button onclick="gameDeleteContractorRequest('${esc(q.id)}')"
-    class="bg-slate-100 text-slate-600 border border-slate-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
-    Удалить
-</button>
+                
+                <div class="mt-3 flex flex-col gap-2 border-t border-slate-100 dark:border-slate-700 pt-2">
+                    <select id="contr_req_action_${esc(q.id)}" class="input-base !py-1.5 !text-[10px] font-bold w-full bg-slate-50 dark:bg-slate-900">
+                        <option value="create">✨ Создать как нового подрядчика</option>
+                        <optgroup label="Связать со справочником:">
+                            ${dirOptions}
+                        </optgroup>
+                        <option value="reject">❌ Отклонить заявку</option>
+                    </select>
+                    
+                    <div class="flex gap-2">
+                        <button onclick="gameResolveContractorRequest('${esc(q.id)}')"
+                            class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 shadow-sm flex-1">
+                            Применить
+                        </button>
+                        <button onclick="gameDeleteContractorRequest('${esc(q.id)}')"
+                            class="bg-slate-100 text-red-600 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
+                            Удалить
+                        </button>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -3269,12 +3386,25 @@ window.gameLoadContractorRequests = async function () {
 };
 
 // === Панель руководителя: создать подрядчика из заявки ===
-window.gameCreateContractorFromRequest = async function (requestId) {
+
+
+// === Панель руководителя: отклонить заявку подрядчика ===
+// === Панель руководителя: Применение решения по заявке подрядчика ===
+window.gameResolveContractorRequest = async function (requestId) {
     if (!window.supabaseClient) return showToast('❌ Облако не подключено');
 
+    const selectEl = document.getElementById(`contr_req_action_${requestId}`);
+    if (!selectEl) return;
+    
+    const action = selectEl.value;
     const pCode = window.syncConfig?.projectCode || 'RBI';
+    const currentUser = window.syncConfig?.engineerName || 'Админ';
+    const nowIso = new Date().toISOString();
+
+    showToast('⏳ Обработка заявки...');
 
     try {
+        // Получаем данные заявки
         const { data: req, error: reqErr } = await window.supabaseClient
             .from('contractor_normalization_queue')
             .select('*')
@@ -3285,118 +3415,82 @@ window.gameCreateContractorFromRequest = async function (requestId) {
         if (!req) return showToast('⚠️ Заявка не найдена');
 
         const rawName = String(req.raw_name || '').trim();
-        if (!rawName) return showToast('⚠️ В заявке нет названия подрядчика');
+        if (!rawName) return showToast('⚠️ В заявке нет названия');
 
-        let canonicalKey = String(req.suggested_canonical_key || '').trim();
+        // Логика: СОЗДАТЬ НОВОГО
+        if (action === 'create') {
+            let canonicalKey = String(req.suggested_canonical_key || '').trim();
+            if (!canonicalKey && window.ContractorDirectory) {
+                canonicalKey = window.ContractorDirectory.makeCanonicalKey(rawName);
+            }
 
-        if (!canonicalKey && window.ContractorDirectory && typeof window.ContractorDirectory.makeCanonicalKey === 'function') {
-            canonicalKey = window.ContractorDirectory.makeCanonicalKey(rawName);
+            const contractorPayload = {
+                project_code: pCode,
+                canonical_key: canonicalKey,
+                display_name: rawName,
+                synonyms: [rawName],
+                inn: '',
+                created_by: currentUser,
+                is_deleted: false,
+                created_at: nowIso,
+                updated_at: nowIso
+            };
+
+            await window.supabaseClient.from('contractor_directory').upsert(contractorPayload, { onConflict: 'project_code,canonical_key' });
+            await window.supabaseClient.from('contractor_aliases').upsert({
+                project_code: pCode, raw_name: rawName, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+            }, { onConflict: 'project_code,raw_name' });
+
+            await window.supabaseClient.from('contractor_normalization_queue').update({
+                status: 'linked', suggested_canonical_key: canonicalKey, admin_comment: 'Создан новый подрядчик', updated_at: nowIso
+            }).eq('id', requestId);
+
+            showToast('✅ Создан новый подрядчик');
+        } 
+        // Логика: СВЯЗАТЬ С СУЩЕСТВУЮЩИМ (Алиас)
+        else if (action.startsWith('link_')) {
+            const targetCanonicalKey = action.replace('link_', '');
+
+            // Добавляем синоним в базу
+            await window.supabaseClient.from('contractor_aliases').upsert({
+                project_code: pCode, raw_name: rawName, canonical_key: targetCanonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+            }, { onConflict: 'project_code,raw_name' });
+
+            await window.supabaseClient.from('contractor_normalization_queue').update({
+                status: 'linked', suggested_canonical_key: targetCanonicalKey, admin_comment: 'Связан со справочником', updated_at: nowIso
+            }).eq('id', requestId);
+
+            showToast('🔗 Заявка связана со справочником');
+        } 
+        // Логика: ОТКЛОНИТЬ
+        else if (action === 'reject') {
+            await window.supabaseClient.from('contractor_normalization_queue').update({
+                status: 'rejected', admin_comment: 'Отклонено руководителем', updated_at: nowIso
+            }).eq('id', requestId);
+            showToast('❌ Заявка отклонена');
         }
 
-        if (!canonicalKey) {
-            canonicalKey = rawName
-                .toLowerCase()
-                .replace(/ё/g, 'е')
-                .replace(/["'«»]/g, '')
-                .replace(/\b(ооо|оао|зао|пао|ао|ип)\b/gi, '')
-                .replace(/[^a-zа-я0-9]+/gi, '_')
-                .replace(/^_+|_+$/g, '');
+        // Обновляем исторические проверки и базу Стройконтроля в облаке (чтобы везде поменялось имя)
+        if (action !== 'reject') {
+            const finalCanonicalKey = action === 'create' ? req.suggested_canonical_key : action.replace('link_', '');
+            const finalDisplayName = action === 'create' ? rawName : selectEl.options[selectEl.selectedIndex].text.replace('Связать с: ', '');
+
+            await window.supabaseClient.from('sk_records')
+                .update({ contractor_name: finalDisplayName, contractor_canonical_key: finalCanonicalKey, contractor_normalization_status: 'matched', updated_at: nowIso })
+                .eq('project_code', pCode).eq('contractor_raw', rawName);
         }
 
-        const nowIso = new Date().toISOString();
-        const currentUser = window.syncConfig?.engineerName || 'Админ';
-
-        const contractorPayload = {
-            project_code: pCode,
-            canonical_key: canonicalKey,
-            display_name: rawName,
-            synonyms: [rawName],
-            inn: '',
-            created_by: currentUser,
-            is_deleted: false,
-            created_at: nowIso,
-            updated_at: nowIso
-        };
-
-        const aliasPayload = {
-            project_code: pCode,
-            raw_name: rawName,
-            canonical_key: canonicalKey,
-            created_by: currentUser,
-            created_at: nowIso,
-            updated_at: nowIso
-        };
-
-        const { error: contractorErr } = await window.supabaseClient
-            .from('contractor_directory')
-            .upsert(contractorPayload, { onConflict: 'project_code,canonical_key' });
-
-        if (contractorErr) throw contractorErr;
-
-        const { error: aliasErr } = await window.supabaseClient
-            .from('contractor_aliases')
-            .upsert(aliasPayload, { onConflict: 'project_code,raw_name' });
-
-        if (aliasErr) throw aliasErr;
-
-        const { error: queueErr } = await window.supabaseClient
-            .from('contractor_normalization_queue')
-            .update({
-                status: 'linked',
-                suggested_canonical_key: canonicalKey,
-                admin_comment: 'Создан подрядчик из панели руководителя',
-                updated_at: nowIso
-            })
-            .eq('id', requestId);
-
-        if (queueErr) throw queueErr;
-
-        await window.supabaseClient
-            .from('sk_records')
-            .update({
-                contractor_name: rawName,
-                contractor_canonical_key: canonicalKey,
-                contractor_normalization_status: 'matched',
-                updated_at: nowIso
-            })
-            .eq('project_code', pCode)
-            .eq('contractor_raw', rawName);
-
-        showToast('✅ Подрядчик создан и связан');
-
+        // Обновляем списки на экране
         if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
         if (typeof gameLoadContractorDirectory === 'function') gameLoadContractorDirectory();
 
-    } catch (e) {
-        console.error('[gameCreateContractorFromRequest]', e);
-        showToast('❌ Не удалось создать подрядчика: ' + (e.message || 'ошибка'));
-    }
-};
-
-// === Панель руководителя: отклонить заявку подрядчика ===
-window.gameRejectContractorRequest = async function (requestId) {
-    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
-
-    if (!confirm('Отклонить заявку на подрядчика?')) return;
-
-    try {
-        const { error } = await window.supabaseClient
-            .from('contractor_normalization_queue')
-            .update({
-                status: 'rejected',
-                admin_comment: 'Отклонено администратором',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', requestId);
-
-        if (error) throw error;
-
-        showToast('🗑️ Заявка подрядчика отклонена');
-        if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
+        // Даем команду приложению подтянуть свежие данные
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
 
     } catch (e) {
-        console.error('[gameRejectContractorRequest]', e);
-        showToast('❌ Не удалось отклонить заявку');
+        console.error('[gameResolveContractorRequest]', e);
+        showToast('❌ Ошибка при обработке заявки');
     }
 };
 
@@ -3627,105 +3721,106 @@ window.gameLoadRoles = async function () {
                 </div>
             ` : '';
 
+            const roleLabels = { guest: 'Гость', contractor: 'Подрядчик', engineer: 'Инженер СК', project_manager: 'РП', director: 'Директор', deputy_manager: 'Зам', manager: 'Админ' };
+            const roleDisplay = roleLabels[role] || role;
+            const isPending = cloudStatus === 'pending';
+            const avatarColor = isPending ? 'orange' : 'indigo';
+
             return `
-                <div class="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 mb-3"
-                    id="user_card_${domId}">
-
-                    <div class="flex justify-between items-start gap-2 mb-3">
-                        <div class="min-w-0">
-                            <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase truncate">
-                                ${esc(engineerName)}
+                <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl mb-2 shadow-sm group [&_summary::-webkit-details-marker]:hidden" id="user_card_${domId}" ${isPending ? 'open' : ''}>
+                    
+                    <!-- СВЕРНУТЫЙ ВИД (КЛЮЧЕВАЯ ИНФО) -->
+                    <summary class="p-2 sm:p-3 cursor-pointer flex justify-between items-center transition-colors select-none group-open:border-b border-[var(--card-border)] bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] rounded-xl group-open:rounded-b-none">
+                        <div class="flex items-center gap-3 min-w-0 pr-2">
+                            <div class="w-8 h-8 rounded-lg bg-${avatarColor}-50 dark:bg-${avatarColor}-900/30 text-${avatarColor}-600 dark:text-${avatarColor}-400 flex items-center justify-center font-black text-sm shrink-0 border border-${avatarColor}-100 dark:border-${avatarColor}-800 shadow-sm">
+                                ${engineerName.charAt(0).toUpperCase()}
                             </div>
-                            <div class="text-[9px] text-slate-400 font-mono truncate">
-                                ${esc(inspectorId)}
+                            <div class="min-w-0 flex flex-col justify-center">
+                                <div class="font-black text-[11px] sm:text-[12px] text-slate-800 dark:text-white uppercase truncate leading-tight">${esc(engineerName)}</div>
+                                <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-500 leading-none">${roleDisplay}</span>
+                                    ${statusBadge}
+                                </div>
                             </div>
                         </div>
-                        ${statusBadge}
-                    </div>
+                        <div class="shrink-0 text-slate-400 transition-transform duration-300 group-open:rotate-180 bg-slate-50 dark:bg-slate-800 p-1.5 rounded-full border border-slate-200 dark:border-slate-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                        </div>
+                    </summary>
 
-                    <div class="grid grid-cols-2 gap-2">
-                        <div>
-                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Роль</label>
-                            <select id="role_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold">
-                                <option value="guest" ${role === 'guest' ? 'selected' : ''}>Гость</option>
-                                <option value="contractor" ${role === 'contractor' ? 'selected' : ''}>Подрядчик</option>
-                                <option value="engineer" ${role === 'engineer' ? 'selected' : ''}>Инженер СК</option>
-                                <option value="project_manager" ${role === 'project_manager' ? 'selected' : ''}>Руководитель проекта</option>
-                                <option value="director" ${role === 'director' ? 'selected' : ''}>Директор</option>
-                                <option value="deputy_manager" ${role === 'deputy_manager' ? 'selected' : ''}>Зам. руководителя</option>
-                                <option value="manager" ${role === 'manager' ? 'selected' : ''}>Админ</option>
-                            </select>
+                    <!-- РАЗВЕРНУТЫЙ ВИД (ФОРМА РЕДАКТИРОВАНИЯ) -->
+                    <div class="p-3 bg-[var(--hover-bg)] rounded-b-xl">
+                        
+                        <!-- Селекты (в ряд) -->
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <div class="bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--card-border)] shadow-sm">
+                                <label class="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Роль сотрудника</label>
+                                <select id="role_select_${domId}" class="input-base !py-1 !px-1.5 !text-[10px] font-bold" onchange="
+                                    const r = this.value;
+                                    const objBlock = document.getElementById('obj_block_${domId}');
+                                    if(['guest', 'director', 'deputy_manager', 'manager'].includes(r)) {
+                                        objBlock.style.display = 'none';
+                                    } else {
+                                        objBlock.style.display = 'block';
+                                    }
+                                ">
+                                    <option value="guest" ${role === 'guest' ? 'selected' : ''}>Гость</option>
+                                    <option value="contractor" ${role === 'contractor' ? 'selected' : ''}>Подрядчик</option>
+                                    <option value="engineer" ${role === 'engineer' ? 'selected' : ''}>Инженер СК</option>
+                                    <option value="project_manager" ${role === 'project_manager' ? 'selected' : ''}>Руководитель (РП)</option>
+                                    <option value="director" ${role === 'director' ? 'selected' : ''}>Директор</option>
+                                    <option value="deputy_manager" ${role === 'deputy_manager' ? 'selected' : ''}>Зам. руководителя</option>
+                                    <option value="manager" ${role === 'manager' ? 'selected' : ''}>Админ</option>
+                                </select>
+                            </div>
+
+                            <div class="bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--card-border)] shadow-sm">
+                                <label class="text-[8px] font-bold text-slate-400 uppercase mb-1 block">Доступ к облаку</label>
+                                <select id="status_select_${domId}" class="input-base !py-1 !px-1.5 !text-[10px] font-bold">
+                                    <option value="pending" ${cloudStatus === 'pending' ? 'selected' : ''}>Ожидает</option>
+                                    <option value="approved" ${cloudStatus === 'approved' ? 'selected' : ''}>Разрешён</option>
+                                    <option value="blocked" ${cloudStatus === 'blocked' ? 'selected' : ''}>Заблокирован</option>
+                                </select>
+                            </div>
                         </div>
 
-                        <div>
-                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">Доступ</label>
-                            <select id="status_select_${domId}" class="input-base !py-1.5 !text-[10px] font-bold">
-                                <option value="pending" ${cloudStatus === 'pending' ? 'selected' : ''}>Ожидает</option>
-                                <option value="approved" ${cloudStatus === 'approved' ? 'selected' : ''}>Разрешён</option>
-                                <option value="blocked" ${cloudStatus === 'blocked' ? 'selected' : ''}>Заблокирован</option>
-                            </select>
-                        </div>
-
-                        <div class="col-span-2">
-                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-0.5 block">
-                                Подрядчик из справочника
+                        <div class="bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--card-border)] mb-2 shadow-sm">
+                            <label class="text-[8px] font-bold text-slate-400 uppercase mb-1 block flex justify-between">
+                                <span>Привязка к подрядчику</span>
+                                <span class="text-[7px] text-slate-400 font-normal lowercase">(для роли "Подрядчик")</span>
                             </label>
                             <select id="contr_input_${domId}" class="input-base !py-1.5 !text-[10px]">
                                 <option value="">— Не назначен —</option>
-                                ${contractorDirectory.map(c => `
-                                    <option value="${esc(c.canonical_key)}"
-                                        data-display="${esc(c.display_name)}"
-                                        ${contrName === c.canonical_key || contrName === c.display_name ? 'selected' : ''}>
-                                        ${esc(c.display_name)}
-                                    </option>
-                                `).join('')}
+                                ${contractorDirectory.map(c => `<option value="${esc(c.canonical_key)}" data-display="${esc(c.display_name)}" ${contrName === c.canonical_key || contrName === c.display_name ? 'selected' : ''}>${esc(c.display_name)}</option>`).join('')}
                             </select>
-                            <div class="text-[8px] text-slate-400 mt-1">
-                                Для роли «Подрядчик» выбираем нормализованного подрядчика из справочника.
-                            </div>
                         </div>
-                    </div>
 
-                    <div id="obj_block_${domId}" style="display: ${displayObjects};">
-                        <div class="flex justify-between items-center mb-0.5 mt-3">
-                            <label class="text-[8px] font-bold text-slate-400 uppercase block">
-                                Закреплённые объекты
-                            </label>
-                            <button onclick="document.getElementById('proj_input_${domId}').value=''; gameRenderAssignedProjectChips('${domId}')"
-                                class="text-[8px] text-red-500 font-bold hover:underline">
-                                Очистить всё
+                        <div id="obj_block_${domId}" style="display: ${displayObjects};" class="bg-indigo-50 dark:bg-indigo-900/10 p-2 rounded-lg border border-indigo-100 dark:border-indigo-800/50 mb-2 shadow-sm">
+                            <div class="flex justify-between items-center mb-1.5">
+                                <label class="text-[8px] font-black text-indigo-700 dark:text-indigo-400 uppercase block">Закреплённые объекты</label>
+                                <button onclick="document.getElementById('proj_input_${domId}').value=''; gameRenderAssignedProjectChips('${domId}')" class="text-[8px] text-red-500 font-bold hover:underline">Очистить всё</button>
+                            </div>
+                            <input type="hidden" id="proj_input_${domId}" value="${esc(projectsStr)}">
+                            <select class="input-base !py-1.5 !text-[10px] mb-2 bg-white dark:bg-slate-800" onchange="gameAddAssignedProjectFromSelect('${domId}', this.value); this.value='';">
+                                <option value="">+ Добавить объект из справочника</option>
+                                ${projectObjects.map(o => `<option value="${esc(o.canonical_key)}">${esc(o.display_name)}</option>`).join('')}
+                            </select>
+                            <div id="proj_chips_${domId}" class="flex flex-wrap gap-1"></div>
+                        </div>
+
+                        ${requestedProjectsHtml}
+
+                        <!-- Кнопки управления -->
+                        <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--card-border)]">
+                            <button onclick="gameDeleteUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')" class="bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-sm">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить
+                            </button>
+                            <button onclick="gameSaveUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')" class="bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить
                             </button>
                         </div>
-
-                        <input type="hidden" id="proj_input_${domId}" value="${esc(projectsStr)}">
-
-                        <select class="input-base !py-1.5 !text-[10px] mb-2"
-                            onchange="gameAddAssignedProjectFromSelect('${domId}', this.value); this.value='';">
-                            <option value="">+ Добавить объект из справочника</option>
-                            ${projectObjects.map(o => `
-                                <option value="${esc(o.canonical_key)}">
-                                    ${esc(o.display_name)} (${esc(o.canonical_key)})
-                                </option>
-                            `).join('')}
-                        </select>
-
-                        <div id="proj_chips_${domId}" class="flex flex-wrap gap-1"></div>
                     </div>
-
-                    ${requestedProjectsHtml}
-
-                    <div class="grid grid-cols-2 gap-2 mt-3">
-                        <button onclick="gameSaveUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')"
-                            class="bg-indigo-600 text-white py-2 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 transition-transform">
-                            Сохранить
-                        </button>
-
-                        <button onclick="gameDeleteUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')"
-                            class="bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform">
-                            Удалить
-                        </button>
-                    </div>
-                </div>
+                </details>
             `;
         };
 
@@ -3785,114 +3880,7 @@ window.gameDeleteUserAccess = async function (inspectorId, engineerName) {
     }
 };
 // === Панель руководителя: свернуть карточку пользователя после сохранения ===
-window.gameCollapseUserCard = function (inspectorId, engineerName) {
-    const safeDomId = String(inspectorId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-    const card =
-        document.getElementById(`user_card_${safeDomId}`) ||
-        document.getElementById(`user_card_${inspectorId}`);
-
-    if (!card) return;
-
-    const roleEl =
-        document.getElementById(`role_select_${safeDomId}`) ||
-        document.getElementById(`role_select_${inspectorId}`);
-
-    const statusEl =
-        document.getElementById(`status_select_${safeDomId}`) ||
-        document.getElementById(`status_select_${inspectorId}`);
-
-    const contrEl =
-        document.getElementById(`contr_input_${safeDomId}`) ||
-        document.getElementById(`contr_input_${inspectorId}`);
-
-    const projEl =
-        document.getElementById(`proj_input_${safeDomId}`) ||
-        document.getElementById(`proj_input_${inspectorId}`);
-
-    const role = roleEl?.value || 'guest';
-    const status = statusEl?.value || 'pending';
-
-    const contractorKey = contrEl?.value || '';
-    const contractorName =
-        contrEl?.selectedOptions?.[0]?.dataset?.display ||
-        contrEl?.selectedOptions?.[0]?.textContent?.trim() ||
-        contractorKey ||
-        'Не назначен';
-
-    const projects = projEl?.value || '';
-
-    const roleLabelMap = {
-        guest: 'Гость',
-        contractor: 'Подрядчик',
-        engineer: 'Инженер СК',
-        project_manager: 'Руководитель проекта',
-        director: 'Директор',
-        deputy_manager: 'Зам. руководителя',
-        manager: 'Админ'
-    };
-
-    const statusLabelMap = {
-        pending: 'Ожидает',
-        approved: 'Разрешён',
-        blocked: 'Заблокирован'
-    };
-
-    const statusClass =
-        status === 'approved'
-            ? 'bg-green-100 text-green-700 border-green-200'
-            : status === 'blocked'
-                ? 'bg-red-100 text-red-700 border-red-200'
-                : 'bg-yellow-100 text-yellow-700 border-yellow-200';
-
-    card.innerHTML = `
-        <div class="flex justify-between items-start gap-3">
-            <div class="min-w-0 flex-1">
-                <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase truncate">
-                    ${String(engineerName || 'Без имени')}
-                </div>
-
-                <div class="text-[9px] text-slate-400 font-mono truncate mt-0.5">
-                    ${String(inspectorId || '')}
-                </div>
-
-                <div class="flex flex-wrap gap-1 mt-2">
-                    <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-full text-[8px] font-black uppercase">
-                        ${roleLabelMap[role] || role}
-                    </span>
-
-                    <span class="${statusClass} border px-2 py-1 rounded-full text-[8px] font-black uppercase">
-                        ${statusLabelMap[status] || status}
-                    </span>
-                </div>
-
-                <div class="mt-2 text-[9px] text-slate-500 font-bold leading-snug">
-                    <div>
-                        <span class="text-slate-400 uppercase">Объекты:</span>
-                        ${projects || 'не назначены'}
-                    </div>
-
-                    <div>
-                        <span class="text-slate-400 uppercase">Подрядчик:</span>
-                        ${contractorName}
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex flex-col gap-1 shrink-0">
-                <button onclick="gameLoadRoles()"
-                    class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
-                    Изменить
-                </button>
-
-                <button onclick="gameDeleteUserAccess('${String(inspectorId || '').replace(/'/g, "\\'")}', '${String(engineerName || '').replace(/'/g, "\\'")}')"
-                    class="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95">
-                    Удалить
-                </button>
-            </div>
-        </div>
-    `;
-};
 
 window.gameSaveUserAccess = async function (inspectorId, engineerName) {
     if (!window.supabaseClient) return showToast("❌ Облако не подключено");
@@ -4020,8 +4008,8 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
 
         showToast(`✅ Права успешно сохранены!`);
 
-        if (typeof gameCollapseUserCard === 'function') {
-            gameCollapseUserCard(inspectorId, engineerName);
+        if (typeof gameLoadRoles === 'function') {
+            gameLoadRoles(); // Полностью перерисовываем список в новом дизайне
         }
 
     } catch (e) {
@@ -4176,5 +4164,188 @@ window.gameDeleteAiKb = async function (id) {
 
         showToast('🗑️ Запись удалена');
         gameLoadAiKb();
+    }
+};
+
+// === Панель руководителя: Умный поиск дубликатов подрядчиков ===
+window.gameFindContractorDuplicates = async function () {
+    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
+
+    showToast('⏳ Нейросеть ищет дубликаты...');
+
+    try {
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        
+        // 1. Загружаем весь справочник
+        const { data: directory, error } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('*')
+            .eq('project_code', pCode)
+            .or('is_deleted.is.null,is_deleted.eq.false');
+
+        if (error) throw error;
+
+        if (!directory || directory.length < 2) {
+            return showToast('В справочнике слишком мало записей для поиска дублей');
+        }
+
+        // 2. Функция расчета схожести (Левенштейн)
+        const getSimilarity = (s1, s2) => {
+            if (!s1 || !s2) return 0;
+            let longer = s1.toLowerCase().replace(/[^a-zа-я0-9]/gi, ''); 
+            let shorter = s2.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+            if (longer.length < shorter.length) { [longer, shorter] = [shorter, longer]; }
+            if (longer.length === 0) return 1.0;
+
+            let costs = [];
+            for (let i = 0; i <= shorter.length; i++) costs[i] = i;
+            for (let i = 1; i <= longer.length; i++) {
+                let costsTemp = costs[0]; costs[0] = i; let nw = i - 1;
+                for (let j = 1; j <= shorter.length; j++) {
+                    let cj = Math.min(1 + Math.min(costs[j], costs[j - 1]), shorter[j - 1] === longer[i - 1] ? nw : nw + 1);
+                    nw = costs[j]; costs[j] = cj;
+                }
+            }
+            return (longer.length - costs[shorter.length]) / parseFloat(longer.length);
+        };
+
+        const duplicates = [];
+        const processedPairs = new Set();
+
+        // 3. Сравниваем всех со всеми
+        for (let i = 0; i < directory.length; i++) {
+            for (let j = i + 1; j < directory.length; j++) {
+                const c1 = directory[i];
+                const c2 = directory[j];
+
+                const score = getSimilarity(c1.display_name, c2.display_name);
+
+                // Если сходство больше 80%
+                if (score > 0.80) {
+                    const pairKey = `${c1.canonical_key}_${c2.canonical_key}`;
+                    if (!processedPairs.has(pairKey)) {
+                        processedPairs.add(pairKey);
+                        duplicates.push({ c1, c2, score: Math.round(score * 100) });
+                    }
+                }
+            }
+        }
+
+        if (duplicates.length === 0) {
+            return showToast('✅ Дубликатов не найдено! База чистая.');
+        }
+
+        // 4. Отрисовываем модалку с результатами
+        let html = duplicates.map((d, idx) => {
+            // ОЧИСТКА: Убираем любые кавычки из названий, чтобы они не ломали код кнопок
+            const safeName1 = d.c1.display_name.replace(/['"«»]/g, '');
+            const safeName2 = d.c2.display_name.replace(/['"«»]/g, '');
+
+            return `
+            <div id="dup-row-${idx}" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-3 shadow-sm">
+                <div class="text-[10px] text-center font-black text-indigo-500 uppercase mb-2">Совпадение: ${d.score}%</div>
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="flex-1 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-center">
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight">${d.c1.display_name}</div>
+                    </div>
+                    <div class="text-slate-400 font-bold">VS</div>
+                    <div class="flex-1 bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700 text-center">
+                        <div class="text-[11px] font-black text-slate-800 dark:text-white leading-tight">${d.c2.display_name}</div>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="gameExecuteContractorMerge('${d.c1.canonical_key}', '${d.c2.canonical_key}', '${safeName2}', 'dup-row-${idx}')" class="flex-1 bg-indigo-50 text-indigo-600 border border-indigo-200 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">Влить правое в Левое ⬅️</button>
+                    <button onclick="gameExecuteContractorMerge('${d.c2.canonical_key}', '${d.c1.canonical_key}', '${safeName1}', 'dup-row-${idx}')" class="flex-1 bg-indigo-50 text-indigo-600 border border-indigo-200 py-2 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-colors">➡️ Влить левое в Правое</button>
+                </div>
+            </div>
+            `;
+        }).join('');
+
+        const modalHtml = `
+            <div id="dup-modal-overlay" class="fixed inset-0 bg-slate-900/80 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+                <div class="bg-[var(--card-bg)] w-full max-w-md rounded-2xl shadow-2xl border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[85vh]">
+                    <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-[var(--hover-bg)] shrink-0">
+                        <h3 class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">🤖 Слияние дубликатов</h3>
+                        <button onclick="document.getElementById('dup-modal-overlay').remove(); document.body.classList.remove('modal-open');" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
+                    </div>
+                    <div class="p-4 overflow-y-auto custom-scrollbar flex-1 bg-slate-50 dark:bg-slate-900/50">
+                        <div class="text-[10px] text-slate-500 mb-4 text-center leading-relaxed">
+                            Выберите, какое название правильное. Неправильное будет удалено, а его имя добавится как синоним к правильному. История объединится автоматически.
+                        </div>
+                        ${html}
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('modal-open');
+
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Ошибка при поиске дубликатов');
+    }
+};
+
+// === Логика объединения двух записей ===
+window.gameExecuteContractorMerge = async function (primaryKey, secondaryKey, secondaryName, rowId) {
+    if (!confirm(`Точно объединить?\n\nПодрядчик "${secondaryName}" исчезнет, став синонимом. Это необратимо.`)) return;
+
+    showToast('⏳ Слияние баз данных...');
+    try {
+        const pCode = window.syncConfig?.projectCode || 'RBI';
+        const currentUser = window.syncConfig?.engineerName || 'Админ';
+        const nowIso = new Date().toISOString();
+
+        // 1. Получаем основного подрядчика, чтобы добавить к нему синоним
+        const { data: primaryData } = await window.supabaseClient
+            .from('contractor_directory')
+            .select('synonyms, display_name')
+            .eq('project_code', pCode)
+            .eq('canonical_key', primaryKey)
+            .single();
+
+        let newSynonyms = Array.isArray(primaryData?.synonyms) ? primaryData.synonyms : [];
+        if (!newSynonyms.includes(secondaryName)) newSynonyms.push(secondaryName);
+
+        // 2. Обновляем Основного (добавляем синоним)
+        await window.supabaseClient
+            .from('contractor_directory')
+            .update({ synonyms: newSynonyms, updated_at: nowIso })
+            .eq('project_code', pCode)
+            .eq('canonical_key', primaryKey);
+
+        // 3. Удаляем Второстепенного (Мягкое удаление)
+        await window.supabaseClient
+            .from('contractor_directory')
+            .update({ is_deleted: true, updated_at: nowIso })
+            .eq('project_code', pCode)
+            .eq('canonical_key', secondaryKey);
+
+        // 4. Добавляем Второстепенное имя в таблицу Алиасов, чтобы он переадресовывал на Основного
+        await window.supabaseClient.from('contractor_aliases').upsert({
+            project_code: pCode, raw_name: secondaryName, canonical_key: primaryKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
+        }, { onConflict: 'project_code,raw_name' });
+
+        // 5. Обновляем историю ПК СК (переписываем все старые дефекты на новое имя)
+        await window.supabaseClient.from('sk_records')
+            .update({ contractor_name: primaryData.display_name, contractor_canonical_key: primaryKey, contractor_normalization_status: 'matched', updated_at: nowIso })
+            .eq('project_code', pCode).eq('contractor_canonical_key', secondaryKey);
+
+        showToast('✅ Успешно объединено!');
+        
+        // Скрываем блок в модалке
+        document.getElementById(rowId).style.display = 'none';
+
+        // Обновляем список на фоне
+        gameLoadContractorDirectory();
+        
+        // Заставляем локальный кэш обновиться
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+        if (window.ContractorDirectory) await window.ContractorDirectory.init();
+
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Ошибка при слиянии');
     }
 };

@@ -198,7 +198,7 @@ function getFilteredAnalyticsData() {
     }
     if (fContr.length > 0) arr = arr.filter(i => fContr.includes(i.contractorName));
     if (fInsp.length > 0) arr = arr.filter(i => fInsp.includes(i.inspectorName));
-    if (fTmpl.length > 0) arr = arr.filter(i => fTmpl.includes(i.templateKey));
+    if (fTmpl.length > 0) arr = arr.filter(i => fTmpl.includes(i.templateTitle));
 
     return arr;
 }
