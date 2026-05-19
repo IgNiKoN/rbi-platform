@@ -1,9 +1,9 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.8.192';
-const SW_VERSION = '17.99';
-const CACHE_NAME = `rbi-quality-v${SW_VERSION}`; 
+const APP_VERSION = '17.8.193';
+const SW_VERSION = '17.99.1';
+const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
 const urlsToCache = [
@@ -15,6 +15,15 @@ const urlsToCache = [
   './data/system_nodes.js',
   './data/system_twi.js',
   './js/config.js',
+  './libs/tailwindcdn.js',
+  './libs/chart.umd.min.js',
+  './libs/xlsx.full.min.js',
+  './libs/html2pdf.bundle.min.js',
+  './libs/pdfjs/pdf.min.js',
+  './libs/pdfjs/pdf.worker.min.js',
+  './libs/qrcode.min.js',
+  './libs/Sortable.min.js',
+  './libs/supabase-js.min.js',
   './js/contractorDirectory.js',
   './js/objectDirectory.js',
   './js/roles.js', // <-- ДОБАВИЛИ РОЛИ (КРИТИЧНО ДЛЯ ОФЛАЙНА!)
@@ -27,26 +36,16 @@ const urlsToCache = [
   './js/task.js',
   './js/etalon.js',
   './js/app.js',
-  './js/analytics.js', 
-  './js/export.js',    
+  './js/analytics.js',
+  './js/export.js',
   './js/game.js',
   './js/sk.js',
-  './manifest.webmanifest',
-  // --- ДОБАВЛЕНО: Внешние библиотеки для работы без интернета ---
-  'https://cdn.tailwindcss.com',
-  'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
-  'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js'
-];
+  './manifest.webmanifest'
+  ];
 
 // 2. УСТАНОВКА: Безопасное скачивание файлов в память
 self.addEventListener('install', event => {
-  self.skipWaiting(); 
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       console.log('[SW] Кэшируем ядро и библиотеки...');
@@ -74,7 +73,7 @@ self.addEventListener('activate', event => {
       );
     })
   );
-  self.clients.claim(); 
+  self.clients.claim();
 });
 
 // 4. ПЕРЕХВАТ ЗАПРОСОВ
@@ -88,8 +87,8 @@ self.addEventListener('fetch', event => {
   }
 
   // ✅ Пропускаем запросы к API (база данных, функции), чтобы не ломать синхронизацию
-  const isApi = event.request.url.includes('api.rbi-q.ru') && 
-                !event.request.url.includes('/storage/v1/object/public/');
+  const isApi = event.request.url.includes('api.rbi-q.ru') &&
+    !event.request.url.includes('/storage/v1/object/public/');
   if (isApi) return;
 
   event.respondWith(

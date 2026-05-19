@@ -12,35 +12,32 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-    <!-- Подключаем Tailwind -->
-    <script src="https://cdn.tailwindcss.com"></script>
+<script src="./libs/tailwindcdn.js"></script>
 
-    <!-- ИСПРАВЛЕНИЕ ТЕМЫ: Заставляем Tailwind слушаться переключателя в приложении -->
-    <script>
-        tailwind.config = {
-            darkMode: 'class'
-        }
-    </script>
+<script>
+    tailwind.config = {
+        darkMode: 'class'
+    }
+</script>
 
-    <!-- Подключаем наши модульные стили v16.0 -->
-    <link rel="stylesheet" href="css/style.css">
-    <!-- Подключаем Chart.js для старых графиков -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="./css/style.css">
 
-    <!-- Подключаем SheetJS для чтения Excel-файлов -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Подключаем html2pdf для обхода глюков печати на iPhone -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- Подключаем PDF.js для парсинга текста из ГОСТов/СП -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    </script>
-    <!-- Подключаем qrcode.js для генерации QR-кодов -->
-    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="./libs/chart.umd.min.js"></script>
 
-    <!-- Подключаем SortableJS для перетаскивания блоков отчета -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="./libs/xlsx.full.min.js"></script>
+
+<script src="./libs/html2pdf.bundle.min.js"></script>
+
+<script src="./libs/pdfjs/pdf.min.js"></script>
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.js';
+</script>
+
+<script src="./libs/qrcode.min.js"></script>
+
+<script src="./libs/Sortable.min.js"></script>
+
+<script src="./libs/supabase-js.min.js"></script>
 </head>
 
 <body id="app-body">
@@ -3205,7 +3202,7 @@
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <!-- 1. Сначала облако и конфигурация -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./libs/supabase-js.min.js"></script>
     <script src="js/config.js"></script>
     <script src="js/sync.js"></script>
     <!-- ДОБАВЛЕНО: Роли и Справочник объектов -->
