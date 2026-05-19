@@ -3191,9 +3191,9 @@ window.gameLoadContractorDirectory = async function () {
                     
                     <div class="flex flex-wrap gap-1 mb-2">
                         ${Array.isArray(c.synonyms) && c.synonyms.length > 0
-                            ? c.synonyms.map(s => `<span class="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px] font-medium inline-flex items-center gap-1">${esc(s)}</span>`).join('')
-                            : '<span class="text-[9px] text-slate-400 italic">Синонимов пока нет</span>'
-                        }
+                ? c.synonyms.map(s => `<span class="bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-[9px] font-medium inline-flex items-center gap-1">${esc(s)}</span>`).join('')
+                : '<span class="text-[9px] text-slate-400 italic">Синонимов пока нет</span>'
+            }
                     </div>
                     
                     <div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
@@ -3212,7 +3212,7 @@ window.gameLoadContractorDirectory = async function () {
 // === Панель руководителя: Изменить название подрядчика ===
 window.gameEditContractor = async function (canonicalKey, currentName) {
     if (!window.supabaseClient) return showToast('❌ Облако не подключено');
-    
+
     // Спрашиваем новое имя
     const newName = prompt('Введите новое корректное название подрядчика:', currentName);
     if (!newName || newName.trim() === '' || newName === currentName) return;
@@ -3222,7 +3222,7 @@ window.gameEditContractor = async function (canonicalKey, currentName) {
     try {
         const pCode = window.syncConfig?.projectCode || 'RBI';
         const nowIso = new Date().toISOString();
-        
+
         // 1. Обновляем в облаке Supabase
         const { error } = await window.supabaseClient
             .from('contractor_directory')
@@ -3246,7 +3246,7 @@ window.gameEditContractor = async function (canonicalKey, currentName) {
 
         showToast('✏️ Название подрядчика успешно обновлено');
         gameLoadContractorDirectory(); // Перерисовываем список
-        
+
         // Обновляем локальный кэш
         if (window.ContractorDirectory) await window.ContractorDirectory.init();
 
@@ -3259,7 +3259,7 @@ window.gameEditContractor = async function (canonicalKey, currentName) {
 // === Панель руководителя: Удалить подрядчика из справочника ===
 window.gameDeleteContractor = async function (canonicalKey) {
     if (!window.supabaseClient) return showToast('❌ Облако не подключено');
-    
+
     if (!confirm('Вы уверены, что хотите удалить подрядчика из справочника?\n\nНовые заявки от него снова будут падать в очередь на подтверждение.')) return;
 
     showToast('⏳ Удаление из справочника...');
@@ -3267,7 +3267,7 @@ window.gameDeleteContractor = async function (canonicalKey) {
     try {
         const pCode = window.syncConfig?.projectCode || 'RBI';
         const nowIso = new Date().toISOString();
-        
+
         // 1. Мягкое удаление в облаке Supabase (is_deleted = true)
         const { error } = await window.supabaseClient
             .from('contractor_directory')
@@ -3291,7 +3291,7 @@ window.gameDeleteContractor = async function (canonicalKey) {
 
         showToast('🗑️ Подрядчик удален из справочника');
         gameLoadContractorDirectory(); // Перерисовываем список
-        
+
         // Обновляем локальный кэш, чтобы система забыла этого подрядчика
         if (window.ContractorDirectory) await window.ContractorDirectory.init();
 
@@ -3342,7 +3342,7 @@ window.gameLoadContractorRequests = async function () {
             .eq('project_code', pCode)
             .or('is_deleted.is.null,is_deleted.eq.false')
             .order('display_name', { ascending: true });
-            
+
         const directory = dirData || [];
         const dirOptions = directory.map(c => `<option value="link_${c.canonical_key}">Связать с: ${c.display_name}</option>`).join('');
 
@@ -3395,7 +3395,7 @@ window.gameResolveContractorRequest = async function (requestId) {
 
     const selectEl = document.getElementById(`contr_req_action_${requestId}`);
     if (!selectEl) return;
-    
+
     const action = selectEl.value;
     const pCode = window.syncConfig?.projectCode || 'RBI';
     const currentUser = window.syncConfig?.engineerName || 'Админ';
@@ -3446,7 +3446,7 @@ window.gameResolveContractorRequest = async function (requestId) {
             }).eq('id', requestId);
 
             showToast('✅ Создан новый подрядчик');
-        } 
+        }
         // Логика: СВЯЗАТЬ С СУЩЕСТВУЮЩИМ (Алиас)
         else if (action.startsWith('link_')) {
             const targetCanonicalKey = action.replace('link_', '');
@@ -3461,7 +3461,7 @@ window.gameResolveContractorRequest = async function (requestId) {
             }).eq('id', requestId);
 
             showToast('🔗 Заявка связана со справочником');
-        } 
+        }
         // Логика: ОТКЛОНИТЬ
         else if (action === 'reject') {
             await window.supabaseClient.from('contractor_normalization_queue').update({
@@ -3812,9 +3812,10 @@ window.gameLoadRoles = async function () {
 
                         <!-- Кнопки управления -->
                         <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--card-border)]">
-                            <button onclick="gameDeleteUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')" class="bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-sm">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить
-                            </button>
+                            <button onclick="gameHandleUserAccessRemove('${escJs(inspectorId)}', '${escJs(engineerName)}', '${escJs(cloudStatus || '')}', '${escJs(role || '')}')" class="bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-sm">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+    ${cloudStatus === 'approved' ? 'Заблокировать' : 'Удалить заявку'}
+</button>
                             <button onclick="gameSaveUserAccess('${escJs(inspectorId)}', '${escJs(engineerName)}')" class="bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5">
                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Сохранить
                             </button>
@@ -3859,10 +3860,79 @@ window.gameLoadRoles = async function () {
         }
     }
 };
+window.gameHandleUserAccessRemove = async function (inspectorId, engineerName, cloudStatus, role) {
+    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
+
+    const status = String(cloudStatus || '').toLowerCase();
+    const userRole = String(role || '').toLowerCase();
+
+    // Если пользователь уже подтвержден — не удаляем, а блокируем.
+    // Это важно для истории, RLS и связи с auth_user_id.
+    if (status === 'approved') {
+        return gameBlockUserAccess(inspectorId, engineerName);
+    }
+
+    // Pending / guest / blocked можно удалить из списка заявок.
+    return gameDeleteUserAccess(inspectorId, engineerName);
+};
+
+window.gameBlockUserAccess = async function (inspectorId, engineerName) {
+    if (!window.supabaseClient) return showToast("❌ Облако не подключено");
+
+    if (!confirm(`Заблокировать доступ пользователя "${engineerName}"? Пользователь останется в базе, но не сможет получать рабочие данные.`)) return;
+
+    try {
+        const nowIso = new Date().toISOString();
+
+        const { data: currentRows, error: readError } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .select('settings')
+            .eq('inspector_id', inspectorId)
+            .limit(1);
+
+        if (readError) throw readError;
+
+        const oldSettings = currentRows && currentRows[0] && currentRows[0].settings
+            ? currentRows[0].settings
+            : {};
+
+        const newSettings = {
+            ...oldSettings,
+            blocked_at: nowIso,
+            blocked_reason: 'blocked_by_admin'
+        };
+
+        const { error } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .update({
+                role: 'guest',
+                cloud_status: 'blocked',
+                assigned_projects: [],
+                assigned_contractor: '',
+                contractor_name: '',
+                settings: newSettings,
+                updated_at: nowIso,
+                last_seen_at: nowIso
+            })
+            .eq('inspector_id', inspectorId);
+
+        if (error) throw error;
+
+        showToast('⛔ Пользователь заблокирован');
+
+        if (typeof gameLoadRoles === 'function') {
+            gameLoadRoles();
+        }
+    } catch (e) {
+        console.error('[gameBlockUserAccess]', e);
+        showToast('❌ Не удалось заблокировать пользователя');
+    }
+};
+
 window.gameDeleteUserAccess = async function (inspectorId, engineerName) {
     if (!window.supabaseClient) return showToast("❌ Облако не подключено");
 
-    if (!confirm(`Удалить пользователя "${engineerName}" из команды?`)) return;
+    if (!confirm(`Удалить заявку/профиль "${engineerName}" из списка? Если пользователь снова войдёт в приложение, заявка создастся заново.`)) return;
 
     try {
         const { error } = await window.supabaseClient
@@ -3872,11 +3942,14 @@ window.gameDeleteUserAccess = async function (inspectorId, engineerName) {
 
         if (error) throw error;
 
-        showToast('✅ Пользователь удалён');
-        if (typeof gameLoadRoles === 'function') gameLoadRoles();
+        showToast('🗑️ Заявка удалена');
+
+        if (typeof gameLoadRoles === 'function') {
+            gameLoadRoles();
+        }
     } catch (e) {
         console.error('[gameDeleteUserAccess]', e);
-        showToast('❌ Не удалось удалить пользователя');
+        showToast('❌ Не удалось удалить заявку');
     }
 };
 // === Панель руководителя: свернуть карточку пользователя после сохранения ===
@@ -4175,7 +4248,7 @@ window.gameFindContractorDuplicates = async function () {
 
     try {
         const pCode = window.syncConfig?.projectCode || 'RBI';
-        
+
         // 1. Загружаем весь справочник
         const { data: directory, error } = await window.supabaseClient
             .from('contractor_directory')
@@ -4192,7 +4265,7 @@ window.gameFindContractorDuplicates = async function () {
         // 2. Функция расчета схожести (Левенштейн)
         const getSimilarity = (s1, s2) => {
             if (!s1 || !s2) return 0;
-            let longer = s1.toLowerCase().replace(/[^a-zа-я0-9]/gi, ''); 
+            let longer = s1.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
             let shorter = s2.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
             if (longer.length < shorter.length) { [longer, shorter] = [shorter, longer]; }
             if (longer.length === 0) return 1.0;
@@ -4332,13 +4405,13 @@ window.gameExecuteContractorMerge = async function (primaryKey, secondaryKey, se
             .eq('project_code', pCode).eq('contractor_canonical_key', secondaryKey);
 
         showToast('✅ Успешно объединено!');
-        
+
         // Скрываем блок в модалке
         document.getElementById(rowId).style.display = 'none';
 
         // Обновляем список на фоне
         gameLoadContractorDirectory();
-        
+
         // Заставляем локальный кэш обновиться
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');

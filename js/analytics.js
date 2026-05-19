@@ -154,8 +154,12 @@ function switchAnalyticsSubTab(tabId, btnElement) {
     // Обновляем кнопку FAB
     if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
 
-    // Запускаем рендер контента
-    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+      // Единый безопасный рендер активной подвкладки аналитики
+    // Важно: ПК СК должен запускаться через renderCurrentAnalyticsTab(),
+    // потому что там sk_renderMainTab() вызывается гарантированно.
+    if (typeof renderCurrentAnalyticsTab === 'function') {
+        renderCurrentAnalyticsTab();
+    }
 }
 // 1. Фильтрация данных для всех вкладок аналитики
 function getFilteredAnalyticsData() {
@@ -265,7 +269,10 @@ function renderCurrentAnalyticsTab() {
         renderHistoryTab();
         initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
     }
-    else if (currentActiveAnalyticsTab === 'sub-sk') { if (typeof sk_renderMainTab === 'function') sk_renderMainTab(); }
+    else if (currentActiveAnalyticsTab === 'sub-sk') {
+        // Гарантированно запускаем пайплайн ПК СК, он сам внутри разберется с кэшем
+        if (typeof sk_renderMainTab === 'function') sk_renderMainTab();
+    }
     else if (currentActiveAnalyticsTab === 'sub-rating') renderRatingTab(); // Обратная совместимость
 }
 

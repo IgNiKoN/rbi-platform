@@ -450,39 +450,47 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 // === КОНЕЦ ЗАМЕНЫ 1 ===
 // === Подгрузка нормализованных подрядчиков в поле "Подрядчик" на осмотре ===
+// === Подгрузка нормализованных подрядчиков (Кастомный Dropdown) ===
+// === Подгрузка нормализованных подрядчиков (Кастомный Dropdown) ===
 window.loadContractorDirectoryToInspectionInput = async function () {
     const input = document.getElementById('inp-contractor');
-
     if (!input) return;
-    if (!window.supabaseClient) return;
-    if (!window.syncConfig?.projectCode) return;
 
-    const listId = 'contractor-directory-datalist';
-    let datalist = document.getElementById(listId);
-
-    if (!datalist) {
-        datalist = document.createElement('datalist');
-        datalist.id = listId;
-        document.body.appendChild(datalist);
-    }
+    // Убираем старый глючный datalist
+    input.removeAttribute('list');
 
     try {
-        const { data, error } = await window.supabaseClient
-            .from('contractor_directory')
-            .select('canonical_key, display_name')
-            .eq('project_code', window.syncConfig.projectCode)
-            .or('is_deleted.is.null,is_deleted.eq.false')
-            .order('display_name', { ascending: true });
+        let contractorNames = [];
 
-        if (error) throw error;
-
-        datalist.innerHTML = (data || []).map(c => `
-            <option value="${String(c.display_name || '').replace(/"/g, '&quot;')}"></option>
-        `).join('');
-
-        input.setAttribute('list', listId);
-
-        console.log('[Осмотр] Справочник подрядчиков загружен:', data?.length || 0);
+        // Берем подрядчиков из справочника
+        if (typeof ContractorDirectory !== 'undefined' && ContractorDirectory.contractors.length > 0) {
+            contractorNames = ContractorDirectory.contractors.map(c => c.display_name);
+        } else if (typeof dbGetAll !== 'undefined') {
+            const dirs = await dbGetAll('contractor_directory');
+            if (dirs) {
+                contractorNames = dirs.filter(c => !c._deleted && !c.is_deleted).map(c => c.display_name);
+            }
+        }
+        
+        // Добавляем тех, кто уже есть в нашей истории (на случай если справочник пуст)
+        if (typeof contractorArray !== 'undefined') {
+            const histNames = contractorArray.map(c => c.contractorName).filter(Boolean);
+            contractorNames = contractorNames.concat(histNames);
+        }
+        
+        // Оставляем только уникальные и сортируем по алфавиту
+        if (contractorNames.length > 0) {
+            contractorNames = [...new Set(contractorNames)].sort();
+            
+            // Загоняем их в кэш умного инпута
+            if (!_smartInputMemoryCache) _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+            _smartInputMemoryCache['contractorName'] = contractorNames;
+            localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
+        }
+        
+        // Инициализируем красивый iOS-подобный дропдаун
+        initSmartInput('inp-contractor', 'contractorName');
+        
     } catch (e) {
         console.warn('[Осмотр] Не удалось загрузить справочник подрядчиков:', e);
     }
@@ -696,10 +704,9 @@ function openMultiFilterModal(type, title, context) {
         uniqueValues = [...new Set([...rbiContrs, ...skContrs].filter(Boolean))].sort();
     } 
     else if (type === 'inspector') {
-        // ТЕПЕРЬ БЕРЕМ И ИНЖЕНЕРОВ СК ТОЖЕ!
+        // Берем ТОЛЬКО Инженеров по Качеству (из истории RBI аудитов), исключая инженеров СК
         const rbiEngs = filteredRbi.map(i => i.inspectorName);
-        const skEngs = filteredSk.map(r => r.issued_by || r.inspector);
-        uniqueValues = [...new Set([...rbiEngs, ...skEngs].filter(name => name && name !== 'Система' && name !== 'Системная'))].sort();
+        uniqueValues = [...new Set(rbiEngs.filter(name => name && name !== 'Система' && name !== 'Системная'))].sort();
     } 
     else if (type === 'template') {
         const rbiTmpls = filteredRbi.map(i => i.templateTitle);
@@ -4026,6 +4033,9 @@ function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
         header.addEventListener('click', () => {
             isCollapsed = !isCollapsed;
             applyPanelState(body, isCollapsed);
+            // Убрано принудительное изменение скролла (window.scrollTo), 
+            // так как на мобильных устройствах это вызывает "прыжки" экрана.
+            // CSS-свойство transition: max-height справится с этим плавно и естественно.
         });
     }
 

@@ -585,16 +585,17 @@ async function runPhotoMigration(historyArray) {
 
 
 window.downloadMissingCloudFiles = async function (silent = false) {
+    console.log("[Cache] Фоновая загрузка облачных файлов...");
+
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
 
     if (!silent && loader && loaderText) {
-        loaderText.innerText = "Поиск файлов в облаке...";
+        loaderText.innerText = 'Кэширование облачных файлов...';
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
-    console.log("[Cache] Проверка облачных файлов...");
     const urlsToDownload = new Set();
 
     // 1. Фото в истории проверок
@@ -643,11 +644,36 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         });
     }
 
+    // 5. PDF-Отчеты (Скачиваем сами файлы для офлайна)
+    if (typeof reportsArray !== 'undefined') {
+        reportsArray.forEach(rep => {
+            if (rep.file_url && rep.file_url.startsWith('http') && !rep.file_blob) {
+                urlsToDownload.add(rep.file_url);
+            }
+        });
+    }
+
     let downloadedCount = 0;
     let alreadyCachedCount = 0;
     const total = urlsToDownload.size;
 
     for (const url of urlsToDownload) {
+          if (url.includes('/reports/')) {
+            try {
+                // Если это отчет, скачиваем его как Blob и сохраняем в базу отчетов
+                const repObj = reportsArray.find(r => r.file_url === url);
+                if (repObj && !repObj.file_blob) {
+                    if (!silent && loaderText) loaderText.innerText = `Кэширование отчета...`;
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        repObj.file_blob = await res.blob();
+                        await dbPut(STORES.REPORTS, repObj);
+                        downloadedCount++;
+                    }
+                }
+            } catch (e) { console.warn('Ошибка кэширования PDF:', e); }
+            continue; // Переходим к следующему файлу, так как это не картинка
+        }
         // Уже в RAM‑кэше
         if (PhotoManager.cache[url]) {
             alreadyCachedCount++;
@@ -684,25 +710,30 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         }
     }
 
-    // Итоговое сообщение – только при ручном запуске
-    if (!silent) {
-        if (loader) {
-            loader.classList.add('opacity-0');
-            setTimeout(() => loader.style.display = 'none', 300);
-        }
-        if (typeof showToast === 'function') {
-            if (downloadedCount > 0) {
-                showToast(`📥 Скачано: ${downloadedCount}`);
-            } else if (alreadyCachedCount === total) {
+    // Итоговое сообщение
+    if (typeof showToast === 'function') {
+        if (downloadedCount > 0) {
+            showToast(`📥 Автокэширование завершено. Загружено файлов: ${downloadedCount}`);
+        } else if (!silent) {
+            // Если кнопку нажали вручную, а качать нечего
+            if (alreadyCachedCount === total && total > 0) {
                 showToast(`✅ Все файлы уже сохранены на устройстве.`);
-            } else {
-                showToast(`⚠️ Проверьте интернет.`);
+            } else if (total === 0) {
+                showToast(`ℹ️ Нет файлов для кэширования.`);
             }
         }
     }
 
     if (typeof updateStorageInfo === 'function') updateStorageInfo();
+
+if (!silent && loader) {
+    loader.classList.add('opacity-0');
+    setTimeout(() => {
+        loader.style.display = 'none';
+    }, 300);
+}
 };
+
 
 // Окончательное удаление файлов из корзины (Hard Delete)
 // Глубокая очистка устройства (Удаление скрытых записей и осиротевших файлов)

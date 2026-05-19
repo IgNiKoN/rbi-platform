@@ -152,6 +152,9 @@ function normalizeCloudSkRecordForLocal(row) {
         block: row.project_block || '',
         floor: row.project_floor || '',
 
+        // Восстанавливаем нормативы на лету из текста
+        standards: typeof sk_extractStandards === 'function' ? sk_extractStandards(row.text || '') : [],
+
         source: 'cloud',
         syncStatus: row.sync_status || 'synced',
         sync_status: row.sync_status || 'synced',
@@ -306,7 +309,120 @@ function prepareContractorQueueForCloud(item, projectCode) {
 
     return payload;
 }
+// === AUTH: нормализация строк для технической почты ===
+window.rbiNormalizeAuthPart = function (value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[^a-zа-я0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '')
+        .substring(0, 80) || 'user';
+};
 
+// === AUTH: стабильный технический email ===
+window.rbiBuildTechnicalEmail = async function (projectCode, userName) {
+    const p = window.rbiNormalizeAuthPart(projectCode);
+    const n = window.rbiNormalizeAuthPart(userName);
+
+    const raw = `${p}_${n}`;
+    const hashBuffer = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(raw)
+    );
+
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const shortHash = hashArray
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('')
+        .substring(0, 12);
+
+    return `rbi_${p}_${shortHash}@rbi-quality.local`;
+};
+
+// === AUTH: пароль для Supabase Auth ===
+// ВАЖНО: это не PIN в чистом виде, а производный пароль.
+// Один и тот же пользователь с тем же проектом и PIN получит тот же пароль.
+window.rbiBuildAuthPassword = async function (projectCode, userName, pin) {
+    const cleanPin = String(pin || '').trim();
+
+    if (!cleanPin || cleanPin.length < 4) {
+        throw new Error('Для облачного входа нужен PIN минимум 4 цифры.');
+    }
+
+    const raw = `rbi-auth|${projectCode}|${userName}|${cleanPin}`;
+    const hash = await window.hashPin(raw);
+
+    // Supabase требует нормальный пароль. Делаем стабильный сложный пароль.
+    return `Rbi_${hash.substring(0, 24)}!`;
+};
+
+// === AUTH: вход или регистрация через Supabase Auth ===
+window.rbiEnsureAuthSession = async function (projectCode, userName, pin) {
+    if (!window.supabaseClient) {
+        throw new Error('Supabase не подключен.');
+    }
+
+    const email = await window.rbiBuildTechnicalEmail(projectCode, userName);
+    const password = await window.rbiBuildAuthPassword(projectCode, userName, pin);
+
+    // 1. Пробуем войти
+    let signInResult = await window.supabaseClient.auth.signInWithPassword({
+        email,
+        password
+    });
+
+    // 2. Если пользователя ещё нет — создаём
+    if (signInResult.error) {
+        const msg = String(signInResult.error.message || '').toLowerCase();
+
+        const looksLikeMissingUser =
+            msg.includes('invalid login') ||
+            msg.includes('invalid credentials') ||
+            msg.includes('email not confirmed') ||
+            msg.includes('user not found');
+
+        if (!looksLikeMissingUser) {
+            throw signInResult.error;
+        }
+
+        const signUpResult = await window.supabaseClient.auth.signUp({
+            email,
+            password,
+            options: {
+                data: {
+                    project_code: projectCode,
+                    engineer_name: userName
+                }
+            }
+        });
+
+        if (signUpResult.error) {
+            throw signUpResult.error;
+        }
+
+        // После signUp ещё раз пробуем войти.
+        signInResult = await window.supabaseClient.auth.signInWithPassword({
+            email,
+            password
+        });
+
+        if (signInResult.error) {
+            throw signInResult.error;
+        }
+    }
+
+    const { data: userData, error: userError } = await window.supabaseClient.auth.getUser();
+
+    if (userError || !userData || !userData.user) {
+        throw userError || new Error('Не удалось получить Auth-пользователя.');
+    }
+
+    return {
+        user: userData.user,
+        email
+    };
+};
 window.hashPin = async function (pin) {
     if (!pin) return null;
     const msgBuffer = new TextEncoder().encode(pin);
@@ -349,11 +465,21 @@ window.initSync = async function () {
         }, 5000);
 
         setInterval(() => {
-            // Экономим Supabase: не гоняем облако без изменений
+            // Экономим трафик: по таймеру отправляем только локальные изменения
             if (localStorage.getItem('rbi_cloud_dirty') === '1') {
                 window.triggerSync('silent');
             }
         }, 60000);
+
+        // НОВОЕ: Проверка обновлений (например, одобрение от Админа) при возврате в приложение
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && window.syncConfig.enabled && navigator.onLine) {
+                console.log('[Sync] Приложение активно. Проверяем обновления в облаке...');
+                // Сбрасываем флаг, чтобы triggerSync точно пошел на сервер за обновлениями
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                window.triggerSync('silent');
+            }
+        });
     }
 };
 
@@ -395,23 +521,37 @@ window.renderSyncUI = function () {
 
     if (window.syncConfig.enabled) {
         // Отрисовка "Моих объектов"
-        const myProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects))
-            ? appSettings.assignedProjects
-            : [];
-
-        // Исключаем заявки, которые сгенерировал импорт Стройконтроля или Справочник
+        const myProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects)) ? appSettings.assignedProjects : [];
+        const pendingProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.pendingAssignedProjects)) ? appSettings.pendingAssignedProjects : [];
+        // Убираем из "Ожидающих" те объекты, которые уже есть в "Подтвержденных"
+        const filteredPending = pendingProjects.filter(p =>
+            !myProjects.includes(p.canonical_key) &&
+            !myProjects.includes(p.raw_name) &&
+            !myProjects.includes(p.display_name)
+        );
         let projectsHtml = '';
 
-        if (myProjects.length === 0) {
+        if (myProjects.length === 0 && pendingProjects.length === 0) {
             projectsHtml = '<div class="text-[10px] text-slate-400 italic text-center mb-2 border border-dashed border-slate-300 rounded p-2">Объекты не добавлены. Шапка осмотра разблокирована для ручного ввода.</div>';
         } else {
-            projectsHtml = myProjects.map(p => `
+            // Рисуем зеленые (Подтвержденные)
+            projectsHtml += myProjects.map(p => `
                 <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 rounded-lg mb-1.5 shadow-sm">
                     <div>
                         <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</div>
                         <div class="text-[8px] font-black uppercase text-green-600">Подтверждён</div>
                     </div>
                     <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
+                </div>
+            `).join('');
+
+            // Рисуем оранжевые (В ожидании)
+            projectsHtml += filteredPending.map(p => `
+                <div class="flex justify-between items-center bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 p-2 rounded-lg mb-1.5 shadow-sm">
+                    <div>
+                        <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p.display_name || p.raw_name}</div>
+                        <div class="text-[8px] font-black uppercase text-orange-600">Ожидает подтверждения</div>
+                    </div>
                 </div>
             `).join('');
         }
@@ -469,14 +609,14 @@ window.renderSyncUI = function () {
                     Вся команда
                 </div>
             </div>`;
-            
+
             // Запускаем асинхронный подсчет заявок НАПРЯМУЮ из облака
             setTimeout(async () => {
                 let totalReqs = 0;
                 try {
                     if (window.supabaseClient) {
                         const pCode = window.syncConfig?.projectCode || 'RBI';
-                        
+
                         // 1. Считаем заявки на подрядчиков (статус pending)
                         const { count: contrCount } = await window.supabaseClient
                             .from('contractor_normalization_queue')
@@ -498,7 +638,7 @@ window.renderSyncUI = function () {
                             .from('rbi_engineer_profiles')
                             .select('cloud_status, settings')
                             .eq('project_code', pCode);
-                            
+
                         if (profiles) {
                             profiles.forEach(p => {
                                 if (p.cloud_status === 'pending') {
@@ -509,10 +649,10 @@ window.renderSyncUI = function () {
                             });
                         }
                     }
-                } catch(e) {
+                } catch (e) {
                     console.warn('[Sync] Ошибка подсчета заявок для бейджа', e);
                 }
-                
+
                 // Отрисовываем бейдж
                 const badge = document.getElementById('admin-badge-count');
                 if (badge) {
@@ -556,12 +696,37 @@ window.renderSyncUI = function () {
                 
                 ${projectsHtml}
                 
-                <div class="flex gap-2 mt-2">
-                    <input type="text" id="new-assigned-project" list="sys-objects-list" class="input-base text-[11px] !py-2" placeholder="Название (или выберите из списка)...">
-                    <datalist id="sys-objects-list">
-                        ${(typeof ObjectDirectory !== 'undefined' ? ObjectDirectory.objects : []).map(o => `<option value="${o.display_name}"></option>`).join('')}
-                    </datalist>
-                    <button onclick="window.addAssignedProject()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold text-[10px] uppercase shadow-sm active:scale-95 shrink-0">Добавить</button>
+                <div class="flex gap-2 mt-2 relative">
+                    <input type="text" id="new-assigned-project" class="input-base text-[11px] !py-2" placeholder="Название (или выберите из списка)..." autocomplete="off"
+                        onfocus="document.getElementById('dd_new-assigned-project').classList.remove('hidden')"
+                        oninput="
+                            const val = this.value.toLowerCase();
+                            const items = document.querySelectorAll('.dd-obj-item');
+                            let hasVisible = false;
+                            items.forEach(el => {
+                                if(el.innerText.toLowerCase().includes(val)) { el.style.display = 'block'; hasVisible = true; }
+                                else { el.style.display = 'none'; }
+                            });
+                            const dd = document.getElementById('dd_new-assigned-project');
+                            if(hasVisible) dd.classList.remove('hidden'); else dd.classList.add('hidden');
+                        "
+                        onblur="setTimeout(() => { const dd = document.getElementById('dd_new-assigned-project'); if(dd) dd.classList.add('hidden'); }, 200)">
+                    
+                    <div id="dd_new-assigned-project" class="absolute top-full left-0 w-[calc(100%-80px)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-xl mt-1 z-[5000] hidden max-h-48 overflow-y-auto custom-scrollbar text-left">
+                        ${(typeof ObjectDirectory !== 'undefined' ? ObjectDirectory.objects : []).map(o => `
+                            <div class="dd-obj-item p-3 text-[12px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors text-slate-800 dark:text-slate-200"
+                                onmousedown="
+                                    const inp = document.getElementById('new-assigned-project');
+                                    inp.value = '${o.display_name.replace(/'/g, "\\'")}';
+                                    inp.dataset.canonical = '${o.canonical_key}';
+                                    document.getElementById('dd_new-assigned-project').classList.add('hidden');
+                                ">
+                                ${o.display_name}
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <button onclick="window.addAssignedProject()" class="bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold text-[10px] uppercase shadow-sm active:scale-95 shrink-0 z-10">Добавить</button>
                 </div>
             </div>
 
@@ -753,20 +918,23 @@ window.addAssignedProject = async function () {
     // Поэтому в assignedProjects не кладём, если статус не approved.
     const cloudStatus = appSettings.cloudStatus || 'offline';
 
-    if (cloudStatus === 'approved' && canonicalKey) {
-        if (!appSettings.assignedProjects.includes(canonicalKey)) {
-            appSettings.assignedProjects.push(canonicalKey);
-        }
-    }
+    // Убрано автоматическое добавление в зеленый список (assignedProjects).
+    // Теперь любой добавленный объект будет оранжевым, пока его не подтвердит Администратор.
 
     if (typeof dbPut === 'function') {
         await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
     }
 
-    // Если облако подключено — записываем заявку в профиль пользователя,
-    // чтобы админ видел её в панели руководителя.
+    // Если облако подключено — записываем заявку в профиль пользователя
     try {
         if (typeof window.pushObjectRequestToCloud === 'function') {
+            // ВАЖНАЯ ПРАВКА: Если статус matched (выбран из базы), мы передаем флаг, 
+            // чтобы Supabase НЕ создавал новую сущность в object_normalization_queue
+            if (requestStatus.includes('matched')) {
+                requestedProject.request_type = 'profile_only'; // Только привязка
+            } else {
+                requestedProject.request_type = 'directory'; // Создание нового в справочнике
+            }
             await window.pushObjectRequestToCloud(requestedProject);
         }
     } catch (e) {
@@ -818,19 +986,42 @@ window.initCloudConnection = async function () {
     const pin = document.getElementById('sync-pin').value.trim();
 
     if (!name || !code) return safeToast("⚠️ Имя и Код проекта обязательны!");
+    if (!pin || pin.length < 4) return safeToast("⚠️ Укажите PIN минимум 4 цифры!");
     if (!window.supabaseClient) return alert("❌ Ошибка: Ключи базы данных не настроены");
 
-    const { data: projData } = await window.supabaseClient.from('allowed_projects').select('code').eq('code', code).limit(1);
-    if (!projData || projData.length === 0) return safeToast("❌ Ошибка: Такого кода проекта не существует!");
+    const { data: projData } = await window.supabaseClient
+        .from('allowed_projects')
+        .select('code')
+        .eq('code', code)
+        .limit(1);
+
+    if (!projData || projData.length === 0) {
+        return safeToast("❌ Ошибка: Такого кода проекта не существует!");
+    }
 
     const hashedPin = await window.hashPin(pin);
     const stableInspectorId = `${code}_${name}`.replace(/\s+/g, '_');
 
+    let authInfo = null;
+
+    try {
+        authInfo = await window.rbiEnsureAuthSession(code, name, pin);
+    } catch (authError) {
+        console.error('[Auth] Ошибка входа:', authError);
+        return safeToast("❌ Ошибка входа в облако: " + authError.message);
+    }
+
+    const authUserId = authInfo.user.id;
+    const authEmail = authInfo.email;
+    const nowIso = new Date().toISOString();
+
+    // Ищем профиль уже по project_code + inspector_id.
+    // Это стабильнее, чем inspector_name.
     const { data, error } = await window.supabaseClient
         .from('rbi_engineer_profiles')
-        .select('inspector_id, pin_hash, role, cloud_status, assigned_projects, contractor_name, assigned_contractor, settings')
+        .select('inspector_id, auth_user_id, auth_email, pin_hash, role, cloud_status, assigned_projects, contractor_name, assigned_contractor, settings')
         .eq('project_code', code)
-        .eq('inspector_name', name)
+        .eq('inspector_id', stableInspectorId)
         .limit(1);
 
     if (error) {
@@ -839,6 +1030,7 @@ window.initCloudConnection = async function () {
     }
 
     // Если профиль есть и PIN не совпал — просим правильный PIN.
+    // Это оставляем как дополнительную защиту внутри приложения.
     if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
         window.showPinPromptModal(name, code, data[0].pin_hash);
         return;
@@ -848,6 +1040,8 @@ window.initCloudConnection = async function () {
     if (!data || data.length === 0) {
         const newProfile = {
             inspector_id: stableInspectorId,
+            auth_user_id: authUserId,
+            auth_email: authEmail,
             inspector_name: name,
             engineer_name: name,
             project_code: code,
@@ -861,8 +1055,9 @@ window.initCloudConnection = async function () {
                 assignedProjects: [],
                 createdFromApp: true
             },
-            last_seen_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            last_auth_at: nowIso,
+            last_seen_at: nowIso,
+            updated_at: nowIso
         };
 
         const { error: insertError } = await window.supabaseClient
@@ -889,47 +1084,67 @@ window.initCloudConnection = async function () {
         safeToast("✅ Заявка отправлена. Ожидает подтверждения администратора.");
     }
 
-    // Если профиль уже есть — применяем его роль и статус.
-    if (data && data.length > 0 && typeof appSettings !== 'undefined') {
+    // Если профиль уже есть — связываем его с auth.uid(), если ещё не связан.
+    if (data && data.length > 0) {
         const profile = data[0];
 
-        appSettings.userRole = profile.role || 'guest';
-        appSettings.cloudStatus = profile.cloud_status || 'pending';
+        const updatePayload = {
+            auth_user_id: authUserId,
+            auth_email: authEmail,
+            last_auth_at: nowIso,
+            last_seen_at: nowIso,
+            updated_at: nowIso
+        };
 
-        appSettings.assignedContractor =
-            profile.contractor_name ||
-            profile.assigned_contractor ||
-            '';
+        const { error: updateAuthError } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .update(updatePayload)
+            .eq('project_code', code)
+            .eq('inspector_id', stableInspectorId);
 
-        appSettings.contractorName = appSettings.assignedContractor;
-
-        const profileCloudStatus = profile.cloud_status || 'pending';
-
-        if (profileCloudStatus === 'approved') {
-            if (Array.isArray(profile.assigned_projects)) {
-                appSettings.assignedProjects = profile.assigned_projects;
-            } else if (profile.settings && Array.isArray(profile.settings.assignedProjects)) {
-                appSettings.assignedProjects = profile.settings.assignedProjects;
-            } else {
-                appSettings.assignedProjects = [];
-            }
-
-            appSettings.pendingAssignedProjects = [];
-        } else {
-            // pending/blocked не должны стирать локальные заявки
-            if (!Array.isArray(appSettings.assignedProjects)) {
-                appSettings.assignedProjects = [];
-            }
-
-            if (profile.settings && Array.isArray(profile.settings.requestedProjects)) {
-                appSettings.pendingAssignedProjects = profile.settings.requestedProjects;
-            } else if (!Array.isArray(appSettings.pendingAssignedProjects)) {
-                appSettings.pendingAssignedProjects = [];
-            }
+        if (updateAuthError) {
+            console.error('[Sync] Ошибка связи профиля с Auth:', updateAuthError);
+            return safeToast("❌ Не удалось связать профиль с Auth");
         }
 
-        if (typeof dbPut === 'function') {
-            await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+        if (typeof appSettings !== 'undefined') {
+            appSettings.userRole = profile.role || 'guest';
+            appSettings.cloudStatus = profile.cloud_status || 'pending';
+
+            appSettings.assignedContractor =
+                profile.contractor_name ||
+                profile.assigned_contractor ||
+                '';
+
+            appSettings.contractorName = appSettings.assignedContractor;
+
+            const profileCloudStatus = profile.cloud_status || 'pending';
+
+            if (profileCloudStatus === 'approved') {
+                if (Array.isArray(profile.assigned_projects)) {
+                    appSettings.assignedProjects = profile.assigned_projects;
+                } else if (profile.settings && Array.isArray(profile.settings.assignedProjects)) {
+                    appSettings.assignedProjects = profile.settings.assignedProjects;
+                } else {
+                    appSettings.assignedProjects = [];
+                }
+
+                appSettings.pendingAssignedProjects = [];
+            } else {
+                if (!Array.isArray(appSettings.assignedProjects)) {
+                    appSettings.assignedProjects = [];
+                }
+
+                if (profile.settings && Array.isArray(profile.settings.requestedProjects)) {
+                    appSettings.pendingAssignedProjects = profile.settings.requestedProjects;
+                } else if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+                    appSettings.pendingAssignedProjects = [];
+                }
+            }
+
+            if (typeof dbPut === 'function') {
+                await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+            }
         }
     }
 
@@ -3121,7 +3336,8 @@ window.triggerSync = async function (mode = 'silent') {
 
                             // 3. Отправляем HTML-снимок для QR-кода (если он есть)
                             if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
-                                await window.pushCloudObject('snapshot', 'snap_' + rep.id, window._tempSnapshots[rep.id]);
+                                const snap = window._tempSnapshots[rep.id];
+                                await window.pushCloudObject('snapshot', snap.id || ('snap_' + rep.id), snap);
                                 delete window._tempSnapshots[rep.id];
                             }
 
@@ -3507,6 +3723,10 @@ window.triggerSync = async function (mode = 'silent') {
         // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
         if (typeof window.rbi_generateAutoTasks === 'function') {
             await window.rbi_generateAutoTasks(true);
+        }
+        // 1.5. Проверяем аномалии в ПК Стройконтроль и создаем задачу
+        if (typeof window.sk_generateAnomalyTasks === 'function') {
+            await window.sk_generateAnomalyTasks();
         }
 
         // 2. Пересчитываем рутинные задачи (Аудиты, Эталоны) после получения свежей истории из облака

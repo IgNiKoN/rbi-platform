@@ -6,6 +6,7 @@ window.skVolumes = {};      // Справочник объемов
 window.skMapping = null;    // Сохраненный шаблон маппинга
 window.skContractorMap = {};// Словарь алиасов подрядчиков
 window.skCategoryMap = {};  // ИИ-Словарь "грязная категория -> чистый вид работ"
+window.skCurrentSubTab = 'dashboard'; // Память открытой вкладки
 let skAiRunning = false; // Защита от параллельного запуска ИИ
 const SK_FIELDS = [
     { id: 'row_number', name: '№ п/п' },
@@ -341,11 +342,20 @@ window.sk_sortHrTable = function(column) {
 // Глобальная переменная для фильтра
 
 window.sk_renderMainTab = async function () {
-    await sk_loadData();
     const container = document.getElementById('sk-main-container');
     if (!container) return;
 
-    // Вычисляем период загруженных данных
+    // Показываем лоадер только если базы еще нет в оперативной памяти И если экран пустой
+    if ((!window.skRecords || window.skRecords.length === 0) && !document.getElementById('sk-view-dashboard')) {
+        container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20">
+                <svg class="animate-spin h-8 w-8 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Чтение базы Стройконтроля...</div>
+            </div>`;
+        await sk_loadData();
+    }
+
+    // Вычисляем период
     let minD = null, maxD = null;
     window.skRecords.forEach(r => {
         if (r.date_issued) {
@@ -356,67 +366,85 @@ window.sk_renderMainTab = async function () {
     });
     const periodStr = (minD && maxD) ? `с ${minD.toLocaleDateString('ru-RU')} по ${maxD.toLocaleDateString('ru-RU')}` : 'Не определен';
 
-    // --- ПРОВЕРКА ПРАВ ДЛЯ ВКЛАДКИ HR ---
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    const canSeeHr = role !== 'guest'; // Разрешаем всем, кроме гостей
+    const canSeeHr = role !== 'guest'; 
     const canUploadSk = ['engineer', 'deputy_manager', 'manager'].includes(role);
 
     const hrBtnHtml = canSeeHr ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
 
-    let html = `
-      <div id="sk-contractor-queue-banner" class="hidden"></div>
-        <!-- ... Шапка дашборда СК (оставляем как есть, меняем только кнопки) ... -->
-        <div class="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-sm mb-4">
-            <div class="flex justify-between items-start mb-3">
-                <div>
-                    <h2 class="text-[13px] font-bold uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                        Данные ПК Стройконтроль
-                    </h2>
-                    <p class="text-[10px] text-slate-500 font-bold mt-1">Всего в базе: <b class="text-indigo-600">${window.skRecords.length}</b> позиций</p>
-                    <p class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Период: ${periodStr}</p>
-                </div>
-                <div class="flex gap-2">
-                ${canUploadSk ? `
-                   <button onclick="sk_clearData()" class="w-10 h-10 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-transform" title="Очистить базу СК">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                    <button onclick="document.getElementById('sk-excel-input').click()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold uppercase shadow-md active:scale-95 flex items-center gap-1.5 h-10">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
-                   </button>
-                            ` : `
-                    <div class="text-[9px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl border border-[var(--card-border)]">
-                  Только просмотр
+    // САМОЕ ВАЖНОЕ: Проверяем, есть ли уже отрисованный КАРКАС графиков. 
+    // Лоадер эту проверку не обманет!
+    const needsFullRender = !document.getElementById('sk-view-dashboard');
+
+    if (needsFullRender) {
+        let html = `
+            <div id="sk-contractor-queue-banner" class="hidden"></div>
+            <div class="bg-[var(--card-bg)] p-4 rounded-2xl border border-[var(--card-border)] shadow-sm mb-4">
+                <div class="flex justify-between items-start mb-3">
+                    <div>
+                        <h2 class="text-[13px] font-bold uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            Данные ПК Стройконтроль
+                        </h2>
+                        <p class="text-[10px] text-slate-500 font-bold mt-1">Всего в базе: <b id="sk-total-count" class="text-indigo-600">${window.skRecords.length}</b> позиций</p>
+                        <p id="sk-period-text" class="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Период: ${periodStr}</p>
                     </div>
-    `}
-</div>
+                    <div class="flex gap-2">
+                    ${canUploadSk ? `
+                        <button onclick="sk_clearData()" class="w-10 h-10 bg-red-50 text-red-600 border border-red-200 rounded-xl flex items-center justify-center shadow-sm active:scale-90 transition-transform" title="Очистить базу СК">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                        <button onclick="document.getElementById('sk-excel-input').click()" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[11px] font-bold uppercase shadow-md active:scale-95 flex items-center gap-1.5 h-10">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Импорт
+                        </button>
+                                ` : `
+                        <div class="text-[9px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl border border-[var(--card-border)]">
+                        Только просмотр
+                        </div>
+                    `}
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 border-t border-[var(--card-border)] pt-3">
+                    <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Фильтр:</span>
+                    <select id="sk-period-filter" class="input-base !py-1 !text-[10px] font-bold flex-1" onchange="window.skCurrentPeriodFilter = this.value; sk_renderDashboard();">
+                        <option value="ALL" ${window.skCurrentPeriodFilter === 'ALL' ? 'selected' : ''}>Анализировать всё время</option>
+                        <option value="14" ${window.skCurrentPeriodFilter === '14' ? 'selected' : ''}>За последние 14 дней</option>
+                        <option value="30" ${window.skCurrentPeriodFilter === '30' ? 'selected' : ''}>За последние 30 дней</option>
+                    </select>
+                </div>
             </div>
-            
-            <div class="flex items-center gap-2 border-t border-[var(--card-border)] pt-3">
-                <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Фильтр:</span>
-                <select id="sk-period-filter" class="input-base !py-1 !text-[10px] font-bold flex-1" onchange="window.skCurrentPeriodFilter = this.value; sk_renderDashboard();">
-                    <option value="ALL" ${window.skCurrentPeriodFilter === 'ALL' ? 'selected' : ''}>Анализировать всё время</option>
-                    <option value="14" ${window.skCurrentPeriodFilter === '14' ? 'selected' : ''}>За последние 14 дней</option>
-                    <option value="30" ${window.skCurrentPeriodFilter === '30' ? 'selected' : ''}>За последние 30 дней</option>
-                </select>
+
+            <div class="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar pb-1">
+                <button onclick="sk_switchView('dashboard')" id="sk-btn-dashboard" class="shrink-0 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Дашборд</button>
+                <button onclick="sk_switchView('volumes')" id="sk-btn-volumes" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Объемы</button>
+                ${hrBtnHtml}
             </div>
-        </div>
 
-        <div class="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar pb-1">
-            <button onclick="sk_switchView('dashboard')" id="sk-btn-dashboard" class="shrink-0 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg> Дашборд</button>
-            <button onclick="sk_switchView('volumes')" id="sk-btn-volumes" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> Объемы</button>
-            ${hrBtnHtml}
-        </div>
+            <div id="sk-view-dashboard" class="block"></div>
+            <div id="sk-view-volumes" class="hidden"></div>
+            <div id="sk-view-hr" class="hidden"></div>
+        `;
+        container.innerHTML = html;
+    } else {
+        // Если каркас уже нарисован, просто обновляем цифры в шапке
+        const countEl = document.getElementById('sk-total-count');
+        const periodEl = document.getElementById('sk-period-text');
+        if (countEl) countEl.innerText = window.skRecords.length;
+        if (periodEl) periodEl.innerText = `Период: ${periodStr}`;
+    }
 
-        <div id="sk-view-dashboard" class="block"></div>
-        <div id="sk-view-volumes" class="hidden"></div>
-        <div id="sk-view-hr" class="hidden"></div>
-    `;
+    // Запускаем баннер асинхронно
+    if (typeof sk_renderContractorQueueBanner === 'function') {
+        sk_renderContractorQueueBanner().catch(e => console.warn(e));
+    }
 
-    container.innerHTML = html;
-    await sk_renderContractorQueueBanner();
-    sk_renderVolumes();
-    sk_renderDashboard();
+    // МГНОВЕННО РИСУЕМ ДАННЫЕ В ГРАФИКАХ
+    const targetTab = window.skCurrentSubTab || 'dashboard';
+    if (typeof sk_renderVolumes === 'function') sk_renderVolumes();
+    if (typeof sk_renderDashboard === 'function') sk_renderDashboard();
+    if (targetTab === 'hr' && typeof sk_renderHrTab === 'function') sk_renderHrTab();
+    if (typeof sk_switchView === 'function') sk_switchView(targetTab);
 };
 
 // Функция очистки данных Стройконтроля
@@ -477,6 +505,7 @@ window.sk_clearData = async function () {
 };
 
 window.sk_switchView = function (view) {
+    window.skCurrentSubTab = view; // Запоминаем выбор пользователя
     // --- НОВОЕ: Безопасное скрытие вкладок (защита от Crash) ---
     const vDash = document.getElementById('sk-view-dashboard');
     const vVol = document.getElementById('sk-view-volumes');
@@ -1523,6 +1552,11 @@ window.sk_renderDashboard = function () {
     // --- 0. ПРИМЕНЕНИЕ ФИЛЬТРОВ (ГЛОБАЛЬНЫЕ + ЛОКАЛЬНЫЕ) ---
     let activeRecords = window.skRecords;
 
+    // ПРИМЕНЯЕМ ФИЛЬТР ТЕЛЕФОН/ОБЛАКО (Как в основной аналитике)
+    if (window.analyticsDataMode === 'cloud') {
+        activeRecords = activeRecords.filter(r => r.source === 'cloud' || r.syncStatus === 'synced' || r.sync_status === 'synced');
+    }
+
     // 1. Глобальный фильтр по Периоду (из шапки)
     const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
     const now = new Date();
@@ -1601,12 +1635,17 @@ window.sk_renderDashboard = function () {
     // <-- ИСПРАВЛЕНО: Защита от пустых имен (Cannot read properties of undefined)
     const rbiContractors = [...new Set(contractorArray.map(c => c.contractorName ? c.contractorName.toLowerCase().trim() : ''))];
 
+    // КЭШИРОВАНИЕ: Сохраняем расчеты, чтобы не гонять фильтр по тысячам строк
+    const rbiDefectRatesCache = {};
     const getRbiDefectRate = (contractor, cleanCategory) => {
+        const cacheKey = contractor + '_||_' + cleanCategory;
+        if (rbiDefectRatesCache[cacheKey] !== undefined) return rbiDefectRatesCache[cacheKey];
+
         const relevantChecks = contractorArray.filter(c =>
             c.contractorName === contractor &&
             c.templateTitle === cleanCategory
         );
-        if (relevantChecks.length === 0) return 0.05;
+        if (relevantChecks.length === 0) { rbiDefectRatesCache[cacheKey] = 0.05; return 0.05; }
 
         let totalItemsChecked = 0; let totalDefectsFound = 0;
         relevantChecks.forEach(c => {
@@ -1615,8 +1654,10 @@ window.sk_renderDashboard = function () {
                 totalDefectsFound += (c.metrics.n_B2_fail + c.metrics.n_B3_fail);
             }
         });
-        if (totalItemsChecked === 0) return 0.05;
-        return totalDefectsFound / totalItemsChecked;
+        
+        const rate = totalItemsChecked === 0 ? 0.05 : (totalDefectsFound / totalItemsChecked);
+        rbiDefectRatesCache[cacheKey] = rate;
+        return rate;
     };
 
     const contrMap = {};
@@ -1665,7 +1706,18 @@ window.sk_renderDashboard = function () {
             if (cleanCat.trim() === '') cleanCat = 'Без категории';
 
             const matrixKey = `${c}_||_${cleanCat}`;
-            if (!matrixMap[matrixKey]) matrixMap[matrixKey] = { contractor: c, category: cleanCat, total: 0, open: 0, overdue: 0, closingDays: [] };
+        if (!matrixMap[matrixKey]) {
+            matrixMap[matrixKey] = { 
+                contractor: c, 
+                category: cleanCat, 
+                total: 0, 
+                open: 0, 
+                overdue: 0, 
+                closingDays: [],
+                // СРАЗУ сохраняем имя объекта, чтобы потом не тратить время на его поиск
+                projectName: r.project_display_name || r.projectName || r.project_canonical_key || 'Объект не определен'
+            };
+        }
 
             matrixMap[matrixKey].total++;
             if (isOpen) matrixMap[matrixKey].open++;
@@ -1736,9 +1788,8 @@ window.sk_renderDashboard = function () {
     const matrixByProject = {};
     Object.keys(matrixMap).forEach(key => {
         const mData = matrixMap[key];
-        // Находим имя объекта из исходных записей
-        const sampleRecord = activeRecords.find(r => r.contractor === mData.contractor && r.category === mData.category);
-        const pName = sampleRecord ? (sampleRecord.project_display_name || sampleRecord.projectName || 'Объект не определен') : 'Объект не определен';
+        // МГНОВЕННОЕ ЧТЕНИЕ ИЗ КЭША (Без тормозящего поиска по всей базе)
+        const pName = mData.projectName;
         
         if (!matrixByProject[pName]) matrixByProject[pName] = {};
         if (!matrixByProject[pName][mData.contractor]) matrixByProject[pName][mData.contractor] = [];
@@ -1939,94 +1990,7 @@ window.sk_renderDashboard = function () {
         if (isLinked) linkedHtml += cardHtml; else unlinkedHtml += cardHtml;
     });
 
-    // === ЖЕСТКОЕ УДАЛЕНИЕ СТАРЫХ МНОЖЕСТВЕННЫХ ЗАДАЧ ИЗ БАЗЫ ===
-    if (typeof window.rbi_tasksData !== 'undefined') {
-        let tasksDeleted = false;
-        window.rbi_tasksData.forEach(t => {
-            if (t.status === 'pending' && (t.title.includes('Низкая зрелость СК:') || t.title.includes('Просрочки ПК СК:') || t.title.includes('Низкий ИСД:'))) {
-                t._deleted = true;
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, t);
-                tasksDeleted = true;
-            }
-        });
-        if (tasksDeleted) {
-            window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
-        }
-    }
-    // === АВТОЗАКРЫТИЕ ЗАДАЧИ "Анализ проблем ПК СК" (Если сигналов больше нет) ===
-    if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
-        if (typeof window.rbi_tasksData !== 'undefined') {
-            const staleTask = window.rbi_tasksData.find(t =>
-                t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
-            );
-            if (staleTask) {
-                staleTask.status = 'done';
-                staleTask.done = 1;
-                staleTask.resultComment = 'Показатели в норме';
-                staleTask.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, staleTask);
-            }
-        }
-    }
-    // === КОНСОЛИДАЦИЯ ЗАДАЧ (СОЗДАНИЕ ОДНОЙ ЕДИНОЙ) ===
-    // Если сигналов нет — закрываем задачу если она висит
-    if (skIssues.isd.length === 0 && skIssues.open.length === 0 && skIssues.cmi.length === 0) {
-        if (typeof window.rbi_tasksData !== 'undefined') {
-            const staleTask = window.rbi_tasksData.find(t =>
-                t.title === 'Анализ проблем ПК СК' && t.status === 'pending'
-            );
-            if (staleTask) {
-                staleTask.status = 'done';
-                staleTask.done = 1;
-                staleTask.resultComment = 'Показатели в норме';
-                staleTask.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut(STORES.TASKS, staleTask);
-            }
-        }
-    }
-    if ((skIssues.isd.length > 0 || skIssues.open.length > 0 || skIssues.cmi.length > 0) && typeof window.rbi_tasksData !== 'undefined') {
-        const taskTitle = 'Анализ проблем ПК СК';
-        // --- УДАЛЯЕМ СТАРЫЕ АКТИВНЫЕ ЗАДАЧИ ЭТОГО ТИПА ПЕРЕД СОЗДАНИЕМ НОВОЙ ---
-        window.rbi_tasksData.forEach(t => {
-            if (t.title === taskTitle && t.status === 'pending') {
-                t._deleted = true;
-                t.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') dbPut('rbi_tasks', t);
-            }
-        });
-        window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
-        // -----------------------------------------------------------------------
-
-
-        let promptLines = [];
-        if (skIssues.isd.length > 0) promptLines.push(`🚨 Низкий ИСД (скрывают брак):\n- ${[...new Set(skIssues.isd)].join('\n- ')}`);
-        if (skIssues.open.length > 0) promptLines.push(`⚠️ Много открытых замечаний:\n- ${[...new Set(skIssues.open)].join('\n- ')}`);
-        if (skIssues.cmi.length > 0) promptLines.push(`⏱ Низкий Индекс Зрелости (срывы сроков):\n- ${[...new Set(skIssues.cmi)].join('\n- ')}`);
-
-        const fullPrompt = "Выявлены проблемы по СВЯЗАННЫМ подрядчикам в Стройконтроле:\n\n" + promptLines.join('\n\n');
-
-        const newTask = {
-            id: 'tsk_sk_cons_' + Date.now().toString(36),
-            type: 'auto', category: 'meeting',
-            engineerName: sk_getCurrentUserName(), // <-- ИСПРАВЛЕНО: Точное имя
-            inspectorName: sk_getCurrentUserName(),
-            icon: 'Совещание', taskType: 'Аналитика СК',
-            contractor: 'Системная',
-            project: document.getElementById('inp-project')?.value || "Все",
-            templateKey: '', workTitle: 'Аналитика СК',
-            title: taskTitle, prompt: fullPrompt,
-            status: 'pending', priorityLvl: 3, date: new Date().toISOString(),
-            target: 1, done: 0, carryOverCount: 0,
-            history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана модулем ПК СК.`],
-            updatedAt: new Date().toISOString(),
-            _deleted: false
-        };
-        window.rbi_tasksData.push(newTask);
-        if (typeof dbPut === 'function') dbPut('rbi_tasks', newTask);
-
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
-    }
+    
     // --- ПРОСТРАНСТВЕННЫЙ АНАЛИЗ (ПО ЭТАЖАМ И СЕКЦИЯМ) ---
     const spatialMap = {};
     activeRecords.forEach(r => {
@@ -2046,24 +2010,29 @@ window.sk_renderDashboard = function () {
 
     let spatialHtml = '';
     Object.keys(spatialMap).forEach(objKey => {
-        spatialHtml += `<div class="text-[11px] font-black uppercase text-slate-800 dark:text-white mt-4 mb-2 border-b border-[var(--card-border)] pb-1">🏢 Объект: ${objKey}</div>`;
+        spatialHtml += `
+        <details class="bg-white dark:bg-slate-800 mb-3 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm group/space [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 bg-indigo-50 dark:bg-indigo-900/30 cursor-pointer font-black text-[12px] uppercase tracking-widest text-indigo-700 dark:text-indigo-400 flex justify-between items-center select-none group-open/space:border-b border-indigo-200 dark:border-indigo-800">
+                <span class="flex items-center gap-2">🏢 Объект: ${objKey}</span>
+                <span class="transition-transform duration-300 group-open/space:rotate-180 text-indigo-500">▼</span>
+            </summary>
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/50">
+        `;
 
         Object.keys(spatialMap[objKey]).sort().forEach(blockName => {
             const blockData = spatialMap[objKey][blockName];
-
-            // Собираем этажи и сортируем как числа (учитывая минусовые)
             const floors = Object.keys(blockData).sort((a, b) => {
                 const numA = parseInt(a); const numB = parseInt(b);
-                if (!isNaN(numA) && !isNaN(numB)) return numB - numA; // Сверху вниз
+                if (!isNaN(numA) && !isNaN(numB)) return numB - numA;
                 return a.localeCompare(b);
             });
 
             let tableRows = '';
             floors.forEach(floor => {
                 const cell = blockData[floor];
-                let bgColor = 'bg-green-50 text-green-700'; // Мало замечаний
-                if (cell.total > 15) bgColor = 'bg-red-100 text-red-800 font-black'; // Много
-                else if (cell.total > 5) bgColor = 'bg-yellow-50 text-yellow-700 font-bold'; // Средне
+                let bgColor = 'bg-green-50 text-green-700'; 
+                if (cell.total > 15) bgColor = 'bg-red-100 text-red-800 font-black'; 
+                else if (cell.total > 5) bgColor = 'bg-yellow-50 text-yellow-700 font-bold'; 
 
                 tableRows += `
                 <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-[var(--hover-bg)]">
@@ -2079,17 +2048,15 @@ window.sk_renderDashboard = function () {
                 <div class="overflow-x-auto">
                     <table class="w-full text-left whitespace-nowrap">
                         <thead class="bg-slate-50 dark:bg-slate-900/50 text-[9px] text-slate-400 uppercase">
-                            <tr>
-                                <th class="p-2 text-center border-r border-slate-100 dark:border-slate-800">Уровень</th>
-                                <th class="p-2 text-center">Всего замечаний</th>
-                                <th class="p-2 text-center">Открыто / Просрочено</th>
-                            </tr>
+                            <tr><th class="p-2 text-center border-r border-slate-100 dark:border-slate-800">Уровень</th><th class="p-2 text-center">Всего замечаний</th><th class="p-2 text-center">Открыто / Просрочено</th></tr>
                         </thead>
                         <tbody>${tableRows}</tbody>
                     </table>
                 </div>
             </div>`;
         });
+        
+        spatialHtml += `</div></details>`;
     });
 
     if (!spatialHtml) spatialHtml = '<div class="text-center py-4 text-slate-400 text-[10px] font-bold uppercase">Данные о расположении отсутствуют. При импорте убедитесь, что колонка "Элемент структуры" связана корректно.</div>';
@@ -3033,3 +3000,136 @@ window.sk_saveContractorLink = async function () {
         showToast('❌ Не удалось связать подрядчика');
     }
 };
+
+// === АВТОГЕНЕРАЦИЯ ЗАДАЧ ПО ПК СТРОЙКОНТРОЛЬ ===
+window.sk_generateAnomalyTasks = async function() {
+    if (!window.skRecords || window.skRecords.length === 0) return;
+    if (!window.rbi_tasksData) return;
+
+    let skIssues = { open: [], cmi: [] };
+    const contrMap = {};
+
+    // Считаем актуальную стату по каждому подрядчику
+    window.skRecords.forEach(r => {
+        if (r.is_deleted || r._deleted) return;
+        const c = r.contractor;
+        if (!contrMap[c]) contrMap[c] = { total: 0, open: 0, overdueCount: 0, closedCount: 0, closedOnTimeCount: 0, overdueDaysArr: [] };
+        
+        const data = contrMap[c];
+        data.total++;
+        
+        const isOpen = r.status && r.status.toLowerCase().includes('не устран');
+        if (isOpen) data.open++;
+        
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+        const now = new Date();
+
+        if (resolved && !isOpen) data.closedCount++;
+        if (deadline) {
+            if (isOpen && now > deadline) {
+                data.overdueCount++;
+                data.overdueDaysArr.push(Math.floor((now - deadline) / (1000 * 60 * 60 * 24)));
+            } else if (!isOpen && resolved) {
+                if (resolved > deadline) {
+                    data.overdueCount++;
+                    data.overdueDaysArr.push(Math.floor((resolved - deadline) / (1000 * 60 * 60 * 24)));
+                } else {
+                    data.closedOnTimeCount++;
+                }
+            }
+        }
+    });
+
+    const rbiContractors = [...new Set((typeof contractorArray !== 'undefined' ? contractorArray : []).map(c => c.contractorName ? c.contractorName.toLowerCase().trim() : ''))];
+    
+    // Ищем проблемы (Пороги снижены для чувствительности)
+    for (let cName in contrMap) {
+        const data = contrMap[cName];
+        const isLinked = rbiContractors.includes(cName.toLowerCase().trim()) || Object.values(window.skContractorMap || {}).includes(cName);
+        
+        if (isLinked) {
+            if (data.open > 2) skIssues.open.push(cName); 
+            
+            const overduePerc = data.total > 0 ? Math.round((data.overdueCount / data.total) * 100) : 0;
+            const avgOverdueDepth = data.overdueDaysArr.length > 0 ? Math.round(data.overdueDaysArr.reduce((a, b) => a + b, 0) / data.overdueDaysArr.length) : 0;
+            const onTimePerc = data.closedCount > 0 ? Math.round((data.closedOnTimeCount / data.closedCount) * 100) : 100;
+            
+            let cmi = 100;
+            if (data.total > 0) {
+                cmi = Math.round((onTimePerc * 0.6) + ((100 - overduePerc) * 0.4) - Math.min(avgOverdueDepth, 30));
+                cmi = Math.max(0, Math.min(100, cmi));
+            }
+            if (cmi < 70 && data.total > 2) skIssues.cmi.push(cName);
+        }
+    }
+
+    const taskTitle = 'Анализ проблем ПК СК';
+
+    // Очистка дубликатов задач
+    let activeTasks = window.rbi_tasksData.filter(t => t.title === taskTitle && t.status === 'pending');
+    if (activeTasks.length > 1) {
+        for (let i = 1; i < activeTasks.length; i++) {
+            activeTasks[i]._deleted = true;
+            if (typeof dbPut === 'function') await dbPut('rbi_tasks', activeTasks[i]);
+        }
+        window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
+    }
+
+    let existingTask = window.rbi_tasksData.find(t => t.title === taskTitle && t.status === 'pending');
+
+    if (skIssues.open.length === 0 && skIssues.cmi.length === 0) {
+        // Если проблем больше нет — закрываем задачу автоматически
+        if (existingTask) {
+            existingTask.status = 'done';
+            existingTask.done = 1;
+            existingTask.resultComment = 'Показатели в норме';
+            existingTask.updatedAt = new Date().toISOString();
+            if (typeof dbPut === 'function') await dbPut('rbi_tasks', existingTask);
+            if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+        }
+    } else {
+        // Формируем текст
+        let promptLines = [];
+        if (skIssues.open.length > 0) promptLines.push(`⚠️ Много открытых замечаний:\n- ${[...new Set(skIssues.open)].join('\n- ')}`);
+        if (skIssues.cmi.length > 0) promptLines.push(`⏱ Низкий Индекс Зрелости (срывы сроков):\n- ${[...new Set(skIssues.cmi)].join('\n- ')}`);
+        const fullPrompt = "Выявлены проблемы по СВЯЗАННЫМ подрядчикам в Стройконтроле:\n\n" + promptLines.join('\n\n');
+
+        if (existingTask) {
+            if (existingTask.prompt !== fullPrompt) {
+                existingTask.prompt = fullPrompt;
+                existingTask.updatedAt = new Date().toISOString();
+                if (typeof dbPut === 'function') await dbPut('rbi_tasks', existingTask);
+            }
+        } else {
+            const newTask = {
+                id: 'tsk_sk_systemic_alert', // Фиксированный ID, чтобы не плодились
+                type: 'auto', category: 'meeting',
+                engineerName: (typeof sk_getCurrentUserName === 'function' ? sk_getCurrentUserName() : 'Инженер'),
+                inspectorName: (typeof sk_getCurrentUserName === 'function' ? sk_getCurrentUserName() : 'Инженер'),
+                icon: 'Совещание', taskType: 'Аналитика СК',
+                contractor: 'Системная',
+                project: document.getElementById('inp-project')?.value || "Все",
+                templateKey: '', workTitle: 'Аналитика СК',
+                title: taskTitle, prompt: fullPrompt,
+                status: 'pending', priorityLvl: 3, date: new Date().toISOString(),
+                target: 1, done: 0, carryOverCount: 0,
+                history: [`[${new Date().toLocaleDateString('ru-RU')}] Задача создана модулем ПК СК.`],
+                updatedAt: new Date().toISOString(),
+                _deleted: false
+            };
+            window.rbi_tasksData.unshift(newTask);
+            if (typeof dbPut === 'function') await dbPut('rbi_tasks', newTask);
+        }
+        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+    }
+};
+
+// Фоновая предзагрузка базы ПК СК при старте приложения
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if (typeof sk_loadData === 'function') {
+            sk_loadData().catch(() => {});
+        }
+    }, 2500); // Грузим через 2.5 сек после старта, чтобы не тормозить основной интерфейс
+});

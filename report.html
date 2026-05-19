@@ -3,70 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Просмотр отчета | RBI Quality</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>RBI Quality — Отчёт</title>
+    <meta name="theme-color" content="#1c2b39">
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Подключаем конфиг с ключами -->
-    <script src="js/config.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            background: #f1f5f9;
+            color: #0f172a;
+            font-family: Arial, sans-serif;
+        }
+
+        #status {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .box {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 18px;
+            padding: 24px;
+            max-width: 460px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+
+        .title {
+            font-size: 14px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: #1c2b39;
+            margin-bottom: 8px;
+        }
+
+        .text {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #64748b;
+            font-weight: 700;
+        }
+
+        #report-root {
+            background: white;
+            min-height: 100vh;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            #report-root {
+                padding: 0;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
 </head>
-<body class="bg-slate-100 text-slate-800 p-4 font-sans">
-
-    <div class="max-w-4xl mx-auto">
-        <div id="loader" class="text-center py-20 animate-pulse font-bold text-indigo-600">
-            Загрузка отчета из базы данных...
-        </div>
-        
-        <!-- Сюда вставится HTML отчета -->
-        <div id="report-container" class="bg-white shadow-xl rounded-2xl p-4 md:p-8 overflow-x-auto hidden"></div>
-
-        <div id="error" class="text-center py-20 text-red-500 font-bold hidden">
-            Отчет не найден или ссылка устарела.
+<body>
+    <div id="status">
+        <div class="box">
+            <div class="title">RBI Quality</div>
+            <div class="text">Загрузка отчёта...</div>
         </div>
     </div>
 
+    <div id="report-root" style="display:none;"></div>
+
     <script>
-        // Получаем ID из URL (например, ?id=rep_12345)
-        const urlParams = new URLSearchParams(window.location.search);
-        const reportId = urlParams.get('id');
+        const APP_CONFIG = {
+            SUPABASE_URL: 'https://api.rbi-q.ru',
+            SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzc3NTA3MjAwLCJleHAiOjE5MzUyNzM2MDB9.f2s_pInfJu74ptaavpJx7J3I6Arwavcjnkzl1z39wPk'
+        };
+
+        function showStatus(title, text) {
+            document.getElementById('status').style.display = 'flex';
+            document.getElementById('report-root').style.display = 'none';
+            document.getElementById('status').innerHTML = `
+                <div class="box">
+                    <div class="title">${title}</div>
+                    <div class="text">${text}</div>
+                </div>
+            `;
+        }
 
         async function loadReport() {
-            if (!reportId) {
-                document.getElementById('loader').classList.add('hidden');
-                document.getElementById('error').classList.remove('hidden');
-                document.getElementById('error').innerText = "Некорректная ссылка";
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('token');
+
+            if (!token) {
+                showStatus('Отчёт не найден', 'В ссылке отсутствует токен отчёта.');
                 return;
             }
 
             try {
-                // Подключаемся к Supabase
-                const supabase = window.supabase.createClient(
-                    window.APP_CONFIG.SUPABASE_URL,
-                    window.APP_CONFIG.SUPABASE_KEY
-                );
+                const client = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_KEY);
 
-                // Ищем HTML снимок в таблице
-                const { data, error } = await supabase
-                    .from('shared_report_snapshots')
-                    .select('html_content')
-                    .eq('report_id', reportId)
-                    .single();
+                const { data, error } = await client.rpc('get_public_report_by_token', {
+                    p_token: token
+                });
 
-                if (error || !data) throw new Error("Отчет не найден");
+                if (error) throw error;
 
-                // Скрываем лоадер и вставляем HTML
-                document.getElementById('loader').classList.add('hidden');
-                const container = document.getElementById('report-container');
-                container.innerHTML = data.html_content;
-                container.classList.remove('hidden');
+                if (!data || data.length === 0) {
+                    showStatus('Отчёт недоступен', 'Ссылка недействительна, отчёт удалён или срок доступа истёк.');
+                    return;
+                }
 
-            } catch (err) {
-                console.error(err);
-                document.getElementById('loader').classList.add('hidden');
-                document.getElementById('error').classList.remove('hidden');
+                const report = data[0];
+
+                document.getElementById('status').style.display = 'none';
+                const root = document.getElementById('report-root');
+                root.style.display = 'block';
+                root.innerHTML = report.html_content;
+
+                document.title = 'RBI Quality — Отчёт';
+
+            } catch (e) {
+                console.error(e);
+                showStatus('Ошибка загрузки', 'Не удалось загрузить отчёт. Проверьте подключение к интернету.');
             }
         }
 
-        document.addEventListener('DOMContentLoaded', loadReport);
+        loadReport();
     </script>
 </body>
 </html>
