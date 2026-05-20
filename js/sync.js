@@ -475,8 +475,6 @@ window.initSync = async function () {
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && window.syncConfig.enabled && navigator.onLine) {
                 console.log('[Sync] Приложение активно. Проверяем обновления в облаке...');
-                // Сбрасываем флаг, чтобы triggerSync точно пошел на сервер за обновлениями
-                localStorage.setItem('rbi_cloud_dirty', '1');
                 window.triggerSync('silent');
             }
         });
@@ -1967,11 +1965,18 @@ window.triggerSync = async function (mode = 'silent') {
         const hashStr = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
         // 2. Формируем путь (Все файлы падают в папку hashed_assets под своим хешем)
-        const storagePath = `hashed_assets/${hashStr}.${ext}`;
+        const cleanPrefix = String(pathPrefix || 'hashed_assets')
+            .replace(/^\/+|\/+$/g, '');
+
+        const cleanFilePrefix = String(filePrefix || 'file')
+            .replace(/[^a-zA-Zа-яА-Я0-9_-]+/g, '_');
+
+        const storagePath = `${cleanPrefix}/${cleanFilePrefix}_${hashStr}.${ext}`;
 
         // 3. Получаем публичный URL
         const { data: urlData } = window.supabaseClient.storage.from(bucketName).getPublicUrl(storagePath);
         const publicUrl = urlData.publicUrl;
+        const fileSizeBytes = blobData.blob.size || arrayBuffer.byteLength || 0;
 
         // 4. Проверяем наличие файла через .list() (Экономим трафик!)
         const { data: existingFiles } = await window.supabaseClient.storage
@@ -1980,6 +1985,25 @@ window.triggerSync = async function (mode = 'silent') {
 
         if (existingFiles && existingFiles.length > 0) {
             console.log('[Sync] Дедупликация сработала (файл уже есть):', publicUrl);
+            // ВРЕМЕННО ОТКЛЮЧЕНО, чтобы не было дублей в file_registry.
+            // Сначала регистрируем только фото проверок как inspection_photo.
+            /*
+            if (window.RbiStorageManager) {
+                await window.RbiStorageManager.registerUploadedFile({
+                    project_code: window.syncConfig?.projectCode || 'LOCAL',
+                    entity_type: 'uploaded_asset',
+                    entity_id: '',
+                    field_path: '',
+                    bucket: bucketName,
+                    storage_path: storagePath,
+                    public_url: publicUrl,
+                    mime_type: blobData.mime,
+                    size_bytes: fileSizeBytes,
+                    uploaded_by: window.syncConfig?.engineerName || '',
+                    cache_status: 'cached_cloud'
+                });
+            }
+            */
             return publicUrl;
         }
 
@@ -1996,7 +2020,102 @@ window.triggerSync = async function (mode = 'silent') {
             console.error('[Sync] Ошибка загрузки файла:', error);
             throw error;
         }
+        if (window.RbiStorageManager) {
+            /*
+if (window.RbiStorageManager) {
+    await window.RbiStorageManager.registerUploadedFile({
+        project_code: window.syncConfig?.projectCode || 'LOCAL',
+        entity_type: 'uploaded_asset',
+        entity_id: '',
+        field_path: '',
+        bucket: bucketName,
+        storage_path: storagePath,
+        public_url: publicUrl,
+        mime_type: blobData.mime,
+        size_bytes: fileSizeBytes,
+        uploaded_by: window.syncConfig?.engineerName || '',
+        cache_status: 'cached_cloud'
+    });
+}
+*/
+        }
         return publicUrl;
+    };
+
+    // RBI NEW: регистрация облачных файлов внутри проектных объектов.
+    // Не регистрирует inspection_photo, потому что фото проверок уже пишутся отдельно.
+    window.rbiRegisterObjectFilesToRegistry = async function (objectType, objectId, obj, bucketName) {
+        try {
+            if (!window.RbiStorageManager || typeof window.RbiStorageManager.registerUploadedFile !== 'function') return;
+            if (!obj || !bucketName) return;
+
+            const pCode = window.syncConfig?.projectCode || obj.project_code || 'LOCAL';
+            const owner = obj.owner || obj.author || obj.created_by || obj.uploaded_by || window.syncConfig?.engineerName || '';
+
+            const typeMap = {
+                custom_twi_card: 'twi_file',
+                custom_doc: 'custom_doc_pdf',
+                custom_node: 'node_file',
+                practice: 'practice_file',
+                etalon: 'etalon_file',
+                report: 'report_pdf',
+                assistant_kb: 'assistant_kb_file'
+            };
+
+            const entityType = typeMap[objectType] || `${objectType}_file`;
+
+            const walk = async (value, path) => {
+                if (!value) return;
+
+                if (typeof value === 'string' && value.startsWith('http') && value.includes('/storage/v1/object/')) {
+                    const storagePath = getStoragePathFromPublicUrl(value, bucketName);
+
+                    if (storagePath) {
+                        const registeredFile = await window.RbiStorageManager.registerUploadedFile({
+                            project_code: pCode,
+                            entity_type: entityType,
+                            entity_id: String(objectId || obj.id || ''),
+                            field_path: path,
+                            bucket: bucketName,
+                            storage_path: storagePath,
+                            public_url: value,
+                            original_name: `${objectType}_${objectId || obj.id || ''}`,
+                            mime_type: '',
+                            size_bytes: 0,
+                            uploaded_by: owner,
+                            cache_policy: 'auto',
+                            cache_status: 'cached_cloud'
+                        });
+
+                        if (
+                            registeredFile &&
+                            window.RbiStorageManager &&
+                            typeof window.RbiStorageManager.updateRegistryFileSizeByUrl === 'function'
+                        ) {
+                            await window.RbiStorageManager.updateRegistryFileSizeByUrl(value);
+                        }
+                    }
+                }
+
+                if (Array.isArray(value)) {
+                    for (let i = 0; i < value.length; i++) {
+                        await walk(value[i], `${path}.${i}`);
+                    }
+                    return;
+                }
+
+                if (typeof value === 'object') {
+                    for (const key of Object.keys(value)) {
+                        await walk(value[key], path ? `${path}.${key}` : key);
+                    }
+                }
+            };
+
+            await walk(obj, '');
+
+        } catch (e) {
+            console.warn('[FileRegistry] Не удалось зарегистрировать файлы объекта:', objectType, objectId, e);
+        }
     };
 
     function getChecklistItem(templateKey, itemId) {
@@ -2826,6 +2945,22 @@ window.triggerSync = async function (mode = 'silent') {
                             }
                         } else {
                             // Стандартная загрузка фото
+                            let localPhotoSizeBytes = 0;
+                            let localPhotoMimeType = '';
+
+                            try {
+                                if (oldPhoto && typeof oldPhoto === 'string' && oldPhoto.startsWith('local://') && typeof dbGet === 'function') {
+                                    const localPhotoRecord = await dbGet('app_photos', oldPhoto);
+
+                                    if (localPhotoRecord && localPhotoRecord.data) {
+                                        localPhotoSizeBytes = localPhotoRecord.data.byteLength || localPhotoRecord.sizeBytes || localPhotoRecord.size_bytes || 0;
+                                        localPhotoMimeType = localPhotoRecord.mimeType || localPhotoRecord.mime_type || '';
+                                    }
+                                }
+                            } catch (e) {
+                                console.warn('[FileRegistry] Не удалось получить размер локального фото:', e);
+                            }
+
                             const publicUrl = await window.rbiUploadAsset(
                                 oldPhoto,
                                 'inspection-photos',
@@ -2836,6 +2971,8 @@ window.triggerSync = async function (mode = 'silent') {
                             uploadedPhotos[itemId] = publicUrl;
 
                             if (publicUrl && isHttpUrl(publicUrl)) {
+                                const photoStoragePath = getStoragePathFromPublicUrl(publicUrl, 'inspection-photos');
+
                                 photoRows.push({
                                     id: `${inspectionId}_${itemId}_main`,
                                     inspection_id: inspectionId,
@@ -2847,10 +2984,45 @@ window.triggerSync = async function (mode = 'silent') {
                                     item_id: String(itemId),
                                     photo_type: 'inspection',
                                     bucket_name: 'inspection-photos',
-                                    storage_path: getStoragePathFromPublicUrl(publicUrl, 'inspection-photos'),
+                                    storage_path: photoStoragePath,
                                     public_url: publicUrl,
                                     updated_at: new Date().toISOString()
                                 });
+
+                                // RBI NEW: связываем локальную копию с облачной ссылкой.
+                                // Было local://..., становится https://...
+                                if (
+                                    oldPhoto &&
+                                    typeof oldPhoto === 'string' &&
+                                    oldPhoto.startsWith('local://') &&
+                                    typeof PhotoManager !== 'undefined' &&
+                                    typeof PhotoManager.linkCloudToLocal === 'function'
+                                ) {
+                                    await PhotoManager.linkCloudToLocal(oldPhoto, publicUrl);
+                                }
+
+                                // RBI NEW: регистрируем фото проверки в общем файловом реестре
+                                if (window.RbiStorageManager && typeof window.RbiStorageManager.registerUploadedFile === 'function') {
+                                    await window.RbiStorageManager.registerUploadedFile({
+                                        project_code: pCode,
+
+                                        entity_type: 'inspection_photo',
+                                        entity_id: inspectionId,
+                                        field_path: `photos.${itemId}`,
+
+                                        bucket: 'inspection-photos',
+                                        storage_path: photoStoragePath,
+                                        public_url: publicUrl,
+
+                                        original_name: `inspection_${inspectionId}_${itemId}`,
+                                        mime_type: localPhotoMimeType,
+                                        size_bytes: localPhotoSizeBytes,
+
+                                        uploaded_by: iName,
+                                        cache_policy: 'auto',
+                                        cache_status: 'cached_cloud'
+                                    });
+                                }
                             }
                         }
                     }
@@ -2964,7 +3136,28 @@ window.triggerSync = async function (mode = 'silent') {
 
                         if (!isDeleted) {
                             c.photos = uploadedPhotos;
-                            if (typeof dbPut === 'function') await dbPut('app_history', c);
+                            c.source = 'cloud';
+                            c.syncStatus = 'synced';
+                            c.sync_status = 'synced';
+                            c.updatedAt = new Date().toISOString();
+                            c.updated_at = c.updatedAt;
+
+                            if (typeof dbPut === 'function') {
+                                await dbPut('app_history', c);
+                            }
+
+                            // RBI FIX: обновляем объект в памяти без перезагрузки приложения.
+                            // Иначе история/аналитика могут продолжать показывать старые local:// ссылки.
+                            if (Array.isArray(contractorArray)) {
+                                const idx = contractorArray.findIndex(x => String(x.id) === String(c.id));
+                                if (idx >= 0) {
+                                    contractorArray[idx] = {
+                                        ...contractorArray[idx],
+                                        ...c,
+                                        photos: { ...uploadedPhotos }
+                                    };
+                                }
+                            }
                         }
                     }
                 }
@@ -3038,13 +3231,28 @@ window.triggerSync = async function (mode = 'silent') {
                 );
 
                 if (profileLastUpdated === 0 || profileLastUpdated >= lastPushTime) {
+                    let currentAuthUserId = null;
+                    let currentAuthEmail = '';
 
+                    try {
+                        const { data: authData } = await window.supabaseClient.auth.getUser();
+                        currentAuthUserId = authData?.user?.id || null;
+                        currentAuthEmail = authData?.user?.email || '';
+                    } catch (e) {
+                        console.warn('[Sync] Не удалось получить auth user для профиля:', e);
+                    }
                     const profilePayload = {
                         inspector_id: stableInspectorId,
+
+                        auth_user_id: currentAuthUserId,
+                        auth_email: currentAuthEmail,
+                        last_auth_at: new Date().toISOString(),
+
                         inspector_name: iName,
                         engineer_name: iName,
                         project_code: pCode,
                         pin_hash: window.syncConfig.pinHash || '',
+
                         profile_data: {
                             timestamp: Date.now(),
                             session: currentSession,
@@ -3055,9 +3263,9 @@ window.triggerSync = async function (mode = 'silent') {
                             statuses: typeof contractorStatuses !== 'undefined' ? contractorStatuses : {},
                             expertConclusions: typeof customExpertConclusions !== 'undefined' ? customExpertConclusions : {},
 
-                            // AI-настройки сохраняем, но не используем их для перезаписи Edge Function
                             settings: typeof appSettings !== 'undefined' ? appSettings : {}
                         },
+
                         settings: typeof appSettings !== 'undefined' ? appSettings : {},
                         last_seen_at: new Date().toISOString(),
                         updated_at: new Date().toISOString()
@@ -3074,6 +3282,7 @@ window.triggerSync = async function (mode = 'silent') {
 
                     actuallyPushedProfiles = 1;
                     console.log('[Sync] Профиль инженера отправлен:', stableInspectorId);
+
                 } // Закрываем if (profileLastUpdated >= lastPushTime)
 
             } catch (e) {
@@ -3269,6 +3478,20 @@ window.triggerSync = async function (mode = 'silent') {
                         for (const obj of items) {
                             // bucketName внутри функции pushCloudObject переопределится сам на правильный
                             const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
+                            const registryBucketMap = {
+                                custom_twi_card: 'library-twi',
+                                custom_doc: 'library-docs',
+                                custom_node: 'library-nodes',
+                                practice: 'library-practices',
+                                etalon: 'library-etalons',
+                                assistant_kb: 'library-docs'
+                            };
+
+                            const registryBucket = registryBucketMap[objectType] || 'custom-assets';
+
+                            if (updated && typeof window.rbiRegisterObjectFilesToRegistry === 'function') {
+                                await window.rbiRegisterObjectFilesToRegistry(objectType, obj.id, updated, registryBucket);
+                            }
                             if (updated) {
                                 updated.source = 'cloud';
                                 updated.syncStatus = 'synced';
@@ -3333,6 +3556,9 @@ window.triggerSync = async function (mode = 'silent') {
 
                             // 2. Отправляем метаданные в таблицу
                             await window.pushCloudObject('report', rep.id, rep, 'reports');
+                            if (rep.file_url && typeof window.rbiRegisterObjectFilesToRegistry === 'function') {
+                                await window.rbiRegisterObjectFilesToRegistry('report', rep.id, rep, 'reports');
+                            }
 
                             // 3. Отправляем HTML-снимок для QR-кода (если он есть)
                             if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
@@ -3733,7 +3959,27 @@ window.triggerSync = async function (mode = 'silent') {
         if (typeof gameGenerateWeeklyPlan === 'function') {
             await gameGenerateWeeklyPlan(true);
         }
+        // RBI NEW: мягкая автоочистка после полного успешного цикла синхронизации.
+        // Ставим здесь, а не после профиля, чтобы сначала завершились проверки, задачи, справочники и интерфейсные флаги.
+        try {
+            if (
+                window.RbiStorageManager &&
+                typeof appSettings !== 'undefined' &&
+                appSettings.storageAutoCleanupEnabled !== false &&
+                typeof window.RbiStorageManager.syncFileRegistryFromCloud === 'function' &&
+                typeof window.RbiStorageManager.runAdaptiveStorageCleanup === 'function'
+            ) {
+                await window.RbiStorageManager.syncFileRegistryFromCloud();
+                if (typeof window.RbiStorageManager.backfillLocalFileRegistryCache === 'function') {
+                    await window.RbiStorageManager.backfillLocalFileRegistryCache();
+                }
 
+                // Без await: очистка фоновая, не блокирует финальное сообщение синхронизации
+                window.RbiStorageManager.runAdaptiveStorageCleanup('after_sync');
+            }
+        } catch (storageCleanupError) {
+            console.warn('[StorageManager] Ошибка автоочистки после полной синхронизации:', storageCleanupError);
+        }
         if (mode === 'manual') {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();

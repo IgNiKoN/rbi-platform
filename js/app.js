@@ -71,6 +71,33 @@ let appSettings = {
     autoSave: true,
     aiEnabled: false,
     autoCacheCloudFiles: true, // автоматически сохранять облачные файлы в офлайн-кэш после синхронизации
+    // RBI NEW: адаптивное управление файловым кэшем
+    storageMode: 'adaptive',
+
+    storageAutoCleanupEnabled: true,
+    storageSilentCleanupEnabled: true,
+
+    storageKeepAllIfFreeMB: 2048,
+    storageSoftCleanupFreeMB: 1000,
+    storageNormalCleanupFreeMB: 500,
+    storageCriticalCleanupFreeMB: 250,
+
+    storageSoftThresholdPercent: 60,
+    storageCleanupThresholdPercent: 80,
+    storageCriticalThresholdPercent: 90,
+
+    storageInspectionPhotoTtlDays: 60,
+    storageKnowledgeFileTtlDays: 45,
+    storageReportTtlDays: 30,
+    storageTwiTtlDays: 90,
+    storageNodeTtlDays: 90,
+    storagePracticeTtlDays: 60,
+    storageDocTtlDays: 60,
+
+    storageCleanupOnlyCloudBackedFiles: true,
+    storageLastCleanupAt: null,
+    storagePersistentRequestedAt: null,
+    storagePersistentGranted: false,
     aiAuthMode: 'role', // 'role', 'corporate', 'personal'
     aiCorpPwd: '',
     aiAuto: false,
@@ -100,6 +127,65 @@ window.setSyncStatus = function (record, status, reason = '') {
     record.syncBlockReason = reason;
     record.sync_block_reason = reason;
     return record;
+};
+
+// RBI NEW: безопасная подстановка local:// / cloud:// фото в интерфейсе
+window.rbiPhotoPlaceholder = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="220">
+    <rect width="100%" height="100%" fill="#f1f5f9"/>
+</svg>
+`);
+
+window.rbiPhotoCloudPlaceholder = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="360">
+    <rect width="100%" height="100%" fill="#f1f5f9"/>
+    <text x="50%" y="45%" text-anchor="middle" fill="#64748b" font-size="22" font-family="Arial" font-weight="700">
+        Файл очищен с устройства
+    </text>
+    <text x="50%" y="55%" text-anchor="middle" fill="#94a3b8" font-size="16" font-family="Arial">
+        Подключитесь к интернету для загрузки из облака
+    </text>
+</svg>
+`);
+
+window.rbiEscapeAttr = function (value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+};
+
+window.rbiHydrateLocalImages = async function (root = document) {
+    if (typeof PhotoManager === 'undefined' || typeof PhotoManager.getAsyncUrl !== 'function') return;
+
+    const scope = root || document;
+    const imgs = Array.from(scope.querySelectorAll('img[data-local-src]'));
+
+    for (const img of imgs) {
+        const src = img.getAttribute('data-local-src');
+        if (!src) continue;
+
+        try {
+            const realUrl = await PhotoManager.getAsyncUrl(src);
+
+            if (
+                realUrl &&
+                !String(realUrl).startsWith('local://') &&
+                !String(realUrl).startsWith('cloud://')
+            ) {
+                img.src = realUrl;
+                img.removeAttribute('data-local-src');
+                continue;
+            }
+
+            img.src = window.rbiPhotoCloudPlaceholder || window.rbiPhotoPlaceholder || img.src;
+
+        } catch (e) {
+            img.src = window.rbiPhotoCloudPlaceholder || window.rbiPhotoPlaceholder || img.src;
+        }
+    }
 };
 
 // Звуковые эффекты (base64 для офлайна)
@@ -176,6 +262,37 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         renderSelector();
         await restoreSession();
+        // RBI NEW: мягкий запуск менеджера хранилища
+        try {
+            if (window.RbiStorageManager) {
+                await window.RbiStorageManager.requestPersistentStorageOnce();
+                await window.RbiStorageManager.syncFileRegistryFromCloud();
+
+                if (typeof window.RbiStorageManager.backfillLocalFileRegistryCache === 'function') {
+                    await window.RbiStorageManager.backfillLocalFileRegistryCache();
+                }
+
+                setTimeout(async () => {
+                    try {
+                        if (
+                            window.RbiStorageManager &&
+                            typeof window.RbiStorageManager.getStorageSnapshot === 'function' &&
+                            typeof window.RbiStorageManager.runAdaptiveStorageCleanup === 'function'
+                        ) {
+                            const snap = await window.RbiStorageManager.getStorageSnapshot();
+
+                            if (snap && snap.mode && snap.mode !== 'keep_all') {
+                                window.RbiStorageManager.runAdaptiveStorageCleanup('app_start');
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[StorageManager] Ошибка мягкой проверки памяти при старте:', e);
+                    }
+                }, 3000);
+            }
+        } catch (e) {
+            console.warn('[StorageManager] Ошибка запуска:', e);
+        }
         // Загрузка фидбека из новой таблицы
         const storedFb = await dbGetAll(STORES.FEEDBACK_LIST);
         if (storedFb) window.rbi_feedbackData = storedFb.filter(f => !f._deleted);
@@ -471,26 +588,26 @@ window.loadContractorDirectoryToInspectionInput = async function () {
                 contractorNames = dirs.filter(c => !c._deleted && !c.is_deleted).map(c => c.display_name);
             }
         }
-        
+
         // Добавляем тех, кто уже есть в нашей истории (на случай если справочник пуст)
         if (typeof contractorArray !== 'undefined') {
             const histNames = contractorArray.map(c => c.contractorName).filter(Boolean);
             contractorNames = contractorNames.concat(histNames);
         }
-        
+
         // Оставляем только уникальные и сортируем по алфавиту
         if (contractorNames.length > 0) {
             contractorNames = [...new Set(contractorNames)].sort();
-            
+
             // Загоняем их в кэш умного инпута
             if (!_smartInputMemoryCache) _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
             _smartInputMemoryCache['contractorName'] = contractorNames;
             localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
         }
-        
+
         // Инициализируем красивый iOS-подобный дропдаун
         initSmartInput('inp-contractor', 'contractorName');
-        
+
     } catch (e) {
         console.warn('[Осмотр] Не удалось загрузить справочник подрядчиков:', e);
     }
@@ -697,17 +814,17 @@ function openMultiFilterModal(type, title, context) {
         const rbiProjs = filteredRbi.map(i => i.project_display_name || i.projectName || i.project_canonical_key);
         const skProjs = filteredSk.map(r => r.project_display_name || r.display_name || r.canonical_key);
         uniqueValues = [...new Set([...rbiProjs, ...skProjs].filter(Boolean))].sort();
-    } 
+    }
     else if (type === 'contractor') {
         const rbiContrs = filteredRbi.map(i => i.contractorName);
         const skContrs = filteredSk.map(r => r.contractor_name || r.contractor);
         uniqueValues = [...new Set([...rbiContrs, ...skContrs].filter(Boolean))].sort();
-    } 
+    }
     else if (type === 'inspector') {
         // Берем ТОЛЬКО Инженеров по Качеству (из истории RBI аудитов), исключая инженеров СК
         const rbiEngs = filteredRbi.map(i => i.inspectorName);
         uniqueValues = [...new Set(rbiEngs.filter(name => name && name !== 'Система' && name !== 'Системная'))].sort();
-    } 
+    }
     else if (type === 'template') {
         const rbiTmpls = filteredRbi.map(i => i.templateTitle);
         const skTmpls = filteredSk.map(r => r.category && r.category !== 'Без категории' ? r.category : null);
@@ -1091,6 +1208,36 @@ function renderSettingsTab() {
     if (document.getElementById('set-groups-col')) document.getElementById('set-groups-col').checked = appSettings.defaultGroupsCollapsed;
     if (document.getElementById('set-fast')) document.getElementById('set-fast').checked = appSettings.fastMode;
 
+    // RBI NEW: настройки управления файловым кэшем
+    if (document.getElementById('set-storage-auto-cleanup')) {
+        document.getElementById('set-storage-auto-cleanup').checked = appSettings.storageAutoCleanupEnabled !== false;
+    }
+
+    if (document.getElementById('set-storage-cleanup-threshold')) {
+        document.getElementById('set-storage-cleanup-threshold').value = String(appSettings.storageCleanupThresholdPercent || 80);
+    }
+
+    if (document.getElementById('set-storage-photo-ttl')) {
+        document.getElementById('set-storage-photo-ttl').value = String(appSettings.storageInspectionPhotoTtlDays || 60);
+    }
+
+    // RBI NEW: расширенные TTL настройки файлового кэша
+    if (document.getElementById('set-storage-report-ttl')) {
+        document.getElementById('set-storage-report-ttl').value = String(appSettings.storageReportTtlDays || 30);
+    }
+
+    if (document.getElementById('set-storage-doc-ttl')) {
+        document.getElementById('set-storage-doc-ttl').value = String(appSettings.storageDocTtlDays || appSettings.storageKnowledgeFileTtlDays || 60);
+    }
+
+    if (document.getElementById('set-storage-twi-node-ttl')) {
+        document.getElementById('set-storage-twi-node-ttl').value = String(appSettings.storageTwiTtlDays || appSettings.storageNodeTtlDays || 90);
+    }
+
+    if (document.getElementById('set-storage-practice-ttl')) {
+        document.getElementById('set-storage-practice-ttl').value = String(appSettings.storagePracticeTtlDays || 60);
+    }
+
     // 3. Аналитика
     if (document.getElementById('set-ana-pareto')) document.getElementById('set-ana-pareto').checked = appSettings.anaEngPareto;
     if (document.getElementById('set-ana-trend')) document.getElementById('set-ana-trend').checked = appSettings.anaOpTrend;
@@ -1198,7 +1345,31 @@ function resetSettingsToDefault() {
         contractorName: '', // <-- ДОБАВЛЕНО
         theme: 'auto', engineerName: '', defaultProject: '', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
         autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
-        soundEnabled: true, autoSave: true, aiEnabled: false, autoCacheCloudFiles: true, aiAuto: false, apiKey: '', dashboardMode: 'compact',
+        soundEnabled: true, autoSave: true, aiEnabled: false, autoCacheCloudFiles: true, storageMode: 'adaptive',
+        storageAutoCleanupEnabled: true,
+        storageSilentCleanupEnabled: true,
+
+        storageKeepAllIfFreeMB: 2048,
+        storageSoftCleanupFreeMB: 1000,
+        storageNormalCleanupFreeMB: 500,
+        storageCriticalCleanupFreeMB: 250,
+
+        storageSoftThresholdPercent: 60,
+        storageCleanupThresholdPercent: 80,
+        storageCriticalThresholdPercent: 90,
+
+        storageInspectionPhotoTtlDays: 60,
+        storageKnowledgeFileTtlDays: 45,
+        storageReportTtlDays: 30,
+        storageTwiTtlDays: 90,
+        storageNodeTtlDays: 90,
+        storagePracticeTtlDays: 60,
+        storageDocTtlDays: 60,
+
+        storageCleanupOnlyCloudBackedFiles: true,
+        storageLastCleanupAt: null,
+        storagePersistentRequestedAt: null,
+        storagePersistentGranted: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
         anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
         autoBackupEnabled: true, autoBackupDay: '5', autoBackupShare: true, autoManagerEnabled: true, autoManagerDay: '5',
         brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'
@@ -1320,32 +1491,60 @@ function toggleSetting(settingKey, element) {
     saveSettings(settingKey, val);
 }
 
-// НОВАЯ ФУНКЦИЯ: Очистка кэша (заглушка для будущего функционала PDF)
-// НОВАЯ ФУНКЦИЯ: Реальная очистка кэша PDF
+
+// Удаляет только восстановимые локальные копии, которые уже имеют облачный источник.
 async function clearPdfCache() {
-    if (confirm('Удалить скачанные PDF-документы из памяти телефона? (Они скачаются заново при открытии)')) {
-        showToast('⏳ Очистка кэша...');
-        try {
-            const photos = await dbGetAll('app_photos') || [];
-            let deletedCount = 0;
-            for (let p of photos) {
-                // Ищем только PDF-файлы
-                if (p.mimeType && p.mimeType.includes('pdf')) {
-                    await dbDelete('app_photos', p.id);
-                    // Удаляем из оперативной памяти
-                    if (PhotoManager.cache[p.id]) {
-                        URL.revokeObjectURL(PhotoManager.cache[p.id]);
-                        delete PhotoManager.cache[p.id];
-                    }
-                    deletedCount++;
-                }
-            }
-            showToast(`✅ Удалено файлов: ${deletedCount} шт.`);
-            if (typeof updateStorageInfo === 'function') updateStorageInfo();
-        } catch (e) {
-            showToast('❌ Ошибка при очистке');
-        }
+    const ok = confirm(
+        'Очистить локальный кэш файлов?\n\n' +
+        'Будут удалены только локальные копии файлов, которые уже есть в облаке.\n' +
+        'Проверки, история, задачи, документы и файлы в Supabase не удаляются.\n\n' +
+        'Без интернета очищенные файлы могут быть недоступны, но загрузятся снова при подключении.'
+    );
+
+    if (!ok) return;
+
+    if (!window.RbiStorageManager || typeof window.RbiStorageManager.runManualRecoverableCacheCleanup !== 'function') {
+        showToast('⚠️ Менеджер хранилища не загружен');
+        return;
     }
+
+    showToast('⏳ Очищаем восстановимый кэш...');
+
+    await window.RbiStorageManager.runManualRecoverableCacheCleanup();
+}
+// RBI NEW: предпросмотр автоочистки без удаления файлов
+async function previewStorageCleanup() {
+    if (!window.RbiStorageManager || typeof window.RbiStorageManager.previewAdaptiveStorageCleanup !== 'function') {
+        showToast('⚠️ Менеджер хранилища не загружен');
+        return;
+    }
+
+    showToast('⏳ Проверяем файловый кэш...');
+
+    const result = await window.RbiStorageManager.previewAdaptiveStorageCleanup('manual_preview');
+
+    if (!result || result.error) {
+        showToast('❌ Не удалось проверить кэш');
+        return;
+    }
+
+    const msg =
+        'Предпросмотр автоочистки:\n\n' +
+        `Режим: ${result.mode}\n` +
+        `Заполнено памяти: ${result.usagePercent.toFixed(1)}%\n` +
+        `Свободно: ${result.freeMB.toFixed(1)} МБ\n\n` +
+        `Можно безопасно очистить: ${result.candidatesCount} файлов / ${result.totalMB.toFixed(1)} МБ\n\n` +
+        `Фото проверок: ${result.inspectionPhotos || 0} шт.\n` +
+        `PDF-отчеты: ${result.reports || 0} шт.\n` +
+        `Документы / база знаний: ${result.docs || 0} шт.\n` +
+        `TWI: ${result.twi || 0} шт.\n` +
+        `Узлы: ${result.nodes || 0} шт.\n` +
+        `Практики: ${result.practices || 0} шт.\n` +
+        `Эталоны: ${result.etalons || 0} шт.\n` +
+        `Прочее: ${result.other || 0} шт.\n\n` +
+        'Файлы сейчас НЕ удалены. Это только проверка.';
+
+    alert(msg);
 }
 
 // === ВКЛАДКА: СПРАВОЧНИК (ПОДВКЛАДКА 1 - ЧЕК-ЛИСТЫ И СВЯЗИ) ===
@@ -1979,7 +2178,19 @@ function showHistoryDetail(id) {
         if (item.state[i.id] === 'fail') { stTxt = 'FAIL'; stCls = 'tag-red'; }
         if (item.state[i.id] === 'fail_escalated') { stTxt = '>1.5x (B3)'; stCls = 'tag-red shadow-sm'; cat = 'B3'; }
 
-        let photoHtml = (item.photos && item.photos[i.id]) ? `<img src="${window.getPhotoSrc(item.photos[i.id])}" class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer" onclick="openPhotoViewer('${item.photos[i.id]}')">` : '';
+        let photoHtml = '';
+        if (item.photos && item.photos[i.id]) {
+            const rawPhotoSrc = item.photos[i.id];
+            const safePhotoSrc = window.rbiEscapeAttr(rawPhotoSrc);
+
+            photoHtml = `
+        <img 
+            src="${window.rbiPhotoPlaceholder}"
+            data-local-src="${safePhotoSrc}"
+            class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer"
+            onclick="openPhotoViewer('${safePhotoSrc}')"
+        >`;
+        }
 
         let extraData = '';
         if (item.details && item.details[i.id]) {
@@ -2042,6 +2253,12 @@ function showHistoryDetail(id) {
 
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
+
+    if (typeof window.rbiHydrateLocalImages === 'function') {
+        setTimeout(() => {
+            window.rbiHydrateLocalImages(document.getElementById('modal-body'));
+        }, 50);
+    }
 }
 /* Файл: js/app.js (БЛОК 2: Инспекция, Свайпы, Аналитика, Данные) */
 
@@ -3682,27 +3899,44 @@ async function openPhotoViewer(src) {
     const viewer = document.getElementById('photo-viewer-overlay');
     const img = document.getElementById('photo-viewer-img');
 
-    if (viewer && img) {
-        // Показываем окно сразу, но картинку делаем прозрачной
-        viewer.style.display = 'flex';
-        img.style.opacity = '0.5';
+    if (!viewer || !img) return;
 
-        // Сброс зума
-        currentZoom = 1; translateX = 0; translateY = 0;
-        img.style.transform = `translate(0px, 0px) scale(1)`;
-        setTimeout(() => viewer.classList.remove('opacity-0'), 10);
+    viewer.style.display = 'flex';
+    img.style.opacity = '0.5';
+    img.src = window.rbiPhotoPlaceholder || '';
 
-        // УМНАЯ АСИНХРОННАЯ ЗАГРУЗКА ИЗ БАЗЫ/ОБЛАКА
-        let finalSrc = src;
-        if (src && (src.startsWith('local://') || src.startsWith('cloud://'))) {
-            // Ждем, пока фото физически достанется из базы данных
-            const cachedSrc = await PhotoManager.getAsyncUrl(src);
-            if (cachedSrc) finalSrc = cachedSrc;
+    currentZoom = 1;
+    translateX = 0;
+    translateY = 0;
+    img.style.transform = `translate(0px, 0px) scale(1)`;
+
+    setTimeout(() => viewer.classList.remove('opacity-0'), 10);
+
+    let finalSrc = null;
+
+    try {
+        if (src && typeof PhotoManager !== 'undefined' && typeof PhotoManager.getAsyncUrl === 'function') {
+            const resolvedSrc = await PhotoManager.getAsyncUrl(src);
+
+            if (
+                resolvedSrc &&
+                !String(resolvedSrc).startsWith('local://') &&
+                !String(resolvedSrc).startsWith('cloud://')
+            ) {
+                finalSrc = resolvedSrc;
+            }
         }
-
-        img.src = finalSrc;
-        img.style.opacity = '1'; // Возвращаем яркость, когда фото загрузилось
+    } catch (e) {
+        finalSrc = null;
     }
+
+    if (finalSrc) {
+        img.src = finalSrc;
+    } else {
+        img.src = window.rbiPhotoCloudPlaceholder || window.rbiPhotoPlaceholder || '';
+    }
+
+    img.style.opacity = '1';
 }
 
 // НОВАЯ ФУНКЦИЯ: Правильно закрывает фото и чистит за собой память
