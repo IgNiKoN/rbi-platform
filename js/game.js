@@ -3524,15 +3524,22 @@ window.gameAddAssignedProjectFromSelect = function (domId, canonicalKey) {
     const input = document.getElementById(`proj_input_${domId}`);
     if (!input) return;
 
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
-
-    if (!arr.includes(canonicalKey)) {
-        arr.push(canonicalKey);
+    let projectsArray = [];
+    if (input.dataset.projectsArray) {
+        try {
+            projectsArray = JSON.parse(input.dataset.projectsArray);
+        } catch (e) { }
+    } else if (input.value) {
+        let separator = input.value.includes(';;;') ? ';;;' : ',';
+        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
     }
 
-    input.value = arr.join(', ');
+    if (!projectsArray.includes(canonicalKey)) {
+        projectsArray.push(canonicalKey);
+    }
+
+    input.dataset.projectsArray = JSON.stringify(projectsArray);
+    input.value = projectsArray.join(';;;');
     window.gameRenderAssignedProjectChips(domId);
 };
 
@@ -3540,36 +3547,59 @@ window.gameRemoveAssignedProjectChip = function (domId, canonicalKey) {
     const input = document.getElementById(`proj_input_${domId}`);
     if (!input) return;
 
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
+    let projectsArray = [];
+    if (input.dataset.projectsArray) {
+        try {
+            projectsArray = JSON.parse(input.dataset.projectsArray);
+        } catch (e) { }
+    } else if (input.value) {
+        let separator = input.value.includes(';;;') ? ';;;' : ',';
+        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
+    }
 
-    input.value = arr.filter(v => v !== canonicalKey).join(', ');
+    projectsArray = projectsArray.filter(v => v !== canonicalKey);
+    input.dataset.projectsArray = JSON.stringify(projectsArray);
+    input.value = projectsArray.join(';;;');
     window.gameRenderAssignedProjectChips(domId);
 };
 
 window.gameRenderAssignedProjectChips = function (domId) {
     const input = document.getElementById(`proj_input_${domId}`);
     const box = document.getElementById(`proj_chips_${domId}`);
-
     if (!input || !box) return;
 
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
+    let projectsArray = [];
+    if (input.dataset.projectsArray) {
+        try {
+            projectsArray = JSON.parse(input.dataset.projectsArray);
+        } catch (e) { }
+    }
+    if (!projectsArray.length && input.value) {
+        let separator = input.value.includes(';;;') ? ';;;' : ',';
+        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
+        input.dataset.projectsArray = JSON.stringify(projectsArray);
+    }
 
-    if (!arr.length) {
+    if (projectsArray.length === 0) {
         box.innerHTML = '<span class="text-[8px] text-slate-400 font-bold">Объекты не назначены</span>';
         return;
     }
 
-    box.innerHTML = arr.map(key => `
+    const escapeHtml = (str) => String(str).replace(/[&<>]/g, function (m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+
+    box.innerHTML = projectsArray.map(key => `
         <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black">
-            ${key}
-            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${key}')"
-                class="text-red-500 font-black leading-none">×</button>
+            ${escapeHtml(key)}
+            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${escapeHtml(key)}')" class="text-red-500 font-black leading-none">×</button>
         </span>
     `).join('');
+
+    input.value = projectsArray.join(';;;');
 };
 window.gameLoadRoles = async function () {
     if (!window.supabaseClient) return showToast("Облако не подключено");
@@ -3675,7 +3705,7 @@ window.gameLoadRoles = async function () {
                     ? user.settings.assignedProjects
                     : [];
 
-            const projectsStr = projectsArray.join(', ');
+            const projectsStr = projectsArray.join(';;;');
 
             const currentSettings = user.settings || {};
             const requestedProjects = Array.isArray(currentSettings.requestedProjects)
@@ -3800,7 +3830,7 @@ window.gameLoadRoles = async function () {
                                 <label class="text-[8px] font-black text-indigo-700 dark:text-indigo-400 uppercase block">Закреплённые объекты</label>
                                 <button onclick="document.getElementById('proj_input_${domId}').value=''; gameRenderAssignedProjectChips('${domId}')" class="text-[8px] text-red-500 font-bold hover:underline">Очистить всё</button>
                             </div>
-                            <input type="hidden" id="proj_input_${domId}" value="${esc(projectsStr)}">
+                            <input type="hidden" id="proj_input_${domId}" value="${projectsStr}" data-projects-array='${JSON.stringify(projectsArray)}'>
                             <select class="input-base !py-1.5 !text-[10px] mb-2 bg-white dark:bg-slate-800" onchange="gameAddAssignedProjectFromSelect('${domId}', this.value); this.value='';">
                                 <option value="">+ Добавить объект из справочника</option>
                                 ${projectObjects.map(o => `<option value="${esc(o.canonical_key)}">${esc(o.display_name)}</option>`).join('')}
@@ -3811,6 +3841,7 @@ window.gameLoadRoles = async function () {
                         ${requestedProjectsHtml}
 
                         <!-- Кнопки управления -->
+                        
                         <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-[var(--card-border)]">
                             <button onclick="gameHandleUserAccessRemove('${escJs(inspectorId)}', '${escJs(engineerName)}', '${escJs(cloudStatus || '')}', '${escJs(role || '')}')" class="bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 transition-transform flex items-center justify-center gap-1.5 shadow-sm">
     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
@@ -3965,11 +3996,24 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
     const contrSelect = document.getElementById(`contr_input_${domId}`);
     const contr = contrSelect?.value?.trim() || '';
     const contrDisplay = contrSelect?.selectedOptions?.[0]?.dataset?.display || contr;
-    const projStr = document.getElementById(`proj_input_${domId}`)?.value.trim() || '';
+    const inputEl = document.getElementById(`proj_input_${domId}`);
+    let projectsArray = [];
+
+    if (inputEl) {
+        if (inputEl.dataset.projectsArray) {
+            try {
+                projectsArray = JSON.parse(inputEl.dataset.projectsArray);
+            } catch (e) { }
+        }
+        if (!projectsArray.length && inputEl.value) {
+            let separator = inputEl.value.includes(';;;') ? ';;;' : ',';
+            projectsArray = inputEl.value.split(separator).map(p => p.trim()).filter(Boolean);
+        }
+    }
 
     // Если роль не требует объектов, очищаем массив
     const isNoObjectsRole = ['guest', 'director', 'deputy_manager', 'manager'].includes(role);
-    let projectsArray = isNoObjectsRole ? [] : (projStr ? projStr.split(',').map(p => p.trim()).filter(Boolean) : []);
+    if (isNoObjectsRole) projectsArray = [];
 
     if (role === 'contractor' && !contr) {
         return showToast('⚠️ Для подрядчика обязательно укажите организацию!');
