@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '17.8.197';
-const SW_VERSION = '17.99.9';
+const SW_VERSION = '17.8.197';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -41,7 +41,7 @@ const urlsToCache = [
   './js/game.js',
   './js/sk.js',
   './manifest.webmanifest'
-  ];
+];
 
 // 2. УСТАНОВКА: Безопасное скачивание файлов в память
 self.addEventListener('install', event => {
@@ -50,11 +50,41 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME).then(cache => {
       console.log('[SW] Кэшируем ядро и библиотеки...');
       // Безопасное кэширование: если одна ссылка недоступна, остальные всё равно скачаются
-      return Promise.all(urlsToCache.map(url => {
-        return fetch(url, { mode: 'no-cors' }).then(response => {
-          return cache.put(url, response);
-        }).catch(err => console.log('[SW] Ошибка кэширования: ', url, err));
-      }));
+      return Promise.all(
+
+        urlsToCache.map(url => {
+
+          return fetch(url)
+
+            .then(response => {
+
+              if (
+                response &&
+                response.status === 200
+              ) {
+
+                return cache.put(
+                  url,
+                  response.clone()
+                );
+
+              }
+
+            })
+
+            .catch(err => {
+
+              console.log(
+                '[SW] Ошибка кэширования:',
+                url,
+                err
+              );
+
+            });
+
+        })
+
+      );
     })
   );
 });

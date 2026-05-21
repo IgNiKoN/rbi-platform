@@ -4,7 +4,7 @@
 // 1. Главный обработчик всплывающего меню выгрузки
 async function handleFabExportAction(actionType, mode = 'script') {
     closeFabExportMenu();
-    
+
     // --- НОВОЕ: Запускаем конструктор шаблонов вместо прямого вызова ---
     if (actionType === 'onepager' || actionType === 'global_onepager' || actionType === 'full_report' || actionType === 'poster' || actionType === 'tender') {
         openReportTemplateModal(actionType, mode);
@@ -739,10 +739,10 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const fsNum = mode === 'browser' ? '18pt' : '26px';
 
         // =========================================================
-    // === СБОРКА БЛОКОВ (КУБИКОВ) ДЛЯ ШАБЛОНИЗАТОРА ===
-    // =========================================================
-    const blocksMap = {
-        'header_metrics': `
+        // === СБОРКА БЛОКОВ (КУБИКОВ) ДЛЯ ШАБЛОНИЗАТОРА ===
+        // =========================================================
+        const blocksMap = {
+            'header_metrics': `
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
                 <tr>
                     <td style="padding: 0 4px 8px 0; width:50%;">
@@ -788,49 +788,49 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                 </tr>
             </table>
         `,
-        'trend_chart': `
+            'trend_chart': `
             <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
                 <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
                 <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
             </div>
         `,
-        'contractors_rating': `
+            'contractors_rating': `
             <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
                 <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
                 <div style="width: 100%;">${ratingHtml}</div>
             </div>
         `,
-        'top_b3_photos': gridB3,
-        'top_b2_photos': gridB2,
-        'top_ok_photos': gridOK,
-        'ai_summary': `
+            'top_b3_photos': gridB3,
+            'top_b2_photos': gridB2,
+            'top_ok_photos': gridOK,
+            'ai_summary': `
             <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
                 <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
                 <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
             </div>
         `
-    };
+        };
 
-    let content = '';
+        let content = '';
 
-    // Если был передан активный шаблон из конструктора
-    if (window._currentActiveTemplate) {
-        const t = window._currentActiveTemplate;
-        const activeBlocks = t.active_blocks || [];
-        
-        if (t.layout === 'one') {
-            // Одна сплошная колонка
-            content = activeBlocks.map(b => blocksMap[b] || '').join('');
-        } else {
-            // Две колонки (Делим массив блоков пополам)
-            const mid = Math.ceil(activeBlocks.length / 2);
-            const leftBlocks = activeBlocks.slice(0, mid).map(b => blocksMap[b] || '').join('');
-            const rightBlocks = activeBlocks.slice(mid).map(b => blocksMap[b] || '').join('');
-            
-            let w1 = '50%', w2 = '50%';
-            if (t.layout === 'two_uneven') { w1 = '35%'; w2 = '65%'; }
+        // Если был передан активный шаблон из конструктора
+        if (window._currentActiveTemplate) {
+            const t = window._currentActiveTemplate;
+            const activeBlocks = t.active_blocks || [];
 
-            content = `
+            if (t.layout === 'one') {
+                // Одна сплошная колонка
+                content = activeBlocks.map(b => blocksMap[b] || '').join('');
+            } else {
+                // Две колонки (Делим массив блоков пополам)
+                const mid = Math.ceil(activeBlocks.length / 2);
+                const leftBlocks = activeBlocks.slice(0, mid).map(b => blocksMap[b] || '').join('');
+                const rightBlocks = activeBlocks.slice(mid).map(b => blocksMap[b] || '').join('');
+
+                let w1 = '50%', w2 = '50%';
+                if (t.layout === 'two_uneven') { w1 = '35%'; w2 = '65%'; }
+
+                content = `
                 <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                     <tr>
                         <td style="width: ${w1}; vertical-align: top; padding-right: 15px;">${leftBlocks}</td>
@@ -838,16 +838,16 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                     </tr>
                 </table>
             `;
-        }
+            }
 
-        // Добавляем текст подвала (Footer), если он указан в шаблоне
-        if (t.footer_text) {
-            content += `<div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${t.footer_text}</div>`;
-        }
+            // Добавляем текст подвала (Footer), если он указан в шаблоне
+            if (t.footer_text) {
+                content += `<div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${t.footer_text}</div>`;
+            }
 
-    } else {
-        // КЛАССИЧЕСКИЙ СТАНДАРТНЫЙ МАКЕТ (Если шаблон не выбран)
-        content = `
+        } else {
+            // КЛАССИЧЕСКИЙ СТАНДАРТНЫЙ МАКЕТ (Если шаблон не выбран)
+            content = `
             <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                 <tr>
                     <td style="width: 32%; vertical-align: top; padding-right: 15px;">
@@ -864,10 +864,10 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                 </tr>
             </table>
         `;
-    }
+        }
 
-    printPdfShell(window._currentActiveTemplate ? window._currentActiveTemplate.name : "Сводка для Руководства", content, "A3", "landscape", mode);
-}
+        printPdfShell(window._currentActiveTemplate ? window._currentActiveTemplate.name : "Сводка для Руководства", content, "A3", "landscape", mode);
+    }
 
     printPdfShell("Сводный Отчет Компании", content, "A3", "landscape", mode);
 }
@@ -1638,7 +1638,7 @@ function exportPdfData(data, mode = 'script') {
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
     window._pdfGenerating = true;
     const isBackground = (mode === 'background');
-    
+
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
 
@@ -1678,7 +1678,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             // QR-код ведет прямо на файл report.html
             qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
         }
-    } catch(e) { console.warn("QR не сгенерирован", e); }
+    } catch (e) { console.warn("QR не сгенерирован", e); }
 
     const headerHtml = await getBrandedHeader(title, mode, qrDataUrl);
     const fullHtml = headerHtml + content;
@@ -1730,32 +1730,164 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
     const styleElem = document.createElement('style');
     styleElem.textContent = `
-        @import url('https://fonts.cdnfonts.com/css/history-pro');
-        .pdf-print-root { 
-            width: ${widthPx}px !important; 
-            margin: 0 auto !important; 
-            padding: 20px !important; 
-            background: white !important; 
-            font-family: 'Circe', Verdana, sans-serif !important; /* Основной шрифт RBI */
-            color: #1c2b39 !important; /* Фирменный темно-синий цвет текста */
-            box-sizing: border-box !important; 
-        }
-        .pdf-print-root h1, .pdf-print-root h2, .pdf-print-root h3 {
-            font-family: 'History PRO', 'Times New Roman', serif !important;
-            letter-spacing: 0.03em;
-        }
-        .pdf-print-root * { box-sizing: border-box !important; }
-        .pdf-print-root img { max-width: 100% !important; display: block !important; }
-        .pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
-        .pdf-print-root .no-break, .pdf-print-root tr, .pdf-print-root td, .pdf-print-root img { page-break-inside: avoid !important; break-inside: avoid !important; }
-    `;
+    /* Локальные шрифты Playfair Display */
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 400;
+        src: url('/fonts/PlayfairDisplay-Regular.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 400;
+        src: url('/fonts/PlayfairDisplay-Italic.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 500;
+        src: url('/fonts/PlayfairDisplay-Medium.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 500;
+        src: url('/fonts/PlayfairDisplay-MediumItalic.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 600;
+        src: url('/fonts/PlayfairDisplay-SemiBold.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 600;
+        src: url('/fonts/PlayfairDisplay-SemiBoldItalic.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 700;
+        src: url('/fonts/PlayfairDisplay-Bold.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 700;
+        src: url('/fonts/PlayfairDisplay-BoldItalic.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 800;
+        src: url('/fonts/PlayfairDisplay-ExtraBold.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 800;
+        src: url('/fonts/PlayfairDisplay-ExtraBoldItalic.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: normal;
+        font-weight: 900;
+        src: url('/fonts/PlayfairDisplay-Black.woff2') format('woff2');
+        font-display: swap;
+    }
+    @font-face {
+        font-family: 'Playfair Display';
+        font-style: italic;
+        font-weight: 900;
+        src: url('/fonts/PlayfairDisplay-BlackItalic.woff2') format('woff2');
+        font-display: swap;
+    }
+
+    /* Bricolage Grotesque – только те файлы, которые есть на скрине */
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 300;
+    src: url('/fonts/BricolageGrotesque-Light.woff2') format('woff2');
+    }
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 400;
+    src: url('/fonts/BricolageGrotesque-Regular.woff2') format('woff2');
+    }
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 500;
+    src: url('/fonts/BricolageGrotesque-Medium.woff2') format('woff2');
+    }
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 600;
+    src: url('/fonts/BricolageGrotesque-SemiBold.woff2') format('woff2');
+    }
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 700;
+    src: url('/fonts/BricolageGrotesque-Bold.woff2') format('woff2');
+    }
+    @font-face {
+    font-family: 'Bricolage Grotesque';
+    font-style: normal;
+    font-weight: 800;
+    src: url('/fonts/BricolageGrotesque-ExtraBold.woff2') format('woff2');
+    }
+
+    /* Базовые стили PDF-контейнера */
+    .pdf-print-root {
+        font-family: 'Bricolage Grotesque', 'Verdana', sans-serif;
+        width: ${widthPx}px !important;
+        margin: 0 auto !important;
+        padding: 20px !important;
+        background: white !important;
+        color: #1c2b39 !important;
+        box-sizing: border-box !important;
+    }
+    .pdf-print-root h1,
+    .pdf-print-root h2,
+    .pdf-print-root h3 {
+        font-family: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+        letter-spacing: 0.03em;
+    }
+    .pdf-print-root * { box-sizing: border-box !important; }
+    .pdf-print-root img { max-width: 100% !important; display: block !important; }
+    .pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+    .pdf-print-root .no-break,
+    .pdf-print-root tr,
+    .pdf-print-root td,
+    .pdf-print-root img {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+`;
     hiddenDiv.appendChild(styleElem);
 
     const cleanup = () => {
         window._pdfGenerating = false;
-        if (!isBackground && loader) { 
-            loader.classList.add('opacity-0'); 
-            setTimeout(() => loader.style.display = 'none', 300); 
+        if (!isBackground && loader) {
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.style.display = 'none', 300);
         }
         if (document.body.contains(hiddenDiv)) document.body.removeChild(hiddenDiv);
     };
@@ -1817,10 +1949,10 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             }
             // Получаем сам файл (Blob)
             pdfBlob = await worker.output('blob');
-            
+
             // Если это не фоновый режим - предлагаем скачать на ПК
             if (mode !== 'background') {
-                worker.save(); 
+                worker.save();
             }
         } else {
             const rootDiv = document.createElement('div');
@@ -1834,7 +1966,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             // Получаем сам файл (Blob)
             const worker = html2pdf().set(opt).from(rootDiv);
             pdfBlob = await worker.output('blob');
-            
+
             // Если это не фоновый режим - предлагаем скачать на ПК
             if (mode !== 'background') {
                 worker.save();
@@ -1842,13 +1974,13 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         }
 
         // === НОВОЕ: Сохраняем полученный Blob (сам файл PDF) в нашу базу истории отчетов ===
-        await saveReportToLocal({ 
-            type: 'pdf', 
-            title: title, 
-            blob: pdfBlob, 
-            project: projName, 
-            period: 'Всё время', 
-            forcedId: reportId 
+        await saveReportToLocal({
+            type: 'pdf',
+            title: title,
+            blob: pdfBlob,
+            project: projName,
+            period: 'Всё время',
+            forcedId: reportId
         }, fullHtml);
 
         // Перерисовываем список отчетов, если вкладка открыта
@@ -2409,13 +2541,13 @@ async function checkAutoReports() {
 
     // Проверяем: Наступил ли нужный день? И не делали ли мы уже отчет в этом месяце?
     if (today.getDate() >= parseInt(appSettings.autoReportDay) && lastRunMonth !== currentMonthStr) {
-        
+
         console.log("Запуск автоматической фоновой генерации отчета...");
         // Ставим метку, что в этом месяце мы отчет уже сделали
         localStorage.setItem('last_auto_report_month', currentMonthStr);
-        
+
         // Получаем все данные
-        const data = getFilteredAnalyticsData(); 
+        const data = getFilteredAnalyticsData();
         if (data.length === 0) return;
 
         // Запускаем генерацию в фоне
@@ -3670,17 +3802,17 @@ window.printEtalonAct = async function (historyId, mode = 'script') {
 // ============================================================================
 // ПЕЧАТЬ ГРАФИКА СМР
 // ============================================================================
-window.exportPdfSchedule = function(mode = 'script') {
+window.exportPdfSchedule = function (mode = 'script') {
     if (!window.rbi_scheduleData || window.rbi_scheduleData.length === 0) {
         return showToast('График СМР пуст. Нет данных для выгрузки.');
     }
 
     const activeData = window.rbi_scheduleData.filter(s => !s._deleted).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
-    
+
     let rowsHtml = activeData.map((s, i) => {
         const d1 = s.startDate ? new Date(s.startDate).toLocaleDateString('ru-RU') : '';
         const d2 = s.endDate ? new Date(s.endDate).toLocaleDateString('ru-RU') : '';
-        const tmplName = s.templateKey ? (SYSTEM_TEMPLATES[s.templateKey.replace('sys_','')]?.title || userTemplates[s.templateKey.replace('user_','')]?.title || s.templateKey) : 'Не привязан';
+        const tmplName = s.templateKey ? (SYSTEM_TEMPLATES[s.templateKey.replace('sys_', '')]?.title || userTemplates[s.templateKey.replace('user_', '')]?.title || s.templateKey) : 'Не привязан';
 
         return `
         <tr style="background-color: ${i % 2 === 0 ? '#ffffff' : '#f8fafc'};">
@@ -3716,7 +3848,7 @@ window.exportPdfSchedule = function(mode = 'script') {
 // ============================================================================
 // ПЕЧАТЬ ДАШБОРДА ПК СК (СТРОЙКОНТРОЛЬ)
 // ============================================================================
-window.exportPdfSK = function(mode = 'script') {
+window.exportPdfSK = function (mode = 'script') {
     if (!window.skRecords || window.skRecords.length === 0) {
         return showToast('Нет загруженных замечаний ПК СК.');
     }
@@ -3734,13 +3866,13 @@ window.exportPdfSK = function(mode = 'script') {
 
         const c = r.contractor || 'Неизвестно';
         if (!contrMap[c]) contrMap[c] = { total: 0, open: 0, overdue: 0 };
-        
+
         contrMap[c].total++;
         if (isOpen) contrMap[c].open++;
         if (deadline && isOpen && new Date() > deadline) contrMap[c].overdue++;
     });
 
-    const sortedContrs = Object.keys(contrMap).sort((a,b) => contrMap[b].total - contrMap[a].total);
+    const sortedContrs = Object.keys(contrMap).sort((a, b) => contrMap[b].total - contrMap[a].total);
 
     let rowsHtml = sortedContrs.map((c, i) => {
         const d = contrMap[c];
@@ -3801,40 +3933,32 @@ let userReportTemplates = []; // Кэш шаблонов отчетов
 // Генератор брендированной шапки (По брендбуку RBI)
 async function getBrandedHeader(title, mode, qrCodeDataUrl = null) {
     let logoHtml = '';
-    
-    // Берем фирменный темно-синий цвет RBI, если он не задан
-    const brandColor = appSettings.brandColor || '#1c2b39'; 
-    const goldColor = '#c49a5f'; // Золотой RBI
+    const brandColor = appSettings.brandColor || '#1c2b39';
+    const goldColor = '#c49a5f';
 
     if (appSettings.brandLogo) {
         const logoSrc = await PhotoManager.getAsyncUrl(appSettings.brandLogo) || appSettings.brandLogo;
-        // Охранное поле логотипа по брендбуку (5X). Мы задаем прозрачный фон для PNG.
         logoHtml = `<img src="${logoSrc}" style="height:45px; width:auto; max-width:200px; object-fit:contain; background: transparent; display: block;">`;
     }
-    
-    const qrHtml = qrCodeDataUrl 
-        ? `<div style="width:60px; height:60px; border:2px solid ${brandColor}; padding:2px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div>` 
+
+    const qrHtml = qrCodeDataUrl
+        ? `<div style="width:60px; height:60px; border:2px solid ${brandColor}; padding:2px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div>`
         : '';
 
     const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
     const fontSizeSub = mode === 'browser' ? '9pt' : '12px';
 
     return `
-        <!-- Встраиваем шрифты RBI -->
         <style>
-            @import url('https://fonts.cdnfonts.com/css/history-pro');
-            .rbi-header { font-family: 'History PRO', 'Times New Roman', serif; letter-spacing: 0.05em; }
-            .rbi-text { font-family: 'Circe', Verdana, sans-serif; }
+            /* уже определены в printPdfShell, дублировать не нужно */
         </style>
-
-        <div class="no-break rbi-text" style="border-bottom: 3px solid ${brandColor}; padding-bottom: 15px; margin-bottom: 25px;">
+        <div class="no-break" style="border-bottom: 3px solid ${brandColor}; padding-bottom: 15px; margin-bottom: 25px;">
             <table style="width: 100%; border: none; border-spacing: 0;">
                 <tr>
                     <td style="width: 25%; vertical-align: middle;">${logoHtml}</td>
                     <td style="width: 50%; vertical-align: middle; text-align: center;">
-                        <!-- Заголовок шрифтом History PRO с разрядкой -->
-                        <h1 class="rbi-header" style="font-size:${fontSizeTitle}; font-weight:normal; text-transform:uppercase; margin:0; color:${brandColor};">${title}</h1>
-                        <div style="font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
+                        <h1 style="font-family: 'Playfair Display', 'Georgia', serif; font-size:${fontSizeTitle}; font-weight:normal; text-transform:uppercase; margin:0; color:${brandColor};">${title}</h1>
+                        <div style="font-family: 'Bricolage Grotesque', 'Verdana', sans-serif; font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
                     </td>
                     <td style="width: 25%; vertical-align: middle; text-align: right;">${qrHtml}</td>
                 </tr>
@@ -3866,7 +3990,7 @@ async function generateQrCodeDataUrl(url) {
 // Универсальное сохранение отчета в IndexedDB и облако
 async function saveReportToLocal(reportData, htmlContent) {
     const reportId = reportData.forcedId || 'rep_' + Date.now().toString(36);
-    
+
     // Пытаемся найти системный ключ объекта для правильной синхронизации
     let canonicalKey = '';
     if (typeof ObjectDirectory !== 'undefined' && reportData.project) {
@@ -3878,7 +4002,7 @@ async function saveReportToLocal(reportData, htmlContent) {
     const reportRecord = {
         id: reportId,
         project_code: window.syncConfig?.projectCode || 'local',
-        
+
         // НОВЫЕ ПОЛЯ ДЛЯ РОЛЕВОЙ СИНХРОНИЗАЦИИ
         project_canonical_key: canonicalKey || reportData.project,
         project_display_name: reportData.project,
@@ -3896,7 +4020,7 @@ async function saveReportToLocal(reportData, htmlContent) {
             period: reportData.period
         },
         created_by: appSettings.engineerName || 'Инженер',
-        
+
         source: 'local',
         sync_status: 'not_synced',
         syncStatus: 'not_synced',
@@ -3908,7 +4032,7 @@ async function saveReportToLocal(reportData, htmlContent) {
     };
 
     await dbPut(STORES.REPORTS, reportRecord);
-    
+
     // Обновляем массив на экране, если он существует
     if (typeof reportsArray !== 'undefined') {
         const idx = reportsArray.findIndex(r => r.id === reportId);
@@ -3921,7 +4045,7 @@ async function saveReportToLocal(reportData, htmlContent) {
         report_id: reportId,
         html_content: htmlContent,
         created_at: new Date().toISOString()
-    }; 
+    };
 
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
@@ -3951,24 +4075,24 @@ const PDF_BLOCKS_LIBRARY = [
     { id: "best_practices", name: "Топ лучших практик", icon: "💡" }
 ];
 
-window.openPdfTemplateModal = async function() {
+window.openPdfTemplateModal = async function () {
     // 1. Загружаем шаблоны из базы
     const tmpls = await dbGetAll(STORES.REPORT_TEMPLATES);
     userReportTemplates = (tmpls || []).filter(t => !t.is_deleted);
-    
+
     // 2. Отрисовываем список
     renderPdfTemplatesList();
-    
+
     // 3. Прячем редактор
     document.getElementById('pdf-template-editor').classList.add('hidden');
-    
+
     // 4. Показываем окно
     const modal = document.getElementById('pdf-template-modal');
     modal.style.display = 'flex';
     document.body.classList.add('modal-open');
 };
 
-window.closePdfTemplateModal = function() {
+window.closePdfTemplateModal = function () {
     document.getElementById('pdf-template-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
     if (sortableAvailable) { sortableAvailable.destroy(); sortableAvailable = null; }
@@ -3977,7 +4101,7 @@ window.closePdfTemplateModal = function() {
 
 function renderPdfTemplatesList() {
     const listDiv = document.getElementById('pdf-templates-list');
-    
+
     if (userReportTemplates.length === 0) {
         listDiv.innerHTML = `<div class="text-center py-4 text-slate-400 text-[10px] font-bold">У вас нет сохраненных шаблонов. Используются системные настройки.</div>`;
         return;
@@ -3997,9 +4121,9 @@ function renderPdfTemplatesList() {
     `).join('');
 }
 
-window.createNewPdfTemplate = function() {
+window.createNewPdfTemplate = function () {
     currentEditingPdfTemplateId = null;
-    
+
     // Сброс полей
     document.getElementById('pdf-tmpl-name').value = '';
     document.getElementById('pdf-tmpl-type').value = 'onepager';
@@ -4007,36 +4131,36 @@ window.createNewPdfTemplate = function() {
     document.getElementById('pdf-tmpl-logo').checked = true;
     document.getElementById('pdf-tmpl-qr').checked = true;
     document.getElementById('pdf-tmpl-footer').value = 'Конфиденциально. Только для внутреннего использования.';
-    
+
     // По умолчанию все блоки активны
     initDragAndDrop([], PDF_BLOCKS_LIBRARY.map(b => b.id));
-    
+
     document.getElementById('pdf-template-editor').classList.remove('hidden');
 };
 
-window.editPdfTemplate = function(id) {
+window.editPdfTemplate = function (id) {
     const t = userReportTemplates.find(x => x.id === id);
     if (!t) return;
-    
+
     currentEditingPdfTemplateId = id;
-    
+
     document.getElementById('pdf-tmpl-name').value = t.name;
     document.getElementById('pdf-tmpl-type').value = t.report_type;
     document.getElementById('pdf-tmpl-layout').value = t.layout || 'two_uneven';
     document.getElementById('pdf-tmpl-logo').checked = t.show_logo !== false;
     document.getElementById('pdf-tmpl-qr').checked = t.show_qr !== false;
     document.getElementById('pdf-tmpl-footer').value = t.footer_text || '';
-    
+
     // Распределяем блоки
     const activeIds = t.active_blocks || [];
     const availableIds = PDF_BLOCKS_LIBRARY.map(b => b.id).filter(id => !activeIds.includes(id));
-    
+
     initDragAndDrop(availableIds, activeIds);
-    
+
     document.getElementById('pdf-template-editor').classList.remove('hidden');
 };
 
-window.cancelPdfTemplateEdit = function() {
+window.cancelPdfTemplateEdit = function () {
     document.getElementById('pdf-template-editor').classList.add('hidden');
     currentEditingPdfTemplateId = null;
 };
@@ -4045,7 +4169,7 @@ window.cancelPdfTemplateEdit = function() {
 function initDragAndDrop(availableIds, activeIds) {
     const availContainer = document.getElementById('pdf-blocks-available');
     const activeContainer = document.getElementById('pdf-blocks-active');
-    
+
     const createItemHtml = (id) => {
         const blockDef = PDF_BLOCKS_LIBRARY.find(b => b.id === id);
         if (!blockDef) return '';
@@ -4055,19 +4179,19 @@ function initDragAndDrop(availableIds, activeIds) {
             </div>
         `;
     };
-    
+
     availContainer.innerHTML = availableIds.map(createItemHtml).join('');
     activeContainer.innerHTML = activeIds.map(createItemHtml).join('');
-    
+
     if (sortableAvailable) { sortableAvailable.destroy(); sortableAvailable = null; }
     if (sortableActive) { sortableActive.destroy(); sortableActive = null; }
-    
+
     sortableAvailable = new Sortable(availContainer, {
         group: 'shared', // позволяет перетаскивать между списками
         animation: 150,
         ghostClass: 'opacity-50'
     });
-    
+
     sortableActive = new Sortable(activeContainer, {
         group: 'shared',
         animation: 150,
@@ -4075,16 +4199,16 @@ function initDragAndDrop(availableIds, activeIds) {
     });
 }
 
-window.savePdfTemplate = async function() {
+window.savePdfTemplate = async function () {
     const name = document.getElementById('pdf-tmpl-name').value.trim();
     if (!name) return showToast("⚠️ Укажите название шаблона!");
-    
+
     // Собираем порядок активных блоков
     const activeBlocksEls = document.getElementById('pdf-blocks-active').children;
     const activeBlocks = Array.from(activeBlocksEls).map(el => el.dataset.id);
-    
+
     if (activeBlocks.length === 0) return showToast("⚠️ Добавьте хотя бы один блок в отчет!");
-    
+
     const templateData = {
         id: currentEditingPdfTemplateId || 'tmpl_' + Date.now().toString(36),
         project_code: window.syncConfig?.projectCode || 'local',
@@ -4101,41 +4225,41 @@ window.savePdfTemplate = async function() {
         updated_at: new Date().toISOString(),
         sync_status: 'not_synced' // Готовим к отправке в облако
     };
-    
+
     // Сохраняем локально
     await dbPut(STORES.REPORT_TEMPLATES, templateData);
-    
+
     // Обновляем массив в RAM
     const idx = userReportTemplates.findIndex(x => x.id === templateData.id);
     if (idx > -1) userReportTemplates[idx] = templateData;
     else userReportTemplates.push(templateData);
-    
+
     // Сигнал облаку
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    
+
     showToast("✅ Шаблон успешно сохранен!");
     document.getElementById('pdf-template-editor').classList.add('hidden');
     renderPdfTemplatesList();
 };
 
-window.deletePdfTemplate = async function(id) {
+window.deletePdfTemplate = async function (id) {
     if (!confirm("Удалить этот шаблон?")) return;
-    
+
     const idx = userReportTemplates.findIndex(x => x.id === id);
     if (idx > -1) {
         userReportTemplates[idx].is_deleted = true;
         userReportTemplates[idx].updated_at = new Date().toISOString();
         userReportTemplates[idx].sync_status = 'not_synced';
-        
+
         await dbPut(STORES.REPORT_TEMPLATES, userReportTemplates[idx]);
-        
+
         userReportTemplates = userReportTemplates.filter(x => !x.is_deleted);
         renderPdfTemplatesList();
-        
+
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
-        
+
         showToast("🗑️ Шаблон удален");
     }
 };
@@ -4145,15 +4269,15 @@ window.deletePdfTemplate = async function(id) {
 // ==========================================================
 
 // Это новая функция, которая перехватывает клик по кнопкам в меню выгрузки
-window.handleFabExportAction = async function(actionType, mode = 'script') {
+window.handleFabExportAction = async function (actionType, mode = 'script') {
     closeFabExportMenu();
-    
+
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast('Нет данных для выгрузки');
 
     // Если это отчеты, которые поддерживают шаблоны, мы сначала ищем шаблон!
     if (actionType === 'onepager' || actionType === 'global_onepager') {
-        
+
         // 1. Проверяем, есть ли в базе созданные шаблоны для этого типа отчета
         const tmpls = await dbGetAll(STORES.REPORT_TEMPLATES);
         userReportTemplates = (tmpls || []).filter(t => !t.is_deleted);
@@ -4162,10 +4286,10 @@ window.handleFabExportAction = async function(actionType, mode = 'script') {
         if (matchingTemplates.length > 0) {
             // Если шаблон есть, берем самый свежий (последний)
             // В будущем здесь можно сделать модалку "Выбор шаблона", но для скорости пока берем активный
-            const activeTemplate = matchingTemplates.sort((a,b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
-            
+            const activeTemplate = matchingTemplates.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+
             showToast(mode === 'script' ? `⏳ Формируем по шаблону: ${activeTemplate.name}...` : '🖨️ Подготовка к системной печати...');
-            
+
             setTimeout(async () => {
                 // Запускаем НОВУЮ функцию динамического рендера
                 await renderReportFromTemplate(data, activeTemplate, actionType, mode);
@@ -4207,17 +4331,17 @@ window.handleFabExportAction = async function(actionType, mode = 'script') {
 async function renderReportFromTemplate(data, template, reportType, mode) {
     const title = template.name || 'Сводный отчет';
     const layout = template.layout || 'two_uneven'; // two_uneven, two_even, one
-    
+
     // Брендированная шапка (проверяем галочки из шаблона)
     let qrDataUrl = null;
     const reportId = 'rep_' + Date.now().toString(36);
-    
+
     if (template.show_qr) {
         try {
             if (typeof QRCode !== 'undefined') {
                 qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
             }
-        } catch(e) {}
+        } catch (e) { }
     }
 
     let logoHtml = '';
@@ -4225,9 +4349,9 @@ async function renderReportFromTemplate(data, template, reportType, mode) {
         const logoSrc = await PhotoManager.getAsyncUrl(appSettings.brandLogo) || appSettings.brandLogo;
         logoHtml = `<img src="${logoSrc}" style="height:60px; width:auto; max-width:150px; object-fit:contain;">`;
     }
-    
-    const qrHtml = qrDataUrl 
-        ? `<div style="width:70px; height:70px; border:2px solid ${appSettings.brandColor || '#4f46e5'}; padding:3px; border-radius:4px;"><img src="${qrDataUrl}" style="width:100%; height:100%;"></div>` 
+
+    const qrHtml = qrDataUrl
+        ? `<div style="width:70px; height:70px; border:2px solid ${appSettings.brandColor || '#4f46e5'}; padding:3px; border-radius:4px;"><img src="${qrDataUrl}" style="width:100%; height:100%;"></div>`
         : '';
 
     const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
@@ -4251,10 +4375,10 @@ async function renderReportFromTemplate(data, template, reportType, mode) {
     // Здесь мы должны сгенерировать HTML блоки в зависимости от того, какие блоки выбрал пользователь.
     // Так как математика расчетов для блоков ОЧЕНЬ сложная (мы ее писали в exportPdfOnePager), 
     // чтобы не дублировать тысячу строк кода, мы пойдем умным путем:
-    
+
     // Мы сообщаем системе, что у нас запрошен кастомный рендер, и перенаправляем поток
     // обратно в базовую функцию, но с флагом, который укажет функции применить наш шаблон.
-    
+
     // Пока что, чтобы завершить этот этап безопасно:
     if (reportType === 'onepager') {
         window._currentActiveTemplate = template; // Передаем как глобальный параметр

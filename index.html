@@ -41,6 +41,25 @@
 </head>
 
 <body id="app-body">
+    <!-- SPLASH SCREEN -->
+    <div id="splash-screen">
+
+        <div class="splash-content">
+            <img src="./icons/icon-512-2.png" class="splash-logo">
+            <div class="splash-title">
+                RBI QUALITY
+                <span class="splash-pro">
+                    PRO
+                </span>
+            </div>
+            <div class="splash-subtitle">
+                QUALITY MANAGEMENT SYSTEM
+            </div>
+            <div class="splash-loader">
+                <div class="loader-bar"></div>
+            </div>
+        </div>
+    </div>
 
     <!-- === СКРЫТЫЕ ИНПУТЫ ДЛЯ ФАЙЛОВ === -->
     <input type="file" id="twi-photo-input" accept="image/jpeg, image/png, image/jpg, image/*" style="display:none;"
@@ -3290,7 +3309,7 @@
     <script>
         window.RBI_APP_VERSION = {
             app: '17.8.197',
-            sw: '17.99.9',
+            sw: '17.8.197',
             buildDate: '2026-05-20'
         };
     </script>
@@ -4357,7 +4376,56 @@
             </div>
         </div>
     </div>
+    <script>
 
+        const MIN_SPLASH_TIME = 1400;
+
+        // minimum delay
+        const splashDelay =
+            new Promise(resolve => {
+
+                setTimeout(resolve, MIN_SPLASH_TIME);
+
+            });
+
+        // app ready
+        const appReady =
+            new Promise(resolve => {
+
+                window.addEventListener('load', () => {
+
+                    requestAnimationFrame(() => {
+
+                        resolve();
+
+                    });
+
+                });
+
+            });
+
+        // wait both
+        Promise.all([
+            splashDelay,
+            appReady
+        ]).then(() => {
+
+            const splash =
+                document.getElementById('splash-screen');
+
+            if (!splash) return;
+
+            splash.classList.add('hidden');
+
+            setTimeout(() => {
+
+                splash.remove();
+
+            }, 600);
+
+        });
+
+    </script>
 </body>
 
 </html>
