@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.8.197';
-const SW_VERSION = '17.8.197';
+const APP_VERSION = '17.8.198';
+const SW_VERSION = '17.8.198';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -40,7 +40,36 @@ const urlsToCache = [
   './js/export.js',
   './js/game.js',
   './js/sk.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+    // Шрифты Inter (интерфейс)
+  './fonts/Inter-Regular.woff2',
+  './fonts/Inter-Medium.woff2',
+  './fonts/Inter-SemiBold.woff2',
+  './fonts/Inter-Bold.woff2',
+  './fonts/Inter-ExtraBold.woff2',
+  './fonts/Inter-Black.woff2',
+
+  // Шрифты Playfair Display (PDF – заголовки)
+  './fonts/PlayfairDisplay-Regular.woff2',
+  './fonts/PlayfairDisplay-Italic.woff2',
+  './fonts/PlayfairDisplay-Medium.woff2',
+  './fonts/PlayfairDisplay-MediumItalic.woff2',
+  './fonts/PlayfairDisplay-SemiBold.woff2',
+  './fonts/PlayfairDisplay-SemiBoldItalic.woff2',
+  './fonts/PlayfairDisplay-Bold.woff2',
+  './fonts/PlayfairDisplay-BoldItalic.woff2',
+  './fonts/PlayfairDisplay-ExtraBold.woff2',
+  './fonts/PlayfairDisplay-ExtraBoldItalic.woff2',
+  './fonts/PlayfairDisplay-Black.woff2',
+  './fonts/PlayfairDisplay-BlackItalic.woff2',
+
+  // Шрифты Bricolage Grotesque (PDF – основной текст)
+  './fonts/BricolageGrotesque-Light.woff2',
+  './fonts/BricolageGrotesque-Regular.woff2',
+  './fonts/BricolageGrotesque-Medium.woff2',
+  './fonts/BricolageGrotesque-SemiBold.woff2',
+  './fonts/BricolageGrotesque-Bold.woff2',
+  './fonts/BricolageGrotesque-ExtraBold.woff2'
 ];
 
 // 2. УСТАНОВКА: Безопасное скачивание файлов в память
