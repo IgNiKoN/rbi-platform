@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -57,7 +58,64 @@
             padding: 16px;
             box-sizing: border-box;
         }
+        .report-viewer {
+    max-width: 1180px;
+    margin: 0 auto;
+    background: #ffffff;
+}
 
+.report-viewer img {
+    max-width: 100%;
+    height: auto;
+    cursor: zoom-in;
+}
+
+.report-viewer table {
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    #report-root {
+        padding: 8px;
+        overflow-x: hidden;
+    }
+
+    .report-viewer {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .report-viewer table,
+    .report-viewer tbody,
+    .report-viewer tr,
+    .report-viewer td,
+    .report-viewer th {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .report-viewer td,
+    .report-viewer th {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        margin-bottom: 10px !important;
+    }
+
+    .report-viewer div {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .report-viewer img {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        object-fit: contain !important;
+    }
+}
         @media print {
             body {
                 background: white;
@@ -73,6 +131,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="status">
         <div class="box">
@@ -99,10 +158,60 @@
                 </div>
             `;
         }
+        function enableImageViewer(root) {
+            if (!root) return;
 
+            let overlay = document.getElementById('image-viewer-overlay');
+
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'image-viewer-overlay';
+                overlay.style.cssText = `
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.94);
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            box-sizing: border-box;
+            cursor: zoom-out;
+        `;
+
+                overlay.innerHTML = `
+            <img id="image-viewer-img" src="" style="
+                max-width: 100%;
+                max-height: 100%;
+                object-fit: contain;
+                border-radius: 12px;
+                box-shadow: 0 20px 60px rgba(0,0,0,.45);
+                background: white;
+            ">
+        `;
+
+                overlay.addEventListener('click', () => {
+                    overlay.style.display = 'none';
+                    document.getElementById('image-viewer-img').src = '';
+                });
+
+                document.body.appendChild(overlay);
+            }
+
+            root.addEventListener('click', function (e) {
+                const img = e.target && e.target.closest ? e.target.closest('img') : null;
+                if (!img) return;
+
+                const src = img.getAttribute('src');
+                if (!src) return;
+
+                document.getElementById('image-viewer-img').src = src;
+                overlay.style.display = 'flex';
+            });
+        }
         async function loadReport() {
             const params = new URLSearchParams(window.location.search);
-            const token = params.get('token');
+            const token = params.get('token') || params.get('id');
 
             if (!token) {
                 showStatus('Отчёт не найден', 'В ссылке отсутствует токен отчёта.');
@@ -128,8 +237,8 @@
                 document.getElementById('status').style.display = 'none';
                 const root = document.getElementById('report-root');
                 root.style.display = 'block';
-                root.innerHTML = report.html_content;
-
+                root.innerHTML = `<div class="report-viewer">${report.html_content}</div>`;
+                enableImageViewer(root);
                 document.title = 'RBI Quality — Отчёт';
 
             } catch (e) {
@@ -141,4 +250,5 @@
         loadReport();
     </script>
 </body>
+
 </html>

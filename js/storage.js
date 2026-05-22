@@ -2203,7 +2203,59 @@ const PhotoManager = {
         // Иначе браузер может показать фото из своего HTTP-кэша, и тест очистки будет нечестным.
         return null;
     },
+    async getBase64(localIdOrHttp) {
+        if (!localIdOrHttp) return null;
 
+        const value = String(localIdOrHttp);
+
+        if (value.startsWith('data:')) {
+            return value;
+        }
+
+        try {
+            // 1. Пробуем взять файл из IndexedDB по ключу local:// или http-url
+            const record = await dbGet(STORES.PHOTOS, localIdOrHttp);
+
+            if (record && record.data) {
+                const blob = arrayBufferToBlob(
+                    record.data,
+                    record.mimeType || record.mime_type || 'image/webp'
+                );
+
+                return await blobToBase64(blob);
+            }
+
+            // 2. Если это обычная ссылка на Storage — скачиваем и превращаем в base64
+            if (value.startsWith('http')) {
+                const res = await rbiFetchCloudFileNoBrowserCache(value);
+                if (!res.ok) return null;
+
+                const blob = await res.blob();
+                return await blobToBase64(blob);
+            }
+
+            // 3. Если это local://, но прямой записи не нашли — пробуем через getAsyncUrl
+            if (
+                value.startsWith('local://') ||
+                value.startsWith('cloud://')
+            ) {
+                const realUrl = await this.getAsyncUrl(value);
+
+                if (realUrl && !String(realUrl).startsWith('local://') && !String(realUrl).startsWith('cloud://')) {
+                    const res = await fetch(realUrl);
+                    if (!res.ok) return null;
+
+                    const blob = await res.blob();
+                    return await blobToBase64(blob);
+                }
+            }
+
+        } catch (e) {
+            console.warn('[PhotoManager] getBase64 error:', e);
+        }
+
+        return null;
+    },
     async getBase64(localId) {
         if (!localId) return null;
 

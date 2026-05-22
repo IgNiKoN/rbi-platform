@@ -1427,13 +1427,18 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt
         };
     } else if (objectType === 'snapshot') {
-        // Специфичный формат для HTML-снимков (для QR)
+        // HTML-снимок публичного QR-отчёта.
+        // Внешний пользователь получает только этот html_content по public_token.
         payload = {
             id: id,
             report_id: data.report_id,
+            public_token: data.public_token || data.token || data.report_id || id,
             html_content: data.html_content,
+            is_public: data.is_public !== false,
+            is_deleted: data.is_deleted === true || data._deleted === true,
             created_at: data.created_at || new Date().toISOString(),
-            expires_at: null // Пока не используем
+            updated_at: updatedAt,
+            expires_at: data.expires_at || null
         };
     } else if (objectType === 'assistant_kb') {
         payload = {
@@ -3427,16 +3432,21 @@ if (window.RbiStorageManager) {
                             levelObj: my.levelObj || null
                         };
 
+                        const { data: authData } = await window.supabaseClient.auth.getUser();
+                        const authUserId = authData?.user?.id || null;
+
                         await window.supabaseClient
                             .from('rbi_engineer_ratings')
                             .upsert({
                                 id: stableInspectorId,
                                 project_code: pCode,
                                 engineer_name: iName,
+                                auth_user_id: authUserId,
                                 rating_data: rating,
                                 pi: rating.pi,
                                 checks_count: rating.checksCount,
                                 level_name: rating.levelObj?.name || '',
+                                is_deleted: false,
                                 updated_at: new Date().toISOString()
                             }, { onConflict: 'project_code,engineer_name' });
                     }
@@ -3525,13 +3535,25 @@ if (window.RbiStorageManager) {
                     await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
 
                     // Синхронизация новых таблиц Справочников
+                    // Синхронизация новых таблиц Справочников
                     await syncTableData('custom_docs', 'customDocs', 'custom_doc');
                     await syncTableData('custom_nodes', 'customNodes', 'custom_node');
                     await syncTableData('twi_cards', 'customTwiCards', 'custom_twi_card');
-                    await syncTableData('project_objects', '_sys_obj_dummy', 'project_object');
-                    await syncTableData('object_aliases', '_sys_alias_dummy', 'object_alias');
+
+                    // Официальный справочник объектов и алиасы ведут только админ/зам.
+                    // Инженер не должен писать напрямую в project_objects/object_aliases:
+                    // от инженера уходят заявки через object_normalization_queue.
+                    const canManageObjects = window.RbiRoles && typeof window.RbiRoles.canManageObjects === 'function'
+                        ? window.RbiRoles.canManageObjects()
+                        : false;
+
+                    if (canManageObjects) {
+                        await syncTableData('project_objects', '_sys_obj_dummy', 'project_object');
+                        await syncTableData('object_aliases', '_sys_alias_dummy', 'object_alias');
+                    }
+
                     await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
-                    await syncTableData('report_templates', 'userReportTemplates', 'report_template'); // <-- ДОБАВИЛИ
+                    await syncTableData('report_templates', 'userReportTemplates', 'report_template');
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
                     // --- НОВОЕ: ОТПРАВКА ОТЧЕТОВ И HTML СНИМКОВ ---
                     let reportsToPush = filterNew(await dbGetAll(STORES.REPORTS) || []);

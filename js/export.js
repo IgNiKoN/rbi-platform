@@ -1672,11 +1672,12 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
     // === НОВОЕ: Генерируем ID отчета, QR-код и Брендированную шапку ===
     const reportId = 'rep_' + Date.now().toString(36);
+    const publicToken = generatePublicReportToken();
+
     let qrDataUrl = null;
     try {
         if (typeof QRCode !== 'undefined') {
-            // QR-код ведет прямо на файл report.html
-            qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
+            qrDataUrl = await generateQrCodeDataUrl(`https://app.rbi-q.ru/report.html?token=${publicToken}`);
         }
     } catch (e) { console.warn("QR не сгенерирован", e); }
 
@@ -1707,7 +1708,15 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
         // Для браузерной печати мы не можем получить Blob (сам файл), поэтому сохраняем "пустышку" в историю, просто чтобы остался след.
         const emptyBlob = new Blob(["Отчет распечатан на принтере, цифровой PDF-копии нет."], { type: 'text/plain' });
-        await saveReportToLocal({ type: 'print', title: title, blob: emptyBlob, project: projName, period: 'Всё время', forcedId: reportId }, fullHtml);
+        await saveReportToLocal({
+            type: 'print',
+            title: title,
+            blob: emptyBlob,
+            project: projName,
+            period: 'Всё время',
+            forcedId: reportId,
+            publicToken: publicToken
+        }, fullHtml);
 
         setTimeout(() => {
             window._pdfGenerating = false;
@@ -1980,7 +1989,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             blob: pdfBlob,
             project: projName,
             period: 'Всё время',
-            forcedId: reportId
+            forcedId: reportId,
+            publicToken: publicToken
         }, fullHtml);
 
         // Перерисовываем список отчетов, если вкладка открыта
@@ -3986,16 +3996,141 @@ async function generateQrCodeDataUrl(url) {
     });
 }
 
+function generatePublicReportToken() {
+    try {
+        const bytes = new Uint8Array(24);
+        crypto.getRandomValues(bytes);
+        return 'rpt_' + Array.from(bytes)
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+    } catch (e) {
+        return 'rpt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12);
+    }
+}
+async function preparePublicReportHtml(rawHtml) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:absolute; left:-99999px; top:0; width:1180px; background:white;';
+    wrapper.innerHTML = rawHtml;
+    document.body.appendChild(wrapper);
+
+    try {
+        const imgs = Array.from(wrapper.querySelectorAll('img'));
+
+        for (const img of imgs) {
+            const src = img.getAttribute('src') || '';
+
+            // QR-код и уже встроенные картинки не трогаем
+            if (!src || src.startsWith('data:')) continue;
+
+            let dataUrl = null;
+
+            try {
+                if (
+                    src.startsWith('local://') ||
+                    src.startsWith('cloud://') ||
+                    src.startsWith('http')
+                ) {
+                    if (typeof PhotoManager !== 'undefined' && typeof PhotoManager.getBase64 === 'function') {
+                        dataUrl = await PhotoManager.getBase64(src);
+                    }
+                } else if (src.startsWith('blob:')) {
+                    dataUrl = await urlToDataUrl(src);
+                }
+
+                if (dataUrl) {
+                    img.setAttribute('src', dataUrl);
+                }
+            } catch (e) {
+                console.warn('[PublicReport] Не удалось встроить фото:', src, e);
+            }
+        }
+
+        const publicCss = `
+            <style>
+                .qr-public-report {
+                    width: 100%;
+                    max-width: 1180px;
+                    margin: 0 auto;
+                    background: #ffffff;
+                    color: #0f172a;
+                    font-family: Arial, sans-serif;
+                    box-sizing: border-box;
+                }
+
+                .qr-public-report * {
+                    box-sizing: border-box;
+                }
+
+                .qr-public-report img {
+                    max-width: 100%;
+                    height: auto;
+                    cursor: zoom-in;
+                }
+
+                @media (max-width: 768px) {
+                    .qr-public-report {
+                        padding: 0;
+                    }
+
+                    .qr-public-report table,
+                    .qr-public-report tbody,
+                    .qr-public-report tr,
+                    .qr-public-report td,
+                    .qr-public-report th {
+                        display: block !important;
+                        width: 100% !important;
+                        box-sizing: border-box !important;
+                    }
+
+                    .qr-public-report td,
+                    .qr-public-report th {
+                        padding-left: 0 !important;
+                        padding-right: 0 !important;
+                        margin-bottom: 10px !important;
+                    }
+
+                    .qr-public-report div {
+                        max-width: 100% !important;
+                    }
+
+                    .qr-public-report img {
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        height: auto !important;
+                        max-height: none !important;
+                        object-fit: contain !important;
+                    }
+                }
+            </style>
+        `;
+
+        return publicCss + `<div class="qr-public-report">${wrapper.innerHTML}</div>`;
+    } finally {
+        document.body.removeChild(wrapper);
+    }
+}
+
+async function urlToDataUrl(url) {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Не удалось загрузить изображение для публичного отчёта');
+
+    const blob = await res.blob();
+
+    return await blobToBase64(blob);
+}
 // Универсальное сохранение отчета в IndexedDB и облако
 // Универсальное сохранение отчета в IndexedDB и облако
 async function saveReportToLocal(reportData, htmlContent) {
     const reportId = reportData.forcedId || 'rep_' + Date.now().toString(36);
+    const publicToken = reportData.publicToken || generatePublicReportToken();
 
     // Пытаемся найти системный ключ объекта для правильной синхронизации
     let canonicalKey = '';
     if (typeof ObjectDirectory !== 'undefined' && reportData.project) {
-        // Ищем объект в справочнике по названию
-        const found = ObjectDirectory.objects.find(o => o.display_name === reportData.project || o.canonical_key === reportData.project);
+        const found = ObjectDirectory.objects.find(o =>
+            o.display_name === reportData.project ||
+            o.canonical_key === reportData.project
+        );
         if (found) canonicalKey = found.canonical_key;
     }
 
@@ -4003,7 +4138,6 @@ async function saveReportToLocal(reportData, htmlContent) {
         id: reportId,
         project_code: window.syncConfig?.projectCode || 'local',
 
-        // НОВЫЕ ПОЛЯ ДЛЯ РОЛЕВОЙ СИНХРОНИЗАЦИИ
         project_canonical_key: canonicalKey || reportData.project,
         project_display_name: reportData.project,
         engineer_name: appSettings.engineerName || 'Инженер',
@@ -4013,12 +4147,16 @@ async function saveReportToLocal(reportData, htmlContent) {
         generated_at: new Date().toISOString(),
         file_blob: reportData.blob,
         file_size: reportData.blob ? reportData.blob.size : 0,
-        file_url: reportData.file_url || '', // На случай если это облачный отчет
+        file_url: reportData.file_url || '',
         mime_type: 'application/pdf',
+
         metadata: {
             project: reportData.project,
-            period: reportData.period
+            period: reportData.period,
+            public_token: publicToken
         },
+
+        public_token: publicToken,
         created_by: appSettings.engineerName || 'Инженер',
 
         source: 'local',
@@ -4033,18 +4171,28 @@ async function saveReportToLocal(reportData, htmlContent) {
 
     await dbPut(STORES.REPORTS, reportRecord);
 
-    // Обновляем массив на экране, если он существует
     if (typeof reportsArray !== 'undefined') {
         const idx = reportsArray.findIndex(r => r.id === reportId);
         if (idx > -1) reportsArray[idx] = reportRecord;
         else reportsArray.unshift(reportRecord);
     }
 
+    // HTML-снимок для публичной QR-ссылки.
+    // Внешний пользователь получает только этот html_content по public_token.
     if (!window._tempSnapshots) window._tempSnapshots = {};
+
+    const publicHtmlContent = await preparePublicReportHtml(htmlContent);
+
     window._tempSnapshots[reportId] = {
+        id: 'snap_' + reportId,
         report_id: reportId,
-        html_content: htmlContent,
-        created_at: new Date().toISOString()
+        public_token: publicToken,
+        html_content: publicHtmlContent,
+        is_public: true,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        expires_at: null
     };
 
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -4335,11 +4483,12 @@ async function renderReportFromTemplate(data, template, reportType, mode) {
     // Брендированная шапка (проверяем галочки из шаблона)
     let qrDataUrl = null;
     const reportId = 'rep_' + Date.now().toString(36);
+    const publicToken = generatePublicReportToken();
 
     if (template.show_qr) {
         try {
             if (typeof QRCode !== 'undefined') {
-                qrDataUrl = await generateQrCodeDataUrl(`https://rbi-q.ru/report.html?id=${reportId}`);
+                qrDataUrl = await generateQrCodeDataUrl(`https://app.rbi-q.ru/report.html?token=${publicToken}`);
             }
         } catch (e) { }
     }
