@@ -812,163 +812,161 @@
         <div id="tab-audit" class="view-section active">
             <!-- Пустое состояние (Оригинальный дизайн, компактная версия) -->
             <div id="empty-checklist-state"
-    class="py-5 ios-panel border border-slate-200/50 dark:border-slate-700/50 rounded-[24px] shadow-sm mb-4 mt-2 mx-1 overflow-hidden">
+                class="py-3 ios-panel border border-slate-200/50 dark:border-slate-700/50 rounded-[22px] shadow-sm mb-3 mt-1 mx-1 overflow-hidden">
 
-    <div class="px-5 text-center">
-        <div
-            class="w-14 h-14 mx-auto bg-indigo-50 dark:bg-indigo-900/30 rounded-[18px] flex items-center justify-center mb-3 border border-indigo-100 dark:border-indigo-800 shadow-sm">
-            <svg class="w-7 h-7 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"></path>
-                <path d="M9 12l2 2 4-4"></path>
-            </svg>
-        </div>
-
-        <div class="text-[16px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
-            Добро пожаловать
-        </div>
-
-        <div class="text-[11px] text-[var(--text-muted)] mt-1 leading-snug">
-            Выберите безопасный способ знакомства с RBI Quality Pro
-        </div>
-    </div>
-
-    <div class="px-4 mt-5 space-y-3">
-
-        <!-- ДЕМО -->
-        <button onclick="startDemoMode()"
-            class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-start">
-            <div
-                class="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 flex items-center justify-center shrink-0">
-                <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M15 10l4.55-2.28A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14"></path>
-                    <rect x="3" y="6" width="12" height="12" rx="3"></rect>
-                    <path d="M7 10h4"></path>
-                    <path d="M7 14h2"></path>
-                </svg>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                    <div class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
-                        Демо-режим
+                <div class="px-4 text-center">
+                    <div
+                        class="w-11 h-11 mx-auto bg-indigo-50 dark:bg-indigo-900/30 rounded-[16px] flex items-center justify-center mb-2 border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                        <svg class="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z"></path>
+                            <path d="M9 12l2 2 4-4"></path>
+                        </svg>
                     </div>
-                    <span
-                        class="text-[8px] font-black uppercase bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-md dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300">
-                        безопасно
-                    </span>
-                </div>
-                <div class="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
-                    Песочница с тестовыми проверками, подрядчиками, задачами, TWI, ПК СК и отчётами.
-                    Можно нажимать всё — рабочие данные не меняются.
-                </div>
-            </div>
-            <svg class="w-4 h-4 text-slate-300 mt-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
-            </svg>
-        </button>
 
-        <!-- ОБУЧЕНИЕ -->
-        <button onclick="startInteractiveTutorial()"
-            class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-start">
-            <div
-                class="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 flex items-center justify-center shrink-0">
-                <svg class="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 20h9"></path>
-                    <path d="M12 4h9"></path>
-                    <path d="M4 9l2 2 4-4"></path>
-                    <path d="M4 17l2 2 4-4"></path>
-                </svg>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                    <div class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
-                        Обучение
+                    <div
+                        class="text-[14px] font-black uppercase tracking-tight text-slate-800 dark:text-white leading-tight">
+                        Добро пожаловать
                     </div>
-                    <span
-                        class="text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded-md dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-300">
-                        пошагово
-                    </span>
-                </div>
-                <div class="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
-                    Интерактивный тур с подсветкой кнопок. Сам включает демо-данные и показывает,
-                    как пройти путь от осмотра до отчёта, TWI, задач и аналитики.
-                </div>
-            </div>
-            <svg class="w-4 h-4 text-slate-300 mt-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
-            </svg>
-        </button>
 
-        <!-- FAQ / AI -->
-        <button onclick="openFaqModal()"
-            class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-start">
-            <div
-                class="w-11 h-11 rounded-2xl bg-violet-50 dark:bg-violet-900/30 border border-violet-100 dark:border-violet-800 flex items-center justify-center shrink-0">
-                <svg class="w-6 h-6 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 6v12"></path>
-                    <path d="M5 8a4 4 0 014-4h11v14H9a4 4 0 00-4 4V8z"></path>
-                    <path d="M5 8a4 4 0 00-4 4v10"></path>
-                </svg>
-            </div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-1">
-                    <div class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
-                        FAQ / ИИ-помощник
+                    <div class="text-[10px] text-[var(--text-muted)] mt-0.5 leading-snug">
+                        Выберите режим старта работы
                     </div>
-                    <span
-                        class="text-[8px] font-black uppercase bg-violet-50 text-violet-600 border border-violet-100 px-1.5 py-0.5 rounded-md dark:bg-violet-900/30 dark:border-violet-800 dark:text-violet-300">
-                        офлайн + AI
-                    </span>
                 </div>
-                <div class="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
-                    Справочник работает после загрузки базы. После первой синхронизации помощник знает
-                    инструкции проекта офлайн, а при интернете может отвечать через ИИ.
+
+                <div class="px-3 mt-3 space-y-2">
+
+                    <!-- ДЕМО -->
+                    <button onclick="startDemoMode()"
+                        class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[18px] p-3 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-center">
+                        <div
+                            class="w-9 h-9 rounded-[14px] bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 flex items-center justify-center shrink-0">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M15 10l4.55-2.28A1 1 0 0121 8.62v6.76a1 1 0 01-1.45.9L15 14"></path>
+                                <rect x="3" y="6" width="12" height="12" rx="3"></rect>
+                                <path d="M7 10h4"></path>
+                                <path d="M7 14h2"></path>
+                            </svg>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <div
+                                    class="text-[11px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
+                                    Демо-режим
+                                </div>
+                                <span
+                                    class="text-[7px] font-black uppercase bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded-md dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300">
+                                    безопасно
+                                </span>
+                            </div>
+                            <div class="text-[9.5px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                                Тестовые данные. Можно нажимать всё — рабочая база не меняется.
+                            </div>
+                        </div>
+
+                        <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+
+                    <!-- ОБУЧЕНИЕ -->
+                    <button onclick="startInteractiveTutorial()"
+                        class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[18px] p-3 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-center">
+                        <div
+                            class="w-9 h-9 rounded-[14px] bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 flex items-center justify-center shrink-0">
+                            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 20h9"></path>
+                                <path d="M12 4h9"></path>
+                                <path d="M4 9l2 2 4-4"></path>
+                                <path d="M4 17l2 2 4-4"></path>
+                            </svg>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <div
+                                    class="text-[11px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
+                                    Обучение
+                                </div>
+                                <span
+                                    class="text-[7px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded-md dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-300">
+                                    тур
+                                </span>
+                            </div>
+                            <div class="text-[9.5px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                                Пошаговый маршрут по осмотрам, задачам, TWI, ПК СК и аналитике.
+                            </div>
+                        </div>
+
+                        <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+
+                    <!-- FAQ / AI -->
+                    <button onclick="openFaqModal()"
+                        class="w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[18px] p-3 shadow-sm active:scale-[0.98] transition-all flex gap-3 items-center">
+                        <div
+                            class="w-9 h-9 rounded-[14px] bg-violet-50 dark:bg-violet-900/30 border border-violet-100 dark:border-violet-800 flex items-center justify-center shrink-0">
+                            <svg class="w-5 h-5 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 6v12"></path>
+                                <path d="M5 8a4 4 0 014-4h11v14H9a4 4 0 00-4 4V8z"></path>
+                                <path d="M5 8a4 4 0 00-4 4v10"></path>
+                            </svg>
+                        </div>
+
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <div
+                                    class="text-[11px] font-black uppercase tracking-tight text-slate-800 dark:text-white">
+                                    FAQ / ИИ-помощник
+                                </div>
+                                <span
+                                    class="text-[7px] font-black uppercase bg-violet-50 text-violet-600 border border-violet-100 px-1.5 py-0.5 rounded-md dark:bg-violet-900/30 dark:border-violet-800 dark:text-violet-300">
+                                    offline + AI
+                                </span>
+                            </div>
+                            <div class="text-[9.5px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                                После первой синхронизации база доступна офлайн, при интернете отвечает ИИ.
+                            </div>
+                        </div>
+
+                        <svg class="w-4 h-4 text-slate-300 shrink-0" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                    </button>
+
+                    <!-- НАЧАТЬ ПРОВЕРКУ -->
+                    <div class="relative pt-1">
+                        <div
+                            class="w-full bg-indigo-600 text-white py-3 rounded-[18px] font-black text-[11px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex justify-center items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 5v14"></path>
+                                <path d="M5 12h14"></path>
+                            </svg>
+                            Начать проверку
+                        </div>
+                        <select id="fake-checklist-selector" onchange="changeTemplate(this.value)"
+                            class="absolute inset-x-0 bottom-0 w-full h-11 opacity-0 cursor-pointer">
+                            <option value="" disabled selected>Выбрать чек-лист</option>
+                            <optgroup label="Системные" id="fake-system-group"></optgroup>
+                            <optgroup label="Загруженные" id="fake-user-group"></optgroup>
+                        </select>
+                    </div>
+
+                    <div class="px-2 pt-0.5 text-[9px] text-slate-400 dark:text-slate-500 leading-snug text-center">
+                        Обучение — для первого входа · Демо — для тестов · FAQ — для вопросов по работе
+                    </div>
                 </div>
             </div>
-            <svg class="w-4 h-4 text-slate-300 mt-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path>
-            </svg>
-        </button>
-
-        <!-- НАЧАТЬ ПРОВЕРКУ -->
-        <div class="relative pt-2">
-            <div
-                class="w-full bg-indigo-600 text-white py-3.5 rounded-2xl font-black text-[12px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md active:scale-95 flex justify-center items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 5v14"></path>
-                    <path d="M5 12h14"></path>
-                </svg>
-                Начать проверку
-            </div>
-            <select id="fake-checklist-selector" onchange="changeTemplate(this.value)"
-                class="absolute inset-x-0 bottom-0 w-full h-12 opacity-0 cursor-pointer">
-                <option value="" disabled selected>Выбрать чек-лист</option>
-                <optgroup label="Системные" id="fake-system-group"></optgroup>
-                <optgroup label="Загруженные" id="fake-user-group"></optgroup>
-            </select>
-        </div>
-
-        <div
-            class="mt-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 flex gap-2 items-start">
-            <svg class="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z"></path>
-            </svg>
-            <div class="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
-                Совет: для первого знакомства лучше нажать <b>«Обучение»</b>. Для свободного тестирования —
-                <b>«Демо-режим»</b>. Для вопросов по функциям — <b>«FAQ / ИИ-помощник»</b>.
-            </div>
-        </div>
-    </div>
-</div>
 
             <!-- НОВОЕ: Горизонтальная навигация по группам -->
             <div id="audit-items"></div>
