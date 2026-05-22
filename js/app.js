@@ -7049,7 +7049,217 @@ function initHorizontalMouseScroll() {
 // ============================================================================
 // === БЛОК: СОВЕРШЕННЫЙ ДЕМО-РЕЖИМ (ПОЛНОЕ ПОКРЫТИЕ ФУНКЦИОНАЛА) ===
 // ============================================================================
+window.rbi_enrichDemoModeV2 = function ({ demoPhotoGood, demoPhotoBad, nowIso } = {}) {
+    const now = nowIso || new Date().toISOString();
+    const good = demoPhotoGood || window.rbiPhotoPlaceholder || '';
+    const bad = demoPhotoBad || window.rbiPhotoPlaceholder || '';
 
+    window.rbi_tasksData = Array.isArray(window.rbi_tasksData) ? window.rbi_tasksData : [];
+    window.rbi_fmeaRecords = Array.isArray(window.rbi_fmeaRecords) ? window.rbi_fmeaRecords : [];
+    window.rbi_meetingsData = Array.isArray(window.rbi_meetingsData) ? window.rbi_meetingsData : [];
+    window.rbi_interventionsData = Array.isArray(window.rbi_interventionsData) ? window.rbi_interventionsData : [];
+    window.rbi_practicesData = Array.isArray(window.rbi_practicesData) ? window.rbi_practicesData : [];
+    window.skRecords = Array.isArray(window.skRecords) ? window.skRecords : [];
+
+    if (typeof customTwiCards === 'undefined' || !Array.isArray(customTwiCards)) {
+        window.customTwiCards = [];
+    }
+
+    const pushUnique = (arr, item) => {
+        if (!Array.isArray(arr) || !item || !item.id) return;
+        if (!arr.some(x => String(x.id) === String(item.id))) arr.push(item);
+    };
+
+    pushUnique(customTwiCards, {
+        id: 'demo_twi_windows_apply_v2',
+        title: 'TWI: Герметизация примыкания окон',
+        checklistKey: 'sys_okna_pvh',
+        checklistName: 'Окна ПВХ',
+        type: 'INSPECTOR',
+        itemId: '1617',
+        whyImportant: 'Риск продувания, протечек, промерзания и гарантийных обращений.',
+        howToCheck: 'Проверить подготовку основания, непрерывность герметизации, примыкания по периметру и фотофиксацию до закрытия откосов.',
+        photoGood: good,
+        photoBad: bad,
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(customTwiCards, {
+        id: 'demo_twi_finish_worker_v2',
+        title: 'Инструкция: подготовка основания под отделку',
+        checklistKey: 'sys_otdelka_mop',
+        checklistName: 'Отделка МОП',
+        type: 'WORKER',
+        itemId: 'ALL',
+        totalTime: 7,
+        steps: [
+            { order: 1, text: 'Проверить основание: нет пыли, непрочных участков и мусора.', time: 2, photo: good },
+            { order: 2, text: 'Устранить дефекты основания до начала следующего слоя.', time: 3, photo: bad },
+            { order: 3, text: 'Предъявить участок прорабу или инженеру до закрытия работ.', time: 2, photo: good }
+        ],
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_tasksData, {
+        id: 'demo_task_audit_red_contractor_v2',
+        title: 'Аудит подрядчика в красной зоне',
+        taskType: 'Аудит',
+        type: 'control',
+        category: 'Аудит',
+        priority: 'high',
+        status: 'open',
+        contractor: 'ООО "Окна-Про"',
+        projectName: 'ЖК "Демонстрационный"',
+        reason: 'Повторяющиеся B2 по оконным примыканиям и низкая стабильность качества.',
+        target: 3,
+        done: 1,
+        progress: 1,
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_tasksData, {
+        id: 'demo_task_twi_magic_v2',
+        title: 'Магия TWI: создать карту по OK/FAIL',
+        taskType: 'TWI',
+        type: 'method',
+        category: 'TWI',
+        priority: 'medium',
+        status: 'open',
+        contractor: 'ООО "Окна-Про"',
+        projectName: 'ЖК "Демонстрационный"',
+        reason: 'Есть фото правильного и неправильного выполнения. Нужно превратить их в TWI.',
+        target: 1,
+        done: 0,
+        progress: 0,
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_tasksData, {
+        id: 'demo_task_pcsk_analysis_v2',
+        title: 'Аналитика ПК СК: проверить просрочки и CMI',
+        taskType: 'ПК СК',
+        type: 'analysis',
+        category: 'ПК СК',
+        priority: 'high',
+        status: 'open',
+        contractor: 'ООО "Окна-Про"',
+        projectName: 'ЖК "Демонстрационный"',
+        reason: 'Есть просроченные замечания и статусы «Устранено» без «Проверено».',
+        target: 1,
+        done: 0,
+        progress: 0,
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_fmeaRecords, {
+        id: 'demo_fmea_windows_leak_v2',
+        title: 'FMEA: повторная протечка оконного примыкания',
+        contractor: 'ООО "Окна-Про"',
+        projectName: 'ЖК "Демонстрационный"',
+        failureMode: 'Нарушение герметизации оконного примыкания',
+        cause: 'Нет единого порядка подготовки основания и контроля герметика.',
+        effect: 'Продувание, протечки, промерзание, гарантийные обращения.',
+        action: 'Создать TWI, принять эталон, проверить соседние этажи до закрытия откосов.',
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_meetingsData, {
+        id: 'demo_meeting_quality_day_v2',
+        date: now,
+        author: 'Иванов И.И.',
+        title: 'Демо: совещание по качеству',
+        memoText: 'Разобраны повторяющиеся B2 по окнам, просрочки ПК СК, низкий CMI и необходимость TWI-инструктажа.',
+        agenda: [
+            {
+                contr: 'ООО "Окна-Про"',
+                defect: 'Повторная герметизация окон',
+                isDone: false,
+                date: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+                resp: 'Прораб окон',
+                comment: 'Провести TWI и предъявить 3 этажа на повторный контроль.'
+            }
+        ],
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_interventionsData, {
+        id: 'demo_intervention_twi_windows_v2',
+        date: now,
+        inspector: 'Иванов И.И.',
+        contractor: 'ООО "Окна-Про"',
+        templateKey: 'sys_okna_pvh',
+        templateTitle: 'Окна ПВХ',
+        typeText: 'TWI-инструктаж',
+        typeCoef: 1.2,
+        comment: 'Проведён инструктаж по герметизации оконных примыканий.',
+        baseUrk: 0.62,
+        finalImpact: 0.18,
+        deltaUrk: 0.12,
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.rbi_practicesData, {
+        id: 'demo_practice_windows_twi_v2',
+        title: 'Практика: TWI перед закрытием откосов',
+        category: 'Окна',
+        problem: 'Дефекты герметизации выявлялись после закрытия откосов.',
+        solution: 'Ввели обязательный TWI-инструктаж и фотофиксацию до закрытия.',
+        result: 'Снизилась повторяемость B2 и ускорился повторный контроль.',
+        author: 'Иванов И.И.',
+        createdAt: now,
+        updatedAt: now
+    });
+
+    pushUnique(window.skRecords, {
+        id: 'demo_sk_v2_001',
+        number: 'ДЕМО-201',
+        text: 'Нарушена герметизация примыкания оконного блока.',
+        category: 'Окна ПВХ',
+        contractor: 'ООО "Окна-Про"',
+        project_name: 'ЖК "Демонстрационный"',
+        deadline: new Date(Date.now() - 3 * 86400000).toISOString(),
+        date_issued: new Date(Date.now() - 10 * 86400000).toISOString(),
+        status: 'Не устранено',
+        inspector: 'Петров А.А.',
+        structure: 'Корпус 2, этаж 5'
+    });
+
+    pushUnique(window.skRecords, {
+        id: 'demo_sk_v2_002',
+        number: 'ДЕМО-202',
+        text: 'Подрядчик заявил устранение, требуется проверка СК.',
+        category: 'Окна ПВХ',
+        contractor: 'ООО "Окна-Про"',
+        project_name: 'ЖК "Демонстрационный"',
+        deadline: new Date(Date.now() - 1 * 86400000).toISOString(),
+        date_issued: new Date(Date.now() - 8 * 86400000).toISOString(),
+        status: 'Устранено',
+        inspector: 'Петров А.А.',
+        structure: 'Корпус 2, этаж 6'
+    });
+
+    pushUnique(window.skRecords, {
+        id: 'demo_sk_v2_003',
+        number: 'ДЕМО-203',
+        text: 'Замечание проверено строительным контролем.',
+        category: 'Фасад',
+        contractor: 'ООО "Фасад-Мастер"',
+        project_name: 'ЖК "Демонстрационный"',
+        deadline: new Date(Date.now() + 2 * 86400000).toISOString(),
+        date_issued: new Date(Date.now() - 5 * 86400000).toISOString(),
+        status: 'Проверено',
+        inspector: 'Сидоров В.В.',
+        structure: 'Корпус 1'
+    });
+};
 window.startDemoMode = function (silent = false) {
     // 1. БЕЗОПАСНОСТЬ: ПРЯЧЕМ РЕАЛЬНЫЕ ДАННЫЕ
     realState = JSON.parse(JSON.stringify(state));
@@ -7211,7 +7421,13 @@ window.startDemoMode = function (silent = false) {
     document.getElementById('empty-checklist-state').style.display = 'none';
     document.getElementById('audit-items').style.display = 'block';
     document.getElementById('audit-actions').style.display = 'grid';
-
+    if (typeof window.rbi_enrichDemoModeV2 === 'function') {
+        window.rbi_enrichDemoModeV2({
+            demoPhotoGood,
+            demoPhotoBad,
+            nowIso: now.toISOString()
+        });
+    }
     // 15. ПРИНУДИТЕЛЬНЫЙ РЕНДЕР ВСЕГО
     updateDataSummary();
     if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
@@ -7298,47 +7514,219 @@ window.exitDemoMode = function () {
 // ============================================================================
 let currentTutStep = 0;
 let tutOverlay, tutHighlightBox, tutTooltip, tutText, tutStepNum, tutNextBtn;
+// ============================================================================
+// === RBI: ОБУЧАЮЩИЕ КАРТОЧКИ ДЛЯ ИСТОРИИ В АНАЛИТИКЕ ========================
+// ============================================================================
 
+window.rbiShowTutorialHistoryCard = function (mode = 'history') {
+    // История у нас живёт внутри аналитики, а не как отдельная tab-history
+    if (typeof switchTab === 'function') {
+        switchTab('tab-analytics');
+    }
+
+    setTimeout(() => {
+        // Открываем подвкладку История в аналитике
+        const historyBtn =
+            Array.from(document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'))
+                .find(b => String(b.getAttribute('onclick') || '').includes('sub-history'));
+
+        if (historyBtn && typeof switchAnalyticsSubTab === 'function') {
+            switchAnalyticsSubTab('sub-history', historyBtn);
+        } else {
+            // fallback, если кнопка не найдена
+            document.querySelectorAll('.analytics-sub-section').forEach(s => s.classList.add('hidden'));
+            const subHistory = document.getElementById('sub-history');
+            if (subHistory) subHistory.classList.remove('hidden');
+            window.currentActiveAnalyticsTab = 'sub-history';
+        }
+
+        setTimeout(() => {
+            if (typeof renderHistoryTab === 'function') renderHistoryTab();
+            if (typeof initCollapsiblePanel === 'function') {
+                initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
+            }
+
+            const subHistory = document.getElementById('sub-history');
+            const list = document.getElementById('history-list');
+            const checksView = document.getElementById('history-checks-view');
+            const emptyMsg = document.getElementById('hist-empty-msg');
+
+            // Главная защита: если history-list пустой/не найден, всё равно вставляем карточку в sub-history
+            const host = list || checksView || subHistory;
+            if (!host) {
+                console.warn('[Tutorial] Не найден контейнер истории: sub-history/history-list/history-checks-view');
+                return;
+            }
+
+            document.querySelectorAll('.tutorial-history-card').forEach(el => el.remove());
+            if (emptyMsg) emptyMsg.style.display = 'none';
+
+            const cards = {
+                sync: {
+                    id: 'tutorial-history-sync-card',
+                    badge: 'офлайн → облако',
+                    title: 'Как данные попадают в историю',
+                    text: 'После сохранения осмотр сначала появляется на устройстве. Затем при наличии интернета, прав доступа и успешной синхронизации он отправляется в облако.',
+                    points: [
+                        'Осмотр сохраняется локально',
+                        'Фото могут загружаться дольше текста',
+                        'После синхронизации данные видны другим пользователям по ролям'
+                    ],
+                    color: 'indigo'
+                },
+                history: {
+                    id: 'tutorial-history-list-card',
+                    badge: 'история проверок',
+                    title: 'Что смотреть в истории',
+                    text: 'История — это не просто архив. Здесь видно, какие проверки были проведены, где зафиксированы дефекты, какие фото приложены и как менялось качество подрядчика.',
+                    points: [
+                        'Проверяйте объект, подрядчика и локацию',
+                        'Открывайте карточку проверки для деталей',
+                        'Используйте историю для повторяемости, отчётов и разбора'
+                    ],
+                    color: 'blue'
+                },
+                day: {
+                    id: 'tutorial-history-day-card',
+                    badge: 'конец дня',
+                    title: 'Как правильно завершить рабочий день',
+                    text: 'В конце дня важно убедиться, что проверки сохранены, фото прикреплены, черновики не забыты, а синхронизация выполнена.',
+                    points: [
+                        'Проверьте сохранённые осмотры',
+                        'Убедитесь, что фото открываются',
+                        'Запустите синхронизацию перед закрытием дня'
+                    ],
+                    color: 'emerald'
+                }
+            };
+
+            const card = cards[mode] || cards.history;
+
+            const colorMap = {
+                indigo: {
+                    bg: 'bg-indigo-50 dark:bg-indigo-900/30',
+                    text: 'text-indigo-600 dark:text-indigo-300',
+                    border: 'border-indigo-100 dark:border-indigo-800',
+                    solid: 'bg-indigo-600'
+                },
+                blue: {
+                    bg: 'bg-blue-50 dark:bg-blue-900/30',
+                    text: 'text-blue-600 dark:text-blue-300',
+                    border: 'border-blue-100 dark:border-blue-800',
+                    solid: 'bg-blue-600'
+                },
+                emerald: {
+                    bg: 'bg-emerald-50 dark:bg-emerald-900/30',
+                    text: 'text-emerald-600 dark:text-emerald-300',
+                    border: 'border-emerald-100 dark:border-emerald-800',
+                    solid: 'bg-emerald-600'
+                }
+            };
+
+            const c = colorMap[card.color] || colorMap.indigo;
+
+            const html = `
+                <div id="${card.id}"
+                    class="tutorial-history-card mx-1 mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[24px] shadow-sm overflow-hidden">
+
+                    <div class="p-4 ${c.bg} border-b ${c.border}">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 rounded-2xl ${c.solid} text-white flex items-center justify-center shrink-0 shadow-sm">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                    stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 11l3 3L22 4"></path>
+                                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+                                </svg>
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[9px] font-black uppercase tracking-widest ${c.text} mb-1">
+                                    ${card.badge}
+                                </div>
+                                <div class="text-[15px] font-black text-slate-800 dark:text-white leading-tight">
+                                    ${card.title}
+                                </div>
+                                <div class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed mt-2">
+                                    ${card.text}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 space-y-2">
+                        ${card.points.map(p => `
+                            <div class="flex items-start gap-2 text-[11px] font-bold text-slate-600 dark:text-slate-300 leading-snug">
+                                <span class="w-5 h-5 rounded-full ${c.bg} ${c.text} border ${c.border} flex items-center justify-center shrink-0 mt-[-2px]">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                        stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                </span>
+                                <span>${p}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            host.insertAdjacentHTML('afterbegin', html);
+
+            const el = document.getElementById(card.id);
+            if (el) {
+                setTimeout(() => {
+                    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }, 80);
+            }
+        }, 180);
+    }, 120);
+};
 const tutorialSteps = [
     {
-        title: "1. Старт",
-        text: "Добро пожаловать в <b>RBI Quality 17.0!</b> 👋<br><br>Я загрузил базу <b>Демо-данных (150 проверок)</b>. Наш первый шаг на стройке — выбрать <b>вид работ</b>. Это делается в шапке.",
-        targetSelector: ".header-top-row .relative.flex",
+        title: "1. Что такое RBI Quality Pro",
+        text: "RBI Quality Pro не заменяет ПК СК. ПК СК ведёт официальный контур замечаний, а RBI Quality помогает инженеру по качеству видеть риски, повторяемость дефектов, работу подрядчиков и действия для предотвращения брака.",
+        targetId: "empty-checklist-state",
         action: () => { switchTab('tab-audit'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
     },
     {
-        title: "2. Умная локация",
-        text: "Заполняем шапку: <b>Объект, Подрядчик и Локация</b>.<br>Система умная: введите '1/2' в поле Корпус, и она сама напишет 'Корпус 1, секция 2'.",
+        title: "2. Обучение проходит в демо",
+        text: "Тур автоматически включает демо-режим. Можно нажимать кнопки и изучать модули — рабочие данные не меняются.",
+        targetId: "fab-exit-demo",
+        action: () => { if (!isDemoMode && typeof startDemoMode === 'function') startDemoMode(true); }
+    },
+    {
+        title: "3. Осмотр",
+        text: "Осмотр — фактическая проверка качества по чек-листу. От правильного выбора объекта, подрядчика и статусов зависит УрК, отчёты и аналитика.",
+        targetSelector: ".bottom-nav .nav-item[data-tab='tab-audit']",
+        action: () => { switchTab('tab-audit'); }
+    },
+    {
+        title: "4. Данные проверки",
+        text: "Заполните объект, подрядчика и локацию. Эти данные нужны для ролей, отчётов, рейтинга, ПК СК и аналитики.",
         targetId: "header-data-block",
-        action: () => { }
+        action: () => { switchTab('tab-audit'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
     },
     {
-        title: "3. Мини-дашборд",
-        text: "Справа — УрК (Уровень качества) <b>текущего осмотра</b>.<br>Слева — историческая <b>Надежность подрядчика</b>. Нажав на них, вы увидите формулы штрафов.",
+        title: "5. Мини-дашборд",
+        text: "В шапке видно качество текущего осмотра и накопленную надёжность подрядчика. Это быстрый индикатор риска.",
         targetId: "header-dashboard",
-        action: () => { document.getElementById('dash-expand-icon').click(); }
-    },
-    {
-        title: "4. Свайп-Осмотр",
-        text: "Оценка производится свайпами!<br>Свайп вправо (зеленая кнопка) ставит <b>OK</b>. Карточка моментально сжимается в тонкую полоску с галочкой, экономя место.",
-        targetId: "card_wrapper_110",
         action: () => {
-            const el = document.getElementById('card_wrapper_110');
-            if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            const icon = document.getElementById('dash-expand-icon');
+            if (icon && document.getElementById('dash-expanded-view')?.classList.contains('hidden')) icon.click();
         }
     },
     {
-        title: "5. Фото Эталона",
-        text: "<b>Важно:</b> Фото можно прикреплять не только к браку, но и к эталонным работам (<b>OK</b>)! Это критически важно для обучения рабочих.",
+        title: "6. Статусы пунктов",
+        text: "Соответствует — только если реально проверено. Не соответствует — если есть дефект. Не проверялось — если проверить нельзя. Не применимо — если пункт не относится к зоне.",
         targetId: "card_wrapper_108",
         action: () => {
+            switchTab('tab-audit');
             const el = document.getElementById('card_wrapper_108');
             if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
     },
     {
-        title: "6. Фиксация брака",
-        text: "А вот так выглядит <b>Брак (FAIL)</b>.<br>Здесь можно выбрать <b>причину дефекта</b> (иконка 💬) или загрузить фото с камеры. Мы заранее поставили крест на пункт 109.",
+        title: "7. B1 / B2 / B3",
+        text: "B1 — мелкая доработка, B2 — значимый технологический дефект, B3 — критический риск. B2 и B3 сильно влияют на УрК, задачи и управленческие выводы.",
         targetId: "card_wrapper_109",
         action: () => {
             const el = document.getElementById('card_wrapper_109');
@@ -7346,142 +7734,234 @@ const tutorialSteps = [
         }
     },
     {
-        title: "7. Правило Эскалации",
-        text: "Обратите внимание на оранжевую кнопку <b>>1.5</b>!<br>Если дефект значимый (B2), но допуск сильно превышен — жмите её. Дефект автоматически станет <b>Критическим (B3)</b>.",
-        targetSelector: "#card_wrapper_109 button.text-orange-500, #card_wrapper_109 button.text-red-600",
+        title: "8. Фото и комментарии",
+        text: "Хорошее замечание содержит место, суть дефекта, требуемое действие и фото. Делайте общий вид, крупный план и фото после устранения.",
+        targetId: "card_wrapper_109",
+        action: () => {
+            const el = document.getElementById('card_wrapper_109');
+            if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+    },
+    {
+        title: "9. TWI прямо из пункта",
+        text: "Если к пункту привязана TWI-карта, инженер может сразу показать прорабу правильный пример, брак и методику проверки.",
+        targetSelector: "#card_wrapper_109 .btn-status.text-blue-600, #card_wrapper_109 .btn-status.text-purple-600",
         action: () => { }
     },
     {
-        title: "8. Связь с TWI",
-        text: "Если кнопка Справки <b>синяя</b> — значит к пункту привязана <b>TWI-карта</b>. Нажмите её, и рабочий сразу увидит на вашем экране эталон, фото брака и методику проверки.",
-        targetSelector: "#card_wrapper_109 .btn-status.text-blue-600",
-        action: () => { }
+        title: "10. Сохранение и офлайн",
+        text: "Приложение работает Offline-First: сначала сохраняет данные на устройстве, потом отправляет в облако при наличии интернета и прав. Здесь показано, почему после обхода важно дождаться синхронизации.",
+        targetId: "tutorial-history-sync-card",
+        action: () => {
+            if (typeof window.rbiShowTutorialHistoryCard === 'function') {
+                window.rbiShowTutorialHistoryCard('sync');
+            }
+        }
     },
     {
-        title: "9. Offline-сохранение",
-        text: "Нажимаем <b>Сохранить</b>. Акт зашифрованно улетает в базу устройства (Интернет не нужен).<br><br>Теперь перейдем во вкладку <b>Инженер</b>.",
+        title: "11. История проверок",
+        text: "История нужна для анализа: какие дефекты были, где повторяются, какие фото приложены и как менялось качество. Открывайте проверки из истории, чтобы смотреть детали, фото и УрК.",
+        targetId: "tutorial-history-list-card",
+        action: () => {
+            if (typeof window.rbiShowTutorialHistoryCard === 'function') {
+                window.rbiShowTutorialHistoryCard('history');
+            }
+        }
+    },
+    {
+        title: "12. Инженер",
+        text: "Раздел инженера показывает профиль, задачи, совещания, Impact Score, FMEA и практики.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-engineer']",
+        action: () => { switchTab('tab-engineer'); }
+    },
+    {
+        title: "13. Задачи",
+        text: "Планировщик задач — это карта рисков. Он подсказывает, где нужен аудит, TWI, FMEA, эталон, совещание или анализ ПК СК.",
+        targetSelector: "button[onclick*='eng-sub-tasks']",
         action: () => {
             switchTab('tab-engineer');
-            setTimeout(() => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if (btns[0]) rbi_switchEngineerSubTab('eng-sub-badges', btns[0]); }, 100);
+            setTimeout(() => {
+                const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+                const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('eng-sub-tasks')) || btns[1];
+                if (btn && typeof rbi_switchEngineerSubTab === 'function') rbi_switchEngineerSubTab('eng-sub-tasks', btn);
+            }, 100);
         }
     },
     {
-        title: "10. Профиль Инженера (HR)",
-        text: "Здесь ваш личный <b>HR-дашборд</b>. Система начисляет вам Опыт (XP) за качественные проверки, выдает грейды и бейджи (ачивки). Также здесь можно запустить <b>AI-Наставника</b>.",
-        targetId: "game-dashboard-container",
-        action: () => { window.scrollTo({ top: 0, behavior: 'smooth' }); }
-    },
-    {
-        title: "11. Планировщик Задач",
-        text: "Переключитесь на <b>Задачи</b>. Планировщик сам анализирует историю и график СМР, выставляя задачи на неделю: Аудиты, Совещания, Отчеты и запросы Эталонов.",
+        title: "14. Задача — не слепой приказ",
+        text: "Задача показывает риск, но инженер учитывает реальную ситуацию: доступность зоны, готовность работ, безопасность и график.",
         targetSelector: "button[onclick*='eng-sub-tasks']",
-        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if (btns[1]) rbi_switchEngineerSubTab('eng-sub-tasks', btns[1]); }
+        action: () => { }
     },
     {
-        title: "12. Совещания и Протоколы",
-        text: "В подвкладке <b>Совещания</b> ИИ (DeepSeek) помогает провести планерку. Он собирает все дефекты по подрядчикам и генерирует готовый текстовый Мемо для отправки в WhatsApp.",
+        title: "15. Совещания",
+        text: "Совещание должно завершаться решениями: ответственный, срок, повторный контроль, TWI, FMEA или эталон.",
         targetSelector: "button[onclick*='eng-sub-meetings']",
-        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]); }
+        action: () => {
+            const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('eng-sub-meetings'));
+            if (btn && typeof rbi_switchEngineerSubTab === 'function') rbi_switchEngineerSubTab('eng-sub-meetings', btn);
+        }
     },
     {
-        title: "13. Impact Score",
-        text: "Вкладка <b>Impact</b>. Как оценить вашу полезность? Система замеряет качество подрядчика ДО и ПОСЛЕ вашего вмешательства. Здесь видно, улучшили вы ситуацию или нет.",
+        title: "16. Impact Score",
+        text: "Эффективность инженера — не количество найденных дефектов, а влияние на снижение повторяемости и улучшение процесса.",
         targetSelector: "button[onclick*='eng-sub-impact']",
-        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if (btns[3]) rbi_switchEngineerSubTab('eng-sub-impact', btns[3]); }
+        action: () => {
+            const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('eng-sub-impact'));
+            if (btn && typeof rbi_switchEngineerSubTab === 'function') rbi_switchEngineerSubTab('eng-sub-impact', btn);
+        }
     },
     {
-        title: "14. FMEA Анализ",
-        text: "Вкладка <b>FMEA</b>. Автоматический сбор самых частых системных дефектов в единую матрицу Рисков. Нажмите «Автозаполнение» и ИИ сам найдет коренные причины брака.",
+        title: "17. FMEA",
+        text: "FMEA нужен, когда дефект повторяется или риск слишком серьёзный. Результатом должны быть действия: TWI, чек-лист, эталон, обучение или повторный контроль.",
         targetSelector: "button[onclick*='eng-sub-fmea']",
-        action: () => { const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn'); if (btns[4]) rbi_switchEngineerSubTab('eng-sub-fmea', btns[4]); }
+        action: () => {
+            const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('eng-sub-fmea'));
+            if (btn && typeof rbi_switchEngineerSubTab === 'function') rbi_switchEngineerSubTab('eng-sub-fmea', btn);
+        }
     },
     {
-        title: "15. Аналитика (Дашборды)",
-        text: "Переходим в сердце системы — <b>Аналитику</b>. Здесь сырые проверки превращаются в графики, а ИИ пишет управленческие решения.",
+        title: "18. Аналитика",
+        text: "Аналитика превращает проверки в управленческие выводы: УрК, ИУрК, ИКО, стабильность, повторяемость и зоны риска.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-analytics']",
-        action: () => { switchTab('tab-analytics'); setTimeout(() => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if (btns[0]) switchAnalyticsSubTab('sub-contractors', btns[0]); }, 100); }
+        action: () => {
+            switchTab('tab-analytics');
+            setTimeout(() => {
+                const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+                if (btns[0] && typeof switchAnalyticsSubTab === 'function') switchAnalyticsSubTab('sub-contractors', btns[0]);
+            }, 100);
+        }
     },
     {
-        title: "16. Сводка (One-Pager)",
-        text: "Раздел <b>Сводка</b>. Это компактный одностраничный отчет для руководства с Индексом Риска (ИКО), Тепловой картой этапов и ТОП-5 самых частых дефектов.",
+        title: "19. Красная / жёлтая / зелёная зона",
+        text: "Цвет подрядчика — сигнал риска. Красная зона требует действий: усиленный контроль, TWI, FMEA, эталон или совещание.",
+        targetSelector: ".bottom-nav .nav-item[data-tab='tab-analytics']",
+        action: () => { switchTab('tab-analytics'); }
+    },
+    {
+        title: "20. One-Pager",
+        text: "One-Pager — короткий управленческий отчёт для руководителя: риски, подрядчики, дефекты, метрики и действия.",
         targetSelector: "button[onclick*='sub-onepager']",
-        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if (btns[1]) switchAnalyticsSubTab('sub-onepager', btns[1]); }
+        action: () => {
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('sub-onepager')) || btns[1];
+            if (btn && typeof switchAnalyticsSubTab === 'function') switchAnalyticsSubTab('sub-onepager', btn);
+        }
     },
     {
-        title: "17. График СМР",
-        text: "Вкладка <b>График</b>. Здесь можно загрузить Excel с графиком производства работ. На его основе система сама запланирует вам задачи: проверка ППР, Инструктаж, Финал.",
+        title: "21. График СМР",
+        text: "График СМР помогает планировать контроль: старт работ, ППР, инструктаж, финал и зоны будущего риска.",
         targetSelector: "button[onclick*='sub-schedule']",
-        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if (btns[2]) switchAnalyticsSubTab('sub-schedule', btns[2]); }
+        action: () => {
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('sub-schedule')) || btns[2];
+            if (btn && typeof switchAnalyticsSubTab === 'function') switchAnalyticsSubTab('sub-schedule', btn);
+        }
     },
     {
-        title: "18. Интеграция с ПК СК",
-        text: "Вкладка <b>ПК СК</b>. Загружайте выгрузки из Стройконтроля! Система сопоставит их с вашей историей RBI и найдет подрядчиков, которые «скрывают» брак (Индекс ИСД).",
+        title: "22. ПК СК",
+        text: "RBI Quality не заменяет ПК СК. Здесь данные ПК СК используются для анализа: просрочки, CMI, ИСД, формальные закрытия и расхождения.",
         targetSelector: "button[onclick*='sub-sk']",
-        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if (btns[3]) switchAnalyticsSubTab('sub-sk', btns[3]); }
+        action: () => {
+            const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('sub-sk')) || btns[3];
+            if (btn && typeof switchAnalyticsSubTab === 'function') switchAnalyticsSubTab('sub-sk', btn);
+        }
     },
     {
-        title: "19. История проверок",
-        text: "Вкладка <b>История</b>. Журнал всех 150 демо-проверок с удобной группировкой, поиском и массовой выгрузкой в Excel (CSV).",
-        targetSelector: "button[onclick*='sub-history']",
-        action: () => { const btns = document.querySelectorAll('#analytics-subtabs-block .sub-tab-btn'); if (btns[4]) switchAnalyticsSubTab('sub-history', btns[4]); }
-    },
-    {
-        title: "20. База Знаний (Справочник)",
-        text: "Переходим в <b>Справочник</b>. Здесь находится вся документация: Чек-листы, ГОСТы, TWI-инструкции, Практики и Технические Узлы.",
+        title: "23. Справочник",
+        text: "Справочник — база знаний инженера: чек-листы, документы, TWI, узлы, практики, эталоны и FAQ.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-reference']",
-        action: () => { switchTab('tab-reference'); setTimeout(() => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[0]) switchReferenceSubTab('ref-sub-checklists', btns[0]); }, 100); }
+        action: () => {
+            switchTab('tab-reference');
+            setTimeout(() => {
+                const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
+                if (btns[0] && typeof switchReferenceSubTab === 'function') switchReferenceSubTab('ref-sub-checklists', btns[0]);
+            }, 100);
+        }
     },
     {
-        title: "21. Конструктор Чек-листов",
-        text: "Здесь вы можете собирать свои шаблоны. А если у вас есть таблица Excel — нажмите <b>Загрузить Excel</b>, и система сама превратит её в работающий чек-лист!",
-        targetId: "ref-filters-block",
-        action: () => { window.scrollTo({ top: 0, behavior: 'smooth' }); const manageBody = document.getElementById('ref-manage-body'); if (manageBody && manageBody.style.maxHeight === '0px') toggleManagePanel(); }
-    },
-    {
-        title: "22. AI-Чат по нормативам",
-        text: "Вкладка <b>НД</b>. Забыли допуск? Нажмите «Спросить ИИ», и нейросеть мгновенно найдет нужный ГОСТ или СП прямо в базе приложения.",
-        targetSelector: "button[onclick*='ref-sub-docs']",
-        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[1]) switchReferenceSubTab('ref-sub-docs', btns[1]); }
-    },
-    {
-        title: "23. База TWI-карт",
-        text: "Вкладка <b>TWI</b>. Важные визуальные стандарты. Есть 3 типа: Технадзор (Было/Стало), Пошаговая инструкция для рабочего и Внешний PDF-регламент.",
+        title: "24. TWI",
+        text: "TWI — короткая инструкция на рабочем месте. Она нужна, чтобы обучить подрядчика и не допустить повторения дефекта.",
         targetSelector: "button[onclick*='ref-sub-twi']",
-        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[2]) switchReferenceSubTab('ref-sub-twi', btns[2]); }
+        action: () => {
+            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('ref-sub-twi')) || btns[2];
+            if (btn && typeof switchReferenceSubTab === 'function') switchReferenceSubTab('ref-sub-twi', btn);
+        }
     },
     {
-        title: "24. Технические Узлы",
-        text: "Вкладка <b>Узлы</b>. Библиотека строительных узлов с чертежами и спецификацией материалов. Прямо отсюда можно открыть нужный ГОСТ.",
-        targetSelector: "button[onclick*='ref-sub-nodes']",
-        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[3]) switchReferenceSubTab('ref-sub-nodes', btns[3]); }
+        title: "25. Узлы и документы",
+        text: "Узлы и документы помогают обосновать требования, объяснить правильное решение и снизить споры с подрядчиком.",
+        targetSelector: "button[onclick*='ref-sub-docs']",
+        action: () => {
+            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('ref-sub-docs')) || btns[1];
+            if (btn && typeof switchReferenceSubTab === 'function') switchReferenceSubTab('ref-sub-docs', btn);
+        }
     },
     {
-        title: "25. Библиотека Практик",
-        text: "Вкладка <b>Практики</b>. Если ваше воздействие (Impact) подняло качество подрядчика на +10%, система сама предложит кристаллизовать этот опыт в виде карточки Лучшей Практики.",
+        title: "26. Практики",
+        text: "Практики сохраняют рабочие решения, которые помогли снизить брак. Хорошую практику можно превратить в TWI или стандарт.",
         targetSelector: "button[onclick*='ref-sub-practices']",
-        action: () => { const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn'); if (btns[4]) switchReferenceSubTab('ref-sub-practices', btns[4]); }
+        action: () => {
+            const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
+            const btn = Array.from(btns).find(b => String(b.getAttribute('onclick') || '').includes('ref-sub-practices')) || btns[4];
+            if (btn && typeof switchReferenceSubTab === 'function') switchReferenceSubTab('ref-sub-practices', btn);
+        }
     },
     {
-        title: "26. Выгрузка отчетов (PDF)",
-        text: "На любой вкладке аналитики нажмите на <b>плавающую кнопку</b> справа внизу, чтобы открыть меню выгрузки. Вы можете скачать PDF (А3/А4) или сразу отправить его на принтер.",
+        title: "27. FAQ / ИИ-помощник",
+        text: "FAQ — справочник по приложению и методологии. После первой синхронизации база помощника доступна офлайн, а при интернете и включённом AI можно задавать вопросы свободным текстом.",
+        targetSelector: "button[onclick*='openFaqModal']",
+        action: () => { switchTab('tab-reference'); }
+    },
+    {
+        title: "28. Отчёты",
+        text: "Отчёт нужен не только для архива. Это инструмент совещания: показать факты, фото, риски и решения.",
         targetId: "fab-download-btn",
         action: () => {
+            if (typeof closeFabExportMenu === 'function') closeFabExportMenu();
             const fab = document.getElementById('fab-download-btn');
-            if (fab) { fab.style.display = 'flex'; fab.classList.add('fab-visible'); }
+            if (fab) {
+                fab.style.display = 'flex';
+                fab.classList.add('fab-visible');
+            }
         }
     },
     {
-        title: "27. Настройки и Синхронизация",
-        text: "В <b>Настройках</b> можно включить темную тему, авто-отправку бэкапов руководителю и привязать ваш ключ DeepSeek. Здесь же включается синхронизация с Командой через облако.",
+        title: "29. Синхронизация",
+        text: "После важных обходов запускайте синхронизацию. Пока фото или проверки только локальные, их нельзя удалять вместе с данными приложения.",
         targetSelector: ".bottom-nav .nav-item[data-tab='tab-settings']",
-        action: () => { if (typeof closeFabExportMenu === 'function') closeFabExportMenu(); switchTab('tab-settings'); }
+        action: () => {
+            if (typeof closeFabExportMenu === 'function') closeFabExportMenu();
+            switchTab('tab-settings');
+        }
     },
     {
-        title: "28. Финал",
-        text: "Если забудете логику работы или формулы (ИКО, ИСД, CMI) — откройте вкладку <b>FAQ</b> в Справочнике.<br><br>🚀 <b>Обучение завершено! Можете продолжить изучать демо-режим.</b>",
-        targetSelector: "button[onclick=\"showAboutApp()\"]",
-        action: () => { },
+        title: "30. Роли и доступ",
+        text: "Пользователь видит данные по роли и закреплениям. Инженер, руководитель, подрядчик, директор и администратор видят разный объём данных.",
+        targetSelector: ".bottom-nav .nav-item[data-tab='tab-settings']",
+        action: () => { switchTab('tab-settings'); }
+    },
+    {
+        title: "31. Завершение дня",
+        text: "В конце дня проверьте: осмотры сохранены, фото прикреплены, черновики не забыты, синхронизация выполнена, критичные дефекты вынесены в отчёт или задачу.",
+        targetId: "tutorial-history-day-card",
+        action: () => {
+            if (typeof window.rbiShowTutorialHistoryCard === 'function') {
+                window.rbiShowTutorialHistoryCard('day');
+            }
+        }
+    },
+    {
+        title: "32. Финал",
+        text: "Главная логика: RBI Quality помогает инженеру по качеству быть Business Quality Partner — видеть риски, предотвращать дефекты и улучшать процесс, а не просто вести второй журнал замечаний.",
+        targetId: "empty-checklist-state",
+        action: () => { switchTab('tab-audit'); },
         isEnd: true
     }
 ];
