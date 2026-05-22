@@ -114,7 +114,7 @@
                 cursor: zoom-in;
             }
 
-            .report-viewer img.report-photo-mobile {
+            .report-viewer img.report-photo-fixed {
                 width: auto !important;
                 max-width: 100% !important;
                 height: auto !important;
@@ -122,11 +122,12 @@
                 object-fit: contain !important;
                 display: block !important;
                 margin: 0 auto !important;
-                border-radius: 10px;
-                background: #f8fafc;
+                border-radius: 10px !important;
+                background: #f8fafc !important;
+                cursor: zoom-in !important;
             }
 
-            .report-viewer .report-photo-mobile-box {
+            .report-viewer .report-photo-fixed-box {
                 height: auto !important;
                 min-height: 0 !important;
                 max-height: none !important;
@@ -138,15 +139,17 @@
                 background: #f8fafc !important;
             }
 
-            .report-viewer .report-photo-mobile-card {
+            .report-viewer .report-photo-fixed-card {
                 height: auto !important;
                 min-height: 0 !important;
+                max-height: none !important;
                 overflow: visible !important;
             }
 
-            .report-viewer .report-photo-mobile-caption {
+            .report-viewer .report-photo-fixed-caption {
                 height: auto !important;
                 min-height: 0 !important;
+                max-height: none !important;
                 overflow: visible !important;
             }
         }
@@ -194,14 +197,14 @@
             `;
         }
         function enableImageViewer(root) {
-    if (!root) return;
+            if (!root) return;
 
-    let overlay = document.getElementById('image-viewer-overlay');
+            let overlay = document.getElementById('image-viewer-overlay');
 
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'image-viewer-overlay';
-        overlay.style.cssText = `
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'image-viewer-overlay';
+                overlay.style.cssText = `
             position: fixed;
             inset: 0;
             background: rgba(15, 23, 42, 0.94);
@@ -214,10 +217,12 @@
             cursor: zoom-out;
         `;
 
-        overlay.innerHTML = `
+                overlay.innerHTML = `
             <img id="image-viewer-img" src="" style="
                 max-width: 100%;
-                max-height: 100%;
+                max-height: 92vh;
+                width: auto;
+                height: auto;
                 object-fit: contain;
                 border-radius: 12px;
                 box-shadow: 0 20px 60px rgba(0,0,0,.45);
@@ -225,61 +230,105 @@
             ">
         `;
 
-        overlay.addEventListener('click', () => {
-            overlay.style.display = 'none';
-            document.getElementById('image-viewer-img').src = '';
-            document.body.style.overflow = '';
-        });
+                overlay.addEventListener('click', () => {
+                    overlay.style.display = 'none';
+                    document.getElementById('image-viewer-img').src = '';
+                    document.body.style.overflow = '';
+                });
 
-        document.body.appendChild(overlay);
-    }
+                document.body.appendChild(overlay);
+            }
 
-    const isUtilityImage = (img) => {
-        const src = String(img.getAttribute('src') || '').toLowerCase();
-        const alt = String(img.getAttribute('alt') || '').toLowerCase();
-        const parentText = String(img.closest('td, div')?.textContent || '').toLowerCase();
+            function isQrOrLogo(img) {
+                const style = String(img.getAttribute('style') || '').toLowerCase();
+                const src = String(img.getAttribute('src') || '').toLowerCase();
+                const alt = String(img.getAttribute('alt') || '').toLowerCase();
 
-        return (
-            src.includes('qr') ||
-            src.includes('logo') ||
-            alt.includes('qr') ||
-            alt.includes('logo') ||
-            parentText.includes('сформировано')
-        );
-    };
+                if (alt.includes('logo') || alt.includes('qr')) return true;
+                if (src.includes('logo') || src.includes('favicon') || src.includes('icon-')) return true;
 
-    root.querySelectorAll('img').forEach((img) => {
-        if (isUtilityImage(img)) return;
+                const smallSquare =
+                    /width\s*:\s*(45|50|55|60|65|70|75)px/.test(style) &&
+                    /height\s*:\s*(45|50|55|60|65|70|75)px/.test(style);
 
-        img.classList.add('report-photo-mobile');
+                return smallSquare;
+            }
 
-        const photoBox = img.parentElement;
-        if (photoBox) {
-            photoBox.classList.add('report-photo-mobile-box');
+            function fixReportPhoto(img) {
+                if (!img || isQrOrLogo(img)) return;
 
-            const card = photoBox.parentElement;
-            if (card) {
-                card.classList.add('report-photo-mobile-card');
+                img.classList.add('report-photo-fixed');
 
-                const caption = card.querySelector('div:last-child');
-                if (caption && caption !== photoBox) {
-                    caption.classList.add('report-photo-mobile-caption');
+                img.style.setProperty('width', 'auto', 'important');
+                img.style.setProperty('max-width', '100%', 'important');
+                img.style.setProperty('height', 'auto', 'important');
+                img.style.setProperty('max-height', '240px', 'important');
+                img.style.setProperty('object-fit', 'contain', 'important');
+                img.style.setProperty('display', 'block', 'important');
+                img.style.setProperty('margin', '0 auto', 'important');
+                img.style.setProperty('cursor', 'zoom-in', 'important');
+                img.style.setProperty('border-radius', '10px', 'important');
+                img.style.setProperty('background', '#f8fafc', 'important');
+
+                let el = img.parentElement;
+                let depth = 0;
+
+                while (el && el !== root && depth < 5) {
+                    el.style.setProperty('height', 'auto', 'important');
+                    el.style.setProperty('min-height', '0', 'important');
+                    el.style.setProperty('max-height', 'none', 'important');
+                    el.style.setProperty('overflow', 'visible', 'important');
+                    el.style.setProperty('box-sizing', 'border-box', 'important');
+
+                    if (depth === 0) {
+                        el.classList.add('report-photo-fixed-box');
+                        el.style.setProperty('display', 'flex', 'important');
+                        el.style.setProperty('align-items', 'center', 'important');
+                        el.style.setProperty('justify-content', 'center', 'important');
+                        el.style.setProperty('padding', '6px', 'important');
+                        el.style.setProperty('background', '#f8fafc', 'important');
+                    }
+
+                    if (depth === 1) {
+                        el.classList.add('report-photo-fixed-card');
+                    }
+
+                    if (depth === 2) {
+                        el.classList.add('report-photo-fixed-caption');
+                    }
+
+                    el = el.parentElement;
+                    depth++;
                 }
             }
+
+            function fixAllImages() {
+                root.querySelectorAll('img').forEach((img) => {
+                    fixReportPhoto(img);
+
+                    if (!img.complete) {
+                        img.addEventListener('load', () => fixReportPhoto(img), { once: true });
+                    }
+                });
+            }
+
+            fixAllImages();
+            setTimeout(fixAllImages, 300);
+            setTimeout(fixAllImages, 1000);
+
+            root.onclick = function (e) {
+                const img = e.target && e.target.closest ? e.target.closest('img') : null;
+                if (!img) return;
+                if (isQrOrLogo(img)) return;
+
+                const src = img.currentSrc || img.getAttribute('src');
+                if (!src) return;
+
+                document.getElementById('image-viewer-img').src = src;
+                overlay.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            };
         }
-
-        img.addEventListener('click', (e) => {
-            e.stopPropagation();
-
-            const src = img.getAttribute('src');
-            if (!src) return;
-
-            document.getElementById('image-viewer-img').src = src;
-            overlay.style.display = 'flex';
-            document.body.style.overflow = 'hidden';
-        });
-    });
-}
         async function loadReport() {
             const params = new URLSearchParams(window.location.search);
             const token = params.get('token') || params.get('id');
