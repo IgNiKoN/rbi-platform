@@ -584,6 +584,10 @@ window.extractTextFromPdf = async function (pdfDataUrl) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
+        
+        // ДОБАВЛЕНО: Очищаем текст от невидимого мусора, который ломает базу
+        fullText = fullText.replace(/[\0\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+        
         return fullText;
     } catch (err) {
         console.error("Ошибка парсинга PDF:", err);

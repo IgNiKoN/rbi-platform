@@ -1414,6 +1414,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             project_canonical_key: data.project_canonical_key || data.metadata?.project || '',
             project_display_name: data.project_display_name || data.metadata?.project || '',
             engineer_name: data.engineer_name || data.created_by || iName,
+            contractor_canonical_key: data.contractor_canonical_key || '', // ДОБАВЛЕНО
             report_type: data.report_type || 'unknown',
             title: data.title || 'Отчет',
             generated_at: data.generated_at || new Date().toISOString(),
@@ -1421,14 +1422,16 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             file_size: data.file_size || 0,
             metadata: data.metadata || {},
             created_by: data.created_by || iName,
+            created_by_name: data.created_by || iName, // ДОБАВЛЕНО
             is_deleted: isDeleted,
             deleted_at: deletedAt,
             created_at: data.created_at || new Date().toISOString(),
-            updated_at: updatedAt
+            updated_at: updatedAt,
+            is_public: data.is_public !== false, // ДОБАВЛЕНО
+            public_token: data.public_token || ''  // ДОБАВЛЕНО
         };
     } else if (objectType === 'snapshot') {
         // HTML-снимок публичного QR-отчёта.
-        // Внешний пользователь получает только этот html_content по public_token.
         payload = {
             id: id,
             report_id: data.report_id,
@@ -1491,6 +1494,13 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb' && objectType !== 'project_object' && objectType !== 'object_alias') {
         if (isShared) {
             payload.owner = data.owner || iName;
+            // ДОБАВЛЕНО: Полное соответствие столбцам таблиц shared_
+            payload.project_code = window.syncConfig.projectCode;
+            payload.created_at = data.createdAt || data.created_at || new Date().toISOString();
+            payload.created_by_name = data.owner || data.author || iName;
+            payload.source = 'cloud';
+            payload.sync_status = 'synced';
+            payload.sync_block_reason = '';
         } else {
             payload.project_code = pCode;
 

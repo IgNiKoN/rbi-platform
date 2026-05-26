@@ -1636,9 +1636,13 @@ function renderReferenceTab() {
             const safeNormText = (i.t || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const specificItemCards = itemCards.filter(c => String(c.itemId) === String(i.id));
 
-            // Проверяем наличие TWI и вешаем иконку
+            // Проверяем наличие TWI
             const hasTwi = specificItemCards.length > 0;
             const twiAction = hasTwi ? `openTwiViewer('${specificItemCards[0].id}')` : `showToast('Для этого пункта пока нет TWI')`;
+
+            // Умная кнопка норматива
+            const docAction = i.ndId ? `openDocViewer('${i.ndId}')` : `findAndOpenND('${safeNormText}')`;
+            const docIconColor = i.ndId ? 'text-indigo-600 bg-indigo-50 border-indigo-200' : 'text-blue-600 bg-blue-50 border-blue-200';
 
             html += `
                 <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden mb-2 flex flex-col">
@@ -1648,9 +1652,8 @@ function renderReferenceTab() {
                                 <span class="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-900 text-slate-500 mr-1">B${i.w}</span>
                                 ${i.n}
                             </div>
-                            <!-- Компактные кнопки действий -->
                             <div class="flex gap-1 shrink-0">
-                                <button onclick="findAndOpenND('${safeNormText}')" class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center active:scale-90 border border-blue-100">
+                                <button onclick="${docAction}" class="w-8 h-8 rounded-lg ${docIconColor} flex items-center justify-center active:scale-90 border">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
                                 </button>
                                 <button onclick="${twiAction}" class="w-8 h-8 rounded-lg ${hasTwi ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-300'} flex items-center justify-center active:scale-90">
@@ -1721,7 +1724,6 @@ function switchToNdSearch(searchString) {
 
 // === 2. ОТКРЫТИЕ УНИВЕРСАЛЬНОЙ ЧИТАЛКИ ИНСТРУКЦИЙ (БЕЗ ЭМОДЗИ) ===
 async function openTwiViewer(twiId) {
-
     const card = customTwiCards.find(c => c.id === twiId);
     if (!card) return showToast('Ошибка: Инструкция не найдена');
     if (typeof gameLogAction === 'function') {
@@ -1749,16 +1751,19 @@ async function openTwiViewer(twiId) {
         footer.classList.remove('hidden');
         content.classList.remove('p-0');
 
-        let photoGoodHtml = card.photoGood ? `
+        let resolvedGood = card.photoGood ? await PhotoManager.getAsyncUrl(card.photoGood) || window.getPhotoSrc(card.photoGood) : null;
+        let resolvedBad = card.photoBad ? await PhotoManager.getAsyncUrl(card.photoBad) || window.getPhotoSrc(card.photoBad) : null;
+
+        let photoGoodHtml = resolvedGood ? `
             <div class="relative rounded-xl overflow-hidden shadow-sm border-2 border-green-500 cursor-pointer active:scale-95 transition-transform bg-slate-50 dark:bg-slate-900" onclick="openPhotoViewer('${card.photoGood}')">
                 <div class="absolute top-0 left-0 w-full bg-gradient-to-b from-green-600/90 to-transparent p-2 text-white font-black text-[10px] uppercase tracking-widest drop-shadow-md flex items-center gap-1.5 z-10"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Правильно</div>
-                <img src="${card.photoGood}" class="w-full h-48 md:h-64 object-contain">
+                <img src="${resolvedGood}" class="w-full h-48 md:h-64 object-contain">
             </div>` : `<div class="h-48 md:h-64 rounded-xl border-2 border-dashed border-green-300 flex flex-col items-center justify-center bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-500"><svg class="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="font-bold text-[9px] uppercase">Нет фото эталона</span></div>`;
 
-        let photoBadHtml = card.photoBad ? `
+        let photoBadHtml = resolvedBad ? `
             <div class="relative rounded-xl overflow-hidden shadow-sm border-2 border-red-500 cursor-pointer active:scale-95 transition-transform bg-slate-50 dark:bg-slate-900" onclick="openPhotoViewer('${card.photoBad}')">
                 <div class="absolute top-0 left-0 w-full bg-gradient-to-b from-red-600/90 to-transparent p-2 text-white font-black text-[10px] uppercase tracking-widest drop-shadow-md flex items-center gap-1.5 z-10"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg> Брак</div>
-                <img src="${card.photoBad}" class="w-full h-48 md:h-64 object-contain">
+                <img src="${resolvedBad}" class="w-full h-48 md:h-64 object-contain">
             </div>` : `<div class="h-48 md:h-64 rounded-xl border-2 border-dashed border-red-300 flex flex-col items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-500"><svg class="w-6 h-6 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg><span class="font-bold text-[9px] uppercase">Нет фото брака</span></div>`;
 
         let normText = 'Норматив не указан';
@@ -1807,10 +1812,12 @@ async function openTwiViewer(twiId) {
 
         let stepsHtml = '<div class="p-4 space-y-4">';
         if (card.steps && card.steps.length > 0) {
-            card.steps.forEach(step => {
-                const photoHtml = step.photo ? `
+            for (let step of card.steps) {
+                let resolvedStepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
+
+                const photoHtml = resolvedStepPhoto ? `
                     <div class="mt-3 w-full rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm relative group" onclick="openPhotoViewer('${step.photo}')">
-                        <img src="${step.photo}" class="w-full h-40 object-cover active:scale-95 transition-transform origin-center cursor-pointer">
+                        <img src="${resolvedStepPhoto}" class="w-full h-40 object-cover active:scale-95 transition-transform origin-center cursor-pointer">
                         <div class="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold uppercase px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg> Увеличить</div>
                     </div>
                 ` : '';
@@ -1826,7 +1833,7 @@ async function openTwiViewer(twiId) {
                         ${photoHtml}
                     </div>
                 `;
-            });
+            }
         } else {
             stepsHtml += `<div class="text-center text-slate-500 text-sm font-bold py-10">Шаги не заполнены</div>`;
         }
@@ -1844,10 +1851,7 @@ async function openTwiViewer(twiId) {
         if (card.pdfData) {
             try {
                 let blobUrl = '';
-
-                // УМНАЯ ПРОВЕРКА: Это Base64 (старый формат) или ссылка (новый формат)?
                 if (card.pdfData.startsWith('data:application/pdf')) {
-                    // Расшифровка старого Base64
                     const byteCharacters = atob(card.pdfData.split(',')[1]);
                     const byteNumbers = new Array(byteCharacters.length);
                     for (let i = 0; i < byteCharacters.length; i++) {
@@ -1857,26 +1861,20 @@ async function openTwiViewer(twiId) {
                     const blob = new Blob([byteArray], { type: 'application/pdf' });
                     blobUrl = URL.createObjectURL(blob);
                 } else {
-                    // ИСПРАВЛЕНИЕ: Ждем реальную ссылку из базы IndexedDB или автоматически скачиваем из облака для офлайна
                     blobUrl = await PhotoManager.getAsyncUrl(card.pdfData) || PhotoManager.getSrc(card.pdfData);
                 }
 
                 content.innerHTML = `
                     <div class="w-full h-full flex flex-col relative bg-slate-100 dark:bg-slate-900">
-                        <!-- Подсказка для iPhone -->
                         <div class="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-2 text-[10px] text-center font-bold flex justify-between items-center shrink-0 border-b border-indigo-100 dark:border-indigo-800">
                             <span>📱 Не листается вниз? Откройте в читалке 👉</span>
                             <a href="${blobUrl}" target="_blank" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg active:scale-95 shadow-sm uppercase tracking-widest">Открыть</a>
                         </div>
-                        
-                        <!-- Само окно просмотра -->
                         <div style="-webkit-overflow-scrolling: touch; overflow-y: auto; flex: 1; width: 100%; min-height: 60vh;">
                             <object data="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full border-none bg-white dark:bg-slate-800" style="min-height: 60vh;">
                                 <embed src="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full" />
                             </object>
                         </div>
-                        
-                        <!-- Подвал с кнопками -->
                         <div class="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10">
                             <div class="min-w-0 pr-2 flex-1">
                                 <div class="text-[11px] font-black text-slate-800 dark:text-white truncate">${card.pdfName || 'Документ.pdf'}</div>
@@ -1886,9 +1884,6 @@ async function openTwiViewer(twiId) {
                                 <a href="${blobUrl}" target="_blank" download="${card.pdfName || 'document.pdf'}" class="bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-3 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex items-center justify-center" title="Скачать файл">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                                 </a>
-                                <a href="${blobUrl}" target="_blank" class="bg-red-600 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-1.5">
-                                    На весь экран
-                                </a>
                             </div>
                         </div>
                     </div>
@@ -1896,13 +1891,42 @@ async function openTwiViewer(twiId) {
                 content.dataset.blobUrl = blobUrl;
             } catch (err) {
                 console.error(err);
-                content.innerHTML = `<div class="flex flex-col items-center justify-center h-full p-6 text-center"><svg class="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg><div class="text-sm font-bold text-slate-500">Не удалось открыть PDF.<br>Возможно, файл поврежден.</div></div>`;
+                content.innerHTML = `<div class="flex flex-col items-center justify-center h-full p-6 text-center"><div class="text-sm font-bold text-slate-500">Не удалось открыть PDF.</div></div>`;
             }
         } else {
-            content.innerHTML = `<div class="flex flex-col items-center justify-center h-full p-6 text-center"><svg class="w-12 h-12 text-slate-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><div class="text-sm font-bold text-slate-500">PDF файл отсутствует.</div></div>`;
+            content.innerHTML = `<div class="flex flex-col items-center justify-center h-full p-6 text-center"><div class="text-sm font-bold text-slate-500">PDF файл отсутствует.</div></div>`;
         }
     }
+    // === СКВОЗНЫЕ ССЫЛКИ (ЭКОСИСТЕМА) ===
+    let crossLinksHtml = '';
+    
+    // Ссылка на Узел
+    if (card.linkedNodeId) {
+        crossLinksHtml += `
+            <button onclick="closeTwiViewer(); setTimeout(()=>openNodeViewer('${card.linkedNodeId}'), 300)" class="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                Открыть Технический Узел
+            </button>`;
+    }
 
+    // Ссылка на Норматив (НД)
+    if (card.linkedDocId) {
+        crossLinksHtml += `
+            <button onclick="closeTwiViewer(); setTimeout(()=>openDocViewer('${card.linkedDocId}'), 300)" class="w-full bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                Смотреть Норматив (ГОСТ/СП)
+            </button>`;
+    }
+
+    // Добавляем кнопки в конец контента (если они есть)
+    if (crossLinksHtml) {
+        content.insertAdjacentHTML('beforeend', `
+            <div class="p-4 border-t border-slate-200 dark:border-slate-700 mt-4 bg-slate-100 dark:bg-slate-900/50">
+                <div class="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest text-center">Связанные материалы</div>
+                ${crossLinksHtml}
+            </div>
+        `);
+    }
     const overlay = document.getElementById('twi-viewer-overlay');
     overlay.style.display = 'flex';
     document.body.classList.add('modal-open');
@@ -4474,28 +4498,45 @@ function addBuilderGroup() {
     addBuilderItem(`${groupId}-items`); // Сразу добавляем 1 пустой пункт
 }
 
-function addBuilderItem(containerId) {
+function addBuilderItem(containerId, itemData = null) {
     builderItemCount++;
     const itemId = `builder-item-${builderItemCount}`;
+    
+    // Собираем список всех нормативных документов
+    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
+    let docOptions = '<option value="">-- Без привязки к документу --</option>';
+    
+    allDocs.sort((a, b) => a.code.localeCompare(b.code)).forEach(doc => {
+        const shortTitle = doc.title.length > 30 ? doc.title.substring(0, 30) + '...' : doc.title;
+        const isSelected = (itemData && itemData.ndId === doc.id) ? 'selected' : '';
+        docOptions += `<option value="${doc.id}" ${isSelected}>${doc.code} - ${shortTitle}</option>`;
+    });
+
+    // Предзаполнение, если мы редактируем старый шаблон
+    const nVal = itemData ? itemData.n.replace(/"/g, '&quot;') : '';
+    const tVal = itemData && itemData.t ? itemData.t.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ").replace(/"/g, '&quot;') : '';
+    const wVal = itemData ? itemData.w : 2;
+
     const html = `
-        <div id="${itemId}" class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)] relative">
+        <div id="${itemId}" class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)] relative mb-2">
             <button onclick="document.getElementById('${itemId}').remove()" class="absolute top-2 right-2 text-red-500 font-black text-sm px-2">✕</button>
             
             <div class="pr-8 mb-2">
-                <input type="text" class="input-base text-xs item-name-input" placeholder="Текст нарушения (Напр: Отклонение от вертикали)">
+                <input type="text" class="input-base text-xs item-name-input font-bold" placeholder="Текст нарушения (Напр: Отклонение от вертикали)" value="${nVal}">
             </div>
             
-            <div class="grid grid-cols-3 gap-2 mb-2">
-                <div class="col-span-1">
-                    <select class="input-base text-[10px] !py-1 item-weight-select bg-white">
-                        <option value="1">B1 (Мелкий)</option>
-                        <option value="2" selected>B2 (Значимый)</option>
-                        <option value="3">B3 (Критич.)</option>
+            <div class="grid grid-cols-1 gap-2 mb-2">
+                <div class="flex gap-2">
+                    <select class="input-base text-[10px] !py-1.5 item-weight-select bg-white w-1/3 font-bold">
+                        <option value="1" ${wVal === 1 ? 'selected' : ''}>B1 (Мелкий)</option>
+                        <option value="2" ${wVal === 2 ? 'selected' : ''}>B2 (Значимый)</option>
+                        <option value="3" ${wVal === 3 ? 'selected' : ''}>B3 (Критич.)</option>
+                    </select>
+                    <select class="input-base text-[10px] !py-1.5 item-nd-select bg-white w-2/3 truncate">
+                        ${docOptions}
                     </select>
                 </div>
-                <div class="col-span-2">
-                    <input type="text" class="input-base text-[10px] !py-1 item-norm-input" placeholder="СНиП / Допуск (Напр: ±2 мм)">
-                </div>
+                <input type="text" class="input-base text-[10px] !py-1.5 item-norm-input" placeholder="Доп. текст / допуск (Напр: ±2 мм)" value="${tVal}">
             </div>
         </div>
     `;
@@ -4529,17 +4570,18 @@ async function saveCustomTemplate() {
         Array.from(itemsEl).forEach(itemEl => {
             const name = itemEl.querySelector('.item-name-input').value.trim();
             const weight = parseInt(itemEl.querySelector('.item-weight-select').value);
+            const ndId = itemEl.querySelector('.item-nd-select').value; // <-- Берем ID норматива
             const norm = itemEl.querySelector('.item-norm-input').value.trim();
 
             if (!name) isValid = false;
 
-            // Генерируем уникальный ID для пункта (чтобы не пересекался с системными)
             const uniqueId = Date.now() % 100000 + Math.floor(Math.random() * 1000);
 
             groupData.items.push({
                 id: uniqueId,
                 n: name || "Пустой пункт",
                 w: weight,
+                ndId: ndId || null, // <-- Сохраняем в объект шаблона
                 t: formatNorms(norm || "Без норматива")
             });
         });
@@ -5203,6 +5245,13 @@ async function saveCustomDoc() {
                 if (idx !== -1) {
                     freshDocs[idx].extractedText = extracted;
                     freshDocs[idx].updatedAt = new Date().toISOString();
+                    freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
+
+                    // ДОБАВЛЕНО: Говорим системе, что файл нужно снова отправить в облако
+                    freshDocs[idx].source = 'local';
+                    freshDocs[idx].syncStatus = 'not_synced';
+                    freshDocs[idx].sync_status = 'not_synced';
+
                     await dbPut(STORES.CUSTOM_DOCS, freshDocs[idx]);
                     customDocs = freshDocs.filter(d => !d._deleted); // обновляем экран
                     showToast("✨ Текст документа успешно проиндексирован ИИ!");
@@ -5234,40 +5283,34 @@ async function saveCustomDoc() {
 
 // Удаление
 // Удаление
-async function deleteCustomDoc(id) {
-
+window.deleteCustomDoc = async function (id) {
     const doc = customDocs.find(d => d.id === id);
     if (!rbi_canDeleteKnowledgeItem(doc?.owner)) {
-        if (!rbi_canDeleteKnowledgeItem(doc?.owner)) {
-            return showToast("⚠️ Инженер может удалить только свой документ. Чужие материалы удаляют заместитель или администратор.");
-        }
+        return showToast("⚠️ Инженер может удалить только свой документ.");
     }
     if (!confirm('Удалить этот документ из базы?')) return;
 
-    const docIndex = customDocs.findIndex(d => d.id === id);
-    if (docIndex !== -1) {
-        // Мягкое удаление
-        customDocs[docIndex]._deleted = true;
-        customDocs[docIndex]._deletedAt = new Date().toISOString();
-        customDocs[docIndex].updatedAt = customDocs[docIndex]._deletedAt;
-        customDocs[docIndex].source = 'local';
-        customDocs[docIndex].syncStatus = 'not_synced';
-        customDocs[docIndex].sync_status = 'not_synced';
-        customDocs[docIndex].syncBlockReason = '';
-        customDocs[docIndex].sync_block_reason = '';
+    if (doc) {
+        const nowIso = new Date().toISOString();
+        doc._deleted = true;
+        doc.is_deleted = true;
+        doc.deleted_at = nowIso;
+        doc.updatedAt = nowIso;
+        doc.updated_at = nowIso;
+        doc.source = 'local';
+        doc.syncStatus = 'not_synced';
+        doc.sync_status = 'not_synced';
+
+        await dbPut(STORES.CUSTOM_DOCS, doc); 
     }
 
-    try {
-        await dbPut(STORES.CUSTOM_DOCS, customDocs[docIndex]); // <-- НОВОЕ: Обновляем только 1 запись с флагом _deleted
-        showToast('🗑️ Документ удален');
-        // Очищаем массив в памяти от удаленных для рендера
-        customDocs = customDocs.filter(d => !d._deleted);
-        renderDocsList();
+    showToast('🗑️ Документ удален');
+    customDocs = customDocs.filter(d => !d._deleted);
+    renderDocsList();
 
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
-    } catch (e) { showToast('❌ Ошибка удаления'); }
-}
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+};
 
 // ПРОСМОТРЩИК НД (Используем оболочку TWI)
 window.openDocViewer = function (docId) {
@@ -5902,15 +5945,34 @@ window.searchNormFromTwi = function () {
 // Привязка узла (Модалка)
 function openNodeSelectorModal() {
     const listEl = document.getElementById('node-selector-list');
-    listEl.innerHTML = SYSTEM_NODES.map(node => `
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer active:scale-95 transition-transform" onclick="selectNodeForTwi('${node.id}', '${node.title.replace(/'/g, "\\'")}')">
-            <img src="${node.img}" class="w-12 h-12 object-cover rounded-lg border border-slate-100">
+    
+    // 1. Объединяем системные и пользовательские (твои) узлы
+    const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
+
+    // 2. Отрисовываем список
+    listEl.innerHTML = allNodes.map(node => {
+        
+        // Определяем картинку для превью (поддерживаем и старый формат, и новый массив файлов)
+        let previewSrc = '';
+        if (node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'image') {
+            previewSrc = window.getPhotoSrc(node.attachments[0].url);
+        } else if (node.img && !node.img.includes('application/pdf')) {
+            previewSrc = window.getPhotoSrc(node.img);
+        }
+
+        const imgHtml = previewSrc 
+            ? `<img src="${previewSrc}" class="w-12 h-12 object-cover rounded-lg border border-slate-100 bg-white dark:bg-slate-900">`
+            : `<div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-[8px] font-black text-slate-400 uppercase">📄 PDF</div>`;
+
+        return `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer active:scale-95 transition-transform" onclick="selectNodeForTwi('${node.id}', '${(node.title || 'Узел').replace(/'/g, "\\'")}')">
+            ${imgHtml}
             <div class="flex-1 min-w-0">
-                <div class="text-[9px] font-black text-indigo-500 uppercase">${node.category}</div>
-                <div class="text-[12px] font-bold text-slate-800 dark:text-white truncate">${node.title}</div>
+                <div class="text-[9px] font-black text-indigo-500 uppercase">${node.category || 'Без категории'}</div>
+                <div class="text-[12px] font-bold text-slate-800 dark:text-white truncate">${node.title || 'Без названия'}</div>
             </div>
-        </div>
-    `).join('') + `<button onclick="selectNodeForTwi('', 'Не привязан')" class="w-full mt-2 py-3 bg-red-50 text-red-600 rounded-xl text-[10px] font-bold uppercase border border-red-200 active:scale-95">Отвязать узел</button>`;
+        </div>`;
+    }).join('') + `<button onclick="selectNodeForTwi('', 'Не привязан')" class="w-full mt-2 py-3 bg-red-50 text-red-600 rounded-xl text-[10px] font-bold uppercase border border-red-200 active:scale-95 transition-colors">Отвязать узел</button>`;
 
     const overlay = document.getElementById('node-selector-modal');
     overlay.style.display = 'flex';
@@ -5957,7 +6019,15 @@ function openTwiConstructor(editId = null) {
     userKeys.forEach(key => { options += `<option value="user_${key}">${userTemplates[key].title}</option>`; });
 
     selectEl.innerHTML = options;
-
+    // Заполняем селектор НД
+    const selectDoc = document.getElementById('twi-linked-doc-id');
+    let docOptions = '<option value="">Не привязывать</option>';
+    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
+    allDocs.sort((a, b) => a.code.localeCompare(b.code)).forEach(doc => {
+        const shortTitle = doc.title.length > 40 ? doc.title.substring(0, 40) + '...' : doc.title;
+        docOptions += `<option value="${doc.id}">${doc.code} - ${shortTitle}</option>`;
+    });
+    selectDoc.innerHTML = docOptions;
     // Сброс полей
     document.getElementById('twi-title-input').value = '';
     document.getElementById('twi-steps-container').innerHTML = '';
@@ -5977,10 +6047,11 @@ function openTwiConstructor(editId = null) {
 
             populateTwiItemSelect(card.type === 'INSPECTOR' ? card.itemId : null);
             changeTwiType(card.type || 'WORKER');
-
+            selectDoc.value = card.linkedDocId || '';
+            selectNodeForTwi(card.linkedNodeId || '', card.linkedNodeId ? (SYSTEM_NODES.find(n => n.id === card.linkedNodeId)?.title || customNodes.find(n => n.id === card.linkedNodeId)?.title || 'Узел') : 'Не привязан');
             if (card.type === 'INSPECTOR') {
                 document.getElementById('twi-why-input').value = card.whyImportant || '';
-                selectNodeForTwi(card.linkedNodeId || '', card.linkedNodeId ? SYSTEM_NODES.find(n => n.id === card.linkedNodeId)?.title || 'Узел' : 'Не привязан');
+                
 
                 // РАСЩЕПЛЕНИЕ ПОЛЯ howToCheck
                 let comp = "", prep = "";
@@ -6023,7 +6094,9 @@ async function saveTwiCard() {
     let cardData = {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
         title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType,
-        owner: appSettings.engineerName || 'Инженер' // <-- Сохраняем имя автора
+        owner: appSettings.engineerName || 'Инженер',
+        linkedNodeId: document.getElementById('twi-linked-node-id').value || null, // <-- НОВОЕ
+        linkedDocId: document.getElementById('twi-linked-doc-id').value || null    // <-- НОВОЕ
     };
 
     if (currentTwiType === 'INSPECTOR') {
@@ -6045,7 +6118,7 @@ async function saveTwiCard() {
         cardData.itemId = itemId === 'ALL' ? 'ALL' : parseInt(itemId);
         cardData.whyImportant = why;
         cardData.howToCheck = how;
-        cardData.linkedNodeId = linkedNode || null;
+        
         cardData.photoGood = document.getElementById('twi-photo-good-container').dataset.photo || null;
         cardData.photoBad = document.getElementById('twi-photo-bad-container').dataset.photo || null;
 
@@ -6164,17 +6237,19 @@ function handleTwiMarkupUpload(event, target) {
     event.target.value = '';
 }
 
-function saveTwiMarkupPhoto() {
+async function saveTwiMarkupPhoto() {
     if (!editorCanvas || !currentMarkupTarget) return;
 
     const base64 = editorCanvas.toDataURL('image/jpeg', 0.85);
+    // ДОБАВЛЕНО: Правильное сохранение в локальный файловый кэш!
+    const localUrl = await PhotoManager.saveLocal(base64, 'twi');
 
-    if (currentMarkupTarget === 'GOOD') renderGoodPhoto(base64);
-    else if (currentMarkupTarget === 'BAD') renderBadPhoto(base64);
+    if (currentMarkupTarget === 'GOOD') renderGoodPhoto(localUrl);
+    else if (currentMarkupTarget === 'BAD') renderBadPhoto(localUrl);
     else if (currentMarkupTarget === 'STEP' && currentTwiStepUploadId) {
         const container = document.getElementById(currentTwiStepUploadId).querySelector('.twi-photo-container');
-        container.dataset.photo = base64;
-        container.innerHTML = `<div class="relative w-full h-48 md:h-64 rounded-lg overflow-hidden border border-slate-200 shadow-sm mt-2 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiPhoto('${currentTwiStepUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
+        container.dataset.photo = localUrl;
+        container.innerHTML = `<div class="relative w-full h-48 md:h-64 rounded-lg overflow-hidden border border-slate-200 shadow-sm mt-2 bg-slate-50 dark:bg-slate-900"><img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-contain"><button onclick="removeTwiPhoto('${currentTwiStepUploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
     }
 
     showToast("📸 Фото добавлено!");
@@ -6230,10 +6305,10 @@ function compressImageToBase64(file, oldMaxWidth, oldQuality, callback) {
     reader.readAsDataURL(file);
 }
 
-function renderGoodPhoto(base64) {
+function renderGoodPhoto(localUrl) {
     const cont = document.getElementById('twi-photo-good-container');
-    cont.dataset.photo = base64;
-    cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-green-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiGoodPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
+    cont.dataset.photo = localUrl;
+    cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-green-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-contain"><button onclick="removeTwiGoodPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
 }
 function removeTwiGoodPhoto() {
     const cont = document.getElementById('twi-photo-good-container');
@@ -6241,10 +6316,10 @@ function removeTwiGoodPhoto() {
     cont.innerHTML = `<button onclick="triggerTwiMarkupUpload('GOOD')" class="w-full h-full min-h-[80px] bg-white dark:bg-slate-800 border border-dashed border-green-300 py-4 rounded-lg text-[10px] font-bold text-green-600 active:scale-95 transition-all">➕ Загрузить фото</button>`;
 }
 
-function renderBadPhoto(base64) {
+function renderBadPhoto(localUrl) {
     const cont = document.getElementById('twi-photo-bad-container');
-    cont.dataset.photo = base64;
-    cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-red-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${base64}" class="w-full h-full object-contain"><button onclick="removeTwiBadPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
+    cont.dataset.photo = localUrl;
+    cont.innerHTML = `<div class="relative w-full h-40 md:h-64 rounded-lg overflow-hidden border border-red-300 shadow-sm mt-1 bg-slate-50 dark:bg-slate-900"><img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-contain"><button onclick="removeTwiBadPhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button></div>`;
 }
 function removeTwiBadPhoto() {
     const cont = document.getElementById('twi-photo-bad-container');
@@ -6366,43 +6441,36 @@ function removeTwiPhoto(stepId) {
 
 
 // 6. УДАЛЕНИЕ КАРТЫ
-async function deleteTwiCard(id) {
-    if (id.startsWith('sys_')) {
-        return showToast("⚠️ Системные инструкции удалить нельзя!");
-    }
+window.deleteTwiCard = async function (id) {
+    if (id.startsWith('sys_')) return showToast("⚠️ Системные инструкции удалить нельзя!");
 
     const card = customTwiCards.find(c => c.id === id);
-
     if (!rbi_canDeleteKnowledgeItem(card?.owner)) {
-        return showToast("⚠️ Инженер может удалить только свою инструкцию. Чужие материалы удаляют заместитель или администратор.");
+        return showToast("⚠️ Инженер может удалить только свою инструкцию.");
+    }
+    if (!confirm('Удалить эту инструкцию? В облаке она тоже будет удалена.')) return;
+
+    if (card) {
+        const nowIso = new Date().toISOString();
+        card._deleted = true;
+        card.is_deleted = true;
+        card.deleted_at = nowIso;
+        card.updatedAt = nowIso;
+        card.updated_at = nowIso;
+        card.source = 'local';
+        card.syncStatus = 'not_synced';
+        card.sync_status = 'not_synced';
+
+        await dbPut(STORES.TWI_CARDS, card); 
     }
 
-    if (!confirm('Удалить эту инструкцию?')) return;
+    showToast("🗑️ Инструкция удалена");
+    customTwiCards = customTwiCards.filter(c => !c._deleted);
+    renderTwiList();
 
-    const cardIndex = customTwiCards.findIndex(c => c.id === id);
-    if (cardIndex !== -1) {
-        customTwiCards[cardIndex]._deleted = true;
-        customTwiCards[cardIndex]._deletedAt = new Date().toISOString();
-        customTwiCards[cardIndex].updatedAt = customTwiCards[cardIndex]._deletedAt;
-
-        customTwiCards[cardIndex].source = 'local';
-        customTwiCards[cardIndex].syncStatus = 'not_synced';
-        customTwiCards[cardIndex].sync_status = 'not_synced';
-        customTwiCards[cardIndex].syncBlockReason = '';
-        customTwiCards[cardIndex].sync_block_reason = '';
-    }
-
-    try {
-        await dbPut(STORES.TWI_CARDS, customTwiCards[cardIndex]); // <-- НОВОЕ: Обновляем статус удаления 1 карты
-        showToast("🗑️ Инструкция удалена");
-
-        customTwiCards = customTwiCards.filter(c => !c._deleted);
-        renderTwiList();
-
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
-    } catch (e) { showToast("❌ Ошибка удаления"); }
-}
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+};
 
 function toggleManagePanel() {
     const body = document.getElementById('ref-manage-body');
@@ -6523,6 +6591,7 @@ function exportNodeJsCode() {
         jsCode += `        title: '${n.title.replace(/'/g, "\\'")}',\n`;
         jsCode += `        desc: '${(n.desc || '').replace(/'/g, "\\'")}',\n`;
         jsCode += `        img: '${n.img}',\n`;
+        jsCode += `        attachments: ${JSON.stringify(n.attachments || [])},\n`; // <-- Сохраняем массив файлов!
         jsCode += `        materials: ${JSON.stringify(n.materials)},\n`;
         jsCode += `        linkedDoc: '${(n.linkedDoc || '').replace(/'/g, "\\'")}',\n`;
         jsCode += `        linkedTwiChecklistKey: ${n.linkedTwiChecklistKey ? "'" + n.linkedTwiChecklistKey + "'" : "null"}\n`;
@@ -6650,9 +6719,37 @@ function renderNodesList() {
             const isSystem = !customNodes.find(n => n.id === node.id);
             const isOwner = !node.owner || node.owner === currentEngineer;
 
-            let previewHtml = node.img
-                ? `<img src="${window.getPhotoSrc(node.img)}" class="w-full h-full object-contain p-2">`
-                : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
+            let previewHtml = '';
+            
+            // Железобетонная проверка: если есть вложения и первое это PDF, ИЛИ старое поле img содержит PDF
+            const hasPdfAttachment = node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'pdf';
+            const isOldPdf = node.img && node.img.includes('application/pdf');
+
+            if (hasPdfAttachment || isOldPdf) {
+                previewHtml = `
+                    <div class="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 relative p-2">
+                        <div class="w-12 h-16 bg-white dark:bg-slate-800 rounded-lg shadow-md border border-red-200 dark:border-red-800 flex flex-col justify-between p-1.5 relative overflow-hidden">
+                            <div class="absolute top-0 left-0 right-0 h-4 bg-red-500 flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">PDF</span></div>
+                            <div class="space-y-1.5 mt-5">
+                                <div class="h-1 bg-slate-200 dark:bg-slate-700 rounded w-full"></div>
+                                <div class="h-1 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>
+                                <div class="h-1 bg-slate-200 dark:bg-slate-700 rounded w-4/6"></div>
+                            </div>
+                        </div>
+                    </div>`;
+            } 
+            // Иначе, если есть фото во вложениях
+            else if (node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'image') {
+                previewHtml = `<img src="${window.getPhotoSrc(node.attachments[0].url)}" class="w-full h-full object-contain p-2">`;
+            }
+            // Фолбэк для старых узлов
+            else if (node.img) {
+                previewHtml = `<img src="${window.getPhotoSrc(node.img)}" class="w-full h-full object-contain p-2">`;
+            } 
+            // Если совсем пусто
+            else {
+                previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
+            }
 
             html += `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openNodeViewer('${node.id}')">
@@ -6686,8 +6783,8 @@ function renderNodesList() {
 
     container.innerHTML = html;
 }
-function openNodeViewer(nodeId) {
-    const allNodes = [...SYSTEM_NODES, ...customNodes];
+window.openNodeViewer = async function(nodeId) {
+    const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
     const node = allNodes.find(n => n.id === nodeId);
     if (!node) return;
 
@@ -6697,14 +6794,49 @@ function openNodeViewer(nodeId) {
     const descEl = document.getElementById('viewer-node-desc');
     if (descEl) descEl.innerText = node.desc || 'Описание отсутствует';
 
-    const imgEl = document.getElementById('viewer-node-img');
-    if (imgEl) {
-        if (node.img) { imgEl.src = node.img; imgEl.style.display = 'block'; }
-        else { imgEl.style.display = 'none'; }
-    }
-
     const catEl = document.getElementById('viewer-node-category');
     if (catEl) catEl.innerText = node.category;
+
+    // === ОТРИСОВКА ВЛОЖЕНИЙ (ФОТО И PDF) ===
+    const attContainer = document.getElementById('viewer-node-attachments');
+    if (attContainer) {
+        attContainer.innerHTML = '<div class="text-[10px] text-center text-slate-400 py-4 animate-pulse">Загрузка файлов...</div>';
+        
+        let files = node.attachments || [];
+        if (files.length === 0 && node.img) {
+            files = [{ type: 'image', url: node.img }];
+        }
+
+        if (files.length === 0) {
+            attContainer.innerHTML = '<div class="text-[10px] text-center text-slate-400 py-4">Нет вложенных файлов</div>';
+        } else {
+            let html = '';
+            for (let file of files) {
+                if (file.type === 'image') {
+                    const realSrc = await PhotoManager.getAsyncUrl(file.url) || window.getPhotoSrc(file.url);
+                    html += `
+                    <div class="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 cursor-pointer shadow-sm mb-3 bg-white dark:bg-slate-800" onclick="openPhotoViewer('${file.url}')">
+                        <img src="${realSrc}" class="w-full h-full object-contain">
+                        <div class="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold uppercase px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">🔍 Увеличить</div>
+                    </div>`;
+                } else if (file.type === 'pdf' || (file.url && file.url.includes('application/pdf'))) {
+                    // Используем нашу новую функцию openNodeAttachmentPdf
+                    html += `
+                    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 flex justify-between items-center cursor-pointer active:scale-95 transition-transform mb-3" onclick="window.openNodeAttachmentPdf('${file.url}', '${file.name || 'Документ'}', '${file.size || ''}')">
+                        <div class="flex items-center gap-3 min-w-0 pr-2">
+                            <div class="w-10 h-10 bg-red-100 text-red-600 rounded-lg flex items-center justify-center shrink-0 font-black">PDF</div>
+                            <div class="truncate min-w-0">
+                                <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${file.name || 'Документ.pdf'}</div>
+                                <div class="text-[9px] text-slate-500">${file.size || 'PDF Файл'}</div>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-bold text-red-600 bg-white dark:bg-slate-800 px-2 py-1 rounded border border-red-200 dark:border-red-800">Открыть</span>
+                    </div>`;
+                }
+            }
+            attContainer.innerHTML = html;
+        }
+    }
 
     const matTbody = document.getElementById('viewer-node-materials');
     if (matTbody) {
@@ -6721,22 +6853,53 @@ function openNodeViewer(nodeId) {
         }
     }
 
-    const linkedTwi = customTwiCards.find(c => c.checklistKey === node.linkedTwiChecklistKey && (c.itemId === 'ALL' || !c.itemId));
-    const twiBtnHtml = linkedTwi
-        ? `<button onclick="closeNodeViewer(); setTimeout(()=>openTwiViewer('${linkedTwi.id}'), 300)" class="bg-indigo-50 text-indigo-600 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3.5 rounded-xl text-[11px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> TWI Монтажа
-           </button>`
-        : `<div class="bg-slate-50 text-slate-400 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 py-3.5 rounded-xl text-[11px] font-bold uppercase flex items-center justify-center gap-2 opacity-70">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Нет TWI
-           </div>`;
-
+    // Ищем TWI, которая ссылается на этот узел
     const linksEl = document.getElementById('viewer-node-links');
     if (linksEl) {
-        linksEl.innerHTML = `
-            <button onclick="closeNodeViewer(); setTimeout(()=>findAndOpenND('${node.linkedDoc || ''}'), 300)" class="bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 py-3.5 rounded-xl text-[11px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
+        const isSystem = !customNodes.find(n => n.id === nodeId);
+        const isOwner = !node.owner || node.owner === (appSettings.engineerName || 'Инженер');
+
+        let deleteBtnHtml = '';
+        if (!isSystem && isOwner) {
+            deleteBtnHtml = `<button onclick="closeNodeViewer(); deleteNode('${node.id}')" class="bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 py-3 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 mt-2 col-span-full">
+                <span>🗑️</span> Удалить узел
+            </button>`;
+        }
+
+        // 1. Кнопка Норматива
+        let docActionHtml = '';
+        if (node.linkedDoc) {
+            let docAction = `findAndOpenND('${node.linkedDoc || ''}')`;
+            if (node.linkedDoc.startsWith('sys_') || node.linkedDoc.startsWith('usr_')) { docAction = `openDocViewer('${node.linkedDoc}')`; }
+            docActionHtml = `<button onclick="closeNodeViewer(); setTimeout(()=>${docAction}, 300)" class="bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 py-3.5 rounded-xl text-[11px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2 w-full">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> Норматив
-            </button>
-            ${twiBtnHtml}
+            </button>`;
+        }
+
+        // 2. Кнопка TWI
+        let twiActionHtml = '';
+        if (node.linkedTwiId) {
+            twiActionHtml = `<button onclick="closeNodeViewer(); setTimeout(()=>openTwiViewer('${node.linkedTwiId}'), 300)" class="bg-indigo-50 text-indigo-600 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 py-3.5 rounded-xl text-[11px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2 w-full">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> TWI Карта
+            </button>`;
+        }
+
+        // 3. Кнопка Чек-листа
+        let chkActionHtml = '';
+        // Для обратной совместимости проверяем оба поля
+        const checklistKey = node.linkedChecklistKey || node.linkedTwiChecklistKey;
+        if (checklistKey && !checklistKey.includes('|')) {
+            chkActionHtml = `<button onclick="closeNodeViewer(); switchTab('tab-audit'); setTimeout(()=>changeTemplate('${checklistKey}'), 300)" class="bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 py-3.5 rounded-xl text-[11px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2 w-full">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg> Чек-лист
+            </button>`;
+        }
+
+        linksEl.className = "grid grid-cols-1 gap-2 mt-4"; // Делаем их друг под другом для красоты
+        linksEl.innerHTML = `
+            ${docActionHtml}
+            ${twiActionHtml}
+            ${chkActionHtml}
+            ${deleteBtnHtml}
         `;
     }
 
@@ -6746,35 +6909,95 @@ function openNodeViewer(nodeId) {
         document.body.classList.add('modal-open');
         setTimeout(() => overlay.classList.remove('opacity-0'), 10);
     }
-}
+};
 
 // КОНСТРУКТОР УЗЛОВ
-function openNodeConstructor() {
+window.currentEditingNodeId = null;
+
+window.openNodeConstructor = function(editId = null) {
     document.getElementById('nodes-main-view').classList.add('hidden');
     const view = document.getElementById('node-constructor-view');
     view.classList.remove('hidden');
-    document.body.classList.add('modal-open'); // Блокируем фон
+    document.body.classList.add('modal-open'); 
     view.scrollTo(0, 0);
 
-    // Сброс полей
-    document.getElementById('node-title-input').value = '';
-    document.getElementById('node-desc-input').value = '';
-    document.getElementById('node-category-input').value = 'ФАСАД';
-    document.getElementById('node-linked-doc').value = '';
+    window.currentEditingNodeId = editId;
 
-    // Заполняем селектор чек-листов
+    // 1. Заполняем селектор НД
+    const selectDoc = document.getElementById('node-linked-doc');
+    let docOptions = '<option value="">-- Без привязки к НД --</option>';
+    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
+    allDocs.sort((a, b) => a.code.localeCompare(b.code)).forEach(doc => {
+        const shortTitle = doc.title.length > 40 ? doc.title.substring(0, 40) + '...' : doc.title;
+        docOptions += `<option value="${doc.id}">${doc.code} - ${shortTitle}</option>`;
+    });
+    selectDoc.innerHTML = docOptions;
+
+    // 2. Заполняем селектор TWI
     const selectTwi = document.getElementById('node-linked-twi');
-    let options = '<option value="">Не привязывать</option>';
-    const sysKeys = Object.keys(SYSTEM_TEMPLATES).sort();
-    sysKeys.forEach(key => { options += `<option value="sys_${key}">${SYSTEM_TEMPLATES[key].title}</option>`; });
-    const userKeys = Object.keys(userTemplates).sort();
-    userKeys.forEach(key => { options += `<option value="user_${key}">${userTemplates[key].title}</option>`; });
-    selectTwi.innerHTML = options;
+    let twiOptions = '<option value="">-- Без привязки к TWI --</option>';
+    customTwiCards.forEach(card => {
+        const typePrefix = card.type === 'INSPECTOR' ? '[Надзор]' : (card.type === 'WORKER' ? '[Шаги]' : '[PDF]');
+        twiOptions += `<option value="${card.id}">${typePrefix} ${card.title}</option>`;
+    });
+    selectTwi.innerHTML = twiOptions;
 
+    // 3. Заполняем селектор Чек-листов
+    const selectChecklist = document.getElementById('node-linked-checklist');
+    let chkOptions = '<option value="">-- Без привязки к Чек-листу --</option>';
+    Object.keys(SYSTEM_TEMPLATES).sort().forEach(key => { chkOptions += `<option value="sys_${key}">[СИС] ${SYSTEM_TEMPLATES[key].title}</option>`; });
+    if (typeof userTemplates !== 'undefined') {
+        Object.keys(userTemplates).sort().forEach(key => { chkOptions += `<option value="user_${key}">[МОЙ] ${userTemplates[key].title}</option>`; });
+    }
+    selectChecklist.innerHTML = chkOptions;
+
+    // Сбрасываем поля материалов
     document.getElementById('node-materials-container').innerHTML = '';
-    removeNodePhoto();
-    addNodeMaterialRow(); // Один пустой материал
-}
+
+    // ЕСЛИ ЭТО РЕДАКТИРОВАНИЕ - ВОССТАНАВЛИВАЕМ ДАННЫЕ
+    if (editId) {
+        const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
+        const node = allNodes.find(n => n.id === editId);
+        if (node) {
+            document.getElementById('node-title-input').value = node.title || '';
+            document.getElementById('node-desc-input').value = node.desc || '';
+            document.getElementById('node-category-input').value = node.category || 'ФАСАД';
+            
+            selectDoc.value = node.linkedDoc || '';
+            selectTwi.value = node.linkedTwiId || '';
+            // Для старых узлов, у которых чек-лист лежал в linkedTwiChecklistKey
+            selectChecklist.value = node.linkedChecklistKey || node.linkedTwiChecklistKey || '';
+
+            // Восстанавливаем вложения (фото/pdf)
+            window.currentNodeAttachments = node.attachments ? [...node.attachments] : [];
+            if (window.currentNodeAttachments.length === 0 && node.img) {
+                window.currentNodeAttachments.push({ type: 'image', url: node.img, name: 'Фото' });
+            }
+            if (typeof window.renderNodeAttachmentsUI === 'function') window.renderNodeAttachmentsUI();
+
+            // Восстанавливаем материалы
+            if (node.materials && node.materials.length > 0) {
+                node.materials.forEach(m => {
+                    addNodeMaterialRow();
+                    const rows = document.querySelectorAll('.node-material-row');
+                    const lastRow = rows[rows.length - 1];
+                    lastRow.querySelector('.mat-name').value = m.name;
+                    lastRow.querySelector('.mat-qty').value = m.qty;
+                });
+            } else {
+                addNodeMaterialRow();
+            }
+        }
+    } else {
+        // НОВЫЙ УЗЕЛ - Сброс
+        document.getElementById('node-title-input').value = '';
+        document.getElementById('node-desc-input').value = '';
+        document.getElementById('node-category-input').value = 'ФАСАД';
+        window.currentNodeAttachments = [];
+        if (typeof window.renderNodeAttachmentsUI === 'function') window.renderNodeAttachmentsUI();
+        addNodeMaterialRow();
+    }
+};
 
 function closeNodeConstructor() {
     document.getElementById('node-constructor-view').classList.add('hidden');
@@ -6796,40 +7019,105 @@ function addNodeMaterialRow() {
     document.getElementById('node-materials-container').insertAdjacentHTML('beforeend', html);
 }
 
-function triggerNodeImageUpload() {
-    document.getElementById('node-photo-input').click();
-}
+window.currentNodeAttachments = [];
 
-function handleNodePhotoUpload(event) {
-    if (!event.target.files[0]) return;
-    compressImageToBase64(event.target.files[0], 1000, 0.8, (base64) => {
-        const cont = document.getElementById('node-photo-container');
-        cont.dataset.photo = base64;
-        cont.innerHTML = `
-            <div class="relative w-full h-48 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-50 dark:bg-slate-900">
-                <img src="${base64}" class="w-full h-full object-contain">
-                <button onclick="removeNodePhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md">✕</button>
+window.renderNodeAttachmentsUI = async function() {
+    const list = document.getElementById('node-attachments-list');
+    if (!list) return;
+    
+    let html = '';
+    for(let i = 0; i < window.currentNodeAttachments.length; i++) {
+        let att = window.currentNodeAttachments[i];
+        if (att.type === 'image') {
+            const realSrc = await PhotoManager.getAsyncUrl(att.url) || window.getPhotoSrc(att.url);
+            html += `
+            <div class="relative w-full h-32 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
+                <img src="${realSrc}" class="w-full h-full object-contain">
+                <button onclick="window.removeNodeAttachment(${i})" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
             </div>`;
-        event.target.value = '';
-    });
-}
+        } else if (att.type === 'pdf') {
+            html += `
+            <div class="flex items-center justify-between p-3 mt-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl shadow-sm">
+                <div class="flex items-center gap-3 min-w-0 pr-2">
+                    <div class="text-red-500 font-black text-lg">PDF</div>
+                    <div class="min-w-0">
+                        <div class="text-[11px] font-bold text-slate-800 dark:text-white truncate">${att.name}</div>
+                        <div class="text-[9px] text-slate-500">${att.size}</div>
+                    </div>
+                </div>
+                <button onclick="window.removeNodeAttachment(${i})" class="text-red-500 font-black px-2 text-lg active:scale-90 shrink-0">✕</button>
+            </div>`;
+        }
+    }
+    list.innerHTML = html;
+};
 
-function removeNodePhoto() {
-    const cont = document.getElementById('node-photo-container');
-    cont.dataset.photo = '';
-    cont.innerHTML = `
-        <button onclick="triggerNodeImageUpload()" class="w-full h-40 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold text-slate-500 uppercase tracking-widest active:scale-95 transition-all flex flex-col items-center justify-center gap-2">
-            <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path></svg> Загрузить схему узла
-        </button>`;
-}
+window.removeNodeAttachment = function(index) {
+    window.currentNodeAttachments.splice(index, 1);
+    window.renderNodeAttachmentsUI();
+};
 
-async function saveNodeCard() {
+window.handleNodeFileUpload = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showToast("⚙️ Обработка файла...");
+    
+    if (file.type === 'application/pdf') {
+        if (file.size > 5 * 1024 * 1024) {
+            event.target.value = '';
+            return showToast("PDF слишком большой! Максимум 5 МБ.");
+        }
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const localUrl = await PhotoManager.saveLocal(e.target.result, 'node_pdf');
+            // КЛАДЕМ PDF В МАССИВ ВЛОЖЕНИЙ
+            window.currentNodeAttachments.push({ type: 'pdf', url: localUrl, name: file.name, size: (file.size / 1024 / 1024).toFixed(1) + ' MB' });
+            window.renderNodeAttachmentsUI();
+            event.target.value = '';
+        };
+        reader.readAsDataURL(file);
+    } else {
+        compressImageToBase64(file, 1000, 0.8, async (base64) => {
+            const localUrl = await PhotoManager.saveLocal(base64, 'node_img');
+            // КЛАДЕМ ФОТО В МАССИВ ВЛОЖЕНИЙ
+            window.currentNodeAttachments.push({ type: 'image', url: localUrl, name: file.name || 'Фото' });
+            window.renderNodeAttachmentsUI();
+            event.target.value = '';
+        });
+    }
+};
+
+// Функция-помощник для открытия PDF прямо внутри узла (через нашу универсальную читалку)
+window.openFakePdfViewer = function (url, name, size) {
+    const fakeCard = {
+        id: 'fake_pdf_' + Date.now(),
+        type: 'PDF',
+        title: name,
+        checklistName: 'Вложение узла',
+        pdfData: url,
+        pdfName: name,
+        pdfSize: size
+    };
+    customTwiCards.push(fakeCard);
+    openTwiViewer(fakeCard.id);
+    // Удаляем временную карточку через секунду, чтобы она не засоряла базу TWI
+    setTimeout(() => {
+        const idx = customTwiCards.findIndex(c => c.id === fakeCard.id);
+        if (idx > -1) customTwiCards.splice(idx, 1);
+    }, 1000);
+};
+
+window.saveNodeCard = async function() {
     if (!rbi_requireKnowledgeEditRight()) return;
+    
     const title = document.getElementById('node-title-input').value.trim();
     if (!title) return showToast('⚠️ Укажите название узла!');
 
-    const imgData = document.getElementById('node-photo-container').dataset.photo;
-    if (!imgData) return showToast('⚠️ Загрузите чертеж или схему узла!');
+    // Проверяем, есть ли файлы в нашем новом массиве вложений
+    if (!window.currentNodeAttachments || window.currentNodeAttachments.length === 0) {
+        return showToast('⚠️ Загрузите хотя бы один файл (чертеж, схему или PDF)!');
+    }
 
     const materials = [];
     document.querySelectorAll('.node-material-row').forEach(row => {
@@ -6838,69 +7126,85 @@ async function saveNodeCard() {
         if (name) materials.push({ name, qty: qty || 'По проекту' });
     });
 
-    const newNode = {
-        id: 'node_' + Date.now().toString(36),
+    // Берем первый файл как обложку для списков (для совместимости)
+    let imgData = '';
+    const firstImg = window.currentNodeAttachments.find(a => a.type === 'image');
+    if (firstImg) imgData = firstImg.url;
+
+    const nodeData = {
+        id: window.currentEditingNodeId || 'node_' + Date.now().toString(36),
         category: document.getElementById('node-category-input').value,
         title: title,
         desc: document.getElementById('node-desc-input').value.trim(),
         img: imgData,
+        attachments: window.currentNodeAttachments, 
         materials: materials,
-        linkedDoc: document.getElementById('node-linked-doc').value.trim(),
-        linkedTwiChecklistKey: document.getElementById('node-linked-twi').value || null,
+        linkedDoc: document.getElementById('node-linked-doc').value || null,
+        linkedTwiId: document.getElementById('node-linked-twi').value || null,
+        linkedChecklistKey: document.getElementById('node-linked-checklist').value || null,
         owner: rbi_getCurrentUserNameSafe(),
         source: 'local',
         syncStatus: 'not_synced',
         sync_status: 'not_synced',
         syncBlockReason: '',
         sync_block_reason: '',
-        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
 
-    customNodes.push(newNode);
+    if (window.currentEditingNodeId) {
+        // Обновляем существующий
+        const index = customNodes.findIndex(n => n.id === window.currentEditingNodeId);
+        if (index !== -1) {
+            nodeData.createdAt = customNodes[index].createdAt || nodeData.updatedAt;
+            customNodes[index] = nodeData;
+        }
+    } else {
+        // Создаем новый
+        nodeData.createdAt = nodeData.updatedAt;
+        customNodes.push(nodeData);
+    }
+
     try {
-        await dbPut(STORES.CUSTOM_NODES, newNode); // <-- НОВОЕ: Сохраняем только 1 запись
-        showToast('✅ Узел сохранен!');
+        await dbPut(STORES.CUSTOM_NODES, nodeData);
+        showToast('✅ Узел успешно сохранен!');
         closeNodeConstructor();
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
     } catch (e) {
-        showToast('❌ Ошибка сохранения (Возможно файл слишком большой)');
+        console.error("Ошибка сохранения узла:", e);
+        showToast('❌ Ошибка сохранения (Возможно, файлы слишком большие)');
     }
-}
+};
 
-async function deleteNode(id) {
+window.deleteNode = async function (id) {
     const node = customNodes.find(n => n.id === id);
     if (!rbi_canDeleteKnowledgeItem(node?.owner)) {
         return showToast("⚠️ Инженер может удалить только свой узел. Чужие материалы удаляют заместитель или администратор.");
     }
-    if (!confirm('Удалить этот узел навсегда?')) return;
+    if (!confirm('Удалить этот узел навсегда? В облаке он тоже будет удален.')) return;
 
+    if (node) {
+        const nowIso = new Date().toISOString();
+        node._deleted = true;
+        node.is_deleted = true; // Жесткий флаг для Supabase
+        node.deleted_at = nowIso;
+        node.updatedAt = nowIso;
+        node.updated_at = nowIso; // КРИТИЧНО: обновляем время, чтобы облако увидело изменение!
+        node.source = 'local';
+        node.syncStatus = 'not_synced';
+        node.sync_status = 'not_synced';
 
-    const nodeIndex = customNodes.findIndex(n => n.id === id);
-    if (nodeIndex !== -1) {
-        customNodes[nodeIndex]._deleted = true;
-        customNodes[nodeIndex]._deletedAt = new Date().toISOString();
-        customNodes[nodeIndex].updatedAt = customNodes[nodeIndex]._deletedAt;
-        customNodes[nodeIndex].source = 'local';
-        customNodes[nodeIndex].syncStatus = 'not_synced';
-        customNodes[nodeIndex].sync_status = 'not_synced';
-        customNodes[nodeIndex].syncBlockReason = '';
-        customNodes[nodeIndex].sync_block_reason = '';
+        await dbPut(STORES.CUSTOM_NODES, node); 
     }
 
-    try {
-        await dbPut(STORES.CUSTOM_NODES, customNodes[nodeIndex]); // <-- НОВОЕ: Обновляем 1 запись
-        showToast('🗑️ Узел удален');
+    showToast('🗑️ Узел удален');
+    customNodes = customNodes.filter(n => !n._deleted);
+    renderNodesList();
 
-        customNodes = customNodes.filter(n => !n._deleted);
-        renderNodesList();
-
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
-    } catch (e) { showToast('❌ Ошибка удаления'); }
-}
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+};
 
 function filterNodes(category, btnElement) {
     currentNodeFilter = category;
@@ -6912,78 +7216,7 @@ function filterNodes(category, btnElement) {
     renderNodesList();
 }
 
-function openNodeViewer(nodeId) {
-    // ИЩЕМ УЗЕЛ ВО ВСЕХ БАЗАХ СРАЗУ
-    const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
-    const node = allNodes.find(n => n.id === nodeId);
-    if (!node) return;
 
-    // Безопасно заполняем текстовые поля
-    const titleEl = document.getElementById('viewer-node-title');
-    if (titleEl) titleEl.innerText = node.title;
-
-    const descEl = document.getElementById('viewer-node-desc');
-    if (descEl) descEl.innerText = node.desc;
-
-    const imgEl = document.getElementById('viewer-node-img');
-    if (imgEl) imgEl.src = node.img;
-
-    const catEl = document.getElementById('viewer-node-category');
-    if (catEl) catEl.innerText = node.category;
-
-    const badgeEl = document.getElementById('viewer-node-badge');
-    if (badgeEl) {
-        badgeEl.innerText = 'УЗЕЛ';
-        badgeEl.className = 'bg-indigo-500 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm';
-    }
-
-    // Таблица материалов
-    const matTbody = document.getElementById('viewer-node-materials');
-    if (matTbody) {
-        matTbody.innerHTML = node.materials.map(m => `
-            <tr class="border-b border-slate-100 dark:border-slate-700">
-                <td class="p-2 font-medium text-slate-700 dark:text-slate-300 text-[11px]">${m.name}</td>
-                <td class="p-2 text-right font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap text-[11px]">${m.qty}</td>
-            </tr>
-        `).join('');
-    }
-
-    // Ищем привязанную TWI карту ко ВСЕМУ чек-листу
-    const linkedTwi = customTwiCards.find(c => c.checklistKey === node.linkedTwiChecklistKey && (c.itemId === 'ALL' || !c.itemId));
-    const twiBtnHtml = linkedTwi
-        ? `<button onclick="closeNodeViewer(); setTimeout(()=>openTwiViewer('${linkedTwi.id}'), 300)" class="bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400 py-3 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5"><span>🛠️</span> TWI Монтажа</button>`
-        : `<div class="bg-slate-50 text-slate-400 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 py-3 rounded-xl text-[10px] font-bold uppercase flex items-center justify-center gap-1.5 opacity-70"><span>🚫</span> Нет TWI</div>`;
-
-    const linksEl = document.getElementById('viewer-node-links');
-    if (linksEl) {
-        // Проверяем права: это системный узел или автор - текущий инженер?
-        const isSystem = !customNodes.find(n => n.id === nodeId);
-        const isOwner = !node.owner || node.owner === (appSettings.engineerName || 'Инженер');
-
-        let deleteBtnHtml = '';
-        if (!isSystem && isOwner) {
-            deleteBtnHtml = `<button onclick="closeNodeViewer(); deleteNode('${node.id}')" class="bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 py-3 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5 mt-2 col-span-2">
-                <span>🗑️</span> Удалить узел
-            </button>`;
-        }
-
-        linksEl.innerHTML = `
-            <button onclick="closeNodeViewer(); setTimeout(()=>findAndOpenND('${node.linkedDoc}'), 300)" class="bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 py-3 rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 flex items-center justify-center gap-1.5">
-                <span>📚</span> Норматив
-            </button>
-            ${twiBtnHtml}
-            ${deleteBtnHtml}
-        `;
-    }
-
-    // Показываем окно
-    const overlay = document.getElementById('node-viewer-overlay');
-    if (overlay) {
-        overlay.style.display = 'flex';
-        document.body.classList.add('modal-open');
-        setTimeout(() => overlay.classList.remove('opacity-0'), 10);
-    }
-}
 
 function closeNodeViewer() {
     const overlay = document.getElementById('node-viewer-overlay');
@@ -10349,6 +10582,16 @@ window.openUniversalActionSheet = function (id, type, title, isOwner, extraData)
             <span class="text-[12px] font-bold">Скачать PDF</span>
         </button>`;
     }
+    // Изменить (Только Узлы и только для автора)
+    if (type === 'node' && isOwner && !id.startsWith('sys_')) {
+        btnsHtml += `
+        <button onclick="handleUasAction('${id}', '${type}', 'edit')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Изменить</span>
+        </button>`;
+    }
     // Удаление (Только для автора, не системные)
     if (isOwner && !id.startsWith('sys_')) {
         btnsHtml += `
@@ -10407,6 +10650,7 @@ window.handleUasAction = function (id, type, action) {
         // --- ДЕЙСТВИЯ УЗЛОВ ---
         if (type === 'node') {
             if (action === 'view') openNodeViewer(id);
+            if (action === 'edit') openNodeConstructor(id); // <-- ВСТАВИТЬ ЭТУ СТРОКУ
             if (action === 'delete') deleteNode(id);
         }
         // --- ДЕЙСТВИЯ НД ---
@@ -11053,6 +11297,32 @@ window.applyContractorAliasToInspectionHistory = async function (rawName, canoni
     console.log(`[Подрядчики] История обновлена по алиасу "${rawName}" → "${displayName}". Записей: ${updated}`);
 
     return updated;
+};
+
+window.openNodeAttachmentPdf = function(url, name, size) {
+    // Создаем временную карточку, чтобы наша встроенная TWI-читалка смогла её открыть
+    const fakeId = 'fake_pdf_' + Date.now();
+    const fakeCard = {
+        id: fakeId,
+        type: 'PDF',
+        title: name || 'Документ',
+        checklistName: 'Вложение узла',
+        pdfData: url,
+        pdfName: name || 'document.pdf',
+        pdfSize: size || ''
+    };
+    
+    // Добавляем в массив
+    customTwiCards.push(fakeCard);
+    
+    // Открываем читалку
+    openTwiViewer(fakeId);
+    
+    // Через 2 секунды удаляем временную карточку, чтобы не засорять базу
+    setTimeout(() => {
+        const idx = customTwiCards.findIndex(c => c.id === fakeId);
+        if (idx > -1) customTwiCards.splice(idx, 1);
+    }, 2000);
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

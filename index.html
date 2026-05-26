@@ -487,16 +487,8 @@
                 </button>
             </div>
             <div class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-900" id="viewer-node-content">
-                <div class="w-full bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm relative"
-                    onclick="openPhotoViewer(document.getElementById('viewer-node-img').src)">
-                    <img id="viewer-node-img" src="" class="w-full h-64 object-contain p-2">
-                    <div
-                        class="absolute bottom-2 right-2 bg-black/60 text-white text-[9px] font-bold uppercase px-2 py-1 rounded backdrop-blur-sm flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path>
-                        </svg> Увеличить
-                    </div>
+                <div id="viewer-node-attachments" class="w-full bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm p-3 space-y-3">
+                    <!-- Сюда JS загрузит картинки и PDF -->
                 </div>
                 <div class="p-4 space-y-4">
                     <div
@@ -1894,6 +1886,10 @@
                                     </svg> Привязать
                                 </button>
                             </div>
+                            <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
+                                <select id="twi-linked-doc-id" class="input-base text-[12px]"></select>
+                            </div>
                         </div>
 
                         <!-- БЛОК А: ТЕХНАДЗОР (ПРАВИЛЬНО/БРАК) -->
@@ -2193,22 +2189,12 @@
                             </div>
 
                             <div class="pt-2 border-t border-slate-100 dark:border-slate-700">
-                                <label
-                                    class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Чертеж /
-                                    Схема *</label>
-                                <div id="node-photo-container" data-photo="" class="w-full">
-                                    <button onclick="triggerNodeImageUpload()"
-                                        class="w-full h-40 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold text-slate-500 active:scale-95 transition-all flex flex-col items-center justify-center gap-2">
-                                        <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor"
-                                            viewBox="0 0 24 24" stroke-width="1.5">
-                                            <path stroke-linecap="round" stroke-linejoin="round"
-                                                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
-                                            </path>
-                                        </svg> Загрузить схему узла
-                                    </button>
-                                </div>
-                                <input type="file" id="node-photo-input" accept="image/*" style="display:none;"
-                                    onchange="handleNodePhotoUpload(event)">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложения (Фото / PDF)</label>
+                                <div id="node-attachments-list" class="space-y-2 mb-3"></div>
+                                <button onclick="document.getElementById('node-file-input').click()" class="w-full h-12 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold uppercase tracking-widest text-slate-500 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                                    ➕ Добавить файл
+                                </button>
+                                <input type="file" id="node-file-input" accept="image/*, application/pdf" style="display:none;" onchange="handleNodeFileUpload(event)">
                             </div>
                         </div>
 
@@ -2235,20 +2221,18 @@
                             </div>
                         </div>
 
-                        <div
-                            class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-4">
-                            <div>
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь
-                                    со справочником НД</label>
-                                <input type="text" id="node-linked-doc" class="input-base text-[12px]"
-                                    placeholder="Напр: ГОСТ 30971-2012">
+                        <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
+                                <select id="node-linked-doc" class="input-base text-[12px]"></select>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь
-                                    с TWI (Чек-листом)</label>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с TWI-картой</label>
                                 <select id="node-linked-twi" class="input-base text-[12px]"></select>
                             </div>
-                        </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с Чек-листом</label>
+                                <select id="node-linked-checklist" class="input-base text-[12px]"></select>
+                            </div>
 
                         <!-- Дублирующая кнопка отмены внизу для удобства на длинных экранах -->
                         <button onclick="closeNodeConstructor()"
@@ -3387,9 +3371,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.201',
-            sw: '17.8.201',
-            buildDate: '2026-05-23'
+            app: '17.8.202',
+            sw: '17.8.202',
+            buildDate: '2026-05-26'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
