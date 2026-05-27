@@ -486,7 +486,13 @@ window.isSyncEnabled = function () { return window.syncConfig.enabled; };
 window.renderSyncUI = function () {
     const container = document.getElementById('sync-settings-block');
     const headerIndicator = document.getElementById('header-sync-status');
-
+    if (headerIndicator) {
+        headerIndicator.ondblclick = () => {
+            if (window.syncConfig.enabled && window.syncConfig.projectCode) {
+                window.forceSyncObjects();
+            }
+        };
+    }
     if (headerIndicator) {
         const cloudSvg = `
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1358,7 +1364,7 @@ window.uploadObjectFilesToCloud = async function (obj, bucketName, pathPrefix, t
 };
 
 window.pushCloudObject = async function (objectType, id, data, bucketName = 'custom-assets') {
-    if (!data || !id) return;
+    if (!data || !id) return null;
 
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
@@ -1383,8 +1389,8 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         case 'fmea': tableName = 'project_fmea'; targetBucket = 'inspection-photos'; break;
         case 'schedule': tableName = 'project_schedule_stages'; targetBucket = 'inspection-photos'; break;
         case 'sk_data_bundle': tableName = 'sk_data_bundles'; targetBucket = 'inspection-photos'; break;
-        case 'project_object': tableName = 'project_objects'; isShared = true; break; // <-- ДОБАВЛЕНО
-        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;   // <-- ДОБАВЛЕНО
+        case 'project_object': tableName = 'project_objects'; isShared = true; break;
+        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;
         case 'report': tableName = 'shared_reports'; isShared = false; targetBucket = 'reports'; break;
         case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
         case 'snapshot': tableName = 'shared_report_snapshots'; isShared = false; break;
@@ -1407,14 +1413,14 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     let payload = {};
 
     if (objectType === 'report') {
-        // Специфичный формат для таблицы отчетов (С ПОДДЕРЖКОЙ РОЛЕЙ И ОБЪЕКТОВ)
+        // Специфичный формат для таблицы отчетов
         payload = {
             id: id,
-            project_code: window.syncConfig.projectCode,
+            project_code: pCode, // Гарантируем наличие кода проекта
             project_canonical_key: data.project_canonical_key || data.metadata?.project || '',
             project_display_name: data.project_display_name || data.metadata?.project || '',
             engineer_name: data.engineer_name || data.created_by || iName,
-            contractor_canonical_key: data.contractor_canonical_key || '', // ДОБАВЛЕНО
+            contractor_canonical_key: data.contractor_canonical_key || '',
             report_type: data.report_type || 'unknown',
             title: data.title || 'Отчет',
             generated_at: data.generated_at || new Date().toISOString(),
@@ -1422,16 +1428,15 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             file_size: data.file_size || 0,
             metadata: data.metadata || {},
             created_by: data.created_by || iName,
-            created_by_name: data.created_by || iName, // ДОБАВЛЕНО
+            created_by_name: data.created_by || iName,
             is_deleted: isDeleted,
             deleted_at: deletedAt,
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt,
-            is_public: data.is_public !== false, // ДОБАВЛЕНО
-            public_token: data.public_token || ''  // ДОБАВЛЕНО
+            is_public: data.is_public !== false,
+            public_token: data.public_token || ''
         };
     } else if (objectType === 'snapshot') {
-        // HTML-снимок публичного QR-отчёта.
         payload = {
             id: id,
             report_id: data.report_id,
@@ -1446,7 +1451,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     } else if (objectType === 'assistant_kb') {
         payload = {
             id: id,
-            project_code: window.syncConfig.projectCode || 'local',
+            project_code: pCode, // Гарантируем наличие кода проекта
             question: data.question || '',
             answer: data.answer || '',
             tags: data.tags || [],
@@ -1457,10 +1462,9 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt
         };
     } else if (objectType === 'project_object') {
-        // Строгий реляционный формат для Справочника объектов
         payload = {
             id: id,
-            project_code: window.syncConfig.projectCode,
+            project_code: pCode,
             canonical_key: data.canonical_key || '',
             display_name: data.display_name || '',
             synonyms: data.synonyms || [],
@@ -1471,10 +1475,9 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt
         };
     } else if (objectType === 'object_alias') {
-        // Строгий реляционный формат для Алиасов
         payload = {
             id: id,
-            project_code: window.syncConfig.projectCode,
+            project_code: pCode,
             raw_name: data.raw_name || '',
             canonical_key: data.canonical_key || '',
             created_at: data.created_at || new Date().toISOString(),
@@ -1491,18 +1494,18 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         };
     }
 
+    // Заполнение специфичных полей для shared_* и project_* таблиц
     if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb' && objectType !== 'project_object' && objectType !== 'object_alias') {
         if (isShared) {
             payload.owner = data.owner || iName;
-            // ДОБАВЛЕНО: Полное соответствие столбцам таблиц shared_
-            payload.project_code = window.syncConfig.projectCode;
+            payload.project_code = pCode; // Гарантируем наличие кода проекта
             payload.created_at = data.createdAt || data.created_at || new Date().toISOString();
             payload.created_by_name = data.owner || data.author || iName;
             payload.source = 'cloud';
             payload.sync_status = 'synced';
             payload.sync_block_reason = '';
         } else {
-            payload.project_code = pCode;
+            payload.project_code = pCode; // Гарантируем наличие кода проекта
 
             payload.project_canonical_key =
                 data.project_canonical_key ||
@@ -1544,8 +1547,73 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         }
     }
 
-    const { error } = await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
-    if (error) throw error;
+    // Для project_object и object_alias используем логику "обновить или вставить" без onConflict
+    if (objectType === 'project_object') {
+        // Проверяем, существует ли запись с таким canonical_key
+        const { data: existing, error: findErr } = await window.supabaseClient
+            .from(tableName)
+            .select('id')
+            .eq('project_code', pCode)
+            .eq('canonical_key', payload.canonical_key)
+            .maybeSingle();
+        if (findErr) throw findErr;
+
+        if (existing) {
+            // Обновляем существующую запись (сбрасываем is_deleted)
+            const { error: updateErr } = await window.supabaseClient
+                .from(tableName)
+                .update({
+                    display_name: payload.display_name,
+                    synonyms: payload.synonyms,
+                    created_by: payload.created_by,
+                    is_deleted: false,
+                    updated_at: payload.updated_at
+                })
+                .eq('id', existing.id);
+            if (updateErr) throw updateErr;
+            // Сохраняем существующий id для возврата
+            uploadedData.id = existing.id;
+        } else {
+            // Вставляем новую запись
+            const { error: insertErr } = await window.supabaseClient
+                .from(tableName)
+                .insert(payload);
+            if (insertErr) throw insertErr;
+        }
+    }
+    else if (objectType === 'object_alias') {
+        // Проверяем, существует ли алиас с таким raw_name
+        const { data: existing, error: findErr } = await window.supabaseClient
+            .from(tableName)
+            .select('id')
+            .eq('project_code', pCode)
+            .eq('raw_name', payload.raw_name)
+            .maybeSingle();
+        if (findErr) throw findErr;
+
+        if (existing) {
+            // Обновляем существующий алиас (canonical_key мог измениться)
+            const { error: updateErr } = await window.supabaseClient
+                .from(tableName)
+                .update({
+                    canonical_key: payload.canonical_key,
+                    updated_at: payload.updated_at
+                })
+                .eq('id', existing.id);
+            if (updateErr) throw updateErr;
+            uploadedData.id = existing.id;
+        } else {
+            const { error: insertErr } = await window.supabaseClient
+                .from(tableName)
+                .insert(payload);
+            if (insertErr) throw insertErr;
+        }
+    }
+    else {
+        // Для всех остальных типов оставляем старый upsert
+        const { error } = await window.supabaseClient.from(tableName).upsert(payload, { onConflict: 'id' });
+        if (error) throw error;
+    }
 
     // ВАЖНО: Возвращаем обновленный объект (с замененными ссылками на http://)
     return uploadedData;
@@ -1553,33 +1621,39 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
 
 window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
-    const iName = window.syncConfig.engineerName || 'Инженер'; // <-- ДОБАВЛЕНО
-    let tableName = ''; let isShared = false;
+    const iName = window.syncConfig.engineerName || 'Инженер';
+
+    let tableName = '';
+    let isShared = false;
 
     switch (objectType) {
         case 'custom_twi_card': tableName = 'shared_twi_cards'; isShared = true; break;
         case 'custom_node': tableName = 'shared_nodes'; isShared = true; break;
         case 'custom_doc': tableName = 'shared_docs'; isShared = true; break;
         case 'user_template': tableName = 'shared_checklists'; isShared = true; break;
-        case 'feedback': tableName = 'shared_feedback'; isShared = true; break; // <-- ДОБАВЛЕНО
+        case 'feedback': tableName = 'shared_feedback'; isShared = true; break;
         case 'practice': tableName = 'shared_practices'; isShared = true; break;
         case 'etalon': tableName = 'shared_etalons'; isShared = true; break;
         case 'meeting': tableName = 'project_meetings'; break;
         case 'intervention': tableName = 'project_interventions'; break;
         case 'fmea': tableName = 'project_fmea'; break;
         case 'schedule': tableName = 'project_schedule_stages'; break;
-        case 'sk_data_bundle': tableName = 'sk_data_bundles'; break;
-        case 'project_object': tableName = 'project_objects'; isShared = true; break; // <-- ДОБАВЛЕНО
-        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;   // <-- ДОБАВЛЕНО
-        case 'report': tableName = 'shared_reports'; isShared = false; targetBucket = 'reports'; break;
+        case 'project_object': tableName = 'project_objects'; isShared = true; break;
+        case 'object_alias': tableName = 'object_aliases'; isShared = true; break;
+        case 'report': tableName = 'shared_reports'; isShared = false; break;
         case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
-        case 'snapshot': tableName = 'shared_report_snapshots'; isShared = true; break;
         case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
         default: return [];
     }
 
-    let query = window.supabaseClient.from(tableName).select('*').limit(1000);
-    if (!isShared) query = query.eq('project_code', pCode);
+    const currentCloudStatus = window.RbiRoles ? window.RbiRoles.getCloudStatus() : 'pending';
+    if (currentCloudStatus !== 'approved') return [];
+
+    let query = window.supabaseClient.from(tableName).select('*').limit(2000);
+
+    // ЖЕСТКАЯ ИЗОЛЯЦИЯ ПРОЕКТОВ (Главное правило!)
+    query = query.eq('project_code', pCode);
+
     if (lastPullTimeStr) query = query.gt('updated_at', lastPullTimeStr);
 
     const { data, error } = await query;
@@ -1588,137 +1662,59 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
     let result = [];
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
     const myProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
-    const myContrName = typeof appSettings !== 'undefined'
-        ? (appSettings.contractorName || appSettings.assignedContractor || '')
-        : '';
+    const myContrName = typeof appSettings !== 'undefined' ? (appSettings.contractorName || appSettings.assignedContractor || '') : '';
 
     for (const row of data || []) {
-        // ВАЖНО:
-        // В shared_* таблицах реальные данные лежат в row.data.
-        // Если взять просто {...row}, то title/category/name окажутся внутри data,
-        // и renderTwiList/renderNodesList упадут на .toLowerCase().
         let obj = {};
 
+        // Распаковываем JSONB (если данные хранятся внутри поля data)
         if (row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
             obj = { ...row.data };
-        } else {
-            obj = { ...row };
+        } else if (row.template_data) {
+            obj = { ...row.template_data }; // Для report_templates
         }
 
-        obj.id = row.id || obj.id;
-        obj.updatedAt = row.updated_at || obj.updatedAt || obj.updated_at || new Date().toISOString();
-        obj.updated_at = row.updated_at || obj.updated_at || obj.updatedAt || new Date().toISOString();
+        // Накатываем сверху поля из корневой таблицы (чтобы они имели приоритет)
+        obj = { ...obj, ...row };
 
-        if (row.owner) obj.owner = row.owner;
+        // Нормализуем системные ключи
+        obj.id = row.id;
+        obj.updatedAt = row.updated_at;
+        obj.createdAt = row.created_at;
+        obj.is_deleted = row.is_deleted;
+        obj._deleted = row.is_deleted;
+        if (row.is_deleted) obj._deletedAt = row.deleted_at || row.updated_at;
+        if (row.owner || row.created_by) obj.owner = row.owner || row.created_by;
 
-        if (row.is_deleted) {
-            obj._deleted = true;
-            obj._deletedAt = row.deleted_at || new Date().toISOString();
+        // Доп. фильтрация RLS на клиенте (чтобы РП видел только свои объекты и т.д.)
+        if (!isShared) {
+            const itemProject = obj.project_canonical_key || obj.project || '';
+            const itemContr = obj.contractor_name || obj.contractor || '';
+            const itemEngineer = obj.engineer_name || obj.inspector_name || obj.created_by || '';
+
+            if (role === 'guest') continue;
+            if (role === 'contractor') {
+                if (!myContrName || (itemContr && itemContr !== myContrName)) continue;
+                if (myProjects.length > 0 && itemProject && itemProject !== 'Все' && !myProjects.includes(itemProject)) continue;
+            } else if (role === 'engineer') {
+                if (window.syncConfig.syncMode === 'personal' && itemEngineer && itemEngineer !== iName) continue;
+                const isGlobal = !itemProject || itemProject.toLowerCase().includes('все ') || itemProject === 'all';
+                if (myProjects.length > 0 && !isGlobal && !myProjects.includes(itemProject)) continue;
+            } else if (role === 'project_manager') {
+                if (myProjects.length === 0) continue;
+                if (itemProject && itemProject !== 'Все' && !myProjects.includes(itemProject)) continue;
+            }
         }
-
-        obj.project_code = row.project_code || obj.project_code || pCode;
-        obj.project_canonical_key = row.project_canonical_key || obj.project_canonical_key || obj.project || obj.projectName || '';
-        obj.project_display_name = row.project_display_name || obj.project_display_name || obj.project || obj.projectName || '';
-        obj.inspector_name = row.inspector_name || obj.inspector_name || obj.inspectorName || obj.engineer_name || obj.engineerName || '';
-        obj.contractor_name = row.contractor_name || obj.contractor_name || obj.contractorName || obj.contractor || '';
 
         obj.source = 'cloud';
         obj.syncStatus = 'synced';
         obj.sync_status = 'synced';
-        obj.syncBlockReason = '';
-        obj.sync_block_reason = '';
-
-        // --- УМНЫЙ ФИЛЬТР ДЛЯ ПРОЕКТНЫХ ДАННЫХ (Задачи, Мемо, FMEA и т.д.) ---
-        // --- ЕДИНЫЙ ФИЛЬТР ДЛЯ ПРОЕКТНЫХ ДАННЫХ ---
-        if (!isShared) {
-            const itemProject =
-                obj.project_canonical_key ||
-                obj.projectCanonicalKey ||
-                obj.canonical_key ||
-                obj.project ||
-                obj.projectName ||
-                '';
-
-            const itemContr =
-                obj.contractor_name ||
-                obj.contractorName ||
-                obj.contractor ||
-                '';
-
-            const itemEngineer =
-                obj.inspector_name ||
-                obj.inspectorName ||
-                obj.engineer_name ||
-                obj.engineerName ||
-                obj.owner ||
-                '';
-
-            const assignedProjects = Array.isArray(myProjects) ? myProjects : [];
-
-            if (role === 'guest') {
-                continue;
-            }
-
-            if (role === 'contractor') {
-                if (!myContrName) continue;
-                if (itemContr && itemContr !== myContrName) continue;
-
-                if (assignedProjects.length > 0 && itemProject && itemProject !== 'Все' && !assignedProjects.includes(itemProject)) {
-                    continue;
-                }
-            }
-
-            else if (role === 'engineer') {
-                if (window.syncConfig.syncMode === 'personal') {
-                    if (itemEngineer && itemEngineer !== iName) continue;
-                }
-
-                // УМНЫЙ ФИЛЬТР: Пропускаем глобальные отчеты и отчеты по всей компании
-                const isGlobal = !itemProject || itemProject.toLowerCase().includes('все ') || itemProject === 'all';
-
-                if (assignedProjects.length > 0 && !isGlobal && !assignedProjects.includes(itemProject)) {
-                    continue;
-                }
-            }
-
-            else if (role === 'project_manager') {
-                if (assignedProjects.length === 0) continue;
-
-                if (itemProject && itemProject !== 'Все' && !assignedProjects.includes(itemProject)) {
-                    continue;
-                }
-            }
-
-            else if (['director', 'deputy_manager', 'manager'].includes(role)) {
-                // Полный просмотр / доступ согласно роли
-            }
-
-            else {
-                continue;
-            }
-        }
-        // -------------------------------------------------------------------
-        // -------------------------------------------------------------------
-
-        if (row.is_deleted) {
-            obj._deleted = true;
-            obj._deletedAt = row.deleted_at || new Date().toISOString();
-        }
-
-        if (isShared && row.owner) obj.owner = row.owner;
-
-        // ИСПРАВЛЕНИЕ: Если Supabase вернул metadata как строку, превращаем в объект
-        if (typeof obj.metadata === 'string') {
-            try { obj.metadata = JSON.parse(obj.metadata); } catch (e) { obj.metadata = {}; }
-        }
-
-        // Гарантируем наличие даты генерации для сортировки
-        if (!obj.generated_at) obj.generated_at = obj.created_at || new Date().toISOString();
 
         result.push(obj);
     }
     return result;
 };
+
 // ============================================================================
 // ГЛАВНЫЙ БЛОК СИНХРОНИЗАЦИИ (ИСПРАВЛЕНО СОХРАНЕНИЕ ОБЪЕКТОВ)
 // ==========================================
@@ -2235,10 +2231,10 @@ if (window.RbiStorageManager) {
 
         // --- НОВОЕ: Фильтрация PULL по ролям ---
         const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        const cloudStatus = window.RbiRoles ? window.RbiRoles.getCloudStatus() : 'pending';
 
-        if (role === 'guest') {
-            // Гостям не нужны чужие проверки (экономим трафик)
-            // Но запрос отменять нельзя (сломает цепочку), поэтому ставим заведомо ложное условие
+        if (role === 'guest' || cloudStatus !== 'approved') {
+            // БЕЗОПАСНОСТЬ: Гостям и неподтвержденным пользователям запрещено качать чужие проверки
             inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
         }
         else if (role === 'contractor') {
@@ -2641,7 +2637,8 @@ if (window.RbiStorageManager) {
                     let query = window.supabaseClient
                         .from('sk_records')
                         .select('*')
-                        .eq('project_code', pCode);
+                        .eq('project_code', pCode)
+                        .limit(25000); // <-- СНЯЛИ ЛИМИТ СУПАБЕЙСА (По умолчанию там 1000)
 
                     if (lastPullAt) {
                         query = query.gt('updated_at', lastPullAt);
@@ -2654,7 +2651,7 @@ if (window.RbiStorageManager) {
                     if (cloudSkRows && cloudSkRows.length > 0) {
                         const localRecords = await dbGetAll(STORES.SK_RECORDS) || [];
                         const localMap = new Map();
-
+                        const skRecordsToSaveBatch = []; // <-- ДОБАВИЛИ МАССИВ ДЛЯ ПАКЕТА
                         localRecords.forEach(r => {
                             const key = r.sk_unique_key || r.id;
                             if (key) localMap.set(String(key), r);
@@ -2710,10 +2707,17 @@ if (window.RbiStorageManager) {
 
                             // Обычное обновление: облачная запись новее локальной
                             if (!localRecord || cloudTime > localTime) {
-                                await dbPut(STORES.SK_RECORDS, cloudRecord);
+                                skRecordsToSaveBatch.push(cloudRecord); // <-- КЛАДЕМ В МАССИВ ВМЕСТО МЕДЛЕННОГО СОХРАНЕНИЯ
                                 localMap.set(cloudKey, cloudRecord);
                             }
                         }
+
+                        // --- ПАКЕТНОЕ СОХРАНЕНИЕ ---
+                        if (skRecordsToSaveBatch.length > 0 && typeof dbPutBatch === 'function') {
+                            await dbPutBatch(STORES.SK_RECORDS, skRecordsToSaveBatch);
+                        }
+                        // ---------------------------
+
 
                         const allPulledSkRecords = Array.from(localMap.values()).filter(r => !r._deleted && !r.is_deleted);
 
@@ -2854,13 +2858,19 @@ if (window.RbiStorageManager) {
                 currentHistory = currentHistory.filter(i => i.inspectorName === iName);
             }
 
-            if (lastPushAt) {
+            // --- ЖЕСТКАЯ БЛОКИРОВКА "ЭХА" ---
+            // Не отправляем обратно то, что только что скачали из облака!
+            currentHistory = currentHistory.filter(i => {
+                // Если запись пришла из облака и уже синхронизирована — пропускаем
+                if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') {
+                    return false;
+                }
+
+                if (!lastPushAt) return true;
                 const lastPushTime = new Date(lastPushAt).getTime();
-                currentHistory = currentHistory.filter(i => {
-                    const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
-                    return t >= lastPushTime;
-                });
-            }
+                const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
+                return t >= lastPushTime;
+            });
 
             if (currentHistory.length > 0) {
 
@@ -3317,9 +3327,15 @@ if (window.RbiStorageManager) {
 
                 const lastPushTimeTasks = lastPushAt ? new Date(lastPushAt).getTime() : 0;
 
-                // ИСПРАВЛЕНИЕ: Отправляем только РУЧНЫЕ задачи, которые ИЗМЕНИЛИСЬ
+                // ИСПРАВЛЕНИЕ: Отправляем только РУЧНЫЕ задачи, которые ИЗМЕНИЛИСЬ локально
                 tasks = tasks.filter(t => {
                     if (t.type !== 'manual') return false;
+
+                    // Блокируем "эхо" облачных задач
+                    if (t.source === 'cloud' || t.syncStatus === 'synced' || t.sync_status === 'synced') {
+                        return false;
+                    }
+
                     const tTime = new Date(t.updatedAt || t.updated_at || t.date || t.createdAt || 0).getTime();
                     return tTime === 0 || tTime >= lastPushTimeTasks;
                 });
@@ -3368,10 +3384,8 @@ if (window.RbiStorageManager) {
                         const upsertData = batch.map(task => ({
                             id: String(task.id),
                             project_code: pCode,
-
                             project_canonical_key: task.project_canonical_key || task.project || task.projectName || '',
                             project_display_name: task.project_display_name || task.project || task.projectName || '',
-
                             engineer_name: task.engineerName || task.inspectorName || iName,
                             inspector_name: task.engineerName || task.inspectorName || iName,
                             contractor_name: task.contractor || task.contractorName || '',
@@ -3379,19 +3393,14 @@ if (window.RbiStorageManager) {
                             task_data: {
                                 ...task,
                                 source: 'cloud',
-                                syncStatus: 'synced',
-                                sync_status: 'synced',
-                                syncBlockReason: '',
-                                sync_block_reason: ''
+                                sync_status: 'synced'
                             },
                             status: task.status || 'pending',
                             task_date: task.date || task.taskDate || null,
                             is_deleted: task._deleted || false,
                             deleted_at: task._deleted ? (task._deletedAt || new Date().toISOString()) : null,
-                            source: 'cloud',
-                            sync_status: 'synced',
-                            sync_block_reason: '',
-                            updated_at: task.updatedAt || task.updated_at || new Date().toISOString()
+                            updated_at: task.updatedAt || task.updated_at || new Date().toISOString(),
+                            created_at: task.createdAt || task.created_at || new Date().toISOString()
                         }));
 
                         const { error: taskError } = await window.supabaseClient
@@ -3477,8 +3486,10 @@ if (window.RbiStorageManager) {
                 } else {
                     const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
                     const filterNew = (arr) => arr.filter(i => {
+                        if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
+                        if (!lastPushTime) return true;
                         const t = new Date(i.updatedAt || i.updated_at || i.date || i.createdAt || 0).getTime();
-                        return t === 0 || t >= lastPushTime;
+                        return t >= lastPushTime;
                     });
 
                     // Единая функция отправки для всех новых таблиц
@@ -3695,6 +3706,7 @@ if (window.RbiStorageManager) {
                                     if (error) throw error;
 
                                     const nowIso = new Date().toISOString();
+                                    const localBatchToUpdate = []; // <-- НОВЫЙ МАССИВ ДЛЯ ПАКЕТА
 
                                     for (const row of data || []) {
                                         const key = `${row.project_code}_${row.sk_number}`;
@@ -3711,8 +3723,13 @@ if (window.RbiStorageManager) {
                                         rec.updated_at = row.updated_at || nowIso;
                                         rec.updatedAt = row.updated_at || nowIso;
 
-                                        await dbPut(STORES.SK_RECORDS, rec);
+                                        localBatchToUpdate.push(rec); // <-- КЛАДЕМ В МАССИВ ВМЕСТО ОЖИДАНИЯ
                                         pushedSkCount++;
+                                    }
+
+                                    // СОХРАНЯЕМ ВСЮ ПАЧКУ СРАЗУ
+                                    if (localBatchToUpdate.length > 0 && typeof dbPutBatch === 'function') {
+                                        await dbPutBatch(STORES.SK_RECORDS, localBatchToUpdate);
                                     }
                                 } catch (e) {
                                     console.warn('[Sync][ПК СК] Ошибка пакетной отправки:', e);
@@ -4136,5 +4153,46 @@ window.mergeCloudData = async function (newInspections, newProfiles, newTasks, n
             }
             contractorArray = contractorArray.filter(i => !i._deleted);
         }
+    }
+};
+
+// Принудительная отправка всех локальных объектов справочника в облако
+window.forceSyncObjects = async function () {
+    if (!window.supabaseClient || !window.syncConfig.enabled) {
+        if (typeof showToast === 'function') showToast('❌ Облако не подключено');
+        return;
+    }
+    if (window.isSyncing) {
+        if (typeof showToast === 'function') showToast('⏳ Синхронизация уже идет...');
+        return;
+    }
+    if (typeof showToast === 'function') showToast('🚀 Принудительная отправка объектов...');
+
+    try {
+        const objs = await dbGetAll('project_objects');
+        let sent = 0;
+        for (let obj of objs) {
+            if (obj.sync_status !== 'synced') {
+                obj.sync_status = 'not_synced';
+                obj.source = 'local';
+                obj.updatedAt = new Date().toISOString();
+                await dbPut('project_objects', obj);
+                try {
+                    const updated = await window.pushCloudObject('project_object', obj.id, obj, 'custom-assets');
+                    if (updated) {
+                        obj.sync_status = 'synced';
+                        obj.source = 'cloud';
+                        await dbPut('project_objects', obj);
+                        sent++;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+        }
+        if (typeof showToast === 'function') showToast(`✅ Отправлено объектов: ${sent}`);
+        setTimeout(() => window.triggerSync('manual'), 1000);
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('❌ Ошибка принудительной отправки');
     }
 };

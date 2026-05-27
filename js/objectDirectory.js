@@ -81,7 +81,7 @@ window.ObjectDirectory = {
 
     // Умная нормализация названия
     // Умная нормализация названия объекта
-    async normalizeProjectName(inputRawName) {
+    async normalizeProjectName(inputRawName, isFromSkImport = false) {
         if (!inputRawName) {
             return {
                 status: 'empty',
@@ -209,7 +209,7 @@ window.ObjectDirectory = {
         // 5. Если совпадений нет — отправляем заявку руководителю на подтверждение
         const newKey = this.cleanString(rawName);
 
-        if (typeof appSettings !== 'undefined') {
+        if (typeof appSettings !== 'undefined' && !isFromSkImport) {
             if (!Array.isArray(appSettings.pendingAssignedProjects)) appSettings.pendingAssignedProjects = [];
 
             // Добавляем в очередь инженера
@@ -887,7 +887,7 @@ window.ObjectDirectory = {
         if (typeof dbPut === 'function') dbPut('project_objects', newObj);
 
         localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
+        // triggerSync не вызываем сразу, чтобы не блокировать добавление следующих объектов
 
         showToast("✅ Объект добавлен в Справочник!");
         inputEl.value = ''; // Очищаем поле

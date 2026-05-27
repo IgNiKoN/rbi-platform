@@ -109,10 +109,24 @@ function openAppDb() {
  * ГЛОБАЛЬНЫЙ НОРМАЛИЗАТОР СИСТЕМНЫХ КЛЮЧЕЙ (JS vs Supabase)
  * Автоматически выравнивает camelCase и snake_case перед любым сохранением в базу.
  */
+/**
+ * ГЛОБАЛЬНЫЙ НОРМАЛИЗАТОР СИСТЕМНЫХ КЛЮЧЕЙ
+ * Автоматически выравнивает структуру, добавляет проект и владельца перед любым сохранением.
+ */
 function normalizeSystemKeys(obj) {
     if (!obj || typeof obj !== 'object') return obj;
 
-    // 1. Метки удаления (_deleted <-> is_deleted)
+    // 1. УНИВЕРСАЛЬНОЕ КЛЕЙМО ПРОЕКТА
+    const pCode = window.syncConfig?.projectCode || 'LOCAL';
+    if (!obj.project_code) obj.project_code = pCode;
+
+    // 2. ВЛАДЕЛЕЦ (Критично для RLS политик Supabase)
+    const currentEng = window.syncConfig?.engineerName || 'Инженер';
+    const owner = obj.owner || obj.created_by || obj.author || obj.inspectorName || obj.engineer_name || currentEng;
+    if (!obj.owner) obj.owner = owner;
+    if (!obj.created_by) obj.created_by = owner;
+
+    // 3. МЕТКИ УДАЛЕНИЯ (_deleted <-> is_deleted)
     const isDel = obj._deleted === true || obj.is_deleted === true;
     obj._deleted = isDel;
     obj.is_deleted = isDel;
@@ -123,7 +137,7 @@ function normalizeSystemKeys(obj) {
         obj.deleted_at = delAt;
     }
 
-    // 2. Статусы синхронизации (syncStatus <-> sync_status)
+    // 4. СТАТУСЫ СИНХРОНИЗАЦИИ (syncStatus <-> sync_status)
     const sStatus = obj.syncStatus || obj.sync_status || 'not_synced';
     obj.syncStatus = sStatus;
     obj.sync_status = sStatus;
@@ -132,7 +146,7 @@ function normalizeSystemKeys(obj) {
     obj.syncBlockReason = sReason;
     obj.sync_block_reason = sReason;
 
-    // 3. Временные метки (updatedAt <-> updated_at)
+    // 5. ВРЕМЕННЫЕ МЕТКИ (updatedAt <-> updated_at)
     const updAt = obj.updatedAt || obj.updated_at || new Date().toISOString();
     obj.updatedAt = updAt;
     obj.updated_at = updAt;
@@ -238,7 +252,32 @@ async function dbGetAll(storeName) {
         const tx = db.transaction(storeName, 'readonly');
         const store = tx.objectStore(storeName);
         const req = store.getAll();
-        req.onsuccess = () => resolve(req.result);
+        
+        req.onsuccess = () => {
+            let results = req.result || [];
+
+            // --- ГЛОБАЛЬНАЯ ИЗОЛЯЦИЯ ПРОЕКТОВ ---
+            const pCode = window.syncConfig?.projectCode || 'LOCAL';
+            
+            // Исключения: эти таблицы общие для всего телефона (настройки, логи, фото-кэш)
+            const globalStores = [STORES.STATE, STORES.SETTINGS, STORES.PHOTOS, STORES.BACKUP_LOGS, STORES.GAME_LOGS];
+
+            if (!globalStores.includes(storeName)) {
+                results = results.filter(item => {
+                    // Разрешаем системные шаблоны и узлы (они начинаются на sys_)
+                    if (String(item.id).startsWith('sys_') || String(item.slug).startsWith('sys_')) return true;
+                    
+                    const itemProject = item.project_code || item.data?.project_code;
+                    
+                    // Пропускаем записи, если они принадлежат текущему проекту
+                    // (или если project_code вообще пустой — это старые локальные данные до обновления)
+                    return !itemProject || itemProject === pCode;
+                });
+            }
+            // ------------------------------------
+
+            resolve(results);
+        };
         req.onerror = () => reject(req.error);
     });
 }
@@ -956,7 +995,7 @@ window.RbiStorageManager = {
                 }
 
                 cloudRow = data;
-                console.log('[StorageManager] Файл зарегистрирован в file_registry:', cloudRow);
+                //console.log('[StorageManager] Файл зарегистрирован в file_registry:', cloudRow);
             }
 
             const localRow = {
@@ -1080,7 +1119,11 @@ window.RbiStorageManager = {
             let nextSize = sizeBytes || currentSize || 0;
             let nextMime = mimeType || currentMime || '';
 
-            if ((!nextSize || nextSize <= 0) && navigator.onLine !== false) {
+           // HEAD-запрос делаем только если это НЕ синхронизация (т.е. уже прошёл первый pull).
+            // Во время первой синхронизации этот запрос блокирует поток на ~60 сек для каждого файла.
+            // lastPullAt пустой при первой синхронизации.
+            const isFirstSync = !localStorage.getItem('rbi_sync_last_pull_at');
+            if ((!nextSize || nextSize <= 0) && navigator.onLine !== false && !isFirstSync) {
                 try {
                     const res = await fetch(url, {
                         method: 'HEAD',

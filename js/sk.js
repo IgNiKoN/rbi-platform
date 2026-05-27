@@ -289,7 +289,7 @@ async function sk_getPendingContractorsQueue() {
     }
 }
 
-async function sk_renderContractorQueueBanner() {
+window.sk_renderContractorQueueBanner = async function () {
     const banner = document.getElementById('sk-contractor-queue-banner');
     if (!banner) return;
 
@@ -929,7 +929,7 @@ async function sk_parseLocation(rawStr) {
 
     if (rawProject && typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.normalizeProjectName === 'function') {
         try {
-            const match = await ObjectDirectory.normalizeProjectName(rawProject);
+            const match = await ObjectDirectory.normalizeProjectName(rawProject, true);
 
             result.canonical_key = match.canonical_key || '';
             result.display_name = match.display_name || rawProject;

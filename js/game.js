@@ -3483,6 +3483,7 @@ window.gameResolveContractorRequest = async function (requestId) {
         // Обновляем списки на экране
         if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
         if (typeof gameLoadContractorDirectory === 'function') gameLoadContractorDirectory();
+        if (typeof window.sk_renderContractorQueueBanner === 'function') window.sk_renderContractorQueueBanner();
 
         // Даем команду приложению подтянуть свежие данные
         localStorage.setItem('rbi_cloud_dirty', '1');
@@ -3510,6 +3511,7 @@ window.gameDeleteContractorRequest = async function (requestId) {
 
         showToast('🗑️ Заявка подрядчика удалена');
         if (typeof gameLoadContractorRequests === 'function') gameLoadContractorRequests();
+        if (typeof window.sk_renderContractorQueueBanner === 'function') window.sk_renderContractorQueueBanner();
 
     } catch (e) {
         console.error('[gameDeleteContractorRequest]', e);
@@ -4460,6 +4462,7 @@ window.gameExecuteContractorMerge = async function (primaryKey, secondaryKey, se
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
         if (window.ContractorDirectory) await window.ContractorDirectory.init();
+        if (typeof window.sk_renderContractorQueueBanner === 'function') window.sk_renderContractorQueueBanner();
 
     } catch (e) {
         console.error(e);

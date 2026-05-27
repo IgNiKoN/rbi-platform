@@ -1937,22 +1937,17 @@ function closeTwiViewer() {
     const overlay = document.getElementById('twi-viewer-overlay');
     const content = document.getElementById('viewer-twi-content');
 
-    function closeTwiViewer() {
-        const overlay = document.getElementById('twi-viewer-overlay');
-        const content = document.getElementById('viewer-twi-content');
-
-        overlay.classList.add('opacity-0');
-        setTimeout(() => {
-            overlay.style.display = 'none';
-            document.body.classList.remove('modal-open');
-            content.innerHTML = '';
-        }, 300);
-    }
-
     overlay.classList.add('opacity-0');
     setTimeout(() => {
         overlay.style.display = 'none';
         document.body.classList.remove('modal-open');
+        
+        // Очищаем оперативную память от временного файла (Blob)
+        if (content.dataset.blobUrl && content.dataset.blobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(content.dataset.blobUrl);
+            content.dataset.blobUrl = '';
+        }
+        
         content.innerHTML = '';
     }, 300);
 }
