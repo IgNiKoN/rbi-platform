@@ -269,6 +269,10 @@ body {
     overflow-x: clip !important;
     width: 100vw;
     max-width: 100%;
+    
+    /* НОВОЕ: Отключаем pull-to-refresh и свайп "назад" в браузере */
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
 }
 
 /* === ТРИ РЕЖИМА НАВИГАЦИИ (АВТО, СВЕРХУ, СНИЗУ) === */

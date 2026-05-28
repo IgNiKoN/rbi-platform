@@ -1899,7 +1899,15 @@ async function openTwiViewer(twiId) {
     }
     // === СКВОЗНЫЕ ССЫЛКИ (ЭКОСИСТЕМА) ===
     let crossLinksHtml = '';
-    
+    // Ссылка на Видео
+    if (card.videoLink) {
+        crossLinksHtml += `
+            <a href="${card.videoLink}" target="_blank" class="w-full bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Смотреть видеоинструкцию
+            </a>`;
+    }
+
     // Ссылка на Узел
     if (card.linkedNodeId) {
         crossLinksHtml += `
@@ -1941,13 +1949,13 @@ function closeTwiViewer() {
     setTimeout(() => {
         overlay.style.display = 'none';
         document.body.classList.remove('modal-open');
-        
+
         // Очищаем оперативную память от временного файла (Blob)
         if (content.dataset.blobUrl && content.dataset.blobUrl.startsWith('blob:')) {
             URL.revokeObjectURL(content.dataset.blobUrl);
             content.dataset.blobUrl = '';
         }
-        
+
         content.innerHTML = '';
     }, 300);
 }
@@ -2351,6 +2359,7 @@ function changeTemplate(val) {
         if (document.getElementById('current-checklist-label')) document.getElementById('current-checklist-label').innerText = 'Вид работ не выбран';
 
         saveSessionData();
+        if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
         return;
     }
 
@@ -2389,7 +2398,9 @@ function changeTemplate(val) {
     document.getElementById('audit-actions').style.display = 'grid';
 
     if (document.getElementById('tab-audit').classList.contains('active')) { render(); updateUI(); }
+    if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
 }
+
 // === КОНЕЦ ЗАМЕНЫ 1 === //
 // === КОНЕЦ ЗАМЕНЫ 1 === //
 
@@ -4496,11 +4507,11 @@ function addBuilderGroup() {
 function addBuilderItem(containerId, itemData = null) {
     builderItemCount++;
     const itemId = `builder-item-${builderItemCount}`;
-    
+
     // Собираем список всех нормативных документов
     const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ...(typeof customDocs !== 'undefined' ? customDocs : [])];
     let docOptions = '<option value="">-- Без привязки к документу --</option>';
-    
+
     allDocs.sort((a, b) => a.code.localeCompare(b.code)).forEach(doc => {
         const shortTitle = doc.title.length > 30 ? doc.title.substring(0, 30) + '...' : doc.title;
         const isSelected = (itemData && itemData.ndId === doc.id) ? 'selected' : '';
@@ -5296,7 +5307,7 @@ window.deleteCustomDoc = async function (id) {
         doc.syncStatus = 'not_synced';
         doc.sync_status = 'not_synced';
 
-        await dbPut(STORES.CUSTOM_DOCS, doc); 
+        await dbPut(STORES.CUSTOM_DOCS, doc);
     }
 
     showToast('🗑️ Документ удален');
@@ -5940,13 +5951,13 @@ window.searchNormFromTwi = function () {
 // Привязка узла (Модалка)
 function openNodeSelectorModal() {
     const listEl = document.getElementById('node-selector-list');
-    
+
     // 1. Объединяем системные и пользовательские (твои) узлы
     const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
 
     // 2. Отрисовываем список
     listEl.innerHTML = allNodes.map(node => {
-        
+
         // Определяем картинку для превью (поддерживаем и старый формат, и новый массив файлов)
         let previewSrc = '';
         if (node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'image') {
@@ -5955,7 +5966,7 @@ function openNodeSelectorModal() {
             previewSrc = window.getPhotoSrc(node.img);
         }
 
-        const imgHtml = previewSrc 
+        const imgHtml = previewSrc
             ? `<img src="${previewSrc}" class="w-12 h-12 object-cover rounded-lg border border-slate-100 bg-white dark:bg-slate-900">`
             : `<div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-[8px] font-black text-slate-400 uppercase">📄 PDF</div>`;
 
@@ -6029,6 +6040,7 @@ function openTwiConstructor(editId = null) {
     document.getElementById('twi-why-input').value = '';
     document.getElementById('twi-compliance-input').value = '';
     document.getElementById('twi-preparation-input').value = '';
+    document.getElementById('twi-video-link-input').value = '';
     selectNodeForTwi('', 'Не привязан');
 
     removeTwiGoodPhoto(); removeTwiBadPhoto(); removeTwiPdf();
@@ -6039,6 +6051,7 @@ function openTwiConstructor(editId = null) {
         if (card) {
             document.getElementById('twi-title-input').value = card.title;
             selectEl.value = card.checklistKey;
+            document.getElementById('twi-video-link-input').value = card.videoLink || '';
 
             populateTwiItemSelect(card.type === 'INSPECTOR' ? card.itemId : null);
             changeTwiType(card.type || 'WORKER');
@@ -6046,7 +6059,7 @@ function openTwiConstructor(editId = null) {
             selectNodeForTwi(card.linkedNodeId || '', card.linkedNodeId ? (SYSTEM_NODES.find(n => n.id === card.linkedNodeId)?.title || customNodes.find(n => n.id === card.linkedNodeId)?.title || 'Узел') : 'Не привязан');
             if (card.type === 'INSPECTOR') {
                 document.getElementById('twi-why-input').value = card.whyImportant || '';
-                
+
 
                 // РАСЩЕПЛЕНИЕ ПОЛЯ howToCheck
                 let comp = "", prep = "";
@@ -6090,8 +6103,9 @@ async function saveTwiCard() {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
         title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType,
         owner: appSettings.engineerName || 'Инженер',
-        linkedNodeId: document.getElementById('twi-linked-node-id').value || null, // <-- НОВОЕ
-        linkedDocId: document.getElementById('twi-linked-doc-id').value || null    // <-- НОВОЕ
+        linkedNodeId: document.getElementById('twi-linked-node-id').value || null, 
+        linkedDocId: document.getElementById('twi-linked-doc-id').value || null,
+        videoLink: document.getElementById('twi-video-link-input').value.trim() || null
     };
 
     if (currentTwiType === 'INSPECTOR') {
@@ -6113,7 +6127,7 @@ async function saveTwiCard() {
         cardData.itemId = itemId === 'ALL' ? 'ALL' : parseInt(itemId);
         cardData.whyImportant = why;
         cardData.howToCheck = how;
-        
+
         cardData.photoGood = document.getElementById('twi-photo-good-container').dataset.photo || null;
         cardData.photoBad = document.getElementById('twi-photo-bad-container').dataset.photo || null;
 
@@ -6456,7 +6470,7 @@ window.deleteTwiCard = async function (id) {
         card.syncStatus = 'not_synced';
         card.sync_status = 'not_synced';
 
-        await dbPut(STORES.TWI_CARDS, card); 
+        await dbPut(STORES.TWI_CARDS, card);
     }
 
     showToast("🗑️ Инструкция удалена");
@@ -6715,7 +6729,7 @@ function renderNodesList() {
             const isOwner = !node.owner || node.owner === currentEngineer;
 
             let previewHtml = '';
-            
+
             // Железобетонная проверка: если есть вложения и первое это PDF, ИЛИ старое поле img содержит PDF
             const hasPdfAttachment = node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'pdf';
             const isOldPdf = node.img && node.img.includes('application/pdf');
@@ -6732,7 +6746,7 @@ function renderNodesList() {
                             </div>
                         </div>
                     </div>`;
-            } 
+            }
             // Иначе, если есть фото во вложениях
             else if (node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'image') {
                 previewHtml = `<img src="${window.getPhotoSrc(node.attachments[0].url)}" class="w-full h-full object-contain p-2">`;
@@ -6740,7 +6754,7 @@ function renderNodesList() {
             // Фолбэк для старых узлов
             else if (node.img) {
                 previewHtml = `<img src="${window.getPhotoSrc(node.img)}" class="w-full h-full object-contain p-2">`;
-            } 
+            }
             // Если совсем пусто
             else {
                 previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
@@ -6778,7 +6792,7 @@ function renderNodesList() {
 
     container.innerHTML = html;
 }
-window.openNodeViewer = async function(nodeId) {
+window.openNodeViewer = async function (nodeId) {
     const allNodes = [...(typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : []), ...customNodes];
     const node = allNodes.find(n => n.id === nodeId);
     if (!node) return;
@@ -6796,7 +6810,7 @@ window.openNodeViewer = async function(nodeId) {
     const attContainer = document.getElementById('viewer-node-attachments');
     if (attContainer) {
         attContainer.innerHTML = '<div class="text-[10px] text-center text-slate-400 py-4 animate-pulse">Загрузка файлов...</div>';
-        
+
         let files = node.attachments || [];
         if (files.length === 0 && node.img) {
             files = [{ type: 'image', url: node.img }];
@@ -6909,11 +6923,11 @@ window.openNodeViewer = async function(nodeId) {
 // КОНСТРУКТОР УЗЛОВ
 window.currentEditingNodeId = null;
 
-window.openNodeConstructor = function(editId = null) {
+window.openNodeConstructor = function (editId = null) {
     document.getElementById('nodes-main-view').classList.add('hidden');
     const view = document.getElementById('node-constructor-view');
     view.classList.remove('hidden');
-    document.body.classList.add('modal-open'); 
+    document.body.classList.add('modal-open');
     view.scrollTo(0, 0);
 
     window.currentEditingNodeId = editId;
@@ -6957,7 +6971,7 @@ window.openNodeConstructor = function(editId = null) {
             document.getElementById('node-title-input').value = node.title || '';
             document.getElementById('node-desc-input').value = node.desc || '';
             document.getElementById('node-category-input').value = node.category || 'ФАСАД';
-            
+
             selectDoc.value = node.linkedDoc || '';
             selectTwi.value = node.linkedTwiId || '';
             // Для старых узлов, у которых чек-лист лежал в linkedTwiChecklistKey
@@ -7016,12 +7030,12 @@ function addNodeMaterialRow() {
 
 window.currentNodeAttachments = [];
 
-window.renderNodeAttachmentsUI = async function() {
+window.renderNodeAttachmentsUI = async function () {
     const list = document.getElementById('node-attachments-list');
     if (!list) return;
-    
+
     let html = '';
-    for(let i = 0; i < window.currentNodeAttachments.length; i++) {
+    for (let i = 0; i < window.currentNodeAttachments.length; i++) {
         let att = window.currentNodeAttachments[i];
         if (att.type === 'image') {
             const realSrc = await PhotoManager.getAsyncUrl(att.url) || window.getPhotoSrc(att.url);
@@ -7047,17 +7061,17 @@ window.renderNodeAttachmentsUI = async function() {
     list.innerHTML = html;
 };
 
-window.removeNodeAttachment = function(index) {
+window.removeNodeAttachment = function (index) {
     window.currentNodeAttachments.splice(index, 1);
     window.renderNodeAttachmentsUI();
 };
 
-window.handleNodeFileUpload = function(event) {
+window.handleNodeFileUpload = function (event) {
     const file = event.target.files[0];
     if (!file) return;
 
     showToast("⚙️ Обработка файла...");
-    
+
     if (file.type === 'application/pdf') {
         if (file.size > 5 * 1024 * 1024) {
             event.target.value = '';
@@ -7103,9 +7117,9 @@ window.openFakePdfViewer = function (url, name, size) {
     }, 1000);
 };
 
-window.saveNodeCard = async function() {
+window.saveNodeCard = async function () {
     if (!rbi_requireKnowledgeEditRight()) return;
-    
+
     const title = document.getElementById('node-title-input').value.trim();
     if (!title) return showToast('⚠️ Укажите название узла!');
 
@@ -7132,7 +7146,7 @@ window.saveNodeCard = async function() {
         title: title,
         desc: document.getElementById('node-desc-input').value.trim(),
         img: imgData,
-        attachments: window.currentNodeAttachments, 
+        attachments: window.currentNodeAttachments,
         materials: materials,
         linkedDoc: document.getElementById('node-linked-doc').value || null,
         linkedTwiId: document.getElementById('node-linked-twi').value || null,
@@ -7190,7 +7204,7 @@ window.deleteNode = async function (id) {
         node.syncStatus = 'not_synced';
         node.sync_status = 'not_synced';
 
-        await dbPut(STORES.CUSTOM_NODES, node); 
+        await dbPut(STORES.CUSTOM_NODES, node);
     }
 
     showToast('🗑️ Узел удален');
@@ -9415,9 +9429,10 @@ window.rbi_createMeeting = function (customData = null) {
         });
     }
 
-    // 2. ИНЪЕКЦИЯ ОТКРЫТЫХ ЗАМЕЧАНИЙ ИЗ ПК СТРОЙКОНТРОЛЬ
-    let skOpenCount = 0;
+    // 2. ИНЪЕКЦИЯ ПРОСРОЧЕННЫХ ЗАМЕЧАНИЙ ИЗ ПК СТРОЙКОНТРОЛЬ
+    let skOverdueCount = 0;
     if (typeof window.skRecords !== 'undefined') {
+        const today = new Date();
         window.skRecords.forEach(r => {
             const isOpen = r.status && r.status.toLowerCase().includes('не устран');
             if (isOpen && r.contractor) {
@@ -9429,17 +9444,29 @@ window.rbi_createMeeting = function (customData = null) {
                 // Берем только тех подрядчиков, которых выбрали в фильтре
                 if (customData && !customData.some(c => c.contractorName === targetContr)) return;
 
-                skOpenCount++;
+                // НОВОЕ: Проверяем, просрочено ли замечание
+                let isOverdue = false;
+                if (r.deadline) {
+                    const deadlineDate = new Date(r.deadline);
+                    if (deadlineDate < today) {
+                        isOverdue = true;
+                    }
+                }
+
+                // Если замечание НЕ просрочено — пропускаем его
+                if (!isOverdue) return;
+
+                skOverdueCount++;
 
                 if (!contrDefects[targetContr]) contrDefects[targetContr] = [];
-                const defectName = r.text ? r.text.substring(0, 80) + '...' : 'Замечание без текста';
+                const defectName = r.text ? r.text : 'Замечание без текста';
 
                 let existing = contrDefects[targetContr].find(d => d.name === defectName);
                 if (existing) {
                     existing.count++;
                 } else {
-                    // Явно помечаем для генератора ИИ
-                    const explicitName = `[Официальное предписание СК] ${defectName}`;
+                    // Помечаем, что это именно просрочка
+                    const explicitName = `[Просрочено в СК] ${defectName}`;
                     contrDefects[targetContr].push({
                         name: explicitName, count: 1, isB3: false, isSk: true, deadline: r.deadline
                     });
@@ -9492,42 +9519,70 @@ window.rbi_createMeeting = function (customData = null) {
                 <div class="space-y-3">
         `;
 
-        contrDefects[cName].sort((a, b) => b.isB3 - a.isB3 || b.isSk - a.isSk || b.count - a.count).forEach(def => {
-            let borderCls = def.isB3 ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-orange-500 bg-orange-50 dark:bg-orange-900/10';
-            let badgeHtml = def.isB3 ? '<span class="text-[9px] bg-red-600 text-white px-1 rounded mr-1">B3</span>' : '';
-            let defDeadline = '';
+        // 1. Создаем корзины для группировки
+        let b3List = [];
+        let b2List = [];
+        let skList = [];
+        let carryList = [];
+        let earliestSkDeadline = '';
 
-            if (def.isSk) {
-                borderCls = 'border-blue-500 bg-blue-50 dark:bg-blue-900/10';
-                badgeHtml = '<span class="text-[9px] bg-blue-600 text-white px-1 rounded mr-1">ПК СК</span>';
-                if (def.deadline) defDeadline = ` value="${def.deadline.split('T')[0]}"`;
-            }
+        // 2. Раскладываем дефекты по корзинам (сортируем по частоте)
+        contrDefects[cName].sort((a, b) => b.count - a.count).forEach(def => {
             if (def.isCarryOver) {
-                borderCls = 'border-purple-500 bg-purple-50 dark:bg-purple-900/10';
-                badgeHtml = '<span class="text-[9px] bg-purple-600 text-white px-1 rounded mr-1">С ПРОШЛОГО СОВЕЩАНИЯ</span>';
+                carryList.push(`${def.name}`);
+            } else if (def.isSk) {
+                let cleanName = def.name.replace('[Официальное предписание СК] ', '');
+                skList.push(`${cleanName}`);
+                if (def.deadline) {
+                    if (!earliestSkDeadline || new Date(def.deadline) < new Date(earliestSkDeadline)) {
+                        earliestSkDeadline = def.deadline.split('T')[0];
+                    }
+                }
+            } else if (def.isB3) {
+                b3List.push(`${def.name} (${def.count} раз)`);
+            } else {
+                b2List.push(`${def.name} (${def.count} раз)`);
             }
+        });
 
-            agendaHtml += `
+        // 3. Вспомогательная функция отрисовки одной сгруппированной строки
+        const renderGroupRow = (groupTitle, itemsArray, borderCls, badgeHtml, defaultDeadline = '') => {
+            if (itemsArray.length === 0) return '';
+            
+            // Текст для скрытого инпута (уйдет в ИИ)
+            const fullText = groupTitle + ':\\n• ' + itemsArray.join('\\n• ');
+            // HTML для вывода на экран (красивый маркированный список)
+            const htmlText = `<ul class="list-disc pl-4 mt-1 space-y-0.5"><li>` + itemsArray.join('</li><li>') + `</li></ul>`;
+            const defDeadline = defaultDeadline ? ` value="${defaultDeadline}"` : '';
+
+            return `
                 <div class="meeting-agenda-row border-l-2 ${borderCls} pl-2 py-1 relative">
                     <input type="hidden" class="agenda-meta-contr" value="${cName}">
-                    <input type="hidden" class="agenda-meta-defect" value="${def.name}">
+                    <input type="hidden" class="agenda-meta-defect" value="${fullText.replace(/"/g, '&quot;')}">
                     
-                    <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 leading-snug">
-                        ${badgeHtml}
-                        ${def.name} <span class="text-slate-400">(${def.count} раз)</span>
+                    <div class="text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1 leading-snug">
+                        <div class="font-bold flex items-center gap-1.5">${badgeHtml} ${groupTitle}</div>
+                        ${htmlText}
                     </div>
                     
                     <div class="flex flex-wrap gap-2 mt-2">
-                        <label class="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 cursor-pointer">
+                        <label class="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 cursor-pointer active:scale-95 transition-transform">
                             <input type="checkbox" class="agenda-done-cb w-3.5 h-3.5 accent-green-600"> Решено
                         </label>
                         <input type="date" class="agenda-date input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]" ${defDeadline}>
                         <input type="text" class="agenda-resp input-base !py-1 !text-[10px] !w-auto flex-1 min-w-[90px]" placeholder="Ответственный...">
                     </div>
-                    <textarea class="agenda-comment input-base mt-2 h-10 resize-none text-[10px]" placeholder="Решение / Тезис..."></textarea>
+                    <textarea class="agenda-comment input-base mt-2 h-10 resize-none text-[10px]" placeholder="Что решили по этому блоку проблем..."></textarea>
                 </div>
             `;
-        });
+        };
+
+        // 4. Отрисовываем корзины в строгом порядке
+        agendaHtml += renderGroupRow('Критические аварии', b3List, 'border-red-500 bg-red-50 dark:bg-red-900/10', '<span class="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded font-black">B3</span>');
+        agendaHtml += renderGroupRow('Повторяющиеся нарушения', b2List, 'border-orange-500 bg-orange-50 dark:bg-orange-900/10', '<span class="text-[9px] bg-orange-500 text-white px-1.5 py-0.5 rounded font-black">B2</span>');
+        agendaHtml += renderGroupRow('Открытые предписания', skList, 'border-blue-500 bg-blue-50 dark:bg-blue-900/10', '<span class="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-black">ПК СК</span>', earliestSkDeadline);
+        agendaHtml += renderGroupRow('Долги с прошлых планерок', carryList, 'border-purple-500 bg-purple-50 dark:bg-purple-900/10', '<span class="text-[9px] bg-purple-600 text-white px-1.5 py-0.5 rounded font-black">ДОЛГ</span>');
+
         agendaHtml += `</div></div>`;
     }
 
@@ -9561,8 +9616,8 @@ window.rbi_createMeeting = function (customData = null) {
                         <div class="text-[20px] font-black leading-none ${b3Count > 0 ? 'text-red-600' : 'text-green-600'}">${b3Count}</div>
                     </div>
                     <div class="bg-white dark:bg-slate-800 border border-[var(--card-border)] p-3 rounded-xl shadow-sm flex flex-col justify-center col-span-2 sm:col-span-1">
-                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Открыто в ПК СК</div>
-                        <div class="text-[20px] font-black leading-none text-blue-600">${skOpenCount}</div>
+                        <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Просрочено в ПК СК</div>
+                        <div class="text-[20px] font-black leading-none text-red-600">${skOverdueCount}</div>
                     </div>
                 </div>
 
@@ -10684,13 +10739,13 @@ window.rbi_openPracticeViewer = async function (id) {
     let imgBeforeHtml = '';
     if (p.photoBefore) {
         const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
-        imgBeforeHtml = `<img src="${realBefore}" class="w-full h-32 object-cover rounded-lg border border-slate-200 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoBefore}')">`;
+        imgBeforeHtml = `<img src="${realBefore}" class="w-full h-40 object-contain bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoBefore}')">`;
     }
 
     let imgAfterHtml = '';
     if (p.photoAfter) {
         const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
-        imgAfterHtml = `<img src="${realAfter}" class="w-full h-32 object-cover rounded-lg border border-slate-200 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoAfter}')">`;
+        imgAfterHtml = `<img src="${realAfter}" class="w-full h-40 object-contain bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoAfter}')">`;
     }
 
     const modal = document.getElementById('modal-overlay');
@@ -11294,7 +11349,7 @@ window.applyContractorAliasToInspectionHistory = async function (rawName, canoni
     return updated;
 };
 
-window.openNodeAttachmentPdf = function(url, name, size) {
+window.openNodeAttachmentPdf = function (url, name, size) {
     // Создаем временную карточку, чтобы наша встроенная TWI-читалка смогла её открыть
     const fakeId = 'fake_pdf_' + Date.now();
     const fakeCard = {
@@ -11306,13 +11361,13 @@ window.openNodeAttachmentPdf = function(url, name, size) {
         pdfName: name || 'document.pdf',
         pdfSize: size || ''
     };
-    
+
     // Добавляем в массив
     customTwiCards.push(fakeCard);
-    
+
     // Открываем читалку
     openTwiViewer(fakeId);
-    
+
     // Через 2 секунды удаляем временную карточку, чтобы не засорять базу
     setTimeout(() => {
         const idx = customTwiCards.findIndex(c => c.id === fakeId);

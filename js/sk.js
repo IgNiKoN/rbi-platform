@@ -2450,7 +2450,7 @@ window.sk_renderHrTab = function () {
                     Разобрать
                 </button>
             </div>
-            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium"></div>
+            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium max-h-[300px] overflow-y-auto custom-scrollbar"></div>
         </div>
     `;
 };

@@ -7,7 +7,8 @@
     <title>RBI QUALITY Pro</title>
 
     <link rel="manifest" href="./manifest.webmanifest">
-    <meta name="theme-color" content="#4f46e5">
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -1890,6 +1891,10 @@
                                 <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
                                 <select id="twi-linked-doc-id" class="input-base text-[12px]"></select>
                             </div>
+                            <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ссылка на видео (YouTube / Облако)</label>
+                                <input type="url" id="twi-video-link-input" class="input-base text-[12px]" placeholder="https://...">
+                            </div>
                         </div>
 
                         <!-- БЛОК А: ТЕХНАДЗОР (ПРАВИЛЬНО/БРАК) -->
@@ -3371,9 +3376,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.203',
-            sw: '17.8.203',
-            buildDate: '2026-05-26'
+            app: '17.8.204',
+            sw: '17.8.204',
+            buildDate: '2026-05-28'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->

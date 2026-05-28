@@ -2555,7 +2555,7 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         });
     }
 
-    // 5. PDF-Отчеты (Скачиваем сами файлы для офлайна)
+    // 5. PDF-Отчеты
     if (typeof reportsArray !== 'undefined') {
         reportsArray.forEach(rep => {
             if (rep.file_url && rep.file_url.startsWith('http') && !rep.file_blob) {
@@ -2566,88 +2566,65 @@ window.downloadMissingCloudFiles = async function (silent = false) {
 
     let downloadedCount = 0;
     let alreadyCachedCount = 0;
-    const total = urlsToDownload.size;
+    const urlArray = Array.from(urlsToDownload);
+    const total = urlArray.length;
+    const BATCH_SIZE = 5; // Качаем по 5 файлов за раз
 
-    for (const url of urlsToDownload) {
-        if (url.includes('/reports/')) {
-            try {
-                // Если это отчет, скачиваем его как Blob и сохраняем в базу отчетов
-                const repObj = reportsArray.find(r => r.file_url === url);
-                if (repObj && !repObj.file_blob) {
-                    if (!silent && loaderText) loaderText.innerText = `Кэширование отчета...`;
-
-                    const res = await rbiFetchCloudFileNoBrowserCache(url);
-
-                    if (res.ok) {
-                        const reportBlob = await res.blob();
-
-                        repObj.file_blob = reportBlob;
-                        repObj.cache_status = 'cached_cloud';
-                        repObj.cacheStatus = 'cached_cloud';
-                        repObj.updatedAt = new Date().toISOString();
-                        repObj.updated_at = repObj.updatedAt;
-
-                        await dbPut(STORES.REPORTS, repObj);
-
-                        if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
-                            await window.RbiStorageManager.markCloudFileCached(
-                                url,
-                                reportBlob.size || 0,
-                                reportBlob.type || 'application/pdf'
-                            );
-                        }
-
-                        downloadedCount++;
-                    }
-                }
-            } catch (e) {
-                console.warn('Ошибка кэширования PDF:', e);
-            }
-
-            continue;
-        }
-        // Уже в RAM‑кэше
-        if (PhotoManager.cache[url]) {
-            alreadyCachedCount++;
-            continue;
-        }
-
-        // Проверяем IndexedDB
-        try {
-            const alreadyInDb = await dbGet(STORES.PHOTOS, url);
-            if (alreadyInDb) {
-                alreadyCachedCount++;
-                continue;
-            }
-        } catch (e) {
-            // ошибка чтения базы — не считаем ни кэшем, ни загрузкой
-            continue;
-        }
-
-        // Для cloud:// без локального файла — просто пропускаем (не ошибка)
-        if (url.startsWith('cloud://')) {
-            continue;
-        }
-
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = urlArray.slice(i, i + BATCH_SIZE);
+        
         if (!silent && loaderText) {
-            loaderText.innerText = `Кэширование: ${downloadedCount + 1} из ${total - alreadyCachedCount}…`;
+            loaderText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount} из ${total}…`;
         }
 
-        try {
-            await PhotoManager.getBase64(url);
-            downloadedCount++;
-        } catch (e) {
-            console.warn('[Cache] Ошибка загрузки:', url.substring(0, 80), e.message);
-            // продолжаем, это не прерывает общий процесс
-        }
+        const promises = batch.map(async (url) => {
+            try {
+                if (url.includes('/reports/')) {
+                    const repObj = reportsArray.find(r => r.file_url === url);
+                    if (repObj && !repObj.file_blob) {
+                        const res = await rbiFetchCloudFileNoBrowserCache(url);
+                        if (res.ok) {
+                            const reportBlob = await res.blob();
+                            repObj.file_blob = reportBlob;
+                            repObj.cache_status = 'cached_cloud';
+                            repObj.cacheStatus = 'cached_cloud';
+                            repObj.updatedAt = new Date().toISOString();
+                            repObj.updated_at = repObj.updatedAt;
+                            await dbPut(STORES.REPORTS, repObj);
+
+                            if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
+                                await window.RbiStorageManager.markCloudFileCached(url, reportBlob.size || 0, reportBlob.type || 'application/pdf');
+                            }
+                            downloadedCount++;
+                        }
+                    }
+                    return;
+                }
+
+                // Уже в RAM‑кэше
+                if (PhotoManager.cache[url]) { alreadyCachedCount++; return; }
+
+                // Проверяем IndexedDB
+                const alreadyInDb = await dbGet(STORES.PHOTOS, url);
+                if (alreadyInDb) { alreadyCachedCount++; return; }
+
+                if (url.startsWith('cloud://')) return;
+
+                await PhotoManager.getBase64(url);
+                downloadedCount++;
+            } catch (e) {
+                console.warn('[Cache] Пропущен файл:', url.substring(0, 30));
+            }
+        });
+
+        // Ждем завершения пачки
+        await Promise.all(promises);
     }
 
-    // Итоговое сообщение
     if (typeof showToast === 'function') {
         if (downloadedCount > 0) {
             showToast(`📥 Автокэширование завершено. Загружено файлов: ${downloadedCount}`);
         } else if (!silent) {
-            // Если кнопку нажали вручную, а качать нечего
             if (alreadyCachedCount === total && total > 0) {
                 showToast(`✅ Все файлы уже сохранены на устройстве.`);
             } else if (total === 0) {

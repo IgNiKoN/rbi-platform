@@ -1667,26 +1667,25 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
     for (const row of data || []) {
         let obj = {};
 
-        // Распаковываем JSONB (если данные хранятся внутри поля data)
+        // Распаковываем JSONB
         if (row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
             obj = { ...row.data };
         } else if (row.template_data) {
-            obj = { ...row.template_data }; // Для report_templates
+            obj = { ...row.template_data }; 
         }
 
-        // Накатываем сверху поля из корневой таблицы (чтобы они имели приоритет)
         obj = { ...obj, ...row };
 
         // Нормализуем системные ключи
         obj.id = row.id;
         obj.updatedAt = row.updated_at;
         obj.createdAt = row.created_at;
-        obj.is_deleted = row.is_deleted;
-        obj._deleted = row.is_deleted;
-        if (row.is_deleted) obj._deletedAt = row.deleted_at || row.updated_at;
+        obj.is_deleted = row.is_deleted === true;
+        obj._deleted = obj.is_deleted;
+        if (obj.is_deleted) obj._deletedAt = row.deleted_at || row.updated_at;
         if (row.owner || row.created_by) obj.owner = row.owner || row.created_by;
 
-        // Доп. фильтрация RLS на клиенте (чтобы РП видел только свои объекты и т.д.)
+        // RLS фильтрация на клиенте (защита от "чужих" данных для инженера)
         if (!isShared) {
             const itemProject = obj.project_canonical_key || obj.project || '';
             const itemContr = obj.contractor_name || obj.contractor || '';
@@ -1697,6 +1696,7 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
                 if (!myContrName || (itemContr && itemContr !== myContrName)) continue;
                 if (myProjects.length > 0 && itemProject && itemProject !== 'Все' && !myProjects.includes(itemProject)) continue;
             } else if (role === 'engineer') {
+                // Если включен режим "Только мои" - отсекаем чужое
                 if (window.syncConfig.syncMode === 'personal' && itemEngineer && itemEngineer !== iName) continue;
                 const isGlobal = !itemProject || itemProject.toLowerCase().includes('все ') || itemProject === 'all';
                 if (myProjects.length > 0 && !isGlobal && !myProjects.includes(itemProject)) continue;
@@ -2845,27 +2845,19 @@ if (window.RbiStorageManager) {
         }
         let currentHistory = []; // <-- ОБЪЯВЛЯЕМ СНАРУЖИ БЛОКА
         // =====================================================
-        // 5. PUSH: локальная история в новую архитектуру
+        // 5. PUSH: локальная история в новую архитектуру (ОПТИМИЗИРОВАНО)
         // =====================================================
         if (canPush) {
-            // Отправлять историю в облако могут только инженеры и менеджеры.
             currentHistory = typeof dbGetAll === 'function' ? (await dbGetAll('app_history') || []) : [];
 
-            // Если не админ, отправляем ТОЛЬКО свои проверки, чтобы случайно не затереть чужие
             const currentPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-
             if (!['manager', 'deputy_manager'].includes(currentPushRole)) {
                 currentHistory = currentHistory.filter(i => i.inspectorName === iName);
             }
 
-            // --- ЖЕСТКАЯ БЛОКИРОВКА "ЭХА" ---
-            // Не отправляем обратно то, что только что скачали из облака!
+            // Блокируем "эхо" облачных задач
             currentHistory = currentHistory.filter(i => {
-                // Если запись пришла из облака и уже синхронизирована — пропускаем
-                if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') {
-                    return false;
-                }
-
+                if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
                 if (!lastPushAt) return true;
                 const lastPushTime = new Date(lastPushAt).getTime();
                 const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
@@ -2873,34 +2865,33 @@ if (window.RbiStorageManager) {
             });
 
             if (currentHistory.length > 0) {
+                const inspectionsBatch = [];
+                const itemsBatch = [];
+                const photosBatch = [];
+                const localHistoryToUpdate = [];
 
+                // Собираем пакеты данных
                 for (const c of currentHistory) {
                     const inspectionId = String(c.id);
-                    const photoRows = [];
-                    const uploadedPhotos = {};
-                    const storagePathsToRemove = []; // Для мягкого удаления фото
                     const isDeleted = c._deleted === true;
-                    // --- РЕТРОАКТИВНАЯ НОРМАЛИЗАЦИЯ ИМЕНИ ОБЪЕКТА ---
-                    // Если у локальной проверки нет жесткого ключа или он равен сырому тексту:
+
+                    // Ретроактивная нормализация объекта
                     if (typeof ObjectDirectory !== 'undefined' && (!c.project_canonical_key || c.project_canonical_key === c.projectName || c.project_canonical_key === c.project_display_name)) {
                         try {
                             const match = await ObjectDirectory.normalizeProjectName(c.projectName || c.project_display_name);
                             if (match && match.status === 'matched') {
                                 c.project_canonical_key = match.canonical_key;
                                 c.project_display_name = match.display_name;
-                                c.projectName = match.display_name; // Обновляем старое поле тоже
-                                if (typeof dbPut === 'function') await dbPut('app_history', c); // Сохраняем обновление
+                                c.projectName = match.display_name; 
                             }
-                        } catch (err) { console.warn("[Sync] Ошибка ретроактивной нормализации:", err); }
+                        } catch (err) {}
                     }
-                    // ------------------------------------------------
-                    // Проверяем, можно ли отправлять локальную или импортированную запись.
-                    // ВАЖНО: проверка должна быть ДО загрузки фото.
+
+                    // Проверка прав на отправку
                     if (c.source === 'local' || c.importedFromBackup) {
                         const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
                         const currentEngineer = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : (window.syncConfig?.engineerName || '');
                         const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : (appSettings?.assignedProjects || []);
-
                         const recProject = c.project_canonical_key || c.projectName || '';
                         const recEngineer = c.inspectorName || c.inspector_name || '';
 
@@ -2913,277 +2904,145 @@ if (window.RbiStorageManager) {
                             allowedToPush = true;
                         } else if (currentRole === 'engineer') {
                             const ownerOk = !recEngineer || recEngineer === currentEngineer;
-                            const projectOk =
-                                !assignedProjects ||
-                                assignedProjects.length === 0 ||
-                                assignedProjects.includes(recProject);
+                            const projectOk = !assignedProjects || assignedProjects.length === 0 || assignedProjects.includes(recProject);
 
-                            if (ownerOk && projectOk) {
-                                allowedToPush = true;
-                            } else if (!ownerOk) {
-                                blockReason = 'Запись создана другим инженером';
-                            } else {
-                                blockReason = 'Объект не назначен пользователю';
-                            }
+                            if (ownerOk && projectOk) allowedToPush = true;
+                            else if (!ownerOk) blockReason = 'Запись создана другим инженером';
+                            else blockReason = 'Объект не назначен пользователю';
                         } else {
                             blockReason = 'Эта роль не может отправлять проектные данные';
                         }
 
                         if (!allowedToPush) {
-                            c.syncStatus = 'blocked';
-                            c.sync_status = 'blocked';
-                            c.syncBlockReason = blockReason || 'Отправка запрещена';
-                            c.sync_block_reason = c.syncBlockReason;
+                            c.syncStatus = 'blocked'; c.sync_status = 'blocked';
+                            c.syncBlockReason = blockReason || 'Отправка запрещена'; c.sync_block_reason = c.syncBlockReason;
                             c.updatedAt = new Date().toISOString();
-
-                            if (typeof dbPut === 'function') {
-                                await dbPut('app_history', c);
-                            }
-
+                            localHistoryToUpdate.push(c);
                             continue;
                         }
                     }
-                    for (const itemId of Object.keys(c.photos || {})) {
+
+                    const uploadedPhotos = {};
+                    const storagePathsToRemove = [];
+
+                    // ПАРАЛЛЕЛЬНАЯ отправка фото для одной инспекции
+                    const photoPromises = Object.keys(c.photos || {}).map(async (itemId) => {
                         const oldPhoto = c.photos[itemId];
 
                         if (isDeleted) {
-                            // Если проверка удалена, фото в облако не грузим, а наоборот - удаляем
                             const path = getStoragePathFromPublicUrl(oldPhoto, 'inspection-photos');
                             if (path) storagePathsToRemove.push(path);
-
                             if (oldPhoto && isHttpUrl(oldPhoto)) {
-                                photoRows.push({
-                                    id: `${inspectionId}_${itemId}_main`,
-                                    inspection_id: inspectionId,
-                                    project_code: pCode,
-                                    project_canonical_key: c.project_canonical_key || c.projectName || '',
-                                    source: 'cloud',
-                                    sync_status: 'synced',
-                                    sync_block_reason: '',
-                                    item_id: String(itemId),
-                                    photo_type: 'inspection',
-                                    bucket_name: 'inspection-photos',
-                                    storage_path: path,
-                                    public_url: oldPhoto,
-                                    updated_at: new Date().toISOString()
+                                photosBatch.push({
+                                    id: `${inspectionId}_${itemId}_main`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                    source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_type: 'inspection',
+                                    bucket_name: 'inspection-photos', storage_path: path, public_url: oldPhoto, updated_at: new Date().toISOString()
                                 });
                             }
-                        } else {
-                            // Стандартная загрузка фото
-                            let localPhotoSizeBytes = 0;
-                            let localPhotoMimeType = '';
+                            return;
+                        }
 
-                            try {
-                                if (oldPhoto && typeof oldPhoto === 'string' && oldPhoto.startsWith('local://') && typeof dbGet === 'function') {
-                                    const localPhotoRecord = await dbGet('app_photos', oldPhoto);
-
-                                    if (localPhotoRecord && localPhotoRecord.data) {
-                                        localPhotoSizeBytes = localPhotoRecord.data.byteLength || localPhotoRecord.sizeBytes || localPhotoRecord.size_bytes || 0;
-                                        localPhotoMimeType = localPhotoRecord.mimeType || localPhotoRecord.mime_type || '';
-                                    }
+                        let localPhotoSizeBytes = 0; let localPhotoMimeType = '';
+                        try {
+                            if (oldPhoto && oldPhoto.startsWith('local://') && typeof dbGet === 'function') {
+                                const localPhotoRecord = await dbGet('app_photos', oldPhoto);
+                                if (localPhotoRecord && localPhotoRecord.data) {
+                                    localPhotoSizeBytes = localPhotoRecord.data.byteLength || localPhotoRecord.sizeBytes || 0;
+                                    localPhotoMimeType = localPhotoRecord.mimeType || localPhotoRecord.mime_type || '';
                                 }
-                            } catch (e) {
-                                console.warn('[FileRegistry] Не удалось получить размер локального фото:', e);
                             }
+                        } catch (e) { }
 
-                            const publicUrl = await window.rbiUploadAsset(
-                                oldPhoto,
-                                'inspection-photos',
-                                `${pCode}/inspections/${inspectionId}/${itemId}`,
-                                'photo'
-                            );
+                        const publicUrl = await window.rbiUploadAsset(oldPhoto, 'inspection-photos', `${pCode}/inspections/${inspectionId}/${itemId}`, 'photo');
+                        uploadedPhotos[itemId] = publicUrl;
 
-                            uploadedPhotos[itemId] = publicUrl;
+                        if (publicUrl && isHttpUrl(publicUrl)) {
+                            const photoStoragePath = getStoragePathFromPublicUrl(publicUrl, 'inspection-photos');
+                            photosBatch.push({
+                                id: `${inspectionId}_${itemId}_main`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_type: 'inspection',
+                                bucket_name: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, updated_at: new Date().toISOString()
+                            });
 
-                            if (publicUrl && isHttpUrl(publicUrl)) {
-                                const photoStoragePath = getStoragePathFromPublicUrl(publicUrl, 'inspection-photos');
-
-                                photoRows.push({
-                                    id: `${inspectionId}_${itemId}_main`,
-                                    inspection_id: inspectionId,
-                                    project_code: pCode,
-                                    project_canonical_key: c.project_canonical_key || c.projectName || '',
-                                    source: 'cloud',
-                                    sync_status: 'synced',
-                                    sync_block_reason: '',
-                                    item_id: String(itemId),
-                                    photo_type: 'inspection',
-                                    bucket_name: 'inspection-photos',
-                                    storage_path: photoStoragePath,
-                                    public_url: publicUrl,
-                                    updated_at: new Date().toISOString()
+                            if (oldPhoto && oldPhoto.startsWith('local://') && typeof PhotoManager !== 'undefined') {
+                                await PhotoManager.linkCloudToLocal(oldPhoto, publicUrl);
+                            }
+                            if (window.RbiStorageManager && typeof window.RbiStorageManager.registerUploadedFile === 'function') {
+                                await window.RbiStorageManager.registerUploadedFile({
+                                    project_code: pCode, entity_type: 'inspection_photo', entity_id: inspectionId, field_path: `photos.${itemId}`,
+                                    bucket: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, original_name: `inspection_${inspectionId}_${itemId}`,
+                                    mime_type: localPhotoMimeType, size_bytes: localPhotoSizeBytes, uploaded_by: iName, cache_policy: 'auto', cache_status: 'cached_cloud'
                                 });
-
-                                // RBI NEW: связываем локальную копию с облачной ссылкой.
-                                // Было local://..., становится https://...
-                                if (
-                                    oldPhoto &&
-                                    typeof oldPhoto === 'string' &&
-                                    oldPhoto.startsWith('local://') &&
-                                    typeof PhotoManager !== 'undefined' &&
-                                    typeof PhotoManager.linkCloudToLocal === 'function'
-                                ) {
-                                    await PhotoManager.linkCloudToLocal(oldPhoto, publicUrl);
-                                }
-
-                                // RBI NEW: регистрируем фото проверки в общем файловом реестре
-                                if (window.RbiStorageManager && typeof window.RbiStorageManager.registerUploadedFile === 'function') {
-                                    await window.RbiStorageManager.registerUploadedFile({
-                                        project_code: pCode,
-
-                                        entity_type: 'inspection_photo',
-                                        entity_id: inspectionId,
-                                        field_path: `photos.${itemId}`,
-
-                                        bucket: 'inspection-photos',
-                                        storage_path: photoStoragePath,
-                                        public_url: publicUrl,
-
-                                        original_name: `inspection_${inspectionId}_${itemId}`,
-                                        mime_type: localPhotoMimeType,
-                                        size_bytes: localPhotoSizeBytes,
-
-                                        uploaded_by: iName,
-                                        cache_policy: 'auto',
-                                        cache_status: 'cached_cloud'
-                                    });
-                                }
                             }
                         }
-                    }
+                    });
 
-                    // Если есть фото для удаления из бакета Supabase
+                    await Promise.all(photoPromises); // Дожидаемся фоток
+
                     if (storagePathsToRemove.length > 0) {
-                        const { error: rmErr } = await window.supabaseClient.storage
-                            .from('inspection-photos')
-                            .remove(storagePathsToRemove);
-                        if (rmErr) console.warn("[Sync] Ошибка удаления фото инспекции из Storage:", rmErr);
+                        await window.supabaseClient.storage.from('inspection-photos').remove(storagePathsToRemove);
                     }
 
-                    // Проверяем, можно ли отправлять локальную или импортированную запись
+                    // Формируем пакет самой проверки
+                    inspectionsBatch.push({
+                        id: inspectionId, project_code: pCode,
+                        project_name: c.project_display_name || c.projectName || '', project_canonical_key: c.project_canonical_key || c.projectName || '', project_display_name: c.project_display_name || c.projectName || '',
+                        engineer_name: c.inspectorName || iName, inspector_name: c.inspectorName || iName, contractor_name: c.contractorName || '',
+                        template_key: c.templateKey || '', template_title: c.templateTitle || '', location: c.location || '',
+                        section: c.section || '', floor: c.floor || '', room: c.room || '', inspection_date: c.date || new Date().toISOString(),
+                        metrics: c.metrics || {}, is_completed: c.isCompleted !== false, is_deleted: isDeleted, deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
+                        source: 'cloud', sync_status: 'synced', sync_block_reason: '', updated_at: new Date().toISOString()
+                    });
 
-                    const { error: headerError } = await window.supabaseClient
-                        .from('rbi_inspections')
-                        .upsert({
-                            id: inspectionId,
-                            project_code: pCode,
-
-                            // Старое поле
-                            project_name: c.project_display_name || c.projectName || '',
-
-                            // Новые поля объектной модели
-                            project_canonical_key: c.project_canonical_key || c.projectName || '',
-                            project_display_name: c.project_display_name || c.projectName || '',
-
-                            engineer_name: c.inspectorName || iName,
-                            inspector_name: c.inspectorName || iName,
-                            contractor_name: c.contractorName || '',
-                            template_key: c.templateKey || '',
-                            template_title: c.templateTitle || '',
-                            location: c.location || '',
-                            section: c.section || '',
-                            floor: c.floor || '',
-                            room: c.room || '',
-                            inspection_date: c.date || new Date().toISOString(),
-                            metrics: c.metrics || {},
-                            is_completed: c.isCompleted !== false,
-                            is_deleted: isDeleted,
-                            deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
-
-                            source: 'cloud',
-                            sync_status: 'synced',
-                            sync_block_reason: '',
-
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'id' });
-
-                    if (headerError) throw headerError;
-                    actuallyPushedChecks++;
-
-                    // После успешной отправки шапки проверки помечаем локальную запись как синхронизированную.
-                    // Это важно для разделения "Моя аналитика" / "Облачная аналитика".
-                    if (!isDeleted) {
-                        c.source = 'cloud';
-                        c.syncStatus = 'synced';
-                        c.sync_status = 'synced';
-                        c.syncBlockReason = '';
-                        c.sync_block_reason = '';
-                        c.importedFromBackup = false;
-                        c.updatedAt = new Date().toISOString();
-                        c.updated_at = c.updatedAt;
-
-                        if (typeof dbPut === 'function') {
-                            await dbPut('app_history', c);
-                        }
-                    }
-
-                    const itemRows = [];
-
+                    // Формируем пакет нарушений
                     for (const itemId of Object.keys(c.state || {})) {
                         const info = getChecklistItem(c.templateKey || '', itemId);
                         const d = (c.details || {})[itemId] || {};
-
-                        itemRows.push({
-                            id: `${inspectionId}_${itemId}`,
-                            inspection_id: inspectionId,
-                            project_code: pCode,
-                            project_canonical_key: c.project_canonical_key || c.projectName || '',
-                            source: 'cloud',
-                            sync_status: 'synced',
-                            sync_block_reason: '',
-                            item_id: String(itemId),
-                            item_name: info?.n || d.name || '',
-                            item_weight: info?.w || d.weight || null,
-                            status: c.state[itemId],
-                            comment: d.comment || d.text || '',
-                            cause_code: d.causeCode || '',
-                            fact_value: d.fact || d.factValue || '',
-                            tolerance_value: d.tolerance || d.toleranceValue || '',
-                            details: d,
-                            updated_at: new Date().toISOString()
+                        itemsBatch.push({
+                            id: `${inspectionId}_${itemId}`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
+                            source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), item_name: info?.n || d.name || '', item_weight: info?.w || d.weight || null,
+                            status: c.state[itemId], comment: d.comment || d.text || '', cause_code: d.causeCode || '', fact_value: d.fact || d.factValue || '', tolerance_value: d.tolerance || d.toleranceValue || '',
+                            details: d, updated_at: new Date().toISOString()
                         });
                     }
 
-                    if (itemRows.length > 0) {
-                        const { error: itemError } = await window.supabaseClient
-                            .from('rbi_inspection_items')
-                            .upsert(itemRows, { onConflict: 'id' });
-
-                        if (itemError) throw itemError;
+                    // Помечаем, что всё ок
+                    if (!isDeleted) {
+                        c.photos = uploadedPhotos; c.source = 'cloud'; c.syncStatus = 'synced'; c.sync_status = 'synced';
+                        c.syncBlockReason = ''; c.sync_block_reason = ''; c.importedFromBackup = false;
+                        c.updatedAt = new Date().toISOString(); c.updated_at = c.updatedAt;
+                        localHistoryToUpdate.push(c);
                     }
+                }
 
-                    if (photoRows.length > 0) {
-                        const { error: photoError } = await window.supabaseClient
-                            .from('rbi_inspection_photos')
-                            .upsert(photoRows, { onConflict: 'id' });
+                // 🚀 ПАКЕТНАЯ ОТПРАВКА В БАЗУ (Вжух и готово!)
+                if (inspectionsBatch.length > 0) {
+                    const { error } = await window.supabaseClient.from('rbi_inspections').upsert(inspectionsBatch, { onConflict: 'id' });
+                    if (error) throw error;
+                    actuallyPushedChecks += inspectionsBatch.length;
+                }
 
-                        if (photoError) throw photoError;
+                // Бьем на куски по 1000 строк (лимит Supabase)
+                if (itemsBatch.length > 0) {
+                    for (let i = 0; i < itemsBatch.length; i += 1000) {
+                        await window.supabaseClient.from('rbi_inspection_items').upsert(itemsBatch.slice(i, i + 1000), { onConflict: 'id' });
+                    }
+                }
 
-                        if (!isDeleted) {
-                            c.photos = uploadedPhotos;
-                            c.source = 'cloud';
-                            c.syncStatus = 'synced';
-                            c.sync_status = 'synced';
-                            c.updatedAt = new Date().toISOString();
-                            c.updated_at = c.updatedAt;
+                if (photosBatch.length > 0) {
+                    for (let i = 0; i < photosBatch.length; i += 1000) {
+                        await window.supabaseClient.from('rbi_inspection_photos').upsert(photosBatch.slice(i, i + 1000), { onConflict: 'id' });
+                    }
+                }
 
-                            if (typeof dbPut === 'function') {
-                                await dbPut('app_history', c);
-                            }
-
-                            // RBI FIX: обновляем объект в памяти без перезагрузки приложения.
-                            // Иначе история/аналитика могут продолжать показывать старые local:// ссылки.
-                            if (Array.isArray(contractorArray)) {
-                                const idx = contractorArray.findIndex(x => String(x.id) === String(c.id));
-                                if (idx >= 0) {
-                                    contractorArray[idx] = {
-                                        ...contractorArray[idx],
-                                        ...c,
-                                        photos: { ...uploadedPhotos }
-                                    };
-                                }
-                            }
-                        }
+                // Обновляем локальную базу
+                if (localHistoryToUpdate.length > 0 && typeof dbPutBatch === 'function') {
+                    await dbPutBatch('app_history', localHistoryToUpdate);
+                    if (Array.isArray(contractorArray)) {
+                        localHistoryToUpdate.forEach(updatedC => {
+                            const idx = contractorArray.findIndex(x => String(x.id) === String(updatedC.id));
+                            if (idx >= 0) contractorArray[idx] = updatedC;
+                        });
                     }
                 }
             }
@@ -3994,7 +3853,14 @@ if (window.RbiStorageManager) {
         window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
         // Перезагружаем Справочник объектов в память, если он прилетел из облака
         if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
+        
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
+        // НОВОЕ: Принудительно очищаем оперативную память от дублей, загружая свежие задачи прямо из IndexedDB
+        if (typeof dbGetAll === 'function') {
+            const freshTasks = await dbGetAll('rbi_tasks');
+            if (freshTasks) window.rbi_tasksData = freshTasks.filter(t => !t._deleted);
+        }
+
         // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
         if (typeof window.rbi_generateAutoTasks === 'function') {
             await window.rbi_generateAutoTasks(true);
@@ -4005,8 +3871,8 @@ if (window.RbiStorageManager) {
         }
 
         // 2. Пересчитываем рутинные задачи (Аудиты, Эталоны) после получения свежей истории из облака
-        if (typeof gameGenerateWeeklyPlan === 'function') {
-            await gameGenerateWeeklyPlan(true);
+        if (typeof gameForceUpdatePlan === 'function') {
+            await gameForceUpdatePlan(true); // Запускаем чистильщик-генератор вместо обычной генерации
         }
         // RBI NEW: мягкая автоочистка после полного успешного цикла синхронизации.
         // Ставим здесь, а не после профиля, чтобы сначала завершились проверки, задачи, справочники и интерфейсные флаги.

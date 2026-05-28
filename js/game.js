@@ -2589,7 +2589,8 @@ window.rbi_viewFmea = async function (fmeaId) {
             ${rowsHtml}
         </div>
         <div class="flex gap-2 mt-2">
-            <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В Файл (PDF)</button>
+            <button onclick="rbi_exportFmeaExcel('${record.id}')" class="flex-[0.5] bg-green-50 text-green-700 border border-green-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> В Excel</button>
+            <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В PDF</button>
             <button onclick="rbi_printFmeaPdf('${record.id}', 'browser')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
         </div>
     `;
@@ -4467,5 +4468,42 @@ window.gameExecuteContractorMerge = async function (primaryKey, secondaryKey, se
     } catch (e) {
         console.error(e);
         showToast('❌ Ошибка при слиянии');
+    }
+};
+
+// === ВЫГРУЗКА FMEA В EXCEL ===
+window.rbi_exportFmeaExcel = function (fmeaId) {
+    const record = window.rbi_fmeaRecords.find(f => f.id === fmeaId);
+    if (!record) return showToast("Запись не найдена");
+
+    showToast("⏳ Формируем Excel файл...");
+
+    // Подготавливаем данные для Excel (массив объектов с русскими заголовками)
+    const dataToExport = record.defects.map((d, index) => ({
+        "№ п/п": index + 1,
+        "Подрядчик": d.contractor,
+        "Вид работ": d.workTitle,
+        "Дефект": d.defectName,
+        "Кол-во повторов": d.count,
+        "Этап возникновения": d.stage || '-',
+        "Коренная причина": d.cause || '-',
+        "Последствия (Риски)": d.effect || '-',
+        "Устранение (Fix)": d.fix || '-',
+        "Предотвращение": d.prevent || '-',
+        "RPN (Приоритет риска)": d.rpn || 0
+    }));
+
+    // Используем встроенную библиотеку XLSX
+    try {
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "FMEA Анализ");
+        
+        // Скачиваем файл
+        XLSX.writeFile(workbook, `FMEA_${record.periodName}_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
+        showToast("✅ FMEA успешно выгружен в Excel!");
+    } catch (e) {
+        console.error(e);
+        showToast("❌ Ошибка при формировании Excel");
     }
 };

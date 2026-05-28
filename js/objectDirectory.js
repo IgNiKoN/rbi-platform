@@ -48,6 +48,7 @@ window.ObjectDirectory = {
         } catch (e) {
             console.error("[ObjectDirectory] Ошибка инициализации:", e);
         }
+        this.initUI();
     },
 
     // Очистка строки перед сравнением
@@ -297,53 +298,44 @@ window.ObjectDirectory = {
         const isManagerRole = ['director', 'project_manager', 'deputy_manager', 'manager'].includes(currentRole);
         const currentValue = projectEl ? (projectEl.dataset.displayName || projectEl.value || '') : '';
 
-        // 1. ДЛЯ РУКОВОДИТЕЛЕЙ: Всегда свободный текстовый ввод с подсказками
+        // 1. Определяем, какой список объектов показывать
+        let availableObjects = [];
         if (isManagerRole) {
-            let datalistHtml = `<datalist id="all-objects-list">`;
-            this.objects.forEach(o => { datalistHtml += `<option value="${o.display_name}"></option>`; });
-            datalistHtml += `</datalist>`;
+            // Руководство видит ВСЕ объекты из справочника
+            availableObjects = this.objects || [];
+        } else {
+            // Инженер видит ТОЛЬКО закрепленные
+            availableObjects = this.getAssignedProjectObjects();
+        }
 
-            const inputHtml = `
-                <input type="text" id="inp-project" list="all-objects-list" class="input-base text-center pr-7 transition-colors" placeholder="Объект *" autocomplete="off" value="${currentValue}">
-                ${datalistHtml}
+        // 2. Если список пуст (справочник пуст или инженеру ничего не назначили)
+        if (availableObjects.length === 0) {
+            projInputContainer.innerHTML = `
+                <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="${isManagerRole ? 'Впишите объект...' : 'Впишите объект для доступа...'}" autocomplete="off" value="${currentValue}">
                 <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
                 </span>
+                ${!isManagerRole ? `<span class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" title="Введите объект и сохраните акт для отправки заявки"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></span>` : ''}
             `;
-            if (projectEl.tagName.toLowerCase() === 'select') projInputContainer.innerHTML = inputHtml;
             if (typeof initSmartInput === 'function') initSmartInput('inp-project', 'projectName');
             return;
         }
 
-        // 2. ДЛЯ ИНЖЕНЕРА: Смотрим на закрепленные объекты в памяти телефона
-        const assignedObjects = this.getAssignedProjectObjects();
-
-        if (assignedObjects.length === 0) {
-            // Если объектов нет - разрешаем ручной ввод для отправки заявки
-            if (projectEl.tagName.toLowerCase() === 'select') {
-                projInputContainer.innerHTML = `<input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="Впишите объект для доступа..." autocomplete="off" value="${currentValue}">
-                <span class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" title="Введите объект и сохраните акт для отправки заявки"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></span>`;
-            } else {
-                projectEl.placeholder = "Впишите объект для доступа...";
-                projectEl.removeAttribute('readonly');
-                projectEl.classList.remove('bg-slate-100', 'dark:bg-slate-900', 'text-slate-500', 'cursor-not-allowed', 'pointer-events-none');
-            }
-            return;
-        }
-
-        // Если объекты есть - Создаем кастомный Dropdown
+        // 3. Если объекты есть - Создаем умный выпадающий список
         let displayValue = currentValue;
-        const matched = assignedObjects.find(obj => obj.canonical_key === currentValue || obj.display_name === currentValue);
+        const matched = availableObjects.find(obj => obj.canonical_key === currentValue || obj.display_name === currentValue);
         if (matched) displayValue = matched.display_name;
-        if (assignedObjects.length === 1) displayValue = assignedObjects[0].display_name;
+        // Автовыбор, если объект ровно один (например, у инженера)
+        if (availableObjects.length === 1) displayValue = availableObjects[0].display_name;
 
-        const optionsHtml = assignedObjects.map(obj => {
+        // Генерируем опции списка
+        const optionsHtml = availableObjects.map(obj => {
             return `
-            <div class="p-3 text-[12px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors text-slate-800 dark:text-slate-200"
+            <div class="dd-obj-item p-3 text-[12px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors text-slate-800 dark:text-slate-200"
                 onmousedown="
                     const inp = document.getElementById('inp-project');
-                    inp.value = '${obj.display_name}';
-                    inp.dataset.displayName = '${obj.display_name}';
+                    inp.value = '${obj.display_name.replace(/'/g, "\\'")}';
+                    inp.dataset.displayName = '${obj.display_name.replace(/'/g, "\\'")}';
                     inp.dataset.canonicalKey = '${obj.canonical_key}';
                     document.getElementById('dd_inp-project-custom').classList.add('hidden');
                     if(typeof updateLocationFromStructured === 'function') updateLocationFromStructured();
@@ -353,14 +345,24 @@ window.ObjectDirectory = {
             </div>`;
         }).join('');
 
-        // Формируем чистый HTML
+        // Формируем чистый HTML инпута с поиском и выпадающим списком
         const selectHtml = `
             <input type="text" id="inp-project" 
                 class="input-base text-center pr-7 transition-colors cursor-pointer font-bold text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800" 
-                placeholder="Выберите объект..." autocomplete="off" value="${displayValue}" readonly
+                placeholder="Выберите объект..." autocomplete="off" value="${displayValue}" ${availableObjects.length === 1 ? 'readonly' : ''}
                 data-display-name="${displayValue}"
                 data-canonical-key="${matched ? matched.canonical_key : ''}"
-                onmousedown="document.getElementById('dd_inp-project-custom').classList.toggle('hidden')">
+                onmousedown="if(this.readOnly) return; document.getElementById('dd_inp-project-custom').classList.remove('hidden');"
+                oninput="
+                    const val = this.value.toLowerCase();
+                    const items = document.getElementById('dd_inp-project-custom').querySelectorAll('.dd-obj-item');
+                    items.forEach(el => {
+                        el.style.display = el.innerText.toLowerCase().includes(val) ? 'block' : 'none';
+                    });
+                ">
+            <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
+            </span>
             <span class="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
             </span>
@@ -369,21 +371,19 @@ window.ObjectDirectory = {
             </div>
         `;
 
-        // ЖЕСТКАЯ ОЧИСТКА: просто заменяем всё содержимое контейнера разом, чтобы не было дублей
         projInputContainer.innerHTML = selectHtml;
 
-        // Если объект только один, блокируем меню выбора
-        if (assignedObjects.length === 1) {
+        // Если объект только один (и мы его уже выбрали), визуально "гасим" инпут
+        if (availableObjects.length === 1) {
             const newInp = document.getElementById('inp-project');
             if (newInp) {
                 newInp.classList.add('opacity-80');
-                newInp.onmousedown = null; // Отключаем клик
-                newInp.dataset.canonicalKey = assignedObjects[0].canonical_key;
-                newInp.dataset.displayName = assignedObjects[0].display_name;
+                newInp.dataset.canonicalKey = availableObjects[0].canonical_key;
+                newInp.dataset.displayName = availableObjects[0].display_name;
             }
         }
 
-        // Вешаем глобальный слушатель клика, чтобы меню закрывалось, если кликнуть мимо
+        // Глобальный слушатель клика, чтобы меню закрывалось, если кликнуть мимо
         if (!window._ddProjectListenerAdded) {
             document.addEventListener('mousedown', function _closeDd(e) {
                 const dd = document.getElementById('dd_inp-project-custom');
