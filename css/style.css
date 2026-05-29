@@ -1876,13 +1876,3 @@ body {
     touch-action: manipulation !important;
 }
 
-/* === RBI SOFT PULL FEEDBACK v17.8.210 === */
-body.rbi-soft-pulling main {
-    transition: transform 0s;
-    will-change: transform;
-}
-
-body.rbi-soft-pull-release main {
-    transition: transform 220ms cubic-bezier(.2,.8,.2,1);
-}
-
