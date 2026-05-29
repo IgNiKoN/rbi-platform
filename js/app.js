@@ -980,87 +980,29 @@ function closeModal() {
 }
 
 // === НАВИГАЦИЯ (5 ВКЛАДОК v16.0) ===
+// === НАВИГАЦИЯ: БЕЗ БЛОКИРОВКИ ЖЕСТОВ v17.8.208 ===
 function setupNavigation() {
     if (window.__rbiNavDelegatedReady) return;
     window.__rbiNavDelegatedReady = true;
 
-    const navHandler = function (e) {
+    function handleNav(e) {
         const item = e.target.closest('.nav-item[data-tab]');
         if (!item) return;
 
-        e.preventDefault();
-        e.stopPropagation();
-
         const tabId = item.getAttribute('data-tab');
-        if (tabId) switchTab(tabId, item);
-    };
+        if (!tabId) return;
 
-    document.addEventListener('pointerdown', navHandler, { passive: false, capture: true });
-    document.addEventListener('click', navHandler, { passive: false, capture: true });
+        switchTab(tabId, item);
+    }
+
+    document.querySelectorAll('.nav-item[data-tab]').forEach(item => {
+        item.addEventListener('touchend', handleNav, { passive: true });
+        item.addEventListener('click', handleNav, { passive: true });
+    });
+
+    document.addEventListener('touchend', handleNav, { passive: true });
+    document.addEventListener('click', handleNav, { passive: true });
 }
-
-// === RBI ANDROID GESTURE GUARD v17.8.206 ===
-(function initAndroidGestureGuard() {
-    if (window.__rbiAndroidGestureGuardReady) return;
-    window.__rbiAndroidGestureGuardReady = true;
-
-    let startX = 0;
-    let startY = 0;
-
-    function isEditableTarget(target) {
-        return !!target.closest('input, textarea, select, [contenteditable="true"]');
-    }
-
-    function getScrollableParent(el) {
-        while (el && el !== document.body) {
-            const style = window.getComputedStyle(el);
-            const canScrollY =
-                /(auto|scroll)/.test(style.overflowY) &&
-                el.scrollHeight > el.clientHeight;
-
-            if (canScrollY) return el;
-            el = el.parentElement;
-        }
-
-        return document.scrollingElement || document.documentElement;
-    }
-
-    document.addEventListener('touchstart', function (e) {
-        if (!e.touches || e.touches.length !== 1) return;
-
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
-    }, { passive: true, capture: true });
-
-    document.addEventListener('touchmove', function (e) {
-        if (!e.touches || e.touches.length !== 1) return;
-        if (isEditableTarget(e.target)) return;
-
-        const x = e.touches[0].clientX;
-        const y = e.touches[0].clientY;
-
-        const dx = x - startX;
-        const dy = y - startY;
-
-        const absX = Math.abs(dx);
-        const absY = Math.abs(dy);
-
-        if (absX > 35 && absX > absY * 1.2) {
-            e.preventDefault();
-            return;
-        }
-
-        const scroller = getScrollableParent(e.target);
-        const scrollTop =
-            scroller === document.documentElement || scroller === document.body
-                ? window.scrollY
-                : scroller.scrollTop;
-
-        if (dy > 0 && scrollTop <= 0) {
-            e.preventDefault();
-        }
-    }, { passive: false, capture: true });
-})();
 
 // === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
 function updateBodyPadding() {

@@ -53,7 +53,7 @@
     color: white;
 
     text-shadow:
-      0 0 12px rgba(255,255,255,.08);
+        0 0 12px rgba(255, 255, 255, .08);
 
 }
 
@@ -62,16 +62,14 @@
     margin-left: 10px;
 
     background:
-      linear-gradient(
-        90deg,
-        #c7d2fe,
-        #818cf8,
-        #4f46e5,
-        #312e81,
-        #4f46e5,
-        #818cf8,
-        #c7d2fe
-      );
+        linear-gradient(90deg,
+            #c7d2fe,
+            #818cf8,
+            #4f46e5,
+            #312e81,
+            #4f46e5,
+            #818cf8,
+            #c7d2fe);
 
     background-size: 300% auto;
 
@@ -82,10 +80,10 @@
     -webkit-text-fill-color: transparent;
 
     animation:
-      proFlow 4s linear infinite;
+        proFlow 4s linear infinite;
 
     filter:
-      drop-shadow(0 0 10px rgba(99,102,241,.45));
+        drop-shadow(0 0 10px rgba(99, 102, 241, .45));
 
 }
 
@@ -93,7 +91,7 @@
 
     margin-top: 8px;
 
-    color: rgba(255,255,255,.45);
+    color: rgba(255, 255, 255, .45);
 
     font-size: 11px;
 
@@ -269,10 +267,10 @@ body {
     overflow-x: clip !important;
     width: 100vw;
     max-width: 100%;
-    
+
     /* НОВОЕ: Отключаем pull-to-refresh и свайп "назад" в браузере */
-    overscroll-behavior-y: none;
-    overscroll-behavior-x: none;
+    overscroll-behavior-y: auto;
+    overscroll-behavior-x: auto;
 }
 
 /* === ТРИ РЕЖИМА НАВИГАЦИИ (АВТО, СВЕРХУ, СНИЗУ) === */
@@ -1859,15 +1857,15 @@ body.read-only-mode .swipe-bg-fail {
 
 }
 
-/* === RBI FIX ANDROID NAVIGATION v17.8.205 === */
+/* === RBI ANDROID NAVIGATION UNLOCK v17.8.208 === */
 html,
 body {
-    overscroll-behavior-y: contain;
-    overscroll-behavior-x: none;
+    overscroll-behavior-y: auto;
+    overscroll-behavior-x: auto;
 }
 
 body {
-    touch-action: pan-y;
+    touch-action: auto;
 }
 
 .bottom-nav,
@@ -1875,15 +1873,14 @@ body {
 .nav-item,
 .nav-item * {
     pointer-events: auto !important;
-    touch-action: manipulation !important;
+    touch-action: auto !important;
 }
 
 .view-section {
-    touch-action: pan-y;
+    touch-action: auto;
 }
 
 body.modal-open {
     overflow: hidden;
     height: 100dvh;
-    touch-action: none;
 }
