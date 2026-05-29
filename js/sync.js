@@ -465,8 +465,10 @@ window.initSync = async function () {
         }, 5000);
 
         setInterval(() => {
-            // Экономим трафик: по таймеру отправляем только локальные изменения
-            if (localStorage.getItem('rbi_cloud_dirty') === '1') {
+            if (
+                localStorage.getItem('rbi_cloud_dirty') === '1' ||
+                localStorage.getItem('rbi_force_full_pull') === '1'
+            ) {
                 window.triggerSync('silent');
             }
         }, 60000);
@@ -1760,6 +1762,8 @@ window.triggerSync = async function (mode = 'silent') {
         return;
     }
     let pushErrors = 0;
+    let pullErrors = 0;
+    let referencePullErrors = 0;
 
     window.isSyncing = true;
     syncChannel.postMessage('sync_started');
@@ -1955,7 +1959,7 @@ window.triggerSync = async function (mode = 'silent') {
         // но не запрещаем pull и локальную работу.
         canPush = false;
     }
-        // RBI FIX: если в ходе проверки роли появился запрос полного pull,
+    // RBI FIX: если в ходе проверки роли появился запрос полного pull,
     // применяем его сразу в этой же синхронизации, а не на следующий запуск.
     if (localStorage.getItem('rbi_force_full_pull') === '1') {
         needFullReferencePull = true;
@@ -2638,30 +2642,68 @@ if (window.RbiStorageManager) {
             ];
 
             for (const cType of cloudTypes) {
-                const objects = await window.pullCloudObjects(cType.type, lastPullAt, mode);
-                if (!objects || objects.length === 0) continue;
+                try {
+                    const isReferenceType = [
+                        'custom_doc',
+                        'custom_node',
+                        'custom_twi_card',
+                        'assistant_kb',
+                        'user_template',
+                        'project_object',
+                        'object_alias'
+                    ].includes(cType.type);
 
-                window[cType.memory] = window[cType.memory] || [];
+                    const pullSince = isReferenceType && needFullReferencePull ? '' : lastPullAt;
 
-                for (const obj of objects) {
-                    const localExisting = await dbGet(cType.store, obj.id);
-                    const localTime = localExisting ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || localExisting.createdAt || 0).getTime() : 0;
-                    const cloudTime = new Date(obj.updatedAt || 0).getTime();
+                    const objects = await window.pullCloudObjects(cType.type, pullSince, mode);
 
-                    if (!localExisting || cloudTime > localTime) {
-                        if (obj._deleted) {
-                            await dbDelete(cType.store, obj.id);
-                            window[cType.memory] = window[cType.memory].filter(x => String(x.id) !== String(obj.id));
-                        } else {
-                            await dbPut(cType.store, obj);
-                            const idx = window[cType.memory].findIndex(x => String(x.id) === String(obj.id));
-                            if (idx >= 0) window[cType.memory][idx] = obj;
-                            else window[cType.memory].push(obj);
+                    window[cType.memory] = window[cType.memory] || [];
+
+                    if (!objects || objects.length === 0) {
+                        console.log(`[Sync] ${cType.type}: новых данных нет`);
+                        continue;
+                    }
+
+                    console.log(`[Sync] ${cType.type}: получено ${objects.length}`);
+
+                    for (const obj of objects) {
+                        const localExisting = await dbGet(cType.store, obj.id);
+                        const localTime = localExisting
+                            ? new Date(localExisting.updatedAt || localExisting.updated_at || localExisting.date || localExisting.createdAt || 0).getTime()
+                            : 0;
+
+                        const cloudTime = new Date(obj.updatedAt || obj.updated_at || 0).getTime();
+
+                        if (!localExisting || cloudTime >= localTime || needFullReferencePull) {
+                            if (obj._deleted || obj.is_deleted) {
+                                await dbDelete(cType.store, obj.id);
+                                window[cType.memory] = window[cType.memory].filter(x => String(x.id) !== String(obj.id));
+                            } else {
+                                await dbPut(cType.store, obj);
+
+                                const idx = window[cType.memory].findIndex(x => String(x.id) === String(obj.id));
+                                if (idx >= 0) window[cType.memory][idx] = obj;
+                                else window[cType.memory].push(obj);
+                            }
                         }
                     }
 
-                }
+                } catch (e) {
+                    pullErrors++;
+                    console.warn(`[Sync] Ошибка pull ${cType.type}:`, e.message || e);
 
+                    if ([
+                        'custom_doc',
+                        'custom_node',
+                        'custom_twi_card',
+                        'assistant_kb',
+                        'user_template',
+                        'project_object',
+                        'object_alias'
+                    ].includes(cType.type)) {
+                        referencePullErrors++;
+                    }
+                }
             } // конец цикла cloudTypes
             // Перезагружаем Справочник объектов в память, если он прилетел из облака
             if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
@@ -3889,14 +3931,19 @@ if (window.RbiStorageManager) {
             referenceOk = false;
         }
 
-        if (pushErrors === 0 && referenceOk) {
+        if (pushErrors === 0 && pullErrors === 0 && referencePullErrors === 0 && referenceOk) {
             localStorage.setItem('rbi_cloud_dirty', '0');
             localStorage.setItem('rbi_sync_last_pull_at', doneAt);
             localStorage.removeItem('rbi_force_full_pull');
         } else {
             localStorage.setItem('rbi_force_full_pull', '1');
             localStorage.setItem('rbi_cloud_dirty', '1');
-            console.log('[Sync] Pull неполный, полный pull будет повторён при следующей синхронизации.');
+            console.log('[Sync] Pull неполный или с ошибками. Полный pull будет повторён при следующей синхронизации.', {
+                pushErrors,
+                pullErrors,
+                referencePullErrors,
+                referenceOk
+            });
         }
 
         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
