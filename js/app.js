@@ -1007,17 +1007,34 @@ function setupNavigation() {
 // === RBI BLOCK ANDROID PULL TO REFRESH ONLY v17.8.209 ===
 // Блокирует только жест "потянуть вниз для обновления" на самом верху страницы.
 // Не блокирует клики по вкладкам и обычный скролл.
+// === RBI BLOCK ANDROID PULL TO REFRESH + SOFT SPRING v17.8.210 ===
 (function rbiBlockAndroidPullToRefreshOnly() {
     if (window.__rbiPullToRefreshBlockReady) return;
     window.__rbiPullToRefreshBlockReady = true;
 
     let startY = 0;
     let startX = 0;
+    let pulling = false;
 
     function isInsideNoBlockZone(target) {
         return !!target.closest(
             '.bottom-nav, .nav-item, button, a, input, textarea, select, [contenteditable="true"], .modal, [role="dialog"]'
         );
+    }
+
+    function resetPull() {
+        const main = document.querySelector('main');
+        if (!main) return;
+
+        document.body.classList.remove('rbi-soft-pulling');
+        document.body.classList.add('rbi-soft-pull-release');
+        main.style.transform = 'translateY(0px)';
+
+        setTimeout(() => {
+            document.body.classList.remove('rbi-soft-pull-release');
+        }, 240);
+
+        pulling = false;
     }
 
     document.addEventListener('touchstart', function (e) {
@@ -1037,14 +1054,26 @@ function setupNavigation() {
         const dy = currentY - startY;
         const dx = Math.abs(currentX - startX);
 
-        const isPullingDown = dy > 8;
-        const isMostlyVertical = Math.abs(dy) > dx;
         const isAtTop = window.scrollY <= 0 || document.documentElement.scrollTop <= 0;
+        const isPullingDown = dy > 0;
+        const isMostlyVertical = Math.abs(dy) > dx;
 
         if (isAtTop && isPullingDown && isMostlyVertical) {
             e.preventDefault();
+
+            const main = document.querySelector('main');
+            if (main) {
+                pulling = true;
+                document.body.classList.add('rbi-soft-pulling');
+
+                const pullPx = Math.min(46, Math.sqrt(dy) * 4.5);
+                main.style.transform = `translateY(${pullPx}px)`;
+            }
         }
     }, { passive: false });
+
+    document.addEventListener('touchend', resetPull, { passive: true });
+    document.addEventListener('touchcancel', resetPull, { passive: true });
 })();
 
 // === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
