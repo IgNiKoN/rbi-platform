@@ -1744,7 +1744,15 @@ window.triggerSync = async function (mode = 'silent') {
     }
 
     // Экономия Supabase: тихую синхронизацию не запускаем без изменений
-    if (mode === 'silent' && localStorage.getItem('rbi_cloud_dirty') !== '1') {
+    const hasNeverPulled = !localStorage.getItem('rbi_sync_last_pull_at');
+    const forcePullRequested = localStorage.getItem('rbi_force_full_pull') === '1';
+
+    if (
+        mode === 'silent' &&
+        localStorage.getItem('rbi_cloud_dirty') !== '1' &&
+        !hasNeverPulled &&
+        !forcePullRequested
+    ) {
         return;
     }
     let pushErrors = 0;
@@ -1830,6 +1838,11 @@ window.triggerSync = async function (mode = 'silent') {
                     // Только approved-профиль имеет право заменить локальные подтверждённые объекты.
                     // pending/guest не должен стирать заявки пользователя.
                     if (fetchedCloudStatus === 'approved') {
+                        if (localStorage.getItem('rbi_last_approved_pull_done') !== '1') {
+                            localStorage.setItem('rbi_force_full_pull', '1');
+                            localStorage.setItem('rbi_cloud_dirty', '1');
+                            localStorage.setItem('rbi_last_approved_pull_done', '1');
+                        }
                         const oldProjects = JSON.stringify(appSettings.assignedProjects || []);
                         const newProjects = JSON.stringify(fetchedProjects);
 
@@ -3822,6 +3835,8 @@ if (window.RbiStorageManager) {
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
         if (pushErrors === 0) {
             localStorage.setItem('rbi_cloud_dirty', '0');
+            localStorage.setItem('rbi_sync_last_pull_at', new Date().toISOString());
+            localStorage.removeItem('rbi_force_full_pull');
         } else {
             console.log('[Sync] Были сетевые ошибки, флаг изменений сохранен для повторной попытки.');
         }
@@ -3832,35 +3847,49 @@ if (window.RbiStorageManager) {
             if (!window._lastBgDownloadTime || (now - window._lastBgDownloadTime) > 300000) {
                 window._lastBgDownloadTime = now;
                 setTimeout(async () => {
-                    await window.downloadMissingCloudFiles(mode === 'manual' ? false : true);
+                    const isFirstFullPull =
+                        localStorage.getItem('rbi_force_full_pull') === '1' ||
+                        !localStorage.getItem('rbi_sync_last_pull_at');
+
+                    const isManual = mode === 'manual';
+                    const showProgress = isManual || isFirstFullPull;
+
+                    if (typeof window.downloadMissingCloudFiles === 'function') {
+                        await window.downloadMissingCloudFiles(!showProgress);
+                    }
 
                     if (typeof window.rbi_reloadReferenceMemory === 'function') {
                         await window.rbi_reloadReferenceMemory();
-                        window.syncDirtyFlags.reference = false;
                     }
 
-                    const activeTab = document.querySelector('.nav-item.active')?.getAttribute('data-tab') || '';
+                    // ВАЖНО: активную вкладку при автосинхронизации НЕ трогаем
+                    const activeTab = document.querySelector('.view-section.active')?.id || '';
 
-                    // Обновляем только НЕактивные вкладки, чтобы интерфейс не прыгал
-                    if (activeTab !== 'tab-knowledge') {
+                    if (mode === 'silent') {
+                        if (window.syncDirtyFlags) {
+                            window.syncDirtyFlags.reference = true;
+                            window.syncDirtyFlags.history = true;
+                            window.syncDirtyFlags.analytics = true;
+                            window.syncDirtyFlags.tasks = true;
+                        }
+                        return;
+                    }
+
+                    // Ручная синхронизация может обновить только НЕактивные экраны
+                    if (activeTab !== 'tab-reference') {
                         if (typeof renderTwiList === 'function') renderTwiList();
                         if (typeof renderDocsList === 'function') renderDocsList();
                         if (typeof renderNodesList === 'function') renderNodesList();
-                    } else {
-                        window.syncDirtyFlags.reference = true;
                     }
 
                     if (activeTab !== 'tab-audit' && !currentTemplateKey && typeof renderSelector === 'function') {
                         renderSelector();
                     }
 
-                    if (activeTab !== 'tab-history' && activeTab !== 'tab-analytics') {
-                        if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
-                    } else {
-                        window.syncDirtyFlags.history = true;
-                        window.syncDirtyFlags.analytics = true;
+                    if (activeTab !== 'tab-analytics' && typeof updateAllDynamicFilters === 'function') {
+                        updateAllDynamicFilters();
                     }
-                }, 5000);
+                }, 3000);
             }
         }
 

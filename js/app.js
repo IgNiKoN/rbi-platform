@@ -109,10 +109,10 @@ let appSettings = {
     anaEngAi: true,
     anaEngPhotos: true,
     anaOpTopDefects: true,
-    autoBackupEnabled: true,
+    autoBackupEnabled: false,
     autoBackupDay: '5', // 5 - Пятница
-    autoBackupShare: true,
-    autoManagerEnabled: true,
+    autoBackupShare: false,
+    autoManagerEnabled: false,
     autoManagerDay: '5', // 5 - Пятница
     taskMeetingDay: '1',      // Понедельник
     taskFmeaDay: '5',         // Пятница
@@ -232,6 +232,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         // -------------------------------------------------------------------
         // Запускаем облако до загрузки остальных настроек
         if (typeof initSync === 'function') await initSync();
+        if (
+            window.syncConfig &&
+            window.syncConfig.enabled &&
+            !localStorage.getItem('rbi_sync_last_pull_at')
+        ) {
+            localStorage.setItem('rbi_force_full_pull', '1');
+            localStorage.setItem('rbi_cloud_dirty', '1');
+
+            setTimeout(() => {
+                if (typeof triggerSync === 'function') triggerSync('manual');
+            }, 1500);
+        }
 
         await loadSettings();
         applySettingsToUI();
@@ -969,22 +981,86 @@ function closeModal() {
 
 // === НАВИГАЦИЯ (5 ВКЛАДОК v16.0) ===
 function setupNavigation() {
-    document.querySelectorAll('.nav-item').forEach(item => {
-        if (item.dataset.navReady === '1') return;
-        item.dataset.navReady = '1';
+    if (window.__rbiNavDelegatedReady) return;
+    window.__rbiNavDelegatedReady = true;
 
-        const handler = function (e) {
-            e.preventDefault();
-            e.stopPropagation();
+    const navHandler = function (e) {
+        const item = e.target.closest('.nav-item[data-tab]');
+        if (!item) return;
 
-            const tabId = this.getAttribute('data-tab');
-            if (tabId) switchTab(tabId, this);
-        };
+        e.preventDefault();
+        e.stopPropagation();
 
-        item.addEventListener('pointerdown', handler, { passive: false });
-        item.addEventListener('click', handler, { passive: false });
-    });
+        const tabId = item.getAttribute('data-tab');
+        if (tabId) switchTab(tabId, item);
+    };
+
+    document.addEventListener('pointerdown', navHandler, { passive: false, capture: true });
+    document.addEventListener('click', navHandler, { passive: false, capture: true });
 }
+
+// === RBI ANDROID GESTURE GUARD v17.8.206 ===
+(function initAndroidGestureGuard() {
+    if (window.__rbiAndroidGestureGuardReady) return;
+    window.__rbiAndroidGestureGuardReady = true;
+
+    let startX = 0;
+    let startY = 0;
+
+    function isEditableTarget(target) {
+        return !!target.closest('input, textarea, select, [contenteditable="true"]');
+    }
+
+    function getScrollableParent(el) {
+        while (el && el !== document.body) {
+            const style = window.getComputedStyle(el);
+            const canScrollY =
+                /(auto|scroll)/.test(style.overflowY) &&
+                el.scrollHeight > el.clientHeight;
+
+            if (canScrollY) return el;
+            el = el.parentElement;
+        }
+
+        return document.scrollingElement || document.documentElement;
+    }
+
+    document.addEventListener('touchstart', function (e) {
+        if (!e.touches || e.touches.length !== 1) return;
+
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    }, { passive: true, capture: true });
+
+    document.addEventListener('touchmove', function (e) {
+        if (!e.touches || e.touches.length !== 1) return;
+        if (isEditableTarget(e.target)) return;
+
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+
+        const dx = x - startX;
+        const dy = y - startY;
+
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+
+        if (absX > 35 && absX > absY * 1.2) {
+            e.preventDefault();
+            return;
+        }
+
+        const scroller = getScrollableParent(e.target);
+        const scrollTop =
+            scroller === document.documentElement || scroller === document.body
+                ? window.scrollY
+                : scroller.scrollTop;
+
+        if (dy > 0 && scrollTop <= 0) {
+            e.preventDefault();
+        }
+    }, { passive: false, capture: true });
+})();
 
 // === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
 function updateBodyPadding() {
@@ -1380,7 +1456,7 @@ function resetSettingsToDefault() {
         storagePersistentRequestedAt: null,
         storagePersistentGranted: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
         anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
-        autoBackupEnabled: true, autoBackupDay: '5', autoBackupShare: true, autoManagerEnabled: true, autoManagerDay: '5',
+        autoBackupEnabled: false, autoBackupDay: '5', autoBackupShare: false, autoManagerEnabled: false, autoManagerDay: '5',
         brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'
     };
 
@@ -1851,6 +1927,15 @@ async function openTwiViewer(twiId) {
     }
     // === ТИП 3: ВНЕШНИЙ PDF-ДОКУМЕНТ ===
     else if (card.type === 'PDF') {
+        await window.rbiOpenPdfInTwiViewer(
+            card.pdfData,
+            card.title,
+            card.checklistName || 'TWI / Регламент',
+            card.pdfName || card.title || 'document.pdf',
+            card.pdfSize || ''
+        );
+        return;
+        
         badgeEl.innerText = 'PDF-Файл';
         badgeEl.className = 'bg-red-500 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm';
         infoPanel.classList.add('hidden');
@@ -1960,7 +2045,113 @@ async function openTwiViewer(twiId) {
     document.body.classList.add('modal-open');
     setTimeout(() => { overlay.classList.remove('opacity-0'); }, 10);
 }
+// === RBI UNIVERSAL PDF VIEWER FIX v17.8.206 ===
+// === RBI UNIVERSAL PDF VIEWER FIX v17.8.207 ===
+window.rbiOpenPdfInTwiViewer = async function (pdfData, title, subtitle, fileName, fileSize) {
+    const overlay = document.getElementById('twi-viewer-overlay');
+    const content = document.getElementById('viewer-twi-content');
+    const titleEl = document.getElementById('viewer-twi-title');
+    const badgeEl = document.getElementById('viewer-twi-badge');
+    const infoPanel = document.getElementById('viewer-twi-info-panel');
+    const footer = document.getElementById('viewer-twi-footer');
 
+    if (!overlay || !content) return showToast('Окно PDF не найдено');
+
+    if (content.dataset.blobUrl && content.dataset.blobUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(content.dataset.blobUrl);
+    }
+
+    content.dataset.blobUrl = '';
+    content.innerHTML = '';
+    content.className = 'flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900 p-0';
+
+    if (titleEl) titleEl.innerText = title || 'PDF документ';
+
+    if (badgeEl) {
+        badgeEl.innerText = 'PDF';
+        badgeEl.className = 'bg-red-500 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm';
+    }
+
+    if (infoPanel) infoPanel.classList.add('hidden');
+    if (footer) footer.classList.add('hidden');
+
+    try {
+        let pdfBase64 = null;
+        let pdfArrayBuffer = null;
+
+        if (String(pdfData).startsWith('local://') || String(pdfData).startsWith('cloud://')) {
+            pdfBase64 = await PhotoManager.getBase64(pdfData);
+            pdfArrayBuffer = await base64ToArrayBuffer(pdfBase64);
+        } else if (String(pdfData).startsWith('data:application/pdf')) {
+            pdfBase64 = pdfData;
+            pdfArrayBuffer = await base64ToArrayBuffer(pdfData);
+        } else if (String(pdfData).startsWith('http')) {
+            const res = await rbiFetchCloudFileNoBrowserCache(pdfData);
+            if (!res.ok) throw new Error('PDF не скачался');
+            pdfArrayBuffer = await res.arrayBuffer();
+        } else {
+            const realUrl = await PhotoManager.getAsyncUrl(pdfData) || pdfData;
+            const res = await fetch(realUrl, { cache: 'no-store' });
+            pdfArrayBuffer = await res.arrayBuffer();
+        }
+
+        const blob = new Blob([pdfArrayBuffer.slice(0)], { type: 'application/pdf' });
+        const blobUrl = URL.createObjectURL(blob);
+        content.dataset.blobUrl = blobUrl;
+
+        content.innerHTML = `
+            <div class="sticky top-0 z-10 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-2 text-[10px] font-bold flex justify-between items-center border-b border-indigo-100 dark:border-indigo-800">
+                <span class="truncate pr-2">${subtitle || 'PDF документ'}</span>
+                <a href="${blobUrl}" target="_blank" download="${fileName || 'document.pdf'}"
+                   class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg active:scale-95 shadow-sm uppercase tracking-widest">
+                   Скачать
+                </a>
+            </div>
+            <div id="rbi-pdf-pages" class="p-3 space-y-3"></div>
+        `;
+
+        overlay.style.display = 'flex';
+        document.body.classList.add('modal-open');
+        setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+
+        const pagesRoot = document.getElementById('rbi-pdf-pages');
+        const pdf = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+
+            const containerWidth = Math.min(window.innerWidth - 24, 1100);
+            const baseViewport = page.getViewport({ scale: 1 });
+            const scale = containerWidth / baseViewport.width;
+            const viewport = page.getViewport({ scale });
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'w-full bg-white rounded-xl shadow-sm border border-slate-200';
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            pagesRoot.appendChild(canvas);
+
+            const ctx = canvas.getContext('2d');
+            await page.render({
+                canvasContext: ctx,
+                viewport
+            }).promise;
+        }
+
+    } catch (e) {
+        console.error('[Universal PDF Viewer]', e);
+        content.innerHTML = `
+            <div class="p-6 text-center">
+                <div class="text-red-600 font-black text-[13px] mb-2">PDF не удалось открыть</div>
+                <div class="text-slate-500 text-[11px]">Попробуйте синхронизировать файлы или открыть документ повторно.</div>
+            </div>
+        `;
+        overlay.style.display = 'flex';
+        document.body.classList.add('modal-open');
+        setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+    }
+};
 function closeTwiViewer() {
     const overlay = document.getElementById('twi-viewer-overlay');
     const content = document.getElementById('viewer-twi-content');
@@ -1977,6 +2168,7 @@ function closeTwiViewer() {
         }
 
         content.innerHTML = '';
+        customTwiCards = customTwiCards.filter(c => !c._tempViewerOnly);
     }, 300);
 }
 
@@ -5339,50 +5531,44 @@ window.deleteCustomDoc = async function (id) {
 };
 
 // ПРОСМОТРЩИК НД (Используем оболочку TWI)
-window.openDocViewer = function (docId) {
+window.openDocViewer = async function (docId) {
     const allDocs = [...SYSTEM_DOCS, ...customDocs];
     const doc = allDocs.find(d => d.id === docId);
     if (!doc) return showToast('Документ не найден');
 
     if (doc.isSystem || !doc.pdfData) {
-        // Если это системный или без файла — показываем простое окно-заглушку с поиском
         return findAndOpenND(doc.code + " " + doc.title);
     }
 
-    // Если есть PDF, открываем его в нашей TWI-читалке, симулируя карточку TWI типа PDF
-    const fakeTwiCard = {
-        id: doc.id,
-        type: 'PDF',
-        title: doc.title,
-        checklistName: doc.code,
-        pdfData: doc.pdfData,
-        pdfName: doc.pdfName || doc.code,
-        pdfSize: doc.pdfSize || ''
-    };
+    await window.rbiOpenPdfInTwiViewer(
+        doc.pdfData,
+        doc.title,
+        doc.code || 'Нормативный документ',
+        doc.pdfName || doc.code || 'document.pdf',
+        doc.pdfSize || ''
+    );
 
-    // Временно добавляем в массив, чтобы читалка его нашла, потом уберем
-    const exists = customTwiCards.find(c => c.id === fakeTwiCard.id);
-
-    if (!exists) {
-        fakeTwiCard._tempViewerOnly = true;
-        customTwiCards.push(fakeTwiCard);
-    }
-
-    openTwiViewer(fakeTwiCard.id);
-    // Ленивая индексация: если документ загружен давно и текста нет — читаем его сейчас
     if (!doc.extractedText && doc.pdfData && appSettings.aiEnabled) {
         setTimeout(async () => {
-            const realUrl = await PhotoManager.getAsyncUrl(doc.pdfData) || doc.pdfData;
-            const extracted = await window.extractTextFromPdf(realUrl);
-            if (extracted) {
-                doc.extractedText = extracted;
-                doc.updatedAt = new Date().toISOString(); // <-- ИСПРАВЛЕНИЕ: Облако увидит, что файл обновился
-                await dbPut(STORES.SETTINGS, { key: 'custom_docs', data: customDocs });
-                console.log("[AI] Текст старого документа проиндексирован:", doc.code);
+            try {
+                const realUrl = await PhotoManager.getAsyncUrl(doc.pdfData) || doc.pdfData;
+                const extracted = await window.extractTextFromPdf(realUrl);
 
-                // ДОБАВЛЕНО: Отправляем старый документ, но уже с текстом, обратно в облако
-                localStorage.setItem('rbi_cloud_dirty', '1');
-                if (typeof triggerSync === 'function') triggerSync('silent');
+                if (extracted) {
+                    doc.extractedText = extracted;
+                    doc.updatedAt = new Date().toISOString();
+                    doc.updated_at = doc.updatedAt;
+                    doc.source = 'local';
+                    doc.syncStatus = 'not_synced';
+                    doc.sync_status = 'not_synced';
+
+                    await dbPut(STORES.CUSTOM_DOCS, doc);
+
+                    localStorage.setItem('rbi_cloud_dirty', '1');
+                    if (typeof triggerSync === 'function') triggerSync('silent');
+                }
+            } catch (e) {
+                console.warn('[DocViewer] Индексация PDF пропущена:', e);
             }
         }, 2000);
     }
@@ -7122,23 +7308,14 @@ window.handleNodeFileUpload = function (event) {
 };
 
 // Функция-помощник для открытия PDF прямо внутри узла (через нашу универсальную читалку)
-window.openFakePdfViewer = function (url, name, size) {
-    const fakeCard = {
-        id: 'fake_pdf_' + Date.now(),
-        type: 'PDF',
-        title: name,
-        checklistName: 'Вложение узла',
-        pdfData: url,
-        pdfName: name,
-        pdfSize: size
-    };
-    customTwiCards.push(fakeCard);
-    openTwiViewer(fakeCard.id);
-    // Удаляем временную карточку через секунду, чтобы она не засоряла базу TWI
-    setTimeout(() => {
-        const idx = customTwiCards.findIndex(c => c.id === fakeCard.id);
-        if (idx > -1) customTwiCards.splice(idx, 1);
-    }, 1000);
+window.openFakePdfViewer = async function (url, name, size) {
+    await window.rbiOpenPdfInTwiViewer(
+        url,
+        name || 'PDF вложение',
+        'Вложение узла',
+        name || 'document.pdf',
+        size || ''
+    );
 };
 
 window.saveNodeCard = async function () {
@@ -11373,30 +11550,14 @@ window.applyContractorAliasToInspectionHistory = async function (rawName, canoni
     return updated;
 };
 
-window.openNodeAttachmentPdf = function (url, name, size) {
-    // Создаем временную карточку, чтобы наша встроенная TWI-читалка смогла её открыть
-    const fakeId = 'fake_pdf_' + Date.now();
-    const fakeCard = {
-        id: fakeId,
-        type: 'PDF',
-        title: name || 'Документ',
-        checklistName: 'Вложение узла',
-        pdfData: url,
-        pdfName: name || 'document.pdf',
-        pdfSize: size || ''
-    };
-
-    // Добавляем в массив
-    customTwiCards.push(fakeCard);
-
-    // Открываем читалку
-    openTwiViewer(fakeId);
-
-    // Через 2 секунды удаляем временную карточку, чтобы не засорять базу
-    setTimeout(() => {
-        const idx = customTwiCards.findIndex(c => c.id === fakeId);
-        if (idx > -1) customTwiCards.splice(idx, 1);
-    }, 2000);
+window.openNodeAttachmentPdf = async function (url, name, size) {
+    await window.rbiOpenPdfInTwiViewer(
+        url,
+        name || 'PDF вложение',
+        'Вложение узла',
+        name || 'document.pdf',
+        size || ''
+    );
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

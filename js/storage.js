@@ -2597,25 +2597,23 @@ async function rbiDownloadFileWithRetry(url, maxAttempts = 3) {
 
     return { status: 'failed' };
 }
-
+window.rbiFileCacheQueueLock = false;
 window.downloadMissingCloudFiles = async function (silent = false) {
     if (window.rbiFileCacheQueueLock) {
-        if (typeof showToast === 'function') showToast('⏳ Докачка файлов уже выполняется');
+        if (!silent && typeof showToast === 'function') showToast('⏳ Докачка файлов уже выполняется');
         return;
     }
 
     window.rbiFileCacheQueueLock = true;
-    console.log("[Cache] Загрузка облачных файлов...");
 
-    // Единый мини-индикатор для ручной и фоновой загрузки
     let miniCacheToast = document.getElementById('mini-cache-toast');
 
     if (!miniCacheToast) {
         miniCacheToast = document.createElement('div');
         miniCacheToast.id = 'mini-cache-toast';
-        miniCacheToast.className = 'fixed right-3 bottom-24 z-[9000] bg-slate-900/90 text-white rounded-2xl shadow-xl px-4 py-3 text-[11px] font-bold hidden border border-white/10 backdrop-blur-md max-w-[280px]';
+        miniCacheToast.className = 'fixed left-1/2 bottom-24 z-[9000] bg-slate-900/90 text-white rounded-2xl shadow-xl px-5 py-4 text-[12px] font-bold hidden border border-white/10 backdrop-blur-md max-w-[300px] -translate-x-1/2 text-center';
         miniCacheToast.innerHTML = `
-            <div class="flex items-center gap-2">
+            <div class="flex items-center justify-center gap-2">
                 <span class="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin shrink-0"></span>
                 <span id="mini-cache-toast-text">Кэширование файлов...</span>
             </div>
@@ -2624,209 +2622,216 @@ window.downloadMissingCloudFiles = async function (silent = false) {
     }
 
     const miniText = document.getElementById('mini-cache-toast-text');
-    miniCacheToast.classList.remove('hidden');
-    if (miniText) miniText.innerText = 'Подготовка файлов...';
 
-    const urlsToDownload = new Set();
+    try {
+        const showProgress = silent !== true;
 
-    // 1. Фото в истории проверок
-    if (typeof contractorArray !== 'undefined') {
-        contractorArray.forEach(check => {
-            if (check.photos) {
-                Object.values(check.photos).forEach(url => {
-                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
-                });
-            }
-        });
-    }
-
-    // 2. TWI-карты
-    if (typeof customTwiCards !== 'undefined') {
-        customTwiCards.forEach(twi => {
-            [twi.photoGood, twi.photoBad, twi.pdfData].forEach(url => {
-                if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
-            });
-
-            if (twi.steps) {
-                twi.steps.forEach(step => {
-                    if (step.photo && (step.photo.startsWith('http') || step.photo.startsWith('cloud://'))) {
-                        urlsToDownload.add(step.photo);
-                    }
-                });
-            }
-        });
-    }
-
-    // 3. Узлы
-    if (typeof customNodes !== 'undefined') {
-        customNodes.forEach(node => {
-            if (node.img && (node.img.startsWith('http') || node.img.startsWith('cloud://'))) urlsToDownload.add(node.img);
-
-            if (Array.isArray(node.attachments)) {
-                node.attachments.forEach(att => {
-                    const url = att.url || att.data || att.file_url || '';
-                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
-                });
-            }
-        });
-    }
-
-    // 4. Документы справочника
-    if (typeof customDocs !== 'undefined') {
-        customDocs.forEach(doc => {
-            if (doc.pdfData && (doc.pdfData.startsWith('http') || doc.pdfData.startsWith('cloud://'))) {
-                urlsToDownload.add(doc.pdfData);
-            }
-        });
-    }
-
-    // 5. Совещания и практики
-    if (typeof window.rbi_meetingsData !== 'undefined') {
-        window.rbi_meetingsData.forEach(m => {
-            if (m.qDayPhoto && (m.qDayPhoto.startsWith('http') || m.qDayPhoto.startsWith('cloud://'))) {
-                urlsToDownload.add(m.qDayPhoto);
-            }
-        });
-    }
-
-    if (typeof window.rbi_practicesData !== 'undefined') {
-        window.rbi_practicesData.forEach(p => {
-            [p.photoBefore, p.photoAfter].forEach(url => {
-                if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
-            });
-        });
-    }
-
-    // 6. PDF-отчеты
-    if (typeof reportsArray !== 'undefined') {
-        reportsArray.forEach(rep => {
-            if (rep.file_url && rep.file_url.startsWith('http') && !rep.file_blob) {
-                urlsToDownload.add(rep.file_url);
-            }
-        });
-    }
-
-    let downloadedCount = 0;
-    let alreadyCachedCount = 0;
-    let failedCount = 0;
-
-    const urlArray = Array.from(urlsToDownload);
-    const total = urlArray.length;
-    const BATCH_SIZE = 3;
-
-    if (total === 0) {
-        if (miniText) miniText.innerText = 'Нет файлов для загрузки';
-        setTimeout(() => miniCacheToast.classList.add('hidden'), 1800);
-
-        window.rbiFileCacheQueueLock = false;
-        return;
-    }
-
-    for (let i = 0; i < total; i += BATCH_SIZE) {
-        const batch = urlArray.slice(i, i + BATCH_SIZE);
-
-        if (miniText) {
-            miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
+        if (showProgress) {
+            miniCacheToast.classList.remove('hidden');
+            if (miniText) miniText.innerText = 'Подготовка файлов...';
         }
 
-        const promises = batch.map(async (url) => {
-            try {
-                // PDF-отчеты
-                if (url.includes('/reports/')) {
-                    const repObj = reportsArray.find(r => r.file_url === url);
+        const urlsToDownload = new Set();
 
-                    if (repObj && repObj.file_blob) {
+        if (typeof contractorArray !== 'undefined') {
+            contractorArray.forEach(check => {
+                if (check.photos) {
+                    Object.values(check.photos).forEach(url => {
+                        if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                    });
+                }
+            });
+        }
+
+        if (typeof customTwiCards !== 'undefined') {
+            customTwiCards.forEach(twi => {
+                [twi.photoGood, twi.photoBad, twi.pdfData].forEach(url => {
+                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                });
+
+                if (twi.steps) {
+                    twi.steps.forEach(step => {
+                        if (step.photo && (step.photo.startsWith('http') || step.photo.startsWith('cloud://'))) {
+                            urlsToDownload.add(step.photo);
+                        }
+                    });
+                }
+            });
+        }
+
+        if (typeof customNodes !== 'undefined') {
+            customNodes.forEach(node => {
+                if (node.img && (node.img.startsWith('http') || node.img.startsWith('cloud://'))) {
+                    urlsToDownload.add(node.img);
+                }
+
+                if (Array.isArray(node.attachments)) {
+                    node.attachments.forEach(att => {
+                        const url = att.url || att.data || att.file_url || '';
+                        if (url && (url.startsWith('http') || url.startsWith('cloud://'))) {
+                            urlsToDownload.add(url);
+                        }
+                    });
+                }
+            });
+        }
+
+        if (typeof customDocs !== 'undefined') {
+            customDocs.forEach(doc => {
+                if (doc.pdfData && (doc.pdfData.startsWith('http') || doc.pdfData.startsWith('cloud://'))) {
+                    urlsToDownload.add(doc.pdfData);
+                }
+            });
+        }
+
+        if (typeof window.rbi_meetingsData !== 'undefined') {
+            window.rbi_meetingsData.forEach(m => {
+                if (m.qDayPhoto && (m.qDayPhoto.startsWith('http') || m.qDayPhoto.startsWith('cloud://'))) {
+                    urlsToDownload.add(m.qDayPhoto);
+                }
+            });
+        }
+
+        if (typeof window.rbi_practicesData !== 'undefined') {
+            window.rbi_practicesData.forEach(p => {
+                [p.photoBefore, p.photoAfter].forEach(url => {
+                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                });
+            });
+        }
+
+        if (typeof reportsArray !== 'undefined') {
+            reportsArray.forEach(rep => {
+                if (rep.file_url && rep.file_url.startsWith('http') && !rep.file_blob) {
+                    urlsToDownload.add(rep.file_url);
+                }
+            });
+        }
+
+        let downloadedCount = 0;
+        let alreadyCachedCount = 0;
+        let failedCount = 0;
+
+        const urlArray = Array.from(urlsToDownload);
+        const total = urlArray.length;
+        const BATCH_SIZE = 3;
+
+        if (total === 0) {
+            if (showProgress && miniText) {
+                miniText.innerText = 'Нет файлов для загрузки';
+                setTimeout(() => miniCacheToast.classList.add('hidden'), 1800);
+            }
+            return;
+        }
+
+        for (let i = 0; i < total; i += BATCH_SIZE) {
+            const batch = urlArray.slice(i, i + BATCH_SIZE);
+
+            if (showProgress && miniText) {
+                miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
+            }
+
+            const promises = batch.map(async (url) => {
+                try {
+                    if (url.includes('/reports/')) {
+                        const repObj = reportsArray.find(r => r.file_url === url);
+
+                        if (repObj && repObj.file_blob) {
+                            alreadyCachedCount++;
+                            return;
+                        }
+
+                        if (repObj && !repObj.file_blob) {
+                            const res = await rbiFetchCloudFileNoBrowserCache(url);
+
+                            if (res.ok) {
+                                const reportBlob = await res.blob();
+
+                                repObj.file_blob = reportBlob;
+                                repObj.cache_status = 'cached_cloud';
+                                repObj.cacheStatus = 'cached_cloud';
+                                repObj.updatedAt = new Date().toISOString();
+                                repObj.updated_at = repObj.updatedAt;
+
+                                await dbPut(STORES.REPORTS, repObj);
+
+                                if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
+                                    await window.RbiStorageManager.markCloudFileCached(
+                                        url,
+                                        reportBlob.size || 0,
+                                        reportBlob.type || 'application/pdf'
+                                    );
+                                }
+
+                                downloadedCount++;
+                            } else {
+                                failedCount++;
+                            }
+                        }
+
+                        return;
+                    }
+
+                    if (PhotoManager.cache[url]) {
                         alreadyCachedCount++;
                         return;
                     }
 
-                    if (repObj && !repObj.file_blob) {
-                        const res = await rbiFetchCloudFileNoBrowserCache(url);
-
-                        if (res.ok) {
-                            const reportBlob = await res.blob();
-                            repObj.file_blob = reportBlob;
-                            repObj.cache_status = 'cached_cloud';
-                            repObj.cacheStatus = 'cached_cloud';
-                            repObj.updatedAt = new Date().toISOString();
-                            repObj.updated_at = repObj.updatedAt;
-
-                            await dbPut(STORES.REPORTS, repObj);
-
-                            if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
-                                await window.RbiStorageManager.markCloudFileCached(
-                                    url,
-                                    reportBlob.size || 0,
-                                    reportBlob.type || 'application/pdf'
-                                );
-                            }
-
-                            downloadedCount++;
-                        } else {
-                            failedCount++;
-                        }
+                    const alreadyInDb = await dbGet(STORES.PHOTOS, url);
+                    if (alreadyInDb && alreadyInDb.data) {
+                        alreadyCachedCount++;
+                        return;
                     }
 
-                    return;
-                }
+                    if (url.startsWith('cloud://')) {
+                        alreadyCachedCount++;
+                        return;
+                    }
 
-                // Уже есть в RAM
-                if (PhotoManager.cache[url]) {
-                    alreadyCachedCount++;
-                    return;
-                }
+                    const result = await rbiDownloadFileWithRetry(url, 3);
 
-                // Уже есть в IndexedDB
-                const alreadyInDb = await dbGet(STORES.PHOTOS, url);
-                if (alreadyInDb && alreadyInDb.data) {
-                    alreadyCachedCount++;
-                    return;
-                }
+                    if (result.status === 'cached') {
+                        downloadedCount++;
+                    } else if (result.status === 'postponed' || result.status === 'skipped') {
+                        alreadyCachedCount++;
+                    } else {
+                        failedCount++;
+                    }
 
-                // cloud:// — это уже локальная ссылка на IndexedDB, ошибкой не считаем
-                if (url.startsWith('cloud://')) {
-                    alreadyCachedCount++;
-                    return;
-                }
-
-                const result = await rbiDownloadFileWithRetry(url, 3);
-
-                if (result.status === 'cached') {
-                    downloadedCount++;
-                } else if (result.status === 'postponed' || result.status === 'skipped') {
-                    alreadyCachedCount++;
-                } else {
+                } catch (e) {
                     failedCount++;
+                    console.warn('[Cache] Пропущен файл:', String(url).substring(0, 80), e);
                 }
+            });
 
-            } catch (e) {
-                failedCount++;
-                console.warn('[Cache] Пропущен файл:', String(url).substring(0, 80), e);
+            await Promise.all(promises);
+
+            if (miniText) {
+                miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
             }
-        });
-
-        await Promise.all(promises);
+        }
 
         if (miniText) {
-            miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
+            if (failedCount > 0) {
+                miniText.innerText = `Готово: ${downloadedCount} загружено, ${failedCount} пропущено`;
+            } else if (downloadedCount > 0) {
+                miniText.innerText = `Готово: загружено ${downloadedCount}`;
+            } else {
+                miniText.innerText = 'Все файлы уже сохранены';
+            }
+        }
+
+        if (showProgress) {
+            setTimeout(() => miniCacheToast.classList.add('hidden'), 3000);
+        }
+
+    } finally {
+        window.rbiFileCacheQueueLock = false;
+
+        if (typeof updateStorageInfo === 'function') {
+            updateStorageInfo();
         }
     }
-
-    if (miniText) {
-        if (failedCount > 0) {
-            miniText.innerText = `Готово: ${downloadedCount} загружено, ${failedCount} пропущено`;
-        } else if (downloadedCount > 0) {
-            miniText.innerText = `Готово: загружено ${downloadedCount}`;
-        } else {
-            miniText.innerText = 'Все файлы уже сохранены';
-        }
-    }
-
-    setTimeout(() => {
-        miniCacheToast.classList.add('hidden');
-    }, 3000);
-
-    window.rbiFileCacheQueueLock = false;
 };
 
 
