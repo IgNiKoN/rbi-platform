@@ -970,10 +970,19 @@ function closeModal() {
 // === НАВИГАЦИЯ (5 ВКЛАДОК v16.0) ===
 function setupNavigation() {
     document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', function () {
+        if (item.dataset.navReady === '1') return;
+        item.dataset.navReady = '1';
+
+        const handler = function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+
             const tabId = this.getAttribute('data-tab');
-            switchTab(tabId, this);
-        });
+            if (tabId) switchTab(tabId, this);
+        };
+
+        item.addEventListener('pointerdown', handler, { passive: false });
+        item.addEventListener('click', handler, { passive: false });
     });
 }
 
@@ -1863,7 +1872,7 @@ async function openTwiViewer(twiId) {
                 } else {
                     blobUrl = await PhotoManager.getAsyncUrl(card.pdfData) || PhotoManager.getSrc(card.pdfData);
                 }
-
+                const isAndroid = /Android/i.test(navigator.userAgent);
                 content.innerHTML = `
                     <div class="w-full h-full flex flex-col relative bg-slate-100 dark:bg-slate-900">
                         <div class="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 p-2 text-[10px] text-center font-bold flex justify-between items-center shrink-0 border-b border-indigo-100 dark:border-indigo-800">
@@ -1871,9 +1880,20 @@ async function openTwiViewer(twiId) {
                             <a href="${blobUrl}" target="_blank" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg active:scale-95 shadow-sm uppercase tracking-widest">Открыть</a>
                         </div>
                         <div style="-webkit-overflow-scrolling: touch; overflow-y: auto; flex: 1; width: 100%; min-height: 60vh;">
-                            <object data="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full border-none bg-white dark:bg-slate-800" style="min-height: 60vh;">
-                                <embed src="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full" />
-                            </object>
+                            ${isAndroid ? `
+    <div class="flex-1 flex flex-col items-center justify-center p-6 text-center bg-white dark:bg-slate-900">
+        <div class="text-[13px] font-black text-slate-800 dark:text-white mb-2">PDF готов к открытию</div>
+        <div class="text-[10px] font-bold text-slate-500 mb-4">На Android PDF надежнее открывать системной читалкой.</div>
+        <a href="${blobUrl}" target="_blank" download="${card.pdfName || 'document.pdf'}"
+           class="bg-red-600 text-white px-5 py-3 rounded-xl font-black text-[11px] uppercase shadow-md">
+           Открыть PDF
+        </a>
+    </div>
+` : `
+    <object data="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full border-none bg-white dark:bg-slate-800" style="min-height: 60vh;">
+        <embed src="${blobUrl}#view=FitH" type="application/pdf" class="w-full h-full" />
+    </object>
+`}
                         </div>
                         <div class="p-3 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-10">
                             <div class="min-w-0 pr-2 flex-1">
@@ -5341,10 +5361,14 @@ window.openDocViewer = function (docId) {
     };
 
     // Временно добавляем в массив, чтобы читалка его нашла, потом уберем
-    customTwiCards.push(fakeTwiCard);
-    openTwiViewer(doc.id);
-    // Сразу убираем, чтобы не засорять TWI-базу
-    customTwiCards.pop();
+    const exists = customTwiCards.find(c => c.id === fakeTwiCard.id);
+
+    if (!exists) {
+        fakeTwiCard._tempViewerOnly = true;
+        customTwiCards.push(fakeTwiCard);
+    }
+
+    openTwiViewer(fakeTwiCard.id);
     // Ленивая индексация: если документ загружен давно и текста нет — читаем его сейчас
     if (!doc.extractedText && doc.pdfData && appSettings.aiEnabled) {
         setTimeout(async () => {
@@ -6103,7 +6127,7 @@ async function saveTwiCard() {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
         title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType,
         owner: appSettings.engineerName || 'Инженер',
-        linkedNodeId: document.getElementById('twi-linked-node-id').value || null, 
+        linkedNodeId: document.getElementById('twi-linked-node-id').value || null,
         linkedDocId: document.getElementById('twi-linked-doc-id').value || null,
         videoLink: document.getElementById('twi-video-link-input').value.trim() || null
     };
@@ -9548,7 +9572,7 @@ window.rbi_createMeeting = function (customData = null) {
         // 3. Вспомогательная функция отрисовки одной сгруппированной строки
         const renderGroupRow = (groupTitle, itemsArray, borderCls, badgeHtml, defaultDeadline = '') => {
             if (itemsArray.length === 0) return '';
-            
+
             // Текст для скрытого инпута (уйдет в ИИ)
             const fullText = groupTitle + ':\\n• ' + itemsArray.join('\\n• ');
             // HTML для вывода на экран (красивый маркированный список)

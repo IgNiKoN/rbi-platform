@@ -252,13 +252,13 @@ async function dbGetAll(storeName) {
         const tx = db.transaction(storeName, 'readonly');
         const store = tx.objectStore(storeName);
         const req = store.getAll();
-        
+
         req.onsuccess = () => {
             let results = req.result || [];
 
             // --- ГЛОБАЛЬНАЯ ИЗОЛЯЦИЯ ПРОЕКТОВ ---
             const pCode = window.syncConfig?.projectCode || 'LOCAL';
-            
+
             // Исключения: эти таблицы общие для всего телефона (настройки, логи, фото-кэш)
             const globalStores = [STORES.STATE, STORES.SETTINGS, STORES.PHOTOS, STORES.BACKUP_LOGS, STORES.GAME_LOGS];
 
@@ -266,9 +266,9 @@ async function dbGetAll(storeName) {
                 results = results.filter(item => {
                     // Разрешаем системные шаблоны и узлы (они начинаются на sys_)
                     if (String(item.id).startsWith('sys_') || String(item.slug).startsWith('sys_')) return true;
-                    
+
                     const itemProject = item.project_code || item.data?.project_code;
-                    
+
                     // Пропускаем записи, если они принадлежат текущему проекту
                     // (или если project_code вообще пустой — это старые локальные данные до обновления)
                     return !itemProject || itemProject === pCode;
@@ -1119,7 +1119,7 @@ window.RbiStorageManager = {
             let nextSize = sizeBytes || currentSize || 0;
             let nextMime = mimeType || currentMime || '';
 
-           // HEAD-запрос делаем только если это НЕ синхронизация (т.е. уже прошёл первый pull).
+            // HEAD-запрос делаем только если это НЕ синхронизация (т.е. уже прошёл первый pull).
             // Во время первой синхронизации этот запрос блокирует поток на ~60 сек для каждого файла.
             // lastPullAt пустой при первой синхронизации.
             const isFirstSync = !localStorage.getItem('rbi_sync_last_pull_at');
@@ -2493,19 +2493,139 @@ async function runPhotoMigration(historyArray) {
         if (itemChanged) await dbPut(STORES.HISTORY, item);
     }
 }
+// === RBI FILE CACHE QUEUE v17.8.205 ===
+window.rbiFileCacheQueueLock = false;
 
+async function rbiUpsertFileCacheQueueItem(url, status = 'pending', extra = {}) {
+    if (!url || !STORES.FILE_REGISTRY) return;
+
+    const now = new Date().toISOString();
+    const all = await dbGetAll(STORES.FILE_REGISTRY) || [];
+
+    let item = all.find(f =>
+        f.public_url === url ||
+        f.publicUrl === url ||
+        f.local_key === url ||
+        f.localKey === url
+    );
+
+    if (!item) {
+        item = {
+            id: 'cacheq_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 100000),
+            project_code: window.syncConfig?.projectCode || 'LOCAL',
+            public_url: url,
+            publicUrl: url,
+            local_key: url,
+            localKey: url,
+            entity_type: window.RbiStorageManager?.guessEntityTypeByUrl?.(url) || 'unknown_file',
+            entityType: window.RbiStorageManager?.guessEntityTypeByUrl?.(url) || 'unknown_file',
+            cache_policy: 'auto',
+            cachePolicy: 'auto',
+            is_deleted: false,
+            created_at: now,
+            createdAt: now
+        };
+    }
+
+    item.cache_status = status;
+    item.cacheStatus = status;
+    item.cache_attempts = extra.cache_attempts ?? item.cache_attempts ?? item.cacheAttempts ?? 0;
+    item.cacheAttempts = item.cache_attempts;
+    item.last_cache_error = extra.last_cache_error ?? item.last_cache_error ?? '';
+    item.lastCacheError = item.last_cache_error;
+    item.next_cache_retry_at = extra.next_cache_retry_at ?? item.next_cache_retry_at ?? null;
+    item.nextCacheRetryAt = item.next_cache_retry_at;
+    item.updated_at = now;
+    item.updatedAt = now;
+
+    await dbPut(STORES.FILE_REGISTRY, item);
+}
+
+async function rbiDownloadFileWithRetry(url, maxAttempts = 3) {
+    if (!url || !String(url).startsWith('http')) {
+        return { status: 'skipped' };
+    }
+
+    const nowMs = Date.now();
+    const registry = await dbGetAll(STORES.FILE_REGISTRY) || [];
+    const item = registry.find(f => f.public_url === url || f.publicUrl === url);
+
+    const retryAt = item?.next_cache_retry_at || item?.nextCacheRetryAt;
+    if (retryAt && new Date(retryAt).getTime() > nowMs) {
+        return { status: 'postponed' };
+    }
+
+    let attempts = item?.cache_attempts || item?.cacheAttempts || 0;
+
+    for (let i = attempts; i < maxAttempts; i++) {
+        try {
+            await rbiUpsertFileCacheQueueItem(url, 'pending', {
+                cache_attempts: i + 1,
+                last_cache_error: ''
+            });
+
+            await PhotoManager.downloadForOffline(url);
+
+            const cached = await dbGet(STORES.PHOTOS, url);
+            if (cached && cached.data) {
+                await rbiUpsertFileCacheQueueItem(url, 'cached_cloud', {
+                    cache_attempts: i + 1,
+                    last_cache_error: '',
+                    next_cache_retry_at: null
+                });
+
+                return { status: 'cached' };
+            }
+
+            throw new Error('Файл не сохранился в IndexedDB');
+
+        } catch (e) {
+            const delayMin = i === 0 ? 2 : i === 1 ? 10 : 60;
+            const nextRetry = new Date(Date.now() + delayMin * 60 * 1000).toISOString();
+
+            await rbiUpsertFileCacheQueueItem(url, i + 1 >= maxAttempts ? 'failed' : 'pending', {
+                cache_attempts: i + 1,
+                last_cache_error: e.message || String(e),
+                next_cache_retry_at: nextRetry
+            });
+
+            if (i + 1 >= maxAttempts) {
+                return { status: 'failed' };
+            }
+        }
+    }
+
+    return { status: 'failed' };
+}
 
 window.downloadMissingCloudFiles = async function (silent = false) {
-    console.log("[Cache] Фоновая загрузка облачных файлов...");
-
-    const loader = document.getElementById('global-loader');
-    const loaderText = document.getElementById('global-loader-text');
-
-    if (!silent && loader && loaderText) {
-        loaderText.innerText = 'Кэширование облачных файлов...';
-        loader.style.display = 'flex';
-        setTimeout(() => loader.classList.remove('opacity-0'), 10);
+    if (window.rbiFileCacheQueueLock) {
+        if (typeof showToast === 'function') showToast('⏳ Докачка файлов уже выполняется');
+        return;
     }
+
+    window.rbiFileCacheQueueLock = true;
+    console.log("[Cache] Загрузка облачных файлов...");
+
+    // Единый мини-индикатор для ручной и фоновой загрузки
+    let miniCacheToast = document.getElementById('mini-cache-toast');
+
+    if (!miniCacheToast) {
+        miniCacheToast = document.createElement('div');
+        miniCacheToast.id = 'mini-cache-toast';
+        miniCacheToast.className = 'fixed right-3 bottom-24 z-[9000] bg-slate-900/90 text-white rounded-2xl shadow-xl px-4 py-3 text-[11px] font-bold hidden border border-white/10 backdrop-blur-md max-w-[280px]';
+        miniCacheToast.innerHTML = `
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin shrink-0"></span>
+                <span id="mini-cache-toast-text">Кэширование файлов...</span>
+            </div>
+        `;
+        document.body.appendChild(miniCacheToast);
+    }
+
+    const miniText = document.getElementById('mini-cache-toast-text');
+    miniCacheToast.classList.remove('hidden');
+    if (miniText) miniText.innerText = 'Подготовка файлов...';
 
     const urlsToDownload = new Set();
 
@@ -2520,15 +2640,18 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         });
     }
 
-    // 2. TWI‑карты (фото и PDF)
+    // 2. TWI-карты
     if (typeof customTwiCards !== 'undefined') {
         customTwiCards.forEach(twi => {
             [twi.photoGood, twi.photoBad, twi.pdfData].forEach(url => {
                 if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
             });
+
             if (twi.steps) {
                 twi.steps.forEach(step => {
-                    if (step.photo && (step.photo.startsWith('http') || step.photo.startsWith('cloud://'))) urlsToDownload.add(step.photo);
+                    if (step.photo && (step.photo.startsWith('http') || step.photo.startsWith('cloud://'))) {
+                        urlsToDownload.add(step.photo);
+                    }
                 });
             }
         });
@@ -2538,15 +2661,34 @@ window.downloadMissingCloudFiles = async function (silent = false) {
     if (typeof customNodes !== 'undefined') {
         customNodes.forEach(node => {
             if (node.img && (node.img.startsWith('http') || node.img.startsWith('cloud://'))) urlsToDownload.add(node.img);
+
+            if (Array.isArray(node.attachments)) {
+                node.attachments.forEach(att => {
+                    const url = att.url || att.data || att.file_url || '';
+                    if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                });
+            }
         });
     }
 
-    // 4. Совещания и практики
-    if (typeof window.rbi_meetingsData !== 'undefined') {
-        window.rbi_meetingsData.forEach(m => {
-            if (m.qDayPhoto && (m.qDayPhoto.startsWith('http') || m.qDayPhoto.startsWith('cloud://'))) urlsToDownload.add(m.qDayPhoto);
+    // 4. Документы справочника
+    if (typeof customDocs !== 'undefined') {
+        customDocs.forEach(doc => {
+            if (doc.pdfData && (doc.pdfData.startsWith('http') || doc.pdfData.startsWith('cloud://'))) {
+                urlsToDownload.add(doc.pdfData);
+            }
         });
     }
+
+    // 5. Совещания и практики
+    if (typeof window.rbi_meetingsData !== 'undefined') {
+        window.rbi_meetingsData.forEach(m => {
+            if (m.qDayPhoto && (m.qDayPhoto.startsWith('http') || m.qDayPhoto.startsWith('cloud://'))) {
+                urlsToDownload.add(m.qDayPhoto);
+            }
+        });
+    }
+
     if (typeof window.rbi_practicesData !== 'undefined') {
         window.rbi_practicesData.forEach(p => {
             [p.photoBefore, p.photoAfter].forEach(url => {
@@ -2555,7 +2697,7 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         });
     }
 
-    // 5. PDF-Отчеты
+    // 6. PDF-отчеты
     if (typeof reportsArray !== 'undefined') {
         reportsArray.forEach(rep => {
             if (rep.file_url && rep.file_url.startsWith('http') && !rep.file_blob) {
@@ -2566,23 +2708,41 @@ window.downloadMissingCloudFiles = async function (silent = false) {
 
     let downloadedCount = 0;
     let alreadyCachedCount = 0;
+    let failedCount = 0;
+
     const urlArray = Array.from(urlsToDownload);
     const total = urlArray.length;
-    const BATCH_SIZE = 5; // Качаем по 5 файлов за раз
+    const BATCH_SIZE = 3;
+
+    if (total === 0) {
+        if (miniText) miniText.innerText = 'Нет файлов для загрузки';
+        setTimeout(() => miniCacheToast.classList.add('hidden'), 1800);
+
+        window.rbiFileCacheQueueLock = false;
+        return;
+    }
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = urlArray.slice(i, i + BATCH_SIZE);
-        
-        if (!silent && loaderText) {
-            loaderText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount} из ${total}…`;
+
+        if (miniText) {
+            miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
         }
 
         const promises = batch.map(async (url) => {
             try {
+                // PDF-отчеты
                 if (url.includes('/reports/')) {
                     const repObj = reportsArray.find(r => r.file_url === url);
+
+                    if (repObj && repObj.file_blob) {
+                        alreadyCachedCount++;
+                        return;
+                    }
+
                     if (repObj && !repObj.file_blob) {
                         const res = await rbiFetchCloudFileNoBrowserCache(url);
+
                         if (res.ok) {
                             const reportBlob = await res.blob();
                             repObj.file_blob = reportBlob;
@@ -2590,57 +2750,83 @@ window.downloadMissingCloudFiles = async function (silent = false) {
                             repObj.cacheStatus = 'cached_cloud';
                             repObj.updatedAt = new Date().toISOString();
                             repObj.updated_at = repObj.updatedAt;
+
                             await dbPut(STORES.REPORTS, repObj);
 
                             if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
-                                await window.RbiStorageManager.markCloudFileCached(url, reportBlob.size || 0, reportBlob.type || 'application/pdf');
+                                await window.RbiStorageManager.markCloudFileCached(
+                                    url,
+                                    reportBlob.size || 0,
+                                    reportBlob.type || 'application/pdf'
+                                );
                             }
+
                             downloadedCount++;
+                        } else {
+                            failedCount++;
                         }
                     }
+
                     return;
                 }
 
-                // Уже в RAM‑кэше
-                if (PhotoManager.cache[url]) { alreadyCachedCount++; return; }
+                // Уже есть в RAM
+                if (PhotoManager.cache[url]) {
+                    alreadyCachedCount++;
+                    return;
+                }
 
-                // Проверяем IndexedDB
+                // Уже есть в IndexedDB
                 const alreadyInDb = await dbGet(STORES.PHOTOS, url);
-                if (alreadyInDb) { alreadyCachedCount++; return; }
+                if (alreadyInDb && alreadyInDb.data) {
+                    alreadyCachedCount++;
+                    return;
+                }
 
-                if (url.startsWith('cloud://')) return;
+                // cloud:// — это уже локальная ссылка на IndexedDB, ошибкой не считаем
+                if (url.startsWith('cloud://')) {
+                    alreadyCachedCount++;
+                    return;
+                }
 
-                await PhotoManager.getBase64(url);
-                downloadedCount++;
+                const result = await rbiDownloadFileWithRetry(url, 3);
+
+                if (result.status === 'cached') {
+                    downloadedCount++;
+                } else if (result.status === 'postponed' || result.status === 'skipped') {
+                    alreadyCachedCount++;
+                } else {
+                    failedCount++;
+                }
+
             } catch (e) {
-                console.warn('[Cache] Пропущен файл:', url.substring(0, 30));
+                failedCount++;
+                console.warn('[Cache] Пропущен файл:', String(url).substring(0, 80), e);
             }
         });
 
-        // Ждем завершения пачки
         await Promise.all(promises);
-    }
 
-    if (typeof showToast === 'function') {
-        if (downloadedCount > 0) {
-            showToast(`📥 Автокэширование завершено. Загружено файлов: ${downloadedCount}`);
-        } else if (!silent) {
-            if (alreadyCachedCount === total && total > 0) {
-                showToast(`✅ Все файлы уже сохранены на устройстве.`);
-            } else if (total === 0) {
-                showToast(`ℹ️ Нет файлов для кэширования.`);
-            }
+        if (miniText) {
+            miniText.innerText = `Кэширование: ${downloadedCount + alreadyCachedCount}/${total}`;
         }
     }
 
-    if (typeof updateStorageInfo === 'function') updateStorageInfo();
-
-    if (!silent && loader) {
-        loader.classList.add('opacity-0');
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 300);
+    if (miniText) {
+        if (failedCount > 0) {
+            miniText.innerText = `Готово: ${downloadedCount} загружено, ${failedCount} пропущено`;
+        } else if (downloadedCount > 0) {
+            miniText.innerText = `Готово: загружено ${downloadedCount}`;
+        } else {
+            miniText.innerText = 'Все файлы уже сохранены';
+        }
     }
+
+    setTimeout(() => {
+        miniCacheToast.classList.add('hidden');
+    }, 3000);
+
+    window.rbiFileCacheQueueLock = false;
 };
 
 

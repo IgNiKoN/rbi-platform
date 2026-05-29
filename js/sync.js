@@ -1671,7 +1671,7 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
         if (row.data && typeof row.data === 'object' && !Array.isArray(row.data)) {
             obj = { ...row.data };
         } else if (row.template_data) {
-            obj = { ...row.template_data }; 
+            obj = { ...row.template_data };
         }
 
         obj = { ...obj, ...row };
@@ -2882,9 +2882,9 @@ if (window.RbiStorageManager) {
                             if (match && match.status === 'matched') {
                                 c.project_canonical_key = match.canonical_key;
                                 c.project_display_name = match.display_name;
-                                c.projectName = match.display_name; 
+                                c.projectName = match.display_name;
                             }
-                        } catch (err) {}
+                        } catch (err) { }
                     }
 
                     // Проверка прав на отправку
@@ -3831,8 +3831,35 @@ if (window.RbiStorageManager) {
             const now = Date.now();
             if (!window._lastBgDownloadTime || (now - window._lastBgDownloadTime) > 300000) {
                 window._lastBgDownloadTime = now;
-                setTimeout(() => {
-                    window.downloadMissingCloudFiles(mode === 'manual' ? false : true);
+                setTimeout(async () => {
+                    await window.downloadMissingCloudFiles(mode === 'manual' ? false : true);
+
+                    if (typeof window.rbi_reloadReferenceMemory === 'function') {
+                        await window.rbi_reloadReferenceMemory();
+                        window.syncDirtyFlags.reference = false;
+                    }
+
+                    const activeTab = document.querySelector('.nav-item.active')?.getAttribute('data-tab') || '';
+
+                    // Обновляем только НЕактивные вкладки, чтобы интерфейс не прыгал
+                    if (activeTab !== 'tab-knowledge') {
+                        if (typeof renderTwiList === 'function') renderTwiList();
+                        if (typeof renderDocsList === 'function') renderDocsList();
+                        if (typeof renderNodesList === 'function') renderNodesList();
+                    } else {
+                        window.syncDirtyFlags.reference = true;
+                    }
+
+                    if (activeTab !== 'tab-audit' && !currentTemplateKey && typeof renderSelector === 'function') {
+                        renderSelector();
+                    }
+
+                    if (activeTab !== 'tab-history' && activeTab !== 'tab-analytics') {
+                        if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
+                    } else {
+                        window.syncDirtyFlags.history = true;
+                        window.syncDirtyFlags.analytics = true;
+                    }
                 }, 5000);
             }
         }
@@ -3853,7 +3880,7 @@ if (window.RbiStorageManager) {
         window.syncDirtyFlags.reference = true; // <-- ДОБАВИЛИ ФЛАГ СПРАВОЧНИКА
         // Перезагружаем Справочник объектов в память, если он прилетел из облака
         if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
-        
+
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
         // НОВОЕ: Принудительно очищаем оперативную память от дублей, загружая свежие задачи прямо из IndexedDB
         if (typeof dbGetAll === 'function') {

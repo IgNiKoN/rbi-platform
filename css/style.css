@@ -1858,3 +1858,32 @@ body.read-only-mode .swipe-bg-fail {
     }
 
 }
+
+/* === RBI FIX ANDROID NAVIGATION v17.8.205 === */
+html,
+body {
+    overscroll-behavior-y: contain;
+    overscroll-behavior-x: none;
+}
+
+body {
+    touch-action: pan-y;
+}
+
+.bottom-nav,
+.bottom-nav *,
+.nav-item,
+.nav-item * {
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
+}
+
+.view-section {
+    touch-action: pan-y;
+}
+
+body.modal-open {
+    overflow: hidden;
+    height: 100dvh;
+    touch-action: none;
+}
