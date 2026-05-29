@@ -1243,6 +1243,10 @@ window.applySyncConnect = async function (name, code, hashedPin) {
     localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
     localStorage.setItem('rbi_cloud_dirty', '1');
 
+    // RBI FIX: при новом подключении/переподключении всегда делаем полный pull из облака
+    localStorage.removeItem('rbi_sync_last_pull_at');
+    localStorage.setItem('rbi_force_full_pull', '1');
+
     if (typeof appSettings !== 'undefined') {
         appSettings.engineerName = name;
 
@@ -1773,8 +1777,33 @@ window.triggerSync = async function (mode = 'silent') {
     const pCode = window.syncConfig.projectCode;
     const iName = window.syncConfig.engineerName;
     const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
-    const lastPullAt = localStorage.getItem('rbi_sync_last_pull_at') || '';
+    let lastPullAt = localStorage.getItem('rbi_sync_last_pull_at') || '';
     const lastPushAt = localStorage.getItem('rbi_sync_last_push_at') || '';
+
+    const forceFullPullRequested = localStorage.getItem('rbi_force_full_pull') === '1';
+
+    let localReferenceCount = 0;
+    try {
+        const localDocs = await dbGetAll('custom_docs') || [];
+        const localNodes = await dbGetAll('custom_nodes') || [];
+        const localTwi = await dbGetAll('twi_cards') || [];
+        const localKb = await dbGetAll('app_assistant_kb') || [];
+
+        localReferenceCount =
+            localDocs.filter(x => !x._deleted && !x.is_deleted).length +
+            localNodes.filter(x => !x._deleted && !x.is_deleted).length +
+            localTwi.filter(x => !x._deleted && !x.is_deleted).length +
+            localKb.filter(x => !x._deleted && !x.is_deleted).length;
+    } catch (e) {
+        localReferenceCount = 0;
+    }
+
+    let needFullReferencePull = forceFullPullRequested || localReferenceCount === 0;
+
+    if (needFullReferencePull) {
+        console.log('[Sync] Полный pull справочников: локальная база знаний пустая или запрошен полный pull');
+        lastPullAt = '';
+    }
     // Счётчики реально отправленных данных.
     // Обязательно объявляем заранее, чтобы не было ReferenceError при первой синхронизации.
 
@@ -1925,6 +1954,13 @@ window.triggerSync = async function (mode = 'silent') {
         // Если профиль не удалось проверить — запрещаем отправку,
         // но не запрещаем pull и локальную работу.
         canPush = false;
+    }
+        // RBI FIX: если в ходе проверки роли появился запрос полного pull,
+    // применяем его сразу в этой же синхронизации, а не на следующий запуск.
+    if (localStorage.getItem('rbi_force_full_pull') === '1') {
+        needFullReferencePull = true;
+        lastPullAt = '';
+        console.log('[Sync] Полный pull применён после обновления роли.');
     }
     // ==============================================
     // ==============================================
@@ -3831,14 +3867,36 @@ if (window.RbiStorageManager) {
         // =====================================================
         const doneAt = new Date().toISOString();
 
-        localStorage.setItem('rbi_sync_last_pull_at', doneAt);
         localStorage.setItem('rbi_sync_last_push_at', doneAt);
-        if (pushErrors === 0) {
+
+        let referenceOk = true;
+        try {
+            const checkDocs = await dbGetAll('custom_docs') || [];
+            const checkNodes = await dbGetAll('custom_nodes') || [];
+            const checkTwi = await dbGetAll('twi_cards') || [];
+            const checkKb = await dbGetAll('app_assistant_kb') || [];
+
+            const checkReferenceCount =
+                checkDocs.filter(x => !x._deleted && !x.is_deleted).length +
+                checkNodes.filter(x => !x._deleted && !x.is_deleted).length +
+                checkTwi.filter(x => !x._deleted && !x.is_deleted).length +
+                checkKb.filter(x => !x._deleted && !x.is_deleted).length;
+
+            if (needFullReferencePull && checkReferenceCount === 0) {
+                referenceOk = false;
+            }
+        } catch (e) {
+            referenceOk = false;
+        }
+
+        if (pushErrors === 0 && referenceOk) {
             localStorage.setItem('rbi_cloud_dirty', '0');
-            localStorage.setItem('rbi_sync_last_pull_at', new Date().toISOString());
+            localStorage.setItem('rbi_sync_last_pull_at', doneAt);
             localStorage.removeItem('rbi_force_full_pull');
         } else {
-            console.log('[Sync] Были сетевые ошибки, флаг изменений сохранен для повторной попытки.');
+            localStorage.setItem('rbi_force_full_pull', '1');
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            console.log('[Sync] Pull неполный, полный pull будет повторён при следующей синхронизации.');
         }
 
         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
