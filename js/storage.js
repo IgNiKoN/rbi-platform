@@ -2,20 +2,28 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 16;
+const DB_VERSION = 17; // БЫЛО 16, СТАЛО 17
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
 
 const STORES = {
-    OBJECT_QUEUE: 'object_normalization_queue', // <-- ВСТАВИТЬ СЮДА
+    // --- НОВЫЕ ТАБЛИЦЫ ДЛЯ СТРОЙКОНТРОЛЯ ---
+    CONST_OBJECTS: 'construction_objects',
+    CONST_BUILDINGS: 'construction_buildings',
+    CONST_FLOORS: 'construction_floors',
+    CONST_DEFECTS: 'construction_defects', // <-- МЫ ДОБАВИЛИ ЭТУ СТРОКУ
+    // ---------------------------------------
+    // ---------------------------------------
+
+    OBJECT_QUEUE: 'object_normalization_queue',
     STATE: 'app_state',
     HISTORY: 'app_history',
     SETTINGS: 'app_settings',
     TEMPLATES: 'user_templates',
     PHOTOS: 'app_photos',
     REPORTS: 'app_reports',
-    REPORT_TEMPLATES: 'report_templates', // <-- ХРАНИЛИЩЕ ДЛЯ ДИЗАЙНА ОТЧЕТОВ
+    REPORT_TEMPLATES: 'report_templates',
     TASKS: 'rbi_tasks',
     SCHEDULE: 'rbi_schedule_stages',
     MEETINGS: 'rbi_meetings',
@@ -26,25 +34,22 @@ const STORES = {
     FMEA: 'rbi_fmea',
     SK_IMPORTS: 'sk_imports',
 
-    // ПК СК: единый реестр замечаний и журнал загрузок
     SK_RECORDS: 'sk_records',
     SK_IMPORT_BATCHES: 'sk_import_batches',
 
-    // Старые справочники ПК СК — оставляем для совместимости
     SK_CONTRACTOR_MAP: 'sk_contractor_map',
     SK_VOLUMES: 'sk_volumes',
     SK_ISD_HISTORY: 'sk_isd_history',
     SK_CATEGORY_MAP: 'sk_category_map',
     SK_MAPPING: 'sk_mapping',
 
-    // Новый справочник подрядчиков
     CONTRACTOR_DIRECTORY: 'contractor_directory',
     CONTRACTOR_ALIASES: 'contractor_aliases',
-    CONTRACTOR_QUEUE: 'contractor_normalization_queue',      // <-- НОВОЕ
+    CONTRACTOR_QUEUE: 'contractor_normalization_queue',
     PROJECT_OBJECTS: 'project_objects',
-    OBJECT_ALIASES: 'object_aliases',   // <-- НОВОЕ
+    OBJECT_ALIASES: 'object_aliases',
     BACKUP_LOGS: 'backup_logs',
-    GAME_LOGS: 'game_logs',      // <-- НОВОЕ
+    GAME_LOGS: 'game_logs',
     TWI_CARDS: 'twi_cards',
     CUSTOM_DOCS: 'custom_docs',
     CUSTOM_NODES: 'custom_nodes',

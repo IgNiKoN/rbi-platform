@@ -981,28 +981,7 @@ function closeModal() {
 
 // === НАВИГАЦИЯ (5 ВКЛАДОК v16.0) ===
 // === НАВИГАЦИЯ: БЕЗ БЛОКИРОВКИ ЖЕСТОВ v17.8.208 ===
-function setupNavigation() {
-    if (window.__rbiNavDelegatedReady) return;
-    window.__rbiNavDelegatedReady = true;
 
-    function handleNav(e) {
-        const item = e.target.closest('.nav-item[data-tab]');
-        if (!item) return;
-
-        const tabId = item.getAttribute('data-tab');
-        if (!tabId) return;
-
-        switchTab(tabId, item);
-    }
-
-    document.querySelectorAll('.nav-item[data-tab]').forEach(item => {
-        item.addEventListener('touchend', handleNav, { passive: true });
-        item.addEventListener('click', handleNav, { passive: true });
-    });
-
-    document.addEventListener('touchend', handleNav, { passive: true });
-    document.addEventListener('click', handleNav, { passive: true });
-}
 
 // === RBI BLOCK ANDROID PULL TO REFRESH ONLY v17.8.209 ===
 // Блокирует только жест "потянуть вниз для обновления" на самом верху страницы.
@@ -1048,31 +1027,43 @@ function setupNavigation() {
 })();
 
 // === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
+// === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
 function updateBodyPadding() {
     const headerEl = document.getElementById('main-header');
-    const navEl = document.querySelector('.bottom-nav');
+    
+    // Ищем нижнюю панель по новому ID или по классу
+    const navEl = document.getElementById('main-bottom-nav') || document.querySelector('.bottom-nav');
 
     const isNavTop = (document.body.classList.contains('nav-pos-top')) ||
         (document.body.classList.contains('nav-pos-auto') && window.innerWidth >= 768);
 
+    // Проверяем, активны ли вкладки Осмотра ИЛИ Дефектов (где нужна шапка)
     const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
+    const isConstructionActive = document.getElementById('tab-construction-defects')?.classList.contains('active');
+    const needsHeader = isAuditActive || isConstructionActive;
 
-    // Снимаем дефолтный отступ контента, так как мы сами контролируем миллиметраж
+    // Снимаем дефолтный отступ контента
     const mainEl = document.querySelector('main');
     if (mainEl) mainEl.classList.remove('pt-4');
 
     let totalTop = 0;
 
-    if (isAuditActive) {
+    if (needsHeader) {
         if (isNavTop && navEl) totalTop += navEl.offsetHeight;
+        
         if (headerEl && headerEl.style.display !== 'none') {
             const wasCollapsed = headerEl.classList.contains('header-collapsed');
+            // Временно убираем класс, чтобы браузер мог посчитать реальную высоту
             if (wasCollapsed) headerEl.classList.remove('header-collapsed');
+            
+            // Если мы в режиме стройконтроля, высота шапки будет меньше
             totalTop += headerEl.offsetHeight;
+            
             if (wasCollapsed) headerEl.classList.add('header-collapsed');
         }
+        
         document.body.style.paddingTop = `${totalTop + 15}px`;
-        if (mainEl) mainEl.classList.add('pt-4'); // Для красоты внутри Осмотра
+        if (mainEl) mainEl.classList.add('pt-4'); // Для красоты внутри Осмотра/Дефектов
     } else {
         if (isNavTop && navEl) {
             // Навигация сверху: Высота меню (60px) + зазор 10px = 70px
@@ -1085,62 +1076,24 @@ function updateBodyPadding() {
 }
 
 // === НАВИГАЦИЯ И ВКЛАДКИ ===
+// === НАВИГАЦИЯ (РОУТЕР-АДАПТЕР) ===
+// === НАВИГАЦИЯ (РОУТЕР-АДАПТЕР) ===
+function setupNavigation() {
+    // Пусто
+}
+
 function switchTab(tabId, navElement = null) {
-    // ОЧИСТКА RAM: При смене вкладки удаляем старые фото из памяти
-    if (typeof PhotoManager !== 'undefined' && !window._pdfGenerating) PhotoManager.clearMemory();
-    document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-
-    const targetTab = document.getElementById(tabId);
-    if (targetTab) targetTab.classList.add('active');
-
-    if (navElement) navElement.classList.add('active');
-    else {
-        const btn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
-        if (btn) btn.classList.add('active');
+    const routeMap = {
+        'tab-audit': '#/quality/audit',
+        'tab-engineer': '#/quality/engineer',
+        'tab-analytics': '#/quality/analytics',
+        'tab-reference': '#/quality/reference',
+        'tab-settings': '#/quality/settings'
+    };
+    
+    if (routeMap[tabId]) {
+        AppRouter.navigate(routeMap[tabId]);
     }
-
-    const header = document.getElementById('main-header');
-    if (header) header.style.display = (tabId === 'tab-audit') ? 'block' : 'none';
-
-    if (tabId === 'tab-audit' && typeof render === 'function') {
-        render(); updateUI();
-    } else if (tabId === 'tab-engineer') {
-        // Запускаем рендер вкладки Инженера (он сам решит, Задачи это или Профиль)
-        if (typeof rbi_renderEngineerTab === 'function') rbi_renderEngineerTab();
-    } else if (tabId === 'tab-analytics' && typeof updateAnalyticsFilters === 'function') {
-        updateAnalyticsFilters();
-        if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
-        else renderAnalyticsTab();
-        initCollapsiblePanel('analytics-filters-block', 'analytics-panel-body', 'analytics-panel-header', 'analytics-panel-toggle-icon');
-    } else if (tabId === 'tab-reference') {
-        // Умная перерисовка: если облако что-то скачало в фоне, перезагружаем память перед показом
-        if (window.syncDirtyFlags && window.syncDirtyFlags.reference) {
-            window.rbi_reloadReferenceMemory().then(() => {
-                window.syncDirtyFlags.reference = false;
-                forceRenderReferenceSubs();
-            });
-        } else {
-            forceRenderReferenceSubs();
-        }
-
-        function forceRenderReferenceSubs() {
-            const activeSub = document.querySelector('.ref-sub-section:not(.hidden)');
-            if (activeSub && activeSub.id === 'ref-sub-checklists' && typeof renderReferenceTab === 'function') renderReferenceTab();
-            else if (activeSub && activeSub.id === 'ref-sub-docs' && typeof renderDocsList === 'function') renderDocsList();
-            else if (activeSub && activeSub.id === 'ref-sub-twi' && typeof renderTwiList === 'function') renderTwiList();
-            else if (activeSub && activeSub.id === 'ref-sub-nodes' && typeof renderNodesList === 'function') renderNodesList();
-        }
-    } else if (tabId === 'tab-settings') {
-        if (typeof renderSettingsTab === 'function') renderSettingsTab();
-        if (typeof updateStorageInfo === 'function') updateStorageInfo();
-        if (typeof rbi_renderBackupRegistry === 'function') rbi_renderBackupRegistry();
-    }
-
-    if (typeof updateFabButton === 'function') updateFabButton(tabId);
-
-    setTimeout(updateBodyPadding, 50);
-    window.scrollTo(0, 0);
 }
 
 
@@ -11550,6 +11503,181 @@ window.openNodeAttachmentPdf = async function (url, name, size) {
         name || 'document.pdf',
         size || ''
     );
+};
+
+// ============================================================================
+// === НОВЫЙ БЛОК: УПРАВЛЕНИЕ РЕЖИМАМИ ПРИЛОЖЕНИЯ (QUALITY / CONSTRUCTION и т.д.) ===
+// ============================================================================
+
+window.AppModeManager = {
+    currentMode: 'quality',
+    previousMode: 'quality',
+
+    init() {
+        // Загружаем сохраненный режим или ставим quality по умолчанию
+        const savedMode = localStorage.getItem('rbi_app_mode');
+        this.currentMode = savedMode || 'quality';
+        
+        // Синхронизируем выпадающий список в шапке
+        const selector = document.getElementById('app-mode-selector');
+        const label = document.getElementById('current-mode-label');
+        if (selector && label) {
+            selector.value = this.currentMode;
+            label.innerHTML = `${selector.options[selector.selectedIndex].text.split(' ')[0]} ▾`;
+        }
+
+        // Отрисовываем нижнюю навигацию
+        this.renderBottomNav();
+        this.updateHeaderVisibility();
+    },
+
+    changeMode(newMode) {
+        if (this.currentMode === newMode) return;
+        
+        this.previousMode = this.currentMode;
+        this.currentMode = newMode;
+        localStorage.setItem('rbi_app_mode', newMode);
+
+        // Обновляем шапку
+        const selector = document.getElementById('app-mode-selector');
+        const label = document.getElementById('current-mode-label');
+        if (selector && label) {
+            selector.value = newMode;
+            label.innerHTML = `${selector.options[selector.selectedIndex].text.split(' ')[0]} ▾`;
+        }
+
+        this.renderBottomNav();
+        this.updateHeaderVisibility();
+
+        // Роутинг: куда переходить при смене режима
+        switch (newMode) {
+            case 'quality':
+                window.AppRouter.navigate('#/quality/audit', true);
+                break;
+            case 'construction':
+                window.AppRouter.navigate('#/construction/defects', true);
+                break;
+            case 'transfer':
+                window.AppRouter.navigate('#/transfer/placeholder', true);
+                break;
+            case 'warranty':
+                window.AppRouter.navigate('#/warranty/placeholder', true);
+                break;
+            case 'uk':
+                window.AppRouter.navigate('#/uk/placeholder', true);
+                break;
+        }
+    },
+
+    revertToPrevious() {
+        this.changeMode(this.previousMode || 'quality');
+    },
+
+    updateHeaderVisibility(showHeader) {
+        const header = document.getElementById('main-header');
+        if (!header) return;
+
+        // Если шапка не нужна на этом экране (например, Настройки), жестко скрываем её
+        if (!showHeader) {
+            header.style.display = 'none';
+            return;
+        }
+
+        header.style.display = 'block';
+
+        const checklistContainer = document.getElementById('header-checklist-container');
+        const dashboard = document.getElementById('header-dashboard');
+        const dataBlock = document.getElementById('header-data-block');
+
+        if (this.currentMode === 'quality') {
+            if (checklistContainer) checklistContainer.style.display = 'flex';
+            if (dashboard && typeof appSettings !== 'undefined' && appSettings.dashboardMode !== 'hidden') {
+                dashboard.style.display = 'block';
+            } else if (dashboard) {
+                dashboard.style.display = 'none';
+            }
+            if (dataBlock) dataBlock.style.display = 'block';
+        } else {
+            // В режиме стройконтроля (и других) прячем специфичные блоки "Осмотра"
+            if (checklistContainer) checklistContainer.style.display = 'none';
+            if (dashboard) dashboard.style.display = 'none';
+            if (dataBlock) dataBlock.style.display = 'none';
+        }
+    },
+
+    renderBottomNav() {
+        const nav = document.getElementById('main-bottom-nav');
+        if (!nav) return;
+
+        let html = '';
+
+        if (this.currentMode === 'quality') {
+            html = `
+                <div class="nav-item" data-path="#/quality/audit">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                    <span class="nav-text">Осмотр</span>
+                </div>
+                <div class="nav-item" data-path="#/quality/engineer">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path></svg>
+                    <span class="nav-text">Инженер</span>
+                </div>
+                <div class="nav-item" data-path="#/quality/analytics">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2m0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    <span class="nav-text">Аналитика</span>
+                </div>
+                <div class="nav-item" data-path="#/quality/reference">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                    <span class="nav-text">БЗ</span>
+                </div>
+                <div class="nav-item" data-path="#/quality/settings">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <span class="nav-text">Настройки</span>
+                </div>
+            `;
+            nav.style.display = 'flex';
+        } else if (this.currentMode === 'construction') {
+            html = `
+                <div class="nav-item" data-path="#/construction/defects">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    <span class="nav-text">Дефекты</span>
+                </div>
+                <div class="nav-item" data-path="#/construction/acceptance">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                    <span class="nav-text">Приёмка</span>
+                </div>
+                <div class="nav-item" data-path="#/construction/units">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <span class="nav-text">Шахматка</span>
+                </div>
+                <div class="nav-item" data-path="#/construction/reports">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg>
+                    <span class="nav-text">Отчеты СК</span>
+                </div>
+                 <div class="nav-item" data-path="#/quality/settings">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <span class="nav-text">Настройки</span>
+                </div>
+            `;
+            nav.style.display = 'flex';
+        } else {
+            // Для заглушек (Гарантия, УК) прячем меню, чтобы не ломать логику
+            nav.style.display = 'none';
+        }
+
+        nav.innerHTML = html;
+        
+        // Восстанавливаем подсветку активного пункта меню
+        if (window.AppRouter) window.AppRouter.updateNavHighlight(window.location.hash);
+    }
+};
+
+// Глобальные прокси-функции для вызова из HTML
+window.changeAppMode = function(mode) {
+    AppModeManager.changeMode(mode);
+};
+
+window.revertToPreviousMode = function() {
+    AppModeManager.revertToPrevious();
 };
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */

@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.8.212';
-const SW_VERSION = '17.8.212';
+const APP_VERSION = '17.8.215';
+const SW_VERSION = '17.8.215';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -14,6 +14,9 @@ const urlsToCache = [
   './data/system_docs.js',
   './data/system_nodes.js',
   './data/system_twi.js',
+  './js/construction/constructionManager.js',
+  './js/router.js',
+  './js/views.js',
   './js/config.js',
   './libs/tailwindcdn.js',
   './libs/chart.umd.min.js',
@@ -22,6 +25,7 @@ const urlsToCache = [
   './libs/pdfjs/pdf.min.js',
   './libs/pdfjs/pdf.worker.min.js',
   './libs/qrcode.min.js',
+  './libs/panzoom.min.js',
   './libs/Sortable.min.js',
   './libs/supabase-js.min.js',
   './js/contractorDirectory.js',

@@ -1379,7 +1379,10 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     const isDeleted = data._deleted === true || data.is_deleted === true;
     const deletedAt = isDeleted ? (data._deletedAt || data.deleted_at || data.updatedAt || data.updated_at || new Date().toISOString()) : null;
     const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
-
+    // Временно отключаем отправку строительного контроля в облако
+    if (objectType === 'const_object' || objectType === 'const_building' || objectType === 'const_floor') {
+        return data; // возвращаем данные без отправки
+    }
     // МАППИНГ НОВЫХ ТАБЛИЦ И БАКЕТОВ
     let tableName = ''; let isShared = false; let targetBucket = bucketName;
     switch (objectType) {
@@ -1401,6 +1404,9 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
         case 'snapshot': tableName = 'shared_report_snapshots'; isShared = false; break;
         case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
+        //case 'const_object': tableName = 'construction_objects'; isShared = true; break;
+        //case 'const_building': tableName = 'construction_buildings'; isShared = true; break;
+        //case 'const_floor': tableName = 'construction_floors'; isShared = true; break;
         default: return;
     }
 
@@ -3504,6 +3510,9 @@ if (window.RbiStorageManager) {
                     await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
                     await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
                     await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
+                    //await syncTableData('construction_objects', '_sys_dummy', 'const_object');
+                    //await syncTableData('construction_buildings', '_sys_dummy', 'const_building');
+                    //await syncTableData('construction_floors', '_sys_dummy', 'const_floor');
 
                     // Синхронизация новых таблиц Справочников
                     // Синхронизация новых таблиц Справочников

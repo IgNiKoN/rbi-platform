@@ -39,6 +39,7 @@
     <script src="./libs/Sortable.min.js"></script>
 
     <script src="./libs/supabase-js.min.js"></script>
+    <script src="./libs/panzoom.min.js"></script>
 </head>
 
 <body id="app-body">
@@ -320,7 +321,41 @@
             </div>
         </div>
     </div>
+    <!-- === УНИВЕРСАЛЬНЫЙ ПРОСМОТРЩИК PDF С PANZOOM === -->
+    <div id="universal-pdf-modal" class="fixed inset-0 bg-slate-900/95 z-[9999] hidden flex-col transition-opacity duration-300 opacity-0">
+        <!-- Шапка -->
+        <div class="bg-indigo-600 text-white p-4 flex justify-between items-center shadow-md z-20 shrink-0">
+            <div class="font-black text-sm uppercase tracking-widest truncate pr-4" id="universal-pdf-title">План этажа</div>
+            <button onclick="window.UniversalPdfViewer.close()" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center active:scale-90 shrink-0 border border-indigo-400 font-bold">✕</button>
+        </div>
+        
+        <!-- Панель инструментов (Тут в будущем будет кнопка "Поставить дефект") -->
+        <!-- Панель инструментов (Тулбар) -->
+        <div id="universal-pdf-toolbar" class="bg-[var(--card-bg)] border-b border-[var(--card-border)] p-3 flex justify-between items-center z-20 shrink-0 shadow-sm hidden">
+            <div id="pdf-add-hint" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden animate-pulse">Кликните на чертеж ➔</div>
+            <div id="pdf-normal-hint" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Режим просмотра</div>
+            
+            <button id="pdf-btn-add-defect" onclick="window.UniversalPdfViewer.toggleAddMode()" class="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить дефект
+            </button>
+        </div>
 
+        <!-- Контейнер для Panzoom -->
+        <div class="flex-1 relative overflow-hidden touch-none" id="universal-pdf-wrapper">
+            <div id="universal-pdf-container" class="absolute top-0 left-0 shadow-2xl" style="transform-origin: 0 0;">
+                <!-- Сам рендер PDF (холст) -->
+                <canvas id="universal-pdf-canvas" class="block"></canvas>
+                <!-- Слой поверх PDF, куда будут падать точки (булавки) дефектов -->
+                <div id="universal-pdf-pins" class="absolute inset-0 pointer-events-none"></div>
+            </div>
+        </div>
+
+        <!-- Лоадер -->
+        <div id="universal-pdf-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 text-white z-30 hidden backdrop-blur-sm">
+            <svg class="animate-spin h-10 w-10 mb-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+            <div class="font-bold text-xs uppercase tracking-widest animate-pulse">Загрузка чертежа...</div>
+        </div>
+    </div>
     <!-- === ГЛОБАЛЬНАЯ МОДАЛКА (История, УрК, Расчеты) === -->
     <div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
         <div class="modal-content" onclick="event.stopPropagation()">
@@ -649,26 +684,39 @@
                     </div>
                 </div>
 
-                <!-- ПРАВАЯ ЧАСТЬ: Селектор Чек-листа (Синхронизирован стиль линий) -->
-                <div
-                    class="relative flex items-center bg-indigo-50/80 dark:bg-indigo-900/30 px-3 h-8 rounded-[10px] border border-indigo-100 dark:border-indigo-800/50 cursor-pointer shrink-0 shadow-sm active:scale-95 transition-transform">
-                    <span
-                        class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path
-                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
-                            </path>
-                        </svg>
-                        Чек-лист ▾
-                    </span>
-                    <select id="checklist-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        onchange="changeTemplate(this.value)">
-                        <option value="" disabled selected>Выбрать...</option>
-                        <option value="HOME">🏠 Главный экран</option>
-                        <optgroup label="Системные" id="system-group"></optgroup>
-                        <optgroup label="Загруженные" id="user-group"></optgroup>
-                    </select>
+                <!-- ПРАВАЯ ЧАСТЬ: Переключатель Режима + Селектор Чек-листа -->
+                <div class="flex items-center gap-1.5 shrink-0">
+                    
+                    <!-- Переключатель режима приложения (НОВОЕ) -->
+                    <div class="relative flex items-center bg-slate-100 dark:bg-slate-800 px-2 h-8 rounded-[10px] border border-slate-200 dark:border-slate-700 cursor-pointer shadow-sm active:scale-95 transition-transform z-50">
+                        <span id="current-mode-label" class="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
+                            Quality ▾
+                        </span>
+                        <select id="app-mode-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="if(window.changeAppMode) window.changeAppMode(this.value)">
+                            <option value="quality" selected>Quality (Качество)</option>
+                            <option value="construction">Стройконтроль</option>
+                            <option value="transfer">Передача квартир</option>
+                            <option value="warranty">Гарантия</option>
+                            <option value="uk">УК (Упр. компания)</option>
+                        </select>
+                    </div>
+
+                    <!-- Старый селектор чек-листа (остается без изменений, просто обернули) -->
+                    <div id="header-checklist-container" class="relative flex items-center bg-indigo-50/80 dark:bg-indigo-900/30 px-3 h-8 rounded-[10px] border border-indigo-100 dark:border-indigo-800/50 cursor-pointer shadow-sm active:scale-95 transition-transform">
+                        <span class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                            </svg>
+                            Чек-лист ▾
+                        </span>
+                        <select id="checklist-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="changeTemplate(this.value)">
+                            <option value="" disabled selected>Выбрать...</option>
+                            <option value="HOME">🏠 Главный экран</option>
+                            <optgroup label="Системные" id="system-group"></optgroup>
+                            <optgroup label="Загруженные" id="user-group"></optgroup>
+                        </select>
+                    </div>
+
                 </div>
 
             </div>
@@ -799,7 +847,7 @@
     </header>
 
     <!-- === ОСНОВНОЙ КОНТЕЙНЕР === -->
-    <main class="max-w-4xl mx-auto px-4 pt-4 pb-20">
+    <main id="app-root" class="max-w-4xl mx-auto px-4 pt-4 pb-20">
 
         <!-- ВКЛАДКА 1: ОСМОТР -->
         <div id="tab-audit" class="view-section active">
@@ -3318,55 +3366,126 @@
                     </div>
                 </div>
             </div>
-    </main>
-
-    </main>
-
+    </div>
+    <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ДЕФЕКТЫ НА ПЛАНЕ === -->
+        <div id="tab-construction-defects" class="view-section">
+            
+            <!-- Панель выбора объекта и этажа -->
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Выбор плана</h2>
+                    <!-- Кнопка администрирования появится здесь через JS, если роль manager -->
+                    <div id="const-admin-btn-container"></div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
+                        <select id="const-object-select" class="input-base" onchange="if(window.ConstManager) window.ConstManager.onObjectChange()">
+                            <option value="">Загрузка объектов...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус / Секция</label>
+                        <select id="const-building-select" class="input-base" disabled onchange="if(window.ConstManager) window.ConstManager.onBuildingChange()">
+                            <option value="">Выберите корпус...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Этаж</label>
+                        <select id="const-floor-select" class="input-base" disabled onchange="if(window.ConstManager) window.ConstManager.onFloorChange()">
+                            <option value="">Выберите этаж...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <!-- НОВОЕ: Переключатель видов и фильтры -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3 mx-1">
+                <!-- Тумблер План / Реестр -->
+                <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg shadow-inner w-full sm:w-auto">
+                    <button onclick="window.ConstManager.switchView('plan')" id="const-btn-view-plan" class="flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">🗺️ План</button>
+                    <button onclick="window.ConstManager.switchView('list')" id="const-btn-view-list" class="flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all text-slate-500 dark:text-slate-400">📋 Реестр</button>
+                </div>
+                
+                <!-- Фильтры -->
+                <div class="flex gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+                    <select id="const-filter-status" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[110px]">
+                        <option value="ALL">Все статусы</option>
+                        <option value="issued">🔴 Выдано</option>
+                        <option value="fixed">🟡 Устранено (Ждет проверки)</option>
+                        <option value="closed">🟢 Закрыто</option>
+                    </select>
+                    <select id="const-filter-category" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px]">
+                        <option value="ALL">Все категории</option>
+                        <option value="B3">Критичные (B3)</option>
+                        <option value="B2">Значимые (B2)</option>
+                        <option value="B1">Мелкие (B1)</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Контейнер для отображения PDF плана -->
+            <div id="const-plan-container" class="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl h-[65vh] flex flex-col items-center justify-center relative overflow-hidden mx-1">
+                <div class="text-center text-slate-400" id="const-plan-placeholder">
+                    <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    <div class="text-xs font-bold uppercase tracking-widest">Выберите план для просмотра</div>
+                </div>
+                
+                <!-- Сюда JS будет вставлять холст с PDF -->
+                <div id="const-pdf-render-area" class="absolute inset-0 w-full h-full hidden overflow-auto touch-none"></div>
+            </div>
+             <!-- НОВОЕ: Контейнер для Реестра дефектов (Скрыт по умолчанию) -->
+        <div id="const-list-container" class="hidden mx-1 pb-8 space-y-3">
+            <!-- Сюда JS будет рендерить карточки дефектов -->
+        </div>
+        </div>
+   <!-- === РЕЖИМ: ЗАГЛУШКА (ДЛЯ НОВЫХ МОДУЛЕЙ) === -->
+        <div id="tab-mode-placeholder" class="view-section hidden">
+            <div class="flex flex-col items-center justify-center py-20 px-4 text-center">
+                <div class="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-3xl flex items-center justify-center text-4xl mb-4 border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                    🚧
+                </div>
+                <h2 class="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight mb-2">Модуль в разработке</h2>
+                <p id="placeholder-message" class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xs mx-auto mb-6">
+                    Функционал находится на стадии проектирования и станет доступен в ближайших обновлениях.
+                </p>
+                <button onclick="window.revertToPreviousMode()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    Вернуться назад
+                </button>
+            </div>
+        </div> 
+ </main>
     <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
     <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
-    <nav class="bottom-nav nav-auto ios-panel border-t-0">
-        <div class="nav-item active" data-tab="tab-audit">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
-                </path>
+    <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
+    <nav id="main-bottom-nav" class="bottom-nav nav-auto ios-panel border-t-0 transition-opacity duration-300">
+        <div class="nav-item" data-path="#/quality/audit">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
             </svg>
             <span class="nav-text">Осмотр</span>
         </div>
-        <div class="nav-item" data-tab="tab-engineer">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path
-                    d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z">
-                </path>
+        <div class="nav-item" data-path="#/quality/engineer">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
             </svg>
             <span class="nav-text">Инженер</span>
         </div>
-        <div class="nav-item" data-tab="tab-analytics">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
-                </path>
+        <div class="nav-item" data-path="#/quality/analytics">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
             </svg>
             <span class="nav-text">Аналитика</span>
         </div>
-        <div class="nav-item" data-tab="tab-reference">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path
-                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
-                </path>
+        <div class="nav-item" data-path="#/quality/reference">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
             </svg>
             <span class="nav-text">БЗ</span>
         </div>
-        <div class="nav-item" data-tab="tab-settings">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                </path>
+        <div class="nav-item" data-path="#/quality/settings">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
             </svg>
             <span class="nav-text">Настройки</span>
@@ -3376,9 +3495,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.212',
-            sw: '17.8.212',
-            buildDate: '2026-05-29'
+            app: '17.8.215',
+            sw: '17.8.215',
+            buildDate: '2026-05-31'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -3395,6 +3514,13 @@
     <script src="data/system_docs.js"></script>
     <script src="data/system_nodes.js"></script>
     <script src="data/system_twi.js"></script>
+
+     <!-- === НОВЫЙ МОДУЛЬ СТРОЙКОНТРОЛЯ === -->
+    <script src="js/construction/constructionManager.js"></script>
+
+     <!-- === НОВЫЕ МОДУЛИ РОУТИНГА === -->
+    <script src="js/router.js"></script>
+    <script src="js/views.js"></script>
 
     <!-- 3. Потом ядро приложения -->
     <script src="js/storage.js"></script>
@@ -3846,7 +3972,90 @@
                 id="node-selector-list"></div>
         </div>
     </div>
+    <!-- === ФОРМА ДОБАВЛЕНИЯ/ПРОСМОТРА ДЕФЕКТА НА ПЛАНЕ === -->
+    <!-- === ФОРМА ДОБАВЛЕНИЯ/ПРОСМОТРА ДЕФЕКТА НА ПЛАНЕ === -->
+    <div id="const-defect-modal" class="fixed inset-0 bg-slate-900/80 z-[10000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm" onclick="window.ConstDefectForm.close()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+            
+            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <h3 id="const-defect-modal-title" class="font-black text-[13px] uppercase text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+                    Новое замечание
+                </h3>
+                <button onclick="window.ConstDefectForm.close()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90 font-black">✕</button>
+            </div>
 
+            <div class="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                <input type="hidden" id="const-defect-x">
+                <input type="hidden" id="const-defect-y">
+                <input type="hidden" id="const-defect-id">
+                <input type="hidden" id="const-defect-item-name">
+
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Вид работ (Чек-лист) *</label>
+                    <select id="const-defect-template" class="input-base text-[12px] font-bold" onchange="window.ConstDefectForm.onTemplateChange(this.value)">
+                        <!-- Список чек-листов загрузится из JS -->
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Нарушение *</label>
+                    <select id="const-defect-item" class="input-base text-[12px] leading-snug" onchange="window.ConstDefectForm.onItemChange(this.value)">
+                        <option value="">Сначала выберите вид работ...</option>
+                    </select>
+                </div>
+
+                <div id="const-defect-norm-block" class="hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl shadow-inner">
+                    <div class="text-[9px] font-black uppercase text-indigo-500 mb-1">Справочно (Норматив)</div>
+                    <div id="const-defect-norm-text" class="text-[10px] text-slate-600 dark:text-slate-400 font-medium"></div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Категория</label>
+                        <select id="const-defect-category" class="input-base text-[11px] font-bold">
+                            <option value="B1">B1 (Мелкий)</option>
+                            <option value="B2" selected>B2 (Значимый)</option>
+                            <option value="B3">B3 (Критика)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок устранения</label>
+                        <input type="date" id="const-defect-deadline" class="input-base !py-2 text-[11px]">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ответственный подрядчик *</label>
+                    <select id="const-defect-contractor" class="input-base text-[12px] font-bold"></select>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Уточняющее описание</label>
+                    <textarea id="const-defect-desc" class="input-base h-16 resize-none text-[12px]" placeholder="Оси, размеры, детали..."></textarea>
+                </div>
+                <!-- НОВОЕ: Блок фото -->
+                <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Фотофиксация</label>
+                    <button id="const-defect-photo-btn" onclick="document.getElementById('const-defect-photo-input').click()" class="w-full bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 py-4 rounded-xl text-[10px] font-bold uppercase active:scale-95 transition-colors flex flex-col items-center justify-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+                        Прикрепить фото
+                    </button>
+                    <!-- Скрытый инпут для выбора файла -->
+                    <input type="file" id="const-defect-photo-input" accept="image/*" class="hidden" onchange="window.ConstDefectForm.handlePhotoUpload(event)">
+                    <!-- Контейнер превью -->
+                    <div id="const-defect-photo-preview" class="hidden relative w-full h-40 mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm" data-photo="">
+                        <img id="const-defect-img" src="" class="w-full h-full object-cover cursor-pointer" onclick="openPhotoViewer(this.src)">
+                        <button onclick="window.ConstDefectForm.removePhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 flex gap-2 shrink-0" id="const-defect-actions">
+                <!-- Сюда JS вставит кнопки Сохранить или Удалить -->
+            </div>
+        </div>
+    </div>
     <!-- === КОНТЕКСТНОЕ МЕНЮ TWI КАРТОЧЕКИ === -->
     <div id="twi-action-sheet"
         class="fixed inset-0 bg-slate-900/60 z-[3500] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"

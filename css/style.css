@@ -419,7 +419,6 @@ body.modal-open {
 
 .view-section.active {
     display: block;
-    animation: fadeIn 0.3s ease;
 }
 
 @keyframes fadeIn {
