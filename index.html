@@ -130,7 +130,7 @@
     </div>
     <!-- === МОДАЛКА ВЫБОРА ИСТОЧНИКА ФОТО === -->
     <div id="photo-source-modal"
-        class="fixed inset-0 bg-slate-900/70 z-[9999] hidden items-center justify-center p-4 backdrop-blur-sm"
+        class="fixed inset-0 bg-slate-900/70 z-[10100] hidden items-center justify-center p-4 backdrop-blur-sm"
         onclick="this.style.display='none'">
         <div class="bg-[var(--card-bg)] w-full max-w-xs p-6 rounded-2xl shadow-2xl flex flex-col gap-3"
             onclick="event.stopPropagation()">
@@ -153,7 +153,7 @@
     </div>
 
     <!-- === ФОТОРЕДАКТОР (РИСОВАНИЕ СТРЕЛОК) === -->
-    <div id="photo-editor-overlay" class="fixed inset-0 bg-slate-900 z-[10000] hidden flex-col">
+    <div id="photo-editor-overlay" class="fixed inset-0 bg-slate-900 z-[10200] hidden flex-col">
         <div class="flex justify-between items-center p-4 bg-slate-900 text-white border-b border-slate-700">
             <button onclick="cancelPhotoEditor()"
                 class="text-sm font-bold text-slate-400 active:scale-95">Отмена</button>
@@ -3495,8 +3495,8 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.215',
-            sw: '17.8.215',
+            app: '17.8.216',
+            sw: '17.8.216',
             buildDate: '2026-05-31'
         };
     </script>
@@ -4045,7 +4045,7 @@
                     <input type="file" id="const-defect-photo-input" accept="image/*" class="hidden" onchange="window.ConstDefectForm.handlePhotoUpload(event)">
                     <!-- Контейнер превью -->
                     <div id="const-defect-photo-preview" class="hidden relative w-full h-40 mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm" data-photo="">
-                        <img id="const-defect-img" src="" class="w-full h-full object-cover cursor-pointer" onclick="openPhotoViewer(this.src)">
+                        <img id="const-defect-img" src="" class="w-full h-full object-cover cursor-pointer" onclick="window.ConstDefectForm.openDefectPhoto(document.getElementById('const-defect-id').value)">
                         <button onclick="window.ConstDefectForm.removePhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
                     </div>
                 </div>

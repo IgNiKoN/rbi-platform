@@ -2006,6 +2006,47 @@ window.triggerSync = async function (mode = 'silent') {
         return 'bin';
     };
 
+    // Supabase Storage: только ASCII в ключах (кириллица в имени инженера ломает upload)
+    const _ruStorageTranslit = {
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh', 'з': 'z',
+        'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
+        'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh',
+        'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+    };
+
+    window.sanitizeStorageKeySegment = function (segment) {
+        const raw = String(segment || '').trim();
+        if (!raw) return 'unknown';
+
+        let latin = '';
+        for (const ch of raw) {
+            const lower = ch.toLowerCase();
+            if (_ruStorageTranslit[lower] !== undefined) {
+                latin += _ruStorageTranslit[lower];
+            } else {
+                latin += ch;
+            }
+        }
+
+        const safe = latin
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-zA-Z0-9._-]+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_|_$/g, '');
+
+        return safe || 'unknown';
+    };
+
+    window.sanitizeStoragePath = function (path) {
+        return String(path || '')
+            .replace(/^\/+|\/+$/g, '')
+            .split('/')
+            .map(seg => window.sanitizeStorageKeySegment(seg))
+            .filter(Boolean)
+            .join('/');
+    };
+
     window.localPhotoToBlob = async function (localUrl) {
         if (!window.isLocalUrl(localUrl) || typeof dbGet !== 'function') return null;
         const rec = await dbGet('app_photos', localUrl);
@@ -2034,12 +2075,10 @@ window.triggerSync = async function (mode = 'silent') {
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashStr = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-        // 2. Формируем путь (Все файлы падают в папку hashed_assets под своим хешем)
-        const cleanPrefix = String(pathPrefix || 'hashed_assets')
-            .replace(/^\/+|\/+$/g, '');
+        // 2. Формируем путь (только ASCII — иначе StorageApiError: Invalid key)
+        const cleanPrefix = window.sanitizeStoragePath(pathPrefix || 'hashed_assets');
 
-        const cleanFilePrefix = String(filePrefix || 'file')
-            .replace(/[^a-zA-Zа-яА-Я0-9_-]+/g, '_');
+        const cleanFilePrefix = window.sanitizeStorageKeySegment(filePrefix || 'file');
 
         const storagePath = `${cleanPrefix}/${cleanFilePrefix}_${hashStr}.${ext}`;
 
@@ -3155,12 +3194,17 @@ if (window.RbiStorageManager) {
                     const draftPhotos = {};
 
                     for (const itemId of Object.keys(currentSession.photos || {})) {
+                        // Фото стройконтроля (def_*) хранятся в CONST_DEFECTS, не в черновике осмотра
+                        if (String(itemId).startsWith('def_')) {
+                            continue;
+                        }
                         // Защита: загружаем только если это реально локальное фото
                         if (currentSession.photos[itemId] && !currentSession.photos[itemId].startsWith('http')) {
+                            const inspectorPath = window.sanitizeStorageKeySegment(stableInspectorId);
                             draftPhotos[itemId] = await window.rbiUploadAsset(
                                 currentSession.photos[itemId],
                                 'inspection-photos',
-                                `${pCode}/drafts/${stableInspectorId}/${itemId}`,
+                                `${pCode}/drafts/${inspectorPath}/${itemId}`,
                                 'photo'
                             );
                         } else {

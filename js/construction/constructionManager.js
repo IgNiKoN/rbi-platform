@@ -29,6 +29,27 @@ window.ConstManager = {
 
                 const f = await dbGetAll(STORES.CONST_FLOORS);
                 this.floors = (f || []).filter(x => !x._deleted);
+
+                const d = await dbGetAll(STORES.CONST_DEFECTS);
+                this.defects = (d || []).filter(x => !x._deleted);
+
+                for (const def of this.defects) {
+                    if (!def.id || !def.photo) continue;
+
+                    if (String(def.photo).startsWith('data:') && typeof window.ensureLocalPhotoRef === 'function') {
+                        def.photo = await window.ensureLocalPhotoRef(def.photo, 'const', {
+                            entityType: 'construction_defect',
+                            entityId: def.id
+                        });
+                        if (typeof dbPut === 'function') {
+                            await dbPut(STORES.CONST_DEFECTS, def);
+                        }
+                    }
+
+                    if (window.photos) {
+                        window.photos[def.id] = def.photo;
+                    }
+                }
             }
         } catch (e) {
             console.error('[ConstManager] Ошибка загрузки БД:', e);
@@ -375,8 +396,12 @@ window.ConstManager = {
         };
 
         container.innerHTML = filtered.map(d => {
-            const photoHtml = d.photo ?
-                `<img src="${typeof window.getPhotoSrc === 'function' ? window.getPhotoSrc(d.photo) : d.photo}" class="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer shadow-sm shrink-0" onclick="event.stopPropagation(); typeof openPhotoViewer === 'function' && openPhotoViewer('${d.photo}')">` :
+            const photoRef = d.photo || '';
+            const needsHydrate = photoRef.startsWith('local://') || photoRef.startsWith('cloud://');
+            const photoSrc = photoRef ? (typeof window.getPhotoSrc === 'function' ? window.getPhotoSrc(photoRef) : photoRef) : '';
+            const localAttr = needsHydrate ? ` data-local-src="${photoRef}"` : '';
+            const photoHtml = photoSrc ?
+                `<img src="${photoSrc}"${localAttr} class="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer shadow-sm shrink-0" onclick="event.stopPropagation(); window.ConstDefectForm.openDefectPhoto('${d.id}')">` :
                 `<div class="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-[8px] text-slate-400 font-bold uppercase shrink-0 text-center leading-tight">Нет<br>фото</div>`;
 
             let catColor = 'bg-blue-500';
@@ -406,6 +431,10 @@ window.ConstManager = {
                 </div>
             </div>`;
         }).join('');
+
+        if (typeof window.rbiHydrateLocalImages === 'function') {
+            window.rbiHydrateLocalImages(container);
+        }
     }
 };
 
@@ -1198,7 +1227,7 @@ window.ConstDefectForm = {
     },
 
     // --- Открыть форму для редактирования существующего дефекта ---
-    openExisting(id) {
+    async openExisting(id) {
         const defect = window.ConstManager.defects.find(d => d.id === id);
         if (!defect) return;
 
@@ -1221,16 +1250,12 @@ window.ConstDefectForm = {
         document.getElementById('const-defect-contractor').value = defect.contractor || '';
         document.getElementById('const-defect-desc').value = defect.description || '';
 
-        // Загружаем фото из глобального хранилища, если оно есть
-        if (window.photos && window.photos[defect.id]) {
-            this.tempPhoto = window.photos[defect.id];
-            const previewDiv = document.getElementById('const-defect-photo-preview');
-            const imgEl = document.getElementById('const-defect-img');
-            if (previewDiv && imgEl) {
-                imgEl.src = window.photos[defect.id];
-                previewDiv.classList.remove('hidden');
-                const btn = document.getElementById('const-defect-photo-btn');
-                if (btn) btn.innerHTML = '📷 Изменить фото';
+        // Загружаем фото: сначала из памяти осмотра, иначе из сохранённого дефекта
+        const defectPhoto = (window.photos && window.photos[defect.id]) || defect.photo || null;
+        if (defectPhoto) {
+            if (window.photos) window.photos[defect.id] = defectPhoto;
+            if (typeof updateConstDefectPhotoPreview === 'function') {
+                await updateConstDefectPhotoPreview(defect.id);
             }
         } else {
             this.removePhoto(); // если фото нет – очищаем превью
@@ -1251,8 +1276,16 @@ window.ConstDefectForm = {
         if (tempPin) tempPin.remove();
     },
 
+    openDefectPhoto(defectId) {
+        const defect = window.ConstManager.defects.find(d => d.id === defectId);
+        const src = (window.photos && window.photos[defectId]) || defect?.photo;
+        if (src && typeof openPhotoViewer === 'function') {
+            openPhotoViewer(src);
+        }
+    },
+
     // --- Сохранить дефект (новый или обновление) ---
-            save() {
+    async save() {
         const id = document.getElementById('const-defect-id').value;
         const x = parseFloat(document.getElementById('const-defect-x').value);
         const y = parseFloat(document.getElementById('const-defect-y').value);
@@ -1281,7 +1314,18 @@ window.ConstDefectForm = {
             window.tempDefectPhotoKey = null;
         }
 
+        if (photo && String(photo).startsWith('data:') && typeof window.ensureLocalPhotoRef === 'function') {
+            photo = await window.ensureLocalPhotoRef(photo, 'const', {
+                entityType: 'construction_defect',
+                entityId: id
+            });
+            window.photos[id] = photo;
+        }
+
         const now = new Date().toISOString();
+        const existingIndex = window.ConstManager.defects.findIndex(d => d.id === id);
+        const prevDefect = existingIndex !== -1 ? window.ConstManager.defects[existingIndex] : null;
+
         const defectData = {
             id: id,
             floorId: floorId,
@@ -1297,21 +1341,30 @@ window.ConstDefectForm = {
             contractor: contractor,
             description: description,
             photo: photo,
-            status: 'issued',
-            created_at: now,
+            status: prevDefect?.status || 'issued',
+            created_at: prevDefect?.created_at || now,
             updated_at: now,
-            created_by: window.syncConfig?.engineerName || 'Инженер'
+            created_by: prevDefect?.created_by || window.syncConfig?.engineerName || 'Инженер'
         };
 
-        const existingIndex = window.ConstManager.defects.findIndex(d => d.id === id);
         if (existingIndex !== -1) {
             window.ConstManager.defects[existingIndex] = { ...window.ConstManager.defects[existingIndex], ...defectData };
         } else {
             window.ConstManager.defects.push(defectData);
         }
 
+        if (photo && window.photos) {
+            window.photos[id] = photo;
+        }
+
         if (typeof dbPut === 'function' && STORES.CONST_DEFECTS) {
-            dbPut(STORES.CONST_DEFECTS, defectData).catch(e => console.warn('Ошибка сохранения дефекта', e));
+            try {
+                await dbPut(STORES.CONST_DEFECTS, defectData);
+            } catch (e) {
+                console.warn('Ошибка сохранения дефекта', e);
+                showToast('⚠️ Замечание не сохранено в память устройства');
+                return;
+            }
         }
 
         this.close();
@@ -1320,6 +1373,9 @@ window.ConstDefectForm = {
             status: window.ConstManager.currentFilterStatus,
             category: window.ConstManager.currentFilterCategory
         });
+        if (window.ConstManager.currentView === 'list') {
+            window.ConstManager.renderDefectsList();
+        }
     },
 
     // --- Удалить дефект ---
@@ -1392,7 +1448,11 @@ window.ConstDefectForm = {
         }
         // Запоминаем ID для переноса (на случай, если он изменится, но у нас постоянный)
         window.tempDefectPhotoKey = null;
-        window.currentPhotoId = defectId;
+        if (typeof syncPhotoTargetId === 'function') {
+            syncPhotoTargetId(defectId);
+        } else {
+            window.currentPhotoId = defectId;
+        }
         window.activePhotoContext = 'defect';
         if (typeof window.handlePhotoUpload === 'function') {
             window.handlePhotoUpload(event);
@@ -1415,7 +1475,11 @@ window.ConstDefectForm = {
         if (btn) btn.innerHTML = '📷 Прикрепить фото';
         const fileInput = document.getElementById('const-defect-photo-input');
         if (fileInput) fileInput.value = '';
-        window.currentPhotoId = null;
+        if (typeof syncPhotoTargetId === 'function') {
+            syncPhotoTargetId(null);
+        } else {
+            window.currentPhotoId = null;
+        }
         window.activePhotoContext = null;
     },
 };

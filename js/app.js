@@ -4,6 +4,14 @@
 let state = {};
 let details = {};
 let photos = {};
+window.photos = photos;
+
+function assignPhotosMap(next) {
+    const src = next || {};
+    Object.keys(photos).forEach((k) => delete photos[k]);
+    Object.assign(photos, src);
+    window.photos = photos;
+}
 let contractorArray = [];
 let etalonActsArray = []; // НОВОЕ: Отдельный массив для эталонов
 let userTemplates = {};
@@ -392,6 +400,15 @@ function scheduleSessionSave() {
     }, 500);
 }
 
+function getSessionPhotosForSync() {
+    const sessionPhotos = {};
+    Object.keys(photos || {}).forEach((key) => {
+        if (String(key).startsWith('def_')) return;
+        sessionPhotos[key] = photos[key];
+    });
+    return sessionPhotos;
+}
+
 async function saveSessionData() {
     if (isDemoMode) return;
     try {
@@ -403,7 +420,7 @@ async function saveSessionData() {
             inspector: document.getElementById('inp-inspector') ? document.getElementById('inp-inspector').value : '',
             contractor: document.getElementById('inp-contractor') ? document.getElementById('inp-contractor').value : '',
             location: document.getElementById('inp-location') ? document.getElementById('inp-location').value : '',
-            state, details, photos,
+            state, details, photos: getSessionPhotosForSync(),
             customExpertConclusions
         });
     } catch (e) {
@@ -458,7 +475,7 @@ async function restoreSession() {
 
         state = data.state || {};
         details = data.details || {};
-        photos = data.photos || {};
+        assignPhotosMap(data.photos);
         customExpertConclusions = data.customExpertConclusions || {};
 
         // НОВОЕ: Распаковываем фото в незаконченном черновике, если они там есть
@@ -2495,7 +2512,7 @@ function changeTemplate(val) {
     if (val === 'HOME') {
         currentTemplateKey = '';
         if (document.getElementById('checklist-selector')) document.getElementById('checklist-selector').value = '';
-        state = {}; details = {}; photos = {};
+        state = {}; details = {}; assignPhotosMap({});
 
         // Умный сброс (Инспектор остается, а Защищенные поля не трогаем)
         const pInp = document.getElementById('inp-project');
@@ -2534,7 +2551,7 @@ function changeTemplate(val) {
     else if (type === 'user' && userTemplates[key]) currentChecklist = userTemplates[key].groups;
 
     // Сброс ответов при смене листа
-    state = {}; details = {}; photos = {};
+    state = {}; details = {}; assignPhotosMap({});
 
     // НЕ стираем Защищенные поля (readonly)
     const pInp2 = document.getElementById('inp-project');
@@ -3395,7 +3412,7 @@ async function saveProductToArray() {
         }
         window.activeTaskId = null; // Сбрасываем
     }
-    state = {}; details = {}; photos = {};
+    state = {}; details = {}; assignPhotosMap({});
     secInput.value = ''; floorInput.value = ''; roomInput.value = ''; locHidden.value = '';
 
     scheduleSessionSave();
@@ -3419,7 +3436,7 @@ async function saveProductToArray() {
 
 function resetChecklist() {
     if (!confirm('Очистить только текущий чек-лист?')) return;
-    state = {}; details = {}; photos = {}; document.getElementById('inp-location').value = '';
+    state = {}; details = {}; assignPhotosMap({}); document.getElementById('inp-location').value = '';
     saveSessionData(); render(); updateUI();
 }
 
@@ -3914,7 +3931,7 @@ function deleteComment(id, e) {
 }
 
 function triggerPhotoInput(id) {
-    currentPhotoId = id;
+    syncPhotoTargetId(id);
     // Вместо прямого клика, открываем наше новое окно выбора
     document.getElementById('photo-source-modal').style.display = 'flex';
 }
@@ -3931,12 +3948,61 @@ function removePhoto(id, e) {
 let editorCanvas, editorCtx, isDrawing = false;
 let editorImgElement = null; // Оригинальное изображение для сброса
 
+function resolvePhotoTargetId() {
+    return currentPhotoId || window.currentPhotoId || null;
+}
+
+function syncPhotoTargetId(id) {
+    currentPhotoId = id || null;
+    window.currentPhotoId = id || null;
+}
+
+window.ensureLocalPhotoRef = async function (photoRef, prefix = 'img', meta = {}) {
+    if (!photoRef) return photoRef;
+    const value = String(photoRef);
+    if (value.startsWith('local://') || value.startsWith('http')) return photoRef;
+    if (value.startsWith('data:') && typeof PhotoManager !== 'undefined' && typeof PhotoManager.saveLocal === 'function') {
+        return await PhotoManager.saveLocal(photoRef, prefix, meta);
+    }
+    return photoRef;
+};
+
+async function updateConstDefectPhotoPreview(photoId) {
+    const photoRef = photos[photoId];
+    if (!photoRef) return;
+    const previewDiv = document.getElementById('const-defect-photo-preview');
+    const imgEl = document.getElementById('const-defect-img');
+    if (!previewDiv || !imgEl) return;
+
+    const ref = String(photoRef);
+    if (ref.startsWith('local://') || ref.startsWith('cloud://')) {
+        imgEl.src = typeof window.getPhotoSrc === 'function' ? window.getPhotoSrc(photoRef) : '';
+        imgEl.setAttribute('data-local-src', photoRef);
+        imgEl.setAttribute('data-defect-id', photoId);
+        imgEl.onclick = () => openPhotoViewer(photoRef);
+        if (typeof window.rbiHydrateLocalImages === 'function') {
+            await window.rbiHydrateLocalImages(previewDiv);
+        }
+    } else {
+        imgEl.removeAttribute('data-local-src');
+        imgEl.setAttribute('data-defect-id', photoId);
+        imgEl.src = typeof window.getPhotoSrc === 'function' ? window.getPhotoSrc(photoRef) : photoRef;
+        imgEl.onclick = () => openPhotoViewer(photoRef);
+    }
+
+    previewDiv.classList.remove('hidden');
+    const btn = document.getElementById('const-defect-photo-btn');
+    if (btn) btn.innerHTML = '📷 Изменить фото';
+}
+
 function handlePhotoUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    // В обычном режиме проверяем, есть ли currentPhotoId. Если это Эталон - пропускаем.
-    if (window.activePhotoContext !== 'etalon' && !currentPhotoId) return;
+    const photoId = resolvePhotoTargetId();
+    // В обычном режиме проверяем, есть ли ID цели. Если это Эталон - пропускаем.
+    if (window.activePhotoContext !== 'etalon' && !photoId) return;
+    syncPhotoTargetId(photoId);
 
     const reader = new FileReader();
     reader.onload = function (e) {
@@ -4051,13 +4117,15 @@ function stopDrawing(e) {
 function cancelPhotoEditor() {
     document.getElementById('photo-editor-overlay').style.display = 'none';
     document.body.classList.remove('modal-open');
-    currentPhotoId = null;
+    syncPhotoTargetId(null);
     editorImgElement = null;
     window.activePhotoContext = null; // Очищаем контекст, чтобы не ломать другие загрузки
 }
 
-function saveEditedPhoto() {
-    if (!currentPhotoId || !editorCanvas) return;
+async function saveEditedPhoto() {
+    const photoId = resolvePhotoTargetId();
+    const photoContext = window.activePhotoContext;
+    if (!photoId || !editorCanvas) return;
 
     // Добавляем штамп времени на финальное фото
     const now = new Date();
@@ -4073,12 +4141,23 @@ function saveEditedPhoto() {
     editorCtx.fillStyle = 'white';
     editorCtx.fillText(timestamp, 25, h - 20);
 
-    // Сохраняем как сжатый JPEG (0.85 качество)
-    photos[currentPhotoId] = editorCanvas.toDataURL('image/jpeg', 0.85);
+    let photoRef = editorCanvas.toDataURL('image/jpeg', 0.85);
+    if (photoContext === 'defect') {
+        photoRef = await window.ensureLocalPhotoRef(photoRef, 'const', {
+            entityType: 'construction_defect',
+            entityId: photoId
+        });
+    }
+
+    photos[photoId] = photoRef;
     showToast("📸 Фото с пометками сохранено!");
 
-    updateCardDOM(currentPhotoId);
-    scheduleSessionSave();
+    if (photoContext === 'defect') {
+        await updateConstDefectPhotoPreview(photoId);
+    } else {
+        updateCardDOM(photoId);
+        scheduleSessionSave();
+    }
     cancelPhotoEditor();
 }
 
@@ -4100,21 +4179,26 @@ async function openPhotoViewer(src) {
     setTimeout(() => viewer.classList.remove('opacity-0'), 10);
 
     let finalSrc = null;
+    const srcStr = String(src || '');
 
-    try {
-        if (src && typeof PhotoManager !== 'undefined' && typeof PhotoManager.getAsyncUrl === 'function') {
-            const resolvedSrc = await PhotoManager.getAsyncUrl(src);
+    if (srcStr.startsWith('data:') || srcStr.startsWith('blob:')) {
+        finalSrc = src;
+    } else {
+        try {
+            if (src && typeof PhotoManager !== 'undefined' && typeof PhotoManager.getAsyncUrl === 'function') {
+                const resolvedSrc = await PhotoManager.getAsyncUrl(src);
 
-            if (
-                resolvedSrc &&
-                !String(resolvedSrc).startsWith('local://') &&
-                !String(resolvedSrc).startsWith('cloud://')
-            ) {
-                finalSrc = resolvedSrc;
+                if (
+                    resolvedSrc &&
+                    !String(resolvedSrc).startsWith('local://') &&
+                    !String(resolvedSrc).startsWith('cloud://')
+                ) {
+                    finalSrc = resolvedSrc;
+                }
             }
+        } catch (e) {
+            finalSrc = null;
         }
-    } catch (e) {
-        finalSrc = null;
     }
 
     if (finalSrc) {
@@ -7802,7 +7886,7 @@ window.startDemoMode = function (silent = false) {
     if (document.getElementById('checklist-selector')) document.getElementById('checklist-selector').value = currentTemplateKey;
     currentChecklist = SYSTEM_TEMPLATES['nvf_facade'].groups;
 
-    state = {}; details = {}; photos = {};
+    state = {}; details = {}; assignPhotosMap({});
     state['108'] = 'ok'; photos['108'] = demoPhotoGood;
     state['109'] = 'fail'; details['109'] = { causeCode: 'C01', comment: '[Нарушение технологии] Отклонение' }; photos['109'] = demoPhotoBad;
 
@@ -7852,7 +7936,7 @@ window.exitDemoMode = function () {
     // ВОССТАНАВЛИВАЕМ ВСЁ
     state = JSON.parse(JSON.stringify(realState));
     details = JSON.parse(JSON.stringify(realDetails));
-    photos = JSON.parse(JSON.stringify(realPhotos));
+    assignPhotosMap(JSON.parse(JSON.stringify(realPhotos)));
     contractorArray = JSON.parse(JSON.stringify(realContractorArray));
     currentTemplateKey = realTemplateKey;
 
