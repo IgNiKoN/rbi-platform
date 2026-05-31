@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.8.216';
-const SW_VERSION = '17.8.216';
+const APP_VERSION = '17.8.218';
+const SW_VERSION = '17.8.218';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -15,6 +15,7 @@ const urlsToCache = [
   './data/system_nodes.js',
   './data/system_twi.js',
   './js/construction/constructionManager.js',
+  './js/construction/transferManager.js',
   './js/router.js',
   './js/views.js',
   './js/config.js',
@@ -169,4 +170,38 @@ self.addEventListener('fetch', event => {
       return cachedResponse || fetchPromise;
     })
   );
+});
+
+// ==========================================
+// PUSH УВЕДОМЛЕНИЯ
+// ==========================================
+
+// Слушаем приход Push-уведомления с сервера
+self.addEventListener('push', function(event) {
+    // Если сервер прислал данные, берем их. Иначе ставим заглушку.
+    const data = event.data ? event.data.json() : { title: 'RBI Quality', body: 'У вас новое уведомление' };
+
+    const options = {
+        body: data.body,
+        icon: './icons/icon-512-2.png',
+        badge: './icons/icon-512-2.png',
+        vibrate: [200, 100, 200],
+        data: {
+            url: data.url || '/' // Ссылка, куда перейти при клике
+        }
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
+});
+
+// Слушаем клик пользователя по уведомлению
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close(); // Закрываем уведомление
+
+    // Открываем приложение по ссылке из уведомления
+    event.waitUntil(
+        clients.openWindow(event.notification.data.url)
+    );
 });

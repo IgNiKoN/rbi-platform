@@ -693,9 +693,9 @@
                             Quality ▾
                         </span>
                         <select id="app-mode-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="if(window.changeAppMode) window.changeAppMode(this.value)">
-                            <option value="quality" selected>Quality (Качество)</option>
+                            <option value="quality" selected>Качество</option>
                             <option value="construction">Стройконтроль</option>
-                            <option value="transfer">Передача квартир</option>
+                            <option value="safety">Безопасность</option>
                             <option value="warranty">Гарантия</option>
                             <option value="uk">УК (Упр. компания)</option>
                         </select>
@@ -848,6 +848,14 @@
 
     <!-- === ОСНОВНОЙ КОНТЕЙНЕР === -->
     <main id="app-root" class="max-w-4xl mx-auto px-4 pt-4 pb-20">
+        <!-- === БАННЕР ПРЕДУПРЕЖДЕНИЯ ДЛЯ РЕЖИМА СТРОЙКОНТРОЛЬ === -->
+        <div id="construction-warning-banner" class="hidden mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-2xl shadow-sm items-start gap-3 mx-1 mt-2">
+            <div class="text-2xl mt-1">🚧</div>
+            <div>
+                <div class="text-[11px] font-black text-yellow-800 uppercase tracking-widest mb-0.5">Режим бета-тестирования</div>
+                <div class="text-[10px] text-yellow-700 font-medium leading-snug">Модуль "Стройконтроль" находится на стадии проектирования архитектуры. Облачная синхронизация для этого раздела временно отключена. Данные сохраняются только на вашем устройстве.</div>
+            </div>
+        </div>
 
         <!-- ВКЛАДКА 1: ОСМОТР -->
         <div id="tab-audit" class="view-section active">
@@ -2635,6 +2643,17 @@
                         </div>
 
                         <!-- Настройки поведения -->
+                        <!-- Настройки уведомлений -->
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Push-уведомления</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Оповещения о новых задачах СК</div>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="set-push-notifications" onchange="window.togglePushSettings(this)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                             <div>
                                 <div class="font-bold text-sm">Свайпы (Вправо/Влево)</div>
@@ -3217,7 +3236,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round"
                                 d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                         </svg> О приложении и Безопасности</button><br>
-                    RBI Quality PWA<br>Версия Pro (AI + Tasks + Sync)<br>Developed by Igor Kondratiev
+                    RBI Quality PWA<br>Версия Pro<br>Developed by Igor Kondratiev
                 </div>
             </div>
             <!-- === КОНСТРУКТОР PDF-ШАБЛОНОВ (PRO) === -->
@@ -3378,7 +3397,7 @@
                     <div id="const-admin-btn-container"></div>
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
                         <select id="const-object-select" class="input-base" onchange="if(window.ConstManager) window.ConstManager.onObjectChange()">
@@ -3397,6 +3416,11 @@
                             <option value="">Выберите этаж...</option>
                         </select>
                     </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Слой (Визуализация)</label>
+                        <select id="const-layer-select" class="input-base" onchange="if(window.ConstManager) window.ConstManager.onLayerChange()">
+                        </select>
+                    </div>
                 </div>
             </div>
             <!-- НОВОЕ: Переключатель видов и фильтры -->
@@ -3409,10 +3433,16 @@
                 
                 <!-- Фильтры -->
                 <div class="flex gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
+                    <button onclick="window.ConstManager.exportDefectsToExcel()" class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm whitespace-nowrap shrink-0 flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Excel
+                    </button>
                     <select id="const-filter-status" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[110px]">
                         <option value="ALL">Все статусы</option>
+                        <option value="open_all">🔥 Все открытые (В работе)</option>
                         <option value="issued">🔴 Выдано</option>
-                        <option value="fixed">🟡 Устранено (Ждет проверки)</option>
+                        <option value="in_progress">🔵 В работе у подрядчика</option>
+                        <option value="rejected">⚪ Отклонено инженером</option>
+                        <option value="fixed">🟡 Устранено (Ждет СК)</option>
                         <option value="closed">🟢 Закрыто</option>
                     </select>
                     <select id="const-filter-category" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px]">
@@ -3437,6 +3467,58 @@
         <div id="const-list-container" class="hidden mx-1 pb-8 space-y-3">
             <!-- Сюда JS будет рендерить карточки дефектов -->
         </div>
+        </div>
+        <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ШАХМАТКА (ПОМЕЩЕНИЯ) === -->
+        <!-- === ВКЛАДКА: ПЕРЕДАЧА КВАРТИР === -->
+        <div id="tab-transfer" class="view-section">
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Шахматка объекта</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
+                        <select id="transfer-object-select" class="input-base" onchange="if(window.TransferManager) window.TransferManager.onObjectChange()">
+                            <option value="">Загрузка объектов...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус / Секция</label>
+                        <select id="transfer-building-select" class="input-base" disabled onchange="if(window.TransferManager) window.TransferManager.onBuildingChange()">
+                            <option value="">Выберите корпус...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="transfer-grid-container" class="mx-1 pb-8">
+                <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Выберите корпус для просмотра шахматки</div>
+            </div>
+        </div>
+
+        <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ПРИЁМКА РАБОТ === -->
+        <div id="tab-construction-acceptance" class="view-section">
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        Журнал заявок
+                    </h2>
+                    <button onclick="if(window.ConstAcceptance) window.ConstAcceptance.openNewRequestModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Предъявить
+                    </button>
+                </div>
+                <!-- НОВЫЙ ФИЛЬТР ПО ОБЪЕКТУ -->
+                <div class="mb-2">
+                    <select id="acc-global-obj-filter" class="input-base !py-1.5 text-[11px] font-bold bg-[var(--hover-bg)]" onchange="window.ConstAcceptance.renderList()">
+                        <option value="ALL">Все объекты</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="acceptance-list-container" class="mx-1 pb-8">
+                <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Загрузка данных...</div>
+            </div>
         </div>
    <!-- === РЕЖИМ: ЗАГЛУШКА (ДЛЯ НОВЫХ МОДУЛЕЙ) === -->
         <div id="tab-mode-placeholder" class="view-section hidden">
@@ -3495,8 +3577,8 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.216',
-            sw: '17.8.216',
+            app: '17.8.218',
+            sw: '17.8.218',
             buildDate: '2026-05-31'
         };
     </script>
@@ -3517,6 +3599,7 @@
 
      <!-- === НОВЫЙ МОДУЛЬ СТРОЙКОНТРОЛЯ === -->
     <script src="js/construction/constructionManager.js"></script>
+    <script src="js/construction/transferManager.js"></script>
 
      <!-- === НОВЫЕ МОДУЛИ РОУТИНГА === -->
     <script src="js/router.js"></script>
@@ -3998,11 +4081,15 @@
                     </select>
                 </div>
 
-                <div>
+                <div class="relative">
                     <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Нарушение *</label>
-                    <select id="const-defect-item" class="input-base text-[12px] leading-snug" onchange="window.ConstDefectForm.onItemChange(this.value)">
-                        <option value="">Сначала выберите вид работ...</option>
-                    </select>
+                    <!-- Видимое поле для поиска -->
+                    <input type="text" id="const-defect-item-search" class="input-base text-[12px] leading-snug" placeholder="Начните вводить нарушение..." autocomplete="off" oninput="window.ConstDefectForm.handleItemSearch(this.value)" onfocus="window.ConstDefectForm.handleItemSearch(this.value)">
+                    <!-- Скрытое поле для ID (чтобы не сломать логику сохранения) -->
+                    <input type="hidden" id="const-defect-item">
+                    
+                    <!-- Выпадающий список с результатами поиска -->
+                    <div id="dd-const-defect-item" class="absolute top-[48px] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-[15000] hidden max-h-48 overflow-y-auto custom-scrollbar"></div>
                 </div>
 
                 <div id="const-defect-norm-block" class="hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl shadow-inner">

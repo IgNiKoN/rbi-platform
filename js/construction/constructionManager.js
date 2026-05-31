@@ -21,8 +21,15 @@ window.ConstManager = {
         try {
             // Грузим из локальной IndexedDB
             if (typeof dbGetAll !== 'undefined') {
-                const o = await dbGetAll(STORES.CONST_OBJECTS);
-                this.objects = (o || []).filter(x => !x._deleted);
+                // ЕДИНЫЙ СПРАВОЧНИК ОБЪЕКТОВ (Интеграция со всем приложением)
+                if (window.ObjectDirectory && window.ObjectDirectory.objects) {
+                    this.objects = window.ObjectDirectory.objects.map(obj => ({
+                        id: obj.canonical_key, // Используем единый системный ключ
+                        name: obj.display_name
+                    }));
+                } else {
+                    this.objects = [];
+                }
 
                 const b = await dbGetAll(STORES.CONST_BUILDINGS);
                 this.buildings = (b || []).filter(x => !x._deleted);
@@ -32,6 +39,14 @@ window.ConstManager = {
 
                 const d = await dbGetAll(STORES.CONST_DEFECTS);
                 this.defects = (d || []).filter(x => !x._deleted);
+
+                // --- Загрузка заявок на приемку ---
+                if (window.ConstAcceptance && typeof window.ConstAcceptance.init === 'function') {
+                    // Запуск модуля приемки происходит асинхронно при открытии вкладки,
+                    // но мы можем подстраховаться и загрузить базу здесь
+                    const reqs = await dbGetAll(STORES.CONST_ACCEPTANCE);
+                    if (reqs) window.ConstAcceptance.requests = reqs.filter(x => !x._deleted);
+                }
 
                 for (const def of this.defects) {
                     if (!def.id || !def.photo) continue;
@@ -85,7 +100,7 @@ window.ConstManager = {
         const objSel = document.getElementById('const-object-select');
         const bldSel = document.getElementById('const-building-select');
         const flrSel = document.getElementById('const-floor-select');
-
+        const layerSel = document.getElementById('const-layer-select');
         if (!objSel || !bldSel || !flrSel) return;
 
         // --- ОБЪЕКТЫ ---
@@ -110,6 +125,21 @@ window.ConstManager = {
 
         // --- ЭТАЖИ ---
         this.updateFloorSelector();
+        // --- СЛОИ ---
+        if (layerSel) {
+            // Если он пустой, инициализируем
+            if (layerSel.options.length === 0) {
+                layerSel.innerHTML = `
+                    <option value="ALL">Слой: Все дефекты</option>
+                    <option value="SMR">Слой: Только СМР (Строительство)</option>
+                    <option value="OT">Слой: Охрана труда и ПБ</option>
+                    <option value="ZONES">Слой: Зоны приемки работ</option>
+                `;
+            }
+            // Запоминаем выбранный слой
+            if (!this.currentLayer) this.currentLayer = 'ALL';
+            layerSel.value = this.currentLayer;
+        }
     },
 
     updateBuildingSelector() {
@@ -212,7 +242,19 @@ window.ConstManager = {
             this.clearPdfView();
         }
     },
-
+    onLayerChange() {
+        const layerSel = document.getElementById('const-layer-select');
+        if (!layerSel) return;
+        this.currentLayer = layerSel.value;
+        
+        // Перерисовываем точки с учетом нового слоя
+        if (this.currentFlrId) {
+            window.ConstDefectForm.renderAllPins(this.currentFlrId, {
+                status: this.currentFilterStatus,
+                category: this.currentFilterCategory
+            });
+        }
+    },
     // 5. Логика отображения PDF
     clearPdfView() {
         const placeholder = document.getElementById('const-plan-placeholder');
@@ -238,11 +280,12 @@ window.ConstManager = {
             return;
         }
 
-        // Показываем лоадер
+        // Показываем лоадер и разрешаем скролл
         placeholder.innerHTML = `<div class="animate-pulse">Загрузка PDF плана...</div>`;
         placeholder.classList.remove('hidden');
         renderArea.classList.add('hidden');
         renderArea.innerHTML = '';
+        renderArea.classList.remove('touch-none'); // Разрешаем скроллить план пальцем!
 
         try {
             // 1. Достаем файл (из кэша или скачиваем)
@@ -270,31 +313,51 @@ window.ConstManager = {
             const scale = containerWidth / baseViewport.width;
             const viewport = page.getViewport({ scale: scale * 1.5 }); // Хорошее качество
 
+            // ЖЕСТКАЯ ПРИВЯЗКА КООРДИНАТ: Создаем обертку строго по размеру холста
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.className = 'relative w-full';
+            wrapperDiv.style.lineHeight = '0'; // Убираем пустое пространство под картинкой
+
             const canvas = document.createElement('canvas');
-            canvas.className = 'w-full h-auto object-contain';
+            canvas.className = 'w-full h-auto'; // План занимает 100% ширины
             canvas.width = viewport.width;
             canvas.height = viewport.height;
             const ctx = canvas.getContext('2d');
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 
-            // 3. Добавляем холст в контейнер
-            renderArea.appendChild(canvas);
+            wrapperDiv.appendChild(canvas);
 
-            // 3.5. Отрисовываем уже существующие на этом этаже точки (если они есть)
+            // КОНТЕЙНЕР БУЛАВОК (Находится внутри жесткой обертки, точки 100% не съедут)
+            const pinsContainer = document.createElement('div');
+            pinsContainer.id = 'preview-pdf-pins';
+            pinsContainer.className = 'absolute top-0 left-0 w-full h-full pointer-events-none';
+            wrapperDiv.appendChild(pinsContainer);
+
+            // 3. Добавляем всё это в область рендера
+            renderArea.appendChild(wrapperDiv);
+
+            // 3.5. Отрисовываем уже существующие на этом этаже точки (с небольшой задержкой)
             window.ConstManager.currentFlrId = floorId;
-            setTimeout(() => window.ConstDefectForm.renderAllPins(floorId), 100);
+            setTimeout(() => window.ConstDefectForm.renderAllPins(floorId, {
+                status: this.currentFilterStatus,
+                category: this.currentFilterCategory
+            }), 100);
 
-            // 4. Добавляем ПЛАВАЮЩУЮ кнопку поверх чертежа
+            // 4. Плавающая кнопка Интерактивного плана
             const safeName = floor.name.replace(/'/g, "\\'");
+            const oldBtn = document.getElementById('interactive-plan-btn');
+            if (oldBtn) oldBtn.remove();
+
             const btnHtml = `
-                <div class="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
+                <div id="interactive-plan-btn" class="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
                     <button onclick="window.UniversalPdfViewer.open('${floor.pdf_url}', 'План: ${safeName}', '${floor.id}')" class="pointer-events-auto bg-indigo-600 text-white px-5 py-3.5 rounded-2xl shadow-[0_5px_15px_rgba(79,70,229,0.4)] active:scale-95 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform border border-indigo-400">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         Интерактивный план
                     </button>
                 </div>
             `;
-            renderArea.insertAdjacentHTML('beforeend', btnHtml);
+            // Добавляем кнопку к главному контейнеру, чтобы она не прокручивалась вместе с планом
+            document.getElementById('const-plan-container').insertAdjacentHTML('beforeend', btnHtml);
 
             // 5. Показываем результат
             placeholder.classList.add('hidden');
@@ -354,6 +417,86 @@ window.ConstManager = {
         }
     },
 
+    exportDefectsToExcel() {
+        if (!this.currentFlrId) return showToast('⚠️ Выберите этаж для выгрузки');
+
+        let filtered = this.defects.filter(d => d.floorId === this.currentFlrId);
+
+        // Умная фильтрация перед выгрузкой
+        if (this.currentFilterStatus !== 'ALL') {
+            if (this.currentFilterStatus === 'open_all') {
+                filtered = filtered.filter(d => ['issued', 'in_progress', 'rejected'].includes(d.status));
+            } else {
+                filtered = filtered.filter(d => d.status === this.currentFilterStatus);
+            }
+        }
+        if (this.currentFilterCategory !== 'ALL') {
+            filtered = filtered.filter(d => d.category === this.currentFilterCategory);
+        }
+
+        if (filtered.length === 0) return showToast('⚠️ Нет данных для выгрузки');
+
+        const statusNames = { 'issued': 'Выдано', 'in_progress': 'В работе', 'fixed': 'Устранено (Ждет СК)', 'closed': 'Закрыто', 'rejected': 'Отклонено СК' };
+
+        // Собираем данные со всей историей статусов
+        const dataToExport = filtered.map((d, index) => {
+            let dateFixed = '-';
+            let dateClosed = '-';
+            let commentsArr = [];
+
+            // Вытаскиваем даты и комментарии из истории
+            if (d.history && d.history.length > 0) {
+                const fixedRecord = d.history.find(h => h.status === 'fixed');
+                if (fixedRecord) dateFixed = new Date(fixedRecord.date).toLocaleString('ru-RU');
+
+                const closedRecord = d.history.find(h => h.status === 'closed');
+                if (closedRecord) dateClosed = new Date(closedRecord.date).toLocaleString('ru-RU');
+
+                d.history.forEach(h => {
+                    if (h.comment) commentsArr.push(`[${statusNames[h.status] || h.status}] ${h.user}: ${h.comment}`);
+                });
+            }
+
+            const objName = window.ConstManager.objects.find(o => o.id === this.currentObjId)?.name || '';
+            const bldName = window.ConstManager.buildings.find(b => b.id === this.currentBldId)?.name || '';
+            const flrName = window.ConstManager.floors.find(f => f.id === this.currentFlrId)?.name || '';
+
+            return {
+                "№": index + 1,
+                "Объект": objName,
+                "Корпус": bldName,
+                "Этаж": flrName,
+                "Координаты (X, Y)": `${parseFloat(d.x).toFixed(1)}%, ${parseFloat(d.y).toFixed(1)}%`,
+                "Статус": statusNames[d.status] || d.status,
+                "Категория": d.category,
+                "Ответственный подрядчик": d.contractor || '-',
+                "Вид работ": d.templateKey ? (SYSTEM_TEMPLATES[d.templateKey.replace('sys_', '')]?.title || userTemplates[d.templateKey.replace('user_', '')]?.title || d.templateKey) : '-',
+                "Нарушение": d.itemName,
+                "Норматив": d.normText ? d.normText.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, "\n") : '-',
+                "Уточнение": d.description || '-',
+                "Срок устранения": d.deadline ? new Date(d.deadline).toLocaleDateString('ru-RU') : '-',
+                "Дата выдачи": new Date(d.created_at).toLocaleString('ru-RU'),
+                "Дата устранения (Факт)": dateFixed,
+                "Дата закрытия": dateClosed,
+                "Автор": d.created_by || '-',
+                "История комментариев": commentsArr.join('\n')
+            };
+        });
+
+        try {
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Реестр замечаний");
+
+            const floorName = window.ConstManager.floors.find(f => f.id === this.currentFlrId)?.name || 'Этаж';
+            XLSX.writeFile(workbook, `Реестр_СК_${floorName}_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
+            showToast("✅ Полный реестр успешно выгружен в Excel!");
+        } catch (e) {
+            console.error(e);
+            showToast("❌ Ошибка при формировании Excel файла");
+        }
+    },
+
     renderDefectsList() {
         const container = document.getElementById('const-list-container');
         if (!container) return;
@@ -380,6 +523,10 @@ window.ConstManager = {
         }
 
         // Сортировка: Сначала красные (B3), потом новые
+        // Вычисляем порядковые номера (от самых старых к новым), чтобы они совпадали с планом
+        const allDefectsForFloor = this.defects.filter(d => d.floorId === this.currentFlrId);
+        const originalIndexes = new Map();
+        allDefectsForFloor.forEach((d, i) => originalIndexes.set(d.id, i + 1));
         filtered.sort((a, b) => {
             if (a.category === 'B3' && b.category !== 'B3') return -1;
             if (b.category === 'B3' && a.category !== 'B3') return 1;
@@ -411,23 +558,33 @@ window.ConstManager = {
             const deadlineText = d.deadline ? new Date(d.deadline).toLocaleDateString('ru-RU') : 'Не указан';
 
             return `
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex gap-3 cursor-pointer hover:border-indigo-400 transition-colors" onclick="window.ConstDefectForm && window.ConstDefectForm.openExisting && window.ConstDefectForm.openExisting('${d.id}')">
-                ${photoHtml}
-                <div class="flex-1 min-w-0 flex flex-col justify-between">
-                    <div>
-                        <div class="flex items-start justify-between gap-2 mb-1">
-                            <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight flex items-center gap-1.5">
-                                <span class="${catColor} text-white px-1.5 py-0.5 rounded text-[8px] tracking-widest">${d.category}</span>
-                                <span class="truncate">${d.itemName}</span>
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm flex flex-col cursor-pointer hover:border-indigo-400 transition-colors" onclick="window.ConstDefectForm && window.ConstDefectForm.openExisting && window.ConstDefectForm.openExisting('${d.id}')">
+                <div class="flex gap-3 mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+                    ${photoHtml}
+                    <div class="flex-1 min-w-0 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-start justify-between gap-2 mb-1">
+                                <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight flex items-center gap-1.5">
+                                    <span class="${catColor} text-white px-1.5 py-0.5 rounded text-[8px] tracking-widest">${d.category}</span>
+                                    <span class="truncate">№${originalIndexes.get(d.id)}: ${d.itemName}</span>
+                                </div>
+                                <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded border ${statusColors[d.status]} shrink-0">${statusNames[d.status] || d.status}</span>
                             </div>
-                            <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded border ${statusColors[d.status]} shrink-0">${statusNames[d.status] || d.status}</span>
+                            <div class="text-[10px] text-slate-500 truncate font-medium">${d.contractor || 'Подрядчик не указан'}</div>
                         </div>
-                        <div class="text-[10px] text-slate-500 truncate font-medium">${d.contractor || 'Подрядчик не указан'}</div>
+                        <div class="mt-1 flex justify-between items-center">
+                            <div class="text-[9px] font-bold text-slate-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> До: ${deadlineText}</div>
+                            <div class="text-[9px] font-bold text-slate-400">${new Date(d.created_at).toLocaleDateString('ru-RU')}</div>
+                        </div>
                     </div>
-                    <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                        <div class="text-[9px] font-bold text-slate-400 flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> До: ${deadlineText}</div>
-                        <div class="text-[9px] font-bold text-slate-400">${new Date(d.created_at).toLocaleDateString('ru-RU')}</div>
-                    </div>
+                </div>
+                
+                <!-- НОВАЯ КНОПКА ПОИСКА НА ПЛАНЕ -->
+                <div class="flex justify-end mt-1">
+                    <button onclick="event.stopPropagation(); window.ConstManager.focusOnPin('${d.id}')" class="bg-indigo-50 text-indigo-600 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase active:scale-95 transition-transform shadow-sm flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Показать на плане
+                    </button>
                 </div>
             </div>`;
         }).join('');
@@ -435,6 +592,31 @@ window.ConstManager = {
         if (typeof window.rbiHydrateLocalImages === 'function') {
             window.rbiHydrateLocalImages(container);
         }
+    },
+    // --- Поиск и фокусировка на конкретной точке на интерактивном плане ---
+    // --- Поиск и фокусировка на конкретной точке на интерактивном плане ---
+    focusOnPin(defectId) {
+        const defect = this.defects.find(d => d.id === defectId);
+        if (!defect) return;
+
+        if (this.currentFlrId !== defect.floorId) {
+            const floor = this.floors.find(f => f.id === defect.floorId);
+            if (floor) {
+                this.currentObjId = this.buildings.find(b => b.id === floor.building_id)?.object_id;
+                this.currentBldId = floor.building_id;
+                this.currentFlrId = floor.id;
+                this.renderSelectors();
+            }
+        }
+
+        this.switchView('plan');
+        const floor = this.floors.find(f => f.id === defect.floorId);
+        if (!floor) return;
+
+        const safeName = floor.name.replace(/'/g, "\\'");
+        
+        // НОВОЕ: Передаем defectId четвертым параметром прямо в просмотрщик!
+        window.UniversalPdfViewer.open(floor.pdf_url, `План: ${safeName}`, floor.id, defectId);
     }
 };
 
@@ -645,23 +827,63 @@ window.ConstAdmin = {
     // ==========================================
     async createObject() {
         const name = prompt('Введите название нового Объекта:');
-        if (!name) return;
+        if (!name || name.trim() === '') return;
 
-        const newObj = {
-            id: 'c_obj_' + Date.now().toString(36),
-            name: name,
-            description: '',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            _deleted: false,
-            source: 'local',
-            sync_status: 'not_synced'
-        };
+        const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        const isManager = ['manager', 'deputy_manager', 'director'].includes(role);
 
-        window.ConstManager.objects.push(newObj);
-        await dbPut(STORES.CONST_OBJECTS, newObj);
-        this.triggerSync();
-        this.renderTree();
+        if (isManager) {
+            // Прямое добавление для администраторов
+            if (window.ObjectDirectory) {
+                const canonical = window.ObjectDirectory.cleanString(name);
+                if (window.ObjectDirectory.objects.find(o => o.canonical_key === canonical)) {
+                    return showToast("⚠️ Объект с таким названием уже существует!");
+                }
+                const newObj = {
+                    id: 'obj_' + Date.now().toString(36),
+                    canonical_key: canonical,
+                    display_name: name.trim(),
+                    synonyms: [],
+                    project_code: window.syncConfig?.projectCode || '',
+                    created_by: window.appSettings?.engineerName || 'Админ',
+                    updated_at: new Date().toISOString(),
+                    _deleted: false,
+                    source: 'local',
+                    sync_status: 'not_synced'
+                };
+                window.ObjectDirectory.objects.push(newObj);
+                if (typeof dbPut === 'function') dbPut('project_objects', newObj);
+
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                if (typeof triggerSync === 'function') triggerSync('silent');
+
+                this.objects.push({ id: canonical, name: name.trim() });
+                this.renderTree();
+                showToast("✅ Объект добавлен в общий Справочник!");
+            }
+        } else {
+            // Создание заявки для инженера (Как в основном приложении)
+            if (typeof appSettings !== 'undefined') {
+                if (!appSettings.pendingAssignedProjects) appSettings.pendingAssignedProjects = [];
+
+                const requestedProject = {
+                    raw_name: name.trim(),
+                    canonical_key: window.ObjectDirectory ? window.ObjectDirectory.cleanString(name) : name.trim().toLowerCase(),
+                    display_name: name.trim(),
+                    status: 'pending',
+                    request_type: 'directory',
+                    created_at: new Date().toISOString()
+                };
+
+                appSettings.pendingAssignedProjects.push(requestedProject);
+                if (typeof dbPut === 'function') dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+
+                if (typeof window.pushObjectRequestToCloud === 'function') {
+                    window.pushObjectRequestToCloud(requestedProject);
+                }
+                showToast("📨 Заявка на создание объекта отправлена руководителю!");
+            }
+        }
     },
 
     async createBuilding(objId) {
@@ -834,7 +1056,16 @@ window.ConstAdmin = {
 
             // Чтобы браузер не кэшировал старые планы, добавляем timestamp к имени файла
             const safeName = `plan_${Date.now()}.pdf`;
-            const filePath = `${pCode}/${bld.object_id}/${bld.id}/${floorId}/${safeName}`;
+            const rawFilePath = `${pCode}/${bld.object_id}/${bld.id}/${floorId}/${safeName}`;
+
+            // ОЧИСТКА ПУТИ: переводим кириллицу в латиницу, убираем скобки и пробелы
+            let filePath = rawFilePath;
+            if (typeof window.sanitizeStoragePath === 'function') {
+                filePath = window.sanitizeStoragePath(rawFilePath);
+            } else {
+                // Если глобальная функция недоступна, делаем жесткую очистку
+                filePath = rawFilePath.replace(/[^a-zA-Z0-9.\-_/]/g, '_');
+            }
 
             // 2. Отправляем в Supabase
             const { data, error } = await window.supabaseClient.storage
@@ -894,10 +1125,18 @@ window.ConstAdmin = {
 window.UniversalPdfViewer = {
     panzoomInstance: null,
     isAddMode: false,
-    currentFloorId: null, // Запоминаем этаж, к которому привязываем дефект
+    currentFloorId: null,
+    isCopyMode: false,
+    copyTemplateDefect: null,
+    _zoomListener: null,
+    
+    // НОВОЕ ДЛЯ ЗОН ПРИЕМКИ
+    isZoneMode: false,
+    zoneClicks: [], // Добавили переменную для слушателя зума
 
-    async open(pdfUrl, title, floorId = null) {
+    async open(pdfUrl, title, floorId = null, highlightDefectId = null) {
         this.currentFloorId = floorId;
+        window.ConstManager.currentFlrId = floorId; // Дублируем в менеджер для надежности
 
         const modal = document.getElementById('universal-pdf-modal');
         const titleEl = document.getElementById('universal-pdf-title');
@@ -905,7 +1144,7 @@ window.UniversalPdfViewer = {
         const wrapper = document.getElementById('universal-pdf-wrapper');
         const container = document.getElementById('universal-pdf-container');
         const canvas = document.getElementById('universal-pdf-canvas');
-        const toolbar = document.getElementById('universal-pdf-toolbar'); // Тулбар
+        const toolbar = document.getElementById('universal-pdf-toolbar');
 
         if (!modal || !canvas) return;
 
@@ -914,6 +1153,16 @@ window.UniversalPdfViewer = {
         // Если передан floorId, значит мы открыли план этажа -> показываем тулбар
         if (floorId) {
             toolbar.classList.remove('hidden');
+            
+            // Динамически добавляем кнопку "Выделить зону", если её еще нет
+            if (!document.getElementById('pdf-btn-add-zone')) {
+                const btnContainer = toolbar.querySelector('button').parentElement;
+                btnContainer.insertAdjacentHTML('afterbegin', `
+                    <button id="pdf-btn-add-zone" onclick="window.UniversalPdfViewer.toggleZoneMode()" class="bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5 mr-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Выделить зону
+                    </button>
+                `);
+            }
         } else {
             toolbar.classList.add('hidden');
         }
@@ -930,7 +1179,6 @@ window.UniversalPdfViewer = {
             this.panzoomInstance = null;
         }
 
-        // Отключаем режим добавления при новом открытии
         this.setAddMode(false);
 
         try {
@@ -960,38 +1208,65 @@ window.UniversalPdfViewer = {
             const ctx = canvas.getContext('2d');
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 
-            const scaleX = wrapper.clientWidth / viewport.width;
-            const scaleY = wrapper.clientHeight / viewport.height;
-            const initialScale = Math.min(scaleX, scaleY) * 0.95;
-
-            const startX = (wrapper.clientWidth - (viewport.width * initialScale)) / 2;
-            const startY = (wrapper.clientHeight - (viewport.height * initialScale)) / 2;
-
             container.style.visibility = 'visible';
+
+            // Инициализация Panzoom
             this.panzoomInstance = Panzoom(container, {
-                maxScale: 5,
-                minScale: initialScale * 0.5,
-                startScale: initialScale,
-                startX: startX,
-                startY: startY,
-                contain: 'outside',
+                maxScale: 15,
+                minScale: 0.05,
                 step: 0.3
             });
 
-            wrapper.parentElement.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
+            // Центрирование и стартовый зум
+            // Даем браузеру 50 миллисекунд для отрисовки окна
+            setTimeout(() => {
+                if (!this.panzoomInstance) return;
+                
+                const cw = wrapper.clientWidth;
+                const ch = wrapper.clientHeight;
+                
+                const scaleX = cw / viewport.width;
+                const scaleY = ch / viewport.height;
+                const initialScale = Math.min(scaleX, scaleY) * 0.98;
 
-            // === ВЕШАЕМ КЛИК ДЛЯ ПОСТАНОВКИ ТОЧКИ ===
-            container.onclick = (e) => this.handleCanvasClick(e);
+                const startX = (cw - (viewport.width * initialScale)) / 2;
+                const startY = (ch - (viewport.height * initialScale)) / 2;
 
-            // === ОТРИСОВКА СУЩЕСТВУЮЩИХ ТОЧЕК НА БОЛЬШОМ ЭКРАНЕ ===
-            if (floorId) {
-                setTimeout(() => {
-                    window.ConstDefectForm.renderAllPins(floorId, {
-                        status: this.currentFilterStatus,
-                        category: this.currentFilterCategory
-                    });
-                }, 100);
+                this.panzoomInstance.zoom(initialScale, { animate: false });
+                this.panzoomInstance.pan(startX, startY, { animate: false, force: true });
+
+                // Рендерим точки со стартовым масштабом И ПОДСВЕТКОЙ
+                if (this.currentFloorId) {
+                    window.ConstDefectForm.renderAllPins(this.currentFloorId, {
+                        status: window.ConstManager.currentFilterStatus,
+                        category: window.ConstManager.currentFilterCategory
+                    }, initialScale, highlightDefectId);
+                }
+            }, 50);
+
+            // --- ОБРАБОТЧИК ЗУМА ДЛЯ КЛАСТЕРОВ ---
+            if (this._zoomListener) {
+                container.removeEventListener('panzoomzoom', this._zoomListener);
             }
+            
+            let zoomTimeout;
+            this._zoomListener = (e) => {
+                clearTimeout(zoomTimeout);
+                // Дебаунс 30мс, чтобы план не лагал при активном скролле мышки
+                zoomTimeout = setTimeout(() => {
+                    const currentScale = e.detail.scale;
+                    if (this.currentFloorId) {
+                        window.ConstDefectForm.renderAllPins(this.currentFloorId, {
+                            status: window.ConstManager.currentFilterStatus,
+                            category: window.ConstManager.currentFilterCategory
+                        }, currentScale, highlightDefectId);
+                    }
+                }, 30);
+            };
+            container.addEventListener('panzoomzoom', this._zoomListener);
+
+            wrapper.parentElement.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
+            container.onclick = (e) => this.handleCanvasClick(e);
 
         } catch (e) {
             console.error('[UniversalPdfViewer] Ошибка:', e);
@@ -1001,78 +1276,207 @@ window.UniversalPdfViewer = {
         }
     },
 
-    // Включение/Отключение режима добавления точки
     toggleAddMode() {
         this.setAddMode(!this.isAddMode);
     },
 
     setAddMode(isActive) {
         this.isAddMode = isActive;
+        this.isCopyMode = false;
+        
         const btn = document.getElementById('pdf-btn-add-defect');
         const hintAdd = document.getElementById('pdf-add-hint');
         const hintNorm = document.getElementById('pdf-normal-hint');
         const container = document.getElementById('universal-pdf-container');
 
         if (isActive) {
-            btn.classList.replace('bg-red-50', 'bg-red-600');
-            btn.classList.replace('text-red-600', 'text-white');
+            btn.className = 'bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
             btn.innerHTML = 'Отмена';
+            btn.onclick = () => this.toggleAddMode();
             hintNorm.classList.add('hidden');
             hintAdd.classList.remove('hidden');
-            // Меняем курсор на прицел
+            hintAdd.innerText = 'Кликните на чертеж ➔';
+            hintAdd.className = 'text-[10px] font-bold text-red-500 uppercase tracking-widest animate-pulse';
             if (container) container.style.cursor = 'crosshair';
         } else {
-            btn.classList.replace('bg-red-600', 'bg-red-50');
-            btn.classList.replace('text-white', 'text-red-600');
+            btn.className = 'bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
             btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить дефект';
+            btn.onclick = () => this.toggleAddMode();
             hintNorm.classList.remove('hidden');
             hintAdd.classList.add('hidden');
-            // Обычный курсор для панорамирования
             if (container) container.style.cursor = 'grab';
         }
     },
 
-    // Обработка клика по чертежу
-    handleCanvasClick(e) {
-        if (!this.isAddMode) return; // Если не в режиме добавления - игнорируем
+    setCopyMode(isActive, templateDefect = null) {
+        this.isCopyMode = isActive;
+        this.copyTemplateDefect = templateDefect;
+        this.isAddMode = false;
+        
+        const btn = document.getElementById('pdf-btn-add-defect');
+        const hintAdd = document.getElementById('pdf-add-hint');
+        const hintNorm = document.getElementById('pdf-normal-hint');
+        const container = document.getElementById('universal-pdf-container');
 
-        // Считаем координаты клика В ПРОЦЕНТАХ относительно холста
-        // e.offsetX / e.offsetY работают идеально, так как мы кликаем по внутреннему элементу (canvas)
+        if (isActive) {
+            btn.className = 'bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
+            btn.innerHTML = 'Завершить штамп';
+            btn.onclick = () => this.setCopyMode(false);
+            hintNorm.classList.add('hidden');
+            hintAdd.classList.remove('hidden');
+            hintAdd.innerText = 'Кликайте для вставки копий ➔';
+            hintAdd.className = 'text-[10px] font-bold text-blue-500 uppercase tracking-widest animate-pulse';
+            if (container) container.style.cursor = 'crosshair';
+        } else {
+            this.setAddMode(false);
+        }
+    },
+    toggleZoneMode() {
+        this.setZoneMode(!this.isZoneMode);
+    },
+
+    setZoneMode(isActive) {
+        this.isZoneMode = isActive;
+        this.isAddMode = false;
+        this.isCopyMode = false;
+        this.zoneClicks = []; // Сбрасываем клики
+        
+        const btnAdd = document.getElementById('pdf-btn-add-defect');
+        const btnZone = document.getElementById('pdf-btn-add-zone');
+        const container = document.getElementById('universal-pdf-container');
+
+        // Глобальный баннер-подсказка
+        let helperBanner = document.getElementById('pdf-zone-helper');
+        if (!helperBanner) {
+            helperBanner = document.createElement('div');
+            helperBanner.id = 'pdf-zone-helper';
+            helperBanner.className = 'absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-2xl shadow-2xl z-50 text-[12px] font-black uppercase tracking-widest text-center transition-all duration-300 pointer-events-none opacity-0 translate-y-[-20px]';
+            document.getElementById('universal-pdf-modal').appendChild(helperBanner);
+        }
+
+        const tempZone = document.getElementById('temp-zone-marker');
+        if (tempZone) tempZone.remove();
+
+        if (isActive) {
+            if (btnZone) {
+                btnZone.className = 'bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5 mr-2';
+                btnZone.innerHTML = 'Отмена';
+            }
+            if (btnAdd) btnAdd.classList.add('hidden'); 
+            
+            // Показываем красивый баннер
+            helperBanner.innerHTML = '👆 Клик 1: Левый верхний угол зоны';
+            helperBanner.classList.remove('opacity-0', 'translate-y-[-20px]');
+            
+            if (container) container.style.cursor = 'crosshair';
+        } else {
+            if (btnZone) {
+                btnZone.className = 'bg-blue-50 text-blue-600 border border-blue-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5 mr-2';
+                btnZone.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Выделить зону';
+            }
+            if (btnAdd) btnAdd.classList.remove('hidden');
+            
+            // Прячем баннер
+            helperBanner.classList.add('opacity-0', 'translate-y-[-20px]');
+            
+            if (container) container.style.cursor = 'grab';
+        }
+    },
+    handleCanvasClick(e) {
+        if (!this.isAddMode && !this.isCopyMode && !this.isZoneMode) return; 
+
         const container = document.getElementById('universal-pdf-container');
         const xPercent = (e.offsetX / container.offsetWidth) * 100;
         const yPercent = (e.offsetY / container.offsetHeight) * 100;
 
-        // Отключаем режим добавления
+        // РЕЖИМ 1: РИСОВАНИЕ ЗОНЫ ПРИЕМКИ (2 Клика)
+        if (this.isZoneMode) {
+            this.zoneClicks.push({ x: xPercent, y: yPercent });
+            const helperBanner = document.getElementById('pdf-zone-helper');
+            
+            if (this.zoneClicks.length === 1) {
+                if (helperBanner) helperBanner.innerHTML = '👇 Клик 2: Правый нижний угол зоны';
+                const pinsContainer = document.getElementById('universal-pdf-pins');
+                pinsContainer.insertAdjacentHTML('beforeend', `<div id="temp-zone-marker" class="absolute w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.8)] transform -translate-x-1/2 -translate-y-1/2 animate-pulse" style="left: ${xPercent}%; top: ${yPercent}%;"></div>`);
+            } 
+            else if (this.zoneClicks.length === 2) {
+                if (helperBanner) helperBanner.innerHTML = '✅ Зона зафиксирована!';
+                
+                const p1 = this.zoneClicks[0];
+                const p2 = this.zoneClicks[1];
+                const x = Math.min(p1.x, p2.x);
+                const y = Math.min(p1.y, p2.y);
+                const w = Math.abs(p1.x - p2.x);
+                const h = Math.abs(p1.y - p2.y);
+                
+                const pinsContainer = document.getElementById('universal-pdf-pins');
+                document.getElementById('temp-zone-marker')?.remove();
+                pinsContainer.insertAdjacentHTML('beforeend', `<div id="temp-zone-rect" class="absolute bg-blue-500/30 border-2 border-blue-500 shadow-inner" style="left: ${x}%; top: ${y}%; width: ${w}%; height: ${h}%;"></div>`);
+                
+                setTimeout(() => {
+                    this.setZoneMode(false);
+                    this.close(); 
+                    // ВОТ ТУТ МЫ ПЕРЕДАЕМ ВЕРНУВШИЕСЯ ДАННЫЕ ВМЕСТЕ С ПАМЯТЬЮ ФОРМЫ (если она была)
+                    window.ConstAcceptance.openNewRequestModal(this.currentFloorId, {x, y, w, h}, window.tempAcceptanceContext);
+                }, 800); // Даем 800мс полюбоваться результатом
+            }
+            return;
+        }
+
+        // РЕЖИМ 2: ШТАМП КОПИЙ
+        if (this.isCopyMode && this.copyTemplateDefect) {
+            this.massCopyDefect(xPercent, yPercent);
+            return; 
+        }
+
+        // РЕЖИМ 3: ОБЫЧНАЯ ТОЧКА ДЕФЕКТА
         this.setAddMode(false);
-
-        // Показываем координаты (для теста)
-        if (typeof showToast === 'function') showToast(`Точка: X=${xPercent.toFixed(1)}%, Y=${yPercent.toFixed(1)}%`);
-
-        // Рисуем временную булавку
         this.drawTempPin(xPercent, yPercent);
-
-        // Вызываем модалку создания дефекта
         window.ConstDefectForm.openNew(xPercent, yPercent);
+    },
+
+    async massCopyDefect(x, y) {
+        const orig = this.copyTemplateDefect;
+        const newId = 'def_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
+        
+        const newDefect = JSON.parse(JSON.stringify(orig));
+        newDefect.id = newId;
+        newDefect.x = x;
+        newDefect.y = y;
+        newDefect.status = 'issued';
+        newDefect.history = [];
+        newDefect.created_at = new Date().toISOString();
+        newDefect.updated_at = new Date().toISOString();
+        
+        if (orig.photo && window.photos) {
+            window.photos[newId] = orig.photo; 
+        }
+
+        window.ConstManager.defects.push(newDefect);
+        if (typeof dbPut === 'function') await dbPut(STORES.CONST_DEFECTS, newDefect);
+        
+        window.ConstDefectForm.renderAllPins(window.ConstManager.currentFlrId, {
+            status: window.ConstManager.currentFilterStatus,
+            category: window.ConstManager.currentFilterCategory
+        }, this.panzoomInstance ? this.panzoomInstance.getScale() : 1);
+        
+        if (navigator.vibrate) navigator.vibrate(30);
     },
 
     drawTempPin(xPercent, yPercent) {
         const pinsContainer = document.getElementById('universal-pdf-pins');
         if (!pinsContainer) return;
-
-        // Очищаем старую временную булавку, если есть
         const oldTemp = document.getElementById('temp-pin');
         if (oldTemp) oldTemp.remove();
-
-        // Красивая пульсирующая булавка
-        const pinHtml = `
+        pinsContainer.insertAdjacentHTML('beforeend', `
             <div id="temp-pin" class="absolute w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px] font-black z-30 transform -translate-x-1/2 -translate-y-1/2 animate-bounce" style="left: ${xPercent}%; top: ${yPercent}%;">
                 +
             </div>
-        `;
-        pinsContainer.insertAdjacentHTML('beforeend', pinHtml);
+        `);
     },
 
     close() {
+        this.setCopyMode(false);
         const modal = document.getElementById('universal-pdf-modal');
         const wrapper = document.getElementById('universal-pdf-wrapper');
         const pins = document.getElementById('universal-pdf-pins');
@@ -1081,7 +1485,7 @@ window.UniversalPdfViewer = {
         setTimeout(() => {
             modal.style.display = 'none';
             document.body.classList.remove('modal-open');
-            if (pins) pins.innerHTML = ''; // Очищаем булавки при закрытии
+            if (pins) pins.innerHTML = ''; 
 
             if (this.panzoomInstance) {
                 wrapper.parentElement.removeEventListener('wheel', this.panzoomInstance.zoomWithWheel);
@@ -1138,14 +1542,23 @@ window.ConstDefectForm = {
         contrSelect.innerHTML = contrHtml;
     },
 
-    // --- Выбран чек-лист → загружаем пункты нарушений ---
+    // --- Выбран чек-лист → подготавливаем базу для поиска ---
     onTemplateChange(tmplKey) {
-        const itemSelect = document.getElementById('const-defect-item');
-        const normBlock = document.getElementById('const-defect-norm-block');
-        normBlock.classList.add('hidden');
+        document.getElementById('const-defect-item').value = '';
+        document.getElementById('const-defect-item-search').value = '';
+        document.getElementById('const-defect-item-name').value = '';
+        document.getElementById('const-defect-norm-block').classList.add('hidden');
+        document.getElementById('dd-const-defect-item').classList.add('hidden');
+    },
+
+    // --- Умный поиск нарушений ---
+    handleItemSearch(query) {
+        const tmplKey = document.getElementById('const-defect-template').value;
+        const dropdown = document.getElementById('dd-const-defect-item');
 
         if (!tmplKey) {
-            itemSelect.innerHTML = '<option value="">Сначала выберите вид работ...</option>';
+            dropdown.innerHTML = '<div class="p-3 text-[10px] text-slate-500 font-bold text-center">Сначала выберите вид работ выше</div>';
+            dropdown.classList.remove('hidden');
             return;
         }
 
@@ -1155,51 +1568,75 @@ window.ConstDefectForm = {
         if (type === 'sys' && SYSTEM_TEMPLATES[key]) groups = SYSTEM_TEMPLATES[key].groups;
         else if (type === 'user' && userTemplates[key]) groups = userTemplates[key].groups;
 
-        let optionsHtml = '<option value="">-- Выберите нарушение --</option>';
-        groups.forEach(g => {
-            optionsHtml += `<optgroup label="${g.group || g.title}">`;
-            (g.items || []).forEach(i => {
-                const safeNorm = (i.t || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                optionsHtml += `<option value="${i.id}" data-weight="${i.w}" data-norm="${safeNorm}" data-text="${i.n.replace(/"/g, '&quot;')}">${i.n}</option>`;
-            });
-            optionsHtml += `</optgroup>`;
-        });
-        itemSelect.innerHTML = optionsHtml;
+        const flatItems = this.getFlatItemsFromGroups(groups);
+
+        // Фильтруем по тексту
+        const q = query.toLowerCase().trim();
+        const matched = flatItems.filter(i => i.n.toLowerCase().includes(q) || (i.t && i.t.toLowerCase().includes(q)));
+
+        if (matched.length === 0) {
+            dropdown.innerHTML = '<div class="p-3 text-[10px] text-slate-500 font-bold text-center">Ничего не найдено</div>';
+            dropdown.classList.remove('hidden');
+            return;
+        }
+
+        // Рендерим результаты
+        dropdown.innerHTML = matched.map(i => {
+            const safeNorm = (i.t || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+            const safeName = i.n.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+            return `
+                <div class="p-2 border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                     onmousedown="window.ConstDefectForm.selectItem('${i.id}', '${safeName}', ${i.w}, '${safeNorm}')">
+                    <div class="text-[11px] font-bold text-slate-800 dark:text-white leading-tight">
+                        <span class="text-[9px] font-black text-white bg-slate-400 px-1 rounded mr-1">B${i.w}</span>${i.n}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        dropdown.classList.remove('hidden');
     },
 
-    // --- Выбран пункт → показать норматив, установить категорию, подставить название нарушения ---
-    onItemChange(itemId) {
-        const select = document.getElementById('const-defect-item');
-        const option = select.querySelector(`option[value="${itemId}"]`);
-        if (!option) return;
+    // --- Обработка клика по найденному пункту ---
+    selectItem(id, name, weight, norm) {
+        document.getElementById('const-defect-item-search').value = name;
+        document.getElementById('const-defect-item-name').value = name;
+        document.getElementById('const-defect-item').value = id;
+        document.getElementById('dd-const-defect-item').classList.add('hidden');
 
+        // Показываем норматив (очищенный от HTML для текстового поля)
+        let cleanNorm = norm ? norm.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ") : "";
         const normBlock = document.getElementById('const-defect-norm-block');
-        const normText = option.getAttribute('data-norm');
-        const weight = parseInt(option.getAttribute('data-weight'));
-        const itemName = option.getAttribute('data-text');
 
-        if (normText && normText.trim()) {
-            document.getElementById('const-defect-norm-text').innerHTML = normText;
+        if (norm && norm.trim()) {
+            document.getElementById('const-defect-norm-text').innerHTML = norm;
             normBlock.classList.remove('hidden');
         } else {
             normBlock.classList.add('hidden');
         }
 
-        // Автоматически ставим категорию по весу пункта
+        // Авто-формирование текста замечания (Нарушение + Норматив)
+        let autoText = `Нарушение: ${name}.`;
+        if (cleanNorm && cleanNorm !== 'Без норматива') {
+            autoText += ` Требования: ${cleanNorm}`;
+        }
+        document.getElementById('const-defect-desc').value = autoText;
+
+        // Автокатегория (Блокируем от ручного изменения)
         const catSelect = document.getElementById('const-defect-category');
         if (weight === 1) catSelect.value = 'B1';
         else if (weight === 2) catSelect.value = 'B2';
         else if (weight === 3) catSelect.value = 'B3';
 
-        // Сохраняем название пункта в hidden-поле (для последующего сохранения)
-        document.getElementById('const-defect-item-name').value = itemName;
+        catSelect.setAttribute('disabled', 'true');
+        catSelect.classList.add('opacity-60', 'cursor-not-allowed');
     },
 
     // --- Открыть форму для нового дефекта ---
-        openNew(xPercent, yPercent) {
+    openNew(xPercent, yPercent) {
         // Генерируем постоянный ID для нового дефекта
         const newId = 'def_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
-        
+
         this.populateDropdowns();
 
         document.getElementById('const-defect-id').value = newId;
@@ -1210,10 +1647,13 @@ window.ConstDefectForm = {
         document.getElementById('const-defect-item-name').value = '';
         document.getElementById('const-defect-norm-block').classList.add('hidden');
         document.getElementById('const-defect-category').value = 'B2';
-        document.getElementById('const-defect-deadline').value = '';
+        // Ставим срок по умолчанию: +14 дней от сегодня
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 14);
+        document.getElementById('const-defect-deadline').value = futureDate.toISOString().split('T')[0];
         document.getElementById('const-defect-contractor').value = '';
         document.getElementById('const-defect-desc').value = '';
-        
+
         // Очищаем превью фото
         this.removePhoto();
 
@@ -1242,7 +1682,16 @@ window.ConstDefectForm = {
         // Небольшая задержка, чтобы пункты успели отрисоваться
         setTimeout(() => {
             document.getElementById('const-defect-item').value = defect.itemId || '';
-            this.onItemChange(defect.itemId);
+            document.getElementById('const-defect-item-search').value = defect.itemName || '';
+
+            // Восстанавливаем блок норматива
+            const normBlock = document.getElementById('const-defect-norm-block');
+            if (defect.normText && defect.normText.trim()) {
+                document.getElementById('const-defect-norm-text').innerHTML = defect.normText;
+                normBlock.classList.remove('hidden');
+            } else {
+                normBlock.classList.add('hidden');
+            }
         }, 50);
         document.getElementById('const-defect-item-name').value = defect.itemName || '';
         document.getElementById('const-defect-category').value = defect.category || 'B2';
@@ -1261,10 +1710,95 @@ window.ConstDefectForm = {
             this.removePhoto(); // если фото нет – очищаем превью
         }
         document.getElementById('const-defect-modal-title').innerText = 'Редактирование замечания';
-        document.getElementById('const-defect-actions').innerHTML = `
-            <button onclick="window.ConstDefectForm.delete('${defect.id}')" class="flex-1 bg-red-50 text-red-600 py-3 rounded-xl text-[11px] font-bold uppercase active:scale-95 border border-red-200">🗑️ Удалить</button>
-            <button onclick="window.ConstDefectForm.save()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">💾 Обновить</button>
-        `;
+        // --- НОВАЯ ЛОГИКА СТАТУСОВ И КНОПОК ПО РОЛЯМ ---
+        const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        const isEngineer = ['engineer', 'manager', 'deputy_manager'].includes(role);
+        const isContractor = role === 'contractor';
+
+        // Гарантируем, что статус есть
+        if (!defect.status) defect.status = 'issued';
+
+        let actionBtns = '';
+
+        if (defect.status === 'issued') {
+            if (isContractor) {
+                actionBtns = `
+                    <button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'in_progress')" class="flex-1 bg-blue-50 text-blue-600 border border-blue-200 py-3 rounded-xl text-[11px] font-bold uppercase active:scale-95">В работу</button>
+                    <button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'fixed')" class="flex-[1.5] bg-green-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">Устранено (Фото)</button>
+                `;
+            } else if (isEngineer) {
+                actionBtns = `
+                    <button onclick="window.ConstDefectForm.delete('${defect.id}')" class="bg-red-50 text-red-600 py-3 px-3 rounded-xl text-[11px] font-bold uppercase active:scale-95 border border-red-200" title="Удалить">🗑️</button>
+                    <button onclick="window.ConstDefectForm.duplicate('${defect.id}')" class="bg-blue-50 text-blue-600 py-3 px-3 rounded-xl text-[11px] font-bold uppercase active:scale-95 border border-blue-200" title="Копировать">📋</button>
+                    <button onclick="window.ConstDefectForm.save()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">💾 Обновить</button>
+                `;
+            }
+        } else if (defect.status === 'in_progress') {
+            if (isContractor) {
+                actionBtns = `<button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'fixed')" class="w-full bg-green-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">Устранено (Приложить фото)</button>`;
+            } else {
+                actionBtns = `<div class="text-center w-full text-[11px] font-bold text-blue-500 py-3">Подрядчик взял в работу</div>`;
+            }
+        } else if (defect.status === 'fixed') {
+            if (isEngineer) {
+                actionBtns = `
+                    <button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'rejected')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl text-[11px] font-bold uppercase active:scale-95">❌ Отклонить</button>
+                    <button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'closed')" class="flex-1 bg-green-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">✅ Принять (Закрыть)</button>
+                 `;
+            } else {
+                actionBtns = `<div class="text-center w-full text-[11px] font-bold text-green-500 py-3">Ожидает проверки Инженером СК</div>`;
+            }
+        } else if (defect.status === 'closed') {
+            actionBtns = `<div class="text-center w-full text-[11px] font-black text-green-600 py-3">Дефект закрыт</div>`;
+        } else if (defect.status === 'rejected') {
+            if (isContractor) {
+                actionBtns = `<button onclick="window.ConstDefectForm.changeStatus('${defect.id}', 'fixed')" class="w-full bg-orange-500 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">Повторно предъявить (Фото)</button>`;
+            } else if (isEngineer) {
+                actionBtns = `
+                    <button onclick="window.ConstDefectForm.save()" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">💾 Обновить</button>
+                 `;
+            }
+        }
+
+        // Рендер истории статусов
+        let historyHtml = '';
+        if (defect.history && defect.history.length > 0) {
+            historyHtml = `<div class="w-full mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-2 max-h-32 overflow-y-auto custom-scrollbar">`;
+            [...defect.history].reverse().forEach(h => {
+                const statusNames = { 'issued': 'Выдано', 'in_progress': 'В работе', 'fixed': 'Устранено', 'closed': 'Закрыто', 'rejected': 'Отклонено' };
+                const stName = statusNames[h.status] || h.status;
+                const dDate = new Date(h.date).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+                let histPhoto = '';
+                if (h.photo) {
+                    histPhoto = `<img src="${window.getPhotoSrc(h.photo)}" class="w-10 h-10 object-cover rounded border cursor-pointer mt-1" onclick="openPhotoViewer('${h.photo}')">`;
+                }
+
+                historyHtml += `
+                    <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800 text-[10px]">
+                        <div class="flex justify-between font-bold mb-1"><span class="text-indigo-600">${stName}</span><span class="text-slate-400">${dDate}</span></div>
+                        <div class="text-slate-600 dark:text-slate-300">${h.user} ${h.comment ? `— <i>${h.comment}</i>` : ''}</div>
+                        ${histPhoto}
+                    </div>
+                `;
+            });
+            historyHtml += `</div>`;
+        }
+
+        document.getElementById('const-defect-actions').innerHTML = actionBtns;
+
+        // Вставляем историю прямо над кнопками
+        const actionsContainer = document.getElementById('const-defect-actions');
+        const existingHistory = document.getElementById('const-defect-history');
+        if (existingHistory) existingHistory.remove();
+
+        if (historyHtml) {
+            const histDiv = document.createElement('div');
+            histDiv.id = 'const-defect-history';
+            histDiv.className = 'w-full px-4 pb-2 bg-[var(--card-bg)]';
+            histDiv.innerHTML = historyHtml;
+            actionsContainer.parentNode.insertBefore(histDiv, actionsContainer);
+        }
 
         document.getElementById('const-defect-modal').style.display = 'flex';
     },
@@ -1274,6 +1808,71 @@ window.ConstDefectForm = {
         document.getElementById('const-defect-modal').style.display = 'none';
         const tempPin = document.getElementById('temp-pin');
         if (tempPin) tempPin.remove();
+    },
+
+    async changeStatus(id, newStatus) {
+        const defect = window.ConstManager.defects.find(d => d.id === id);
+        if (!defect) return;
+
+        const userName = window.syncConfig?.engineerName || 'Пользователь';
+        let comment = '';
+
+        // Инженер отклоняет
+        if (newStatus === 'rejected') {
+            comment = prompt('Укажите причину отклонения:');
+            if (!comment) return showToast('⚠️ Для отклонения нужен комментарий!');
+        }
+
+        // Подрядчик устраняет (Требуется фото!)
+        if (newStatus === 'fixed') {
+            comment = prompt('Краткий комментарий об устранении:');
+            if (comment === null) return;
+
+            // Настраиваем фоторедактор специально для "устранения"
+            window.activePhotoContext = 'defect_fix';
+            window.currentDefectFixId = id;
+            window.currentDefectFixComment = comment;
+
+            // Вызываем окно добавления фото
+            document.getElementById('photo-source-modal').style.display = 'flex';
+            return; // Прерываем функцию, она продолжится автоматически после рисования на фото
+        }
+
+        this.applyStatusChange(defect, newStatus, userName, comment, null);
+    },
+
+    async applyStatusChange(defect, newStatus, userName, comment, photoUrl) {
+        defect.status = newStatus;
+        if (!defect.history) defect.history = [];
+
+        // Добавляем запись в историю
+        defect.history.push({
+            status: newStatus,
+            date: new Date().toISOString(),
+            user: userName,
+            comment: comment,
+            photo: photoUrl
+        });
+
+        defect.updated_at = new Date().toISOString();
+
+        if (typeof dbPut === 'function') await dbPut(STORES.CONST_DEFECTS, defect);
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
+
+        showToast('✅ Статус обновлен!');
+        this.openExisting(defect.id); // Перерисовываем модалку, чтобы показать новые кнопки
+
+        // Обновляем булавки на плане (чтобы сменить цвет)
+        if (window.ConstManager.currentView === 'plan') {
+            window.ConstDefectForm.renderAllPins(window.ConstManager.currentFlrId, {
+                status: window.ConstManager.currentFilterStatus,
+                category: window.ConstManager.currentFilterCategory
+            });
+        } else {
+            window.ConstManager.renderDefectsList();
+        }
     },
 
     openDefectPhoto(defectId) {
@@ -1299,9 +1898,30 @@ window.ConstDefectForm = {
         const contractor = document.getElementById('const-defect-contractor').value;
         const description = document.getElementById('const-defect-desc').value.trim();
 
-        if (!templateKey) return showToast('⚠️ Выберите вид работ!');
-        if (!itemId) return showToast('⚠️ Выберите нарушение!');
-        if (!contractor) return showToast('⚠️ Выберите ответственного подрядчика!');
+        // Убираем старую подсветку
+        ['const-defect-template', 'const-defect-item-search', 'const-defect-contractor'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('border-red-500', 'bg-red-50');
+        });
+
+        // Проверяем и подсвечиваем пустые обязательные поля
+        let hasError = false;
+        if (!templateKey) {
+            document.getElementById('const-defect-template').classList.add('border-red-500', 'bg-red-50');
+            hasError = true;
+        }
+        if (!itemId) {
+            document.getElementById('const-defect-item-search').classList.add('border-red-500', 'bg-red-50');
+            hasError = true;
+        }
+        if (!contractor) {
+            document.getElementById('const-defect-contractor').classList.add('border-red-500', 'bg-red-50');
+            hasError = true;
+        }
+
+        if (hasError) {
+            return showToast('⚠️ Заполните все поля, выделенные красным!');
+        }
 
         // Получаем фото из глобального хранилища
         let photo = (window.photos && window.photos[id]) ? window.photos[id] : null;
@@ -1369,10 +1989,20 @@ window.ConstDefectForm = {
 
         this.close();
         showToast('✅ Замечание сохранено на плане!');
+        
+        // Безопасно получаем текущий масштаб, если открыт интерактивный план
+        let currentScale = 1;
+        if (window.UniversalPdfViewer && window.UniversalPdfViewer.panzoomInstance) {
+            currentScale = window.UniversalPdfViewer.panzoomInstance.getScale();
+        }
+
+        // Перерисовываем точки с правильным масштабом
         this.renderAllPins(floorId, {
             status: window.ConstManager.currentFilterStatus,
             category: window.ConstManager.currentFilterCategory
-        });
+        }, currentScale);
+        
+        // Если был открыт реестр (хотя мы ставим точки на плане, но вдруг)
         if (window.ConstManager.currentView === 'list') {
             window.ConstManager.renderDefectsList();
         }
@@ -1389,57 +2019,209 @@ window.ConstDefectForm = {
         this.renderAllPins(window.ConstManager.currentFlrId);
         showToast('🗑️ Замечание удалено');
     },
+    // --- Копировать (дублировать) дефект ---
+    // --- Массовое копирование (Штамп) ---
+    duplicate(id) {
+        const orig = window.ConstManager.defects.find(d => d.id === id);
+        if (!orig) return;
+
+        this.close(); // Закрываем модалку дефекта
+        showToast('📋 Режим штампа. Кликайте по чертежу, чтобы расставить копии.');
+
+        // Передаем данные оригинала в просмотрщик PDF и включаем режим копирования
+        window.UniversalPdfViewer.setCopyMode(true, orig);
+    },
 
     // --- Отрисовать все булавки на текущем плане ---
     // --- Отрисовать все булавки на текущем плане с учётом фильтров ---
-    renderAllPins(floorId, filters = {}) {
+    renderAllPins(floorId, filters = {}, currentScale = 1, highlightDefectId = null) {
         if (!floorId) return;
-        let defects = window.ConstManager.defects.filter(d => d.floorId === floorId);
+        
+        // 1. Сначала скрываем ВСЕ нарисованные зоны приемок (если они были)
+        document.querySelectorAll('.zone-marker-layer').forEach(el => el.remove());
 
-        // Применяем фильтры, если они переданы
-        if (filters.status && filters.status !== 'ALL') {
-            defects = defects.filter(d => d.status === filters.status);
-        }
-        if (filters.category && filters.category !== 'ALL') {
-            defects = defects.filter(d => d.category === filters.category);
+        // 2. Получаем текущий слой из Менеджера
+        const layer = window.ConstManager.currentLayer || 'ALL';
+
+        let defects = [];
+
+        // 3. Логика слоев для ДЕФЕКТОВ
+        if (layer === 'ZONES') {
+            // Если выбран слой зон приемки, дефекты СМР мы вообще не показываем!
+            defects = []; 
+        } else {
+            // Берем дефекты этажа
+            defects = window.ConstManager.defects.filter(d => d.floorId === floorId);
+
+            // Фильтр по слою ОТ и ПБ (Ищем ключевые слова в названии чеклиста)
+            if (layer === 'OT') {
+                defects = defects.filter(d => {
+                    const tName = d.templateKey ? (SYSTEM_TEMPLATES[d.templateKey.replace('sys_', '')]?.title || userTemplates[d.templateKey.replace('user_', '')]?.title || '') : '';
+                    return tName.toLowerCase().includes('охран') || tName.toLowerCase().includes('безопас') || tName.toLowerCase().includes('тб');
+                });
+            } else if (layer === 'SMR') {
+                // Если СМР, убираем Охрану труда
+                defects = defects.filter(d => {
+                    const tName = d.templateKey ? (SYSTEM_TEMPLATES[d.templateKey.replace('sys_', '')]?.title || userTemplates[d.templateKey.replace('user_', '')]?.title || '') : '';
+                    return !(tName.toLowerCase().includes('охран') || tName.toLowerCase().includes('безопас') || tName.toLowerCase().includes('тб'));
+                });
+            }
+
+            // Стандартные фильтры
+            if (filters.status && filters.status !== 'ALL') {
+                if (filters.status === 'open_all') {
+                    defects = defects.filter(d => ['issued', 'in_progress', 'rejected'].includes(d.status));
+                } else {
+                    defects = defects.filter(d => d.status === filters.status);
+                }
+            }
+            if (filters.category && filters.category !== 'ALL') {
+                defects = defects.filter(d => d.category === filters.category);
+            }
         }
 
-        // Генерируем HTML для точек
-        const pinsHtml = defects.map((d, index) => {
-            let bgColor = 'bg-blue-500';  // B1
-            if (d.category === 'B2') bgColor = 'bg-orange-500';
-            if (d.category === 'B3') bgColor = 'bg-red-600';
-            return `
-            <div onclick="window.ConstDefectForm.openExisting('${d.id}')" 
-                 class="absolute w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center text-white text-[10px] font-black cursor-pointer hover:scale-125 transition-transform z-20 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto ${bgColor}" 
-                 style="left: ${d.x}%; top: ${d.y}%;" 
-                 title="${d.itemName} (${d.category})">
-                ${index + 1}
-            </div>
-        `;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // --- АЛГОРИТМ КЛАСТЕРИЗАЦИИ (ГРУППИРОВКИ) ---
+
+        // --- АЛГОРИТМ КЛАСТЕРИЗАЦИИ (ГРУППИРОВКИ) ---
+        // Чем больше зум (currentScale), тем меньше радиус захвата
+        const threshold = 4 / currentScale;
+
+        let clusters = [];
+        let unclustered = [...defects];
+        let originalIndexes = new Map();
+        defects.forEach((d, i) => originalIndexes.set(d.id, i + 1));
+
+        while (unclustered.length > 0) {
+            let base = unclustered.shift();
+            let currentCluster = [base];
+            let i = 0;
+            
+            while (i < unclustered.length) {
+                let p = unclustered[i];
+                let dist = Math.sqrt(Math.pow(base.x - p.x, 2) + Math.pow(base.y - p.y, 2));
+                
+                if (dist < threshold) {
+                    currentCluster.push(p);
+                    unclustered.splice(i, 1);
+                } else {
+                    i++;
+                }
+            }
+            clusters.push(currentCluster);
+        }
+
+        const pinsHtml = clusters.map(cluster => {
+            if (cluster.length === 1) {
+                const d = cluster[0];
+                const indexNum = originalIndexes.get(d.id);
+
+                let bgColor = 'bg-blue-500';  
+                if (d.category === 'B2') bgColor = 'bg-orange-500';
+                if (d.category === 'B3') bgColor = 'bg-red-600';
+                if (d.status === 'closed') bgColor = 'bg-green-500';
+
+                let overdueClass = '';
+                if (d.deadline && d.status !== 'closed' && d.status !== 'fixed') {
+                    const dl = new Date(d.deadline);
+                    dl.setHours(0, 0, 0, 0);
+                    if (dl < today) overdueClass = 'ring-4 ring-red-500/80 animate-pulse';
+                }
+                // Если мы искали именно эту точку с Реестра - делаем её ОГРОМНОЙ и пульсирующей
+                if (highlightDefectId === d.id) {
+                    return `
+                    <div class="absolute z-50 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto" style="left: ${d.x}%; top: ${d.y}%;">
+                        <!-- Эффект радара (синие расходящиеся круги) -->
+                        <div class="absolute inset-0 bg-indigo-500 rounded-full animate-ping opacity-75"></div>
+                        <!-- Сама увеличенная кнопка с жирной синей рамкой -->
+                        <div onclick="window.ConstDefectForm.openExisting('${d.id}')" 
+                             class="relative w-10 h-10 rounded-full border-4 border-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.8)] flex items-center justify-center text-white text-[16px] font-black cursor-pointer bg-indigo-500" 
+                             title="${d.itemName} (${d.category})">
+                            ${indexNum}
+                        </div>
+                    </div>`;
+                }
+
+                return `
+                <div onclick="window.ConstDefectForm.openExisting('${d.id}')" 
+                     class="absolute w-6 h-6 rounded-full border-2 border-white shadow-md flex items-center justify-center text-white text-[10px] font-black cursor-pointer hover:scale-125 transition-transform z-20 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto ${bgColor} ${overdueClass}" 
+                     style="left: ${d.x}%; top: ${d.y}%;" 
+                     title="${d.itemName} (${d.category})">
+                    ${indexNum}
+                </div>`;
+
+                
+            } else {
+                const total = cluster.length;
+                const avgX = cluster.reduce((sum, p) => sum + p.x, 0) / total;
+                const avgY = cluster.reduce((sum, p) => sum + p.y, 0) / total;
+
+                let red = 0, orange = 0, blue = 0, green = 0;
+                cluster.forEach(d => {
+                    if (d.status === 'closed') green++;
+                    else if (d.category === 'B3') red++;
+                    else if (d.category === 'B2') orange++;
+                    else blue++;
+                });
+
+                const cRed = (red / total) * 360;
+                const cOrange = cRed + (orange / total) * 360;
+                const cBlue = cOrange + (blue / total) * 360;
+                const cGreen = cBlue + (green / total) * 360;
+
+                const grad = `conic-gradient(from 0deg, #ef4444 0deg ${cRed}deg, #f97316 ${cRed}deg ${cOrange}deg, #3b82f6 ${cOrange}deg ${cBlue}deg, #22c55e ${cBlue}deg 360deg)`;
+
+                return `
+                <div class="absolute w-8 h-8 rounded-full shadow-[0_4px_10px_rgba(0,0,0,0.3)] flex items-center justify-center cursor-pointer z-30 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto transition-transform hover:scale-110"
+                     style="left: ${avgX}%; top: ${avgY}%; background: ${grad}; padding: 3px;"
+                     onclick="showToast('Приблизьте чертеж, чтобы увидеть ${total} дефектов')" title="Скрыто дефектов: ${total}">
+                    <div class="w-full h-full bg-white text-slate-800 rounded-full flex items-center justify-center text-[12px] font-black border border-slate-200">
+                        ${total}
+                    </div>
+                </div>`;
+            }
         }).join('');
 
-        // 1. Универсальный контейнер (используется при открытом pdf-просмотрщике)
         const universalPinsContainer = document.getElementById('universal-pdf-pins');
-        if (universalPinsContainer) {
-            universalPinsContainer.innerHTML = pinsHtml;
-        }
+        if (universalPinsContainer) universalPinsContainer.innerHTML = pinsHtml;
 
-        // 2. Контейнер на странице администрирования (мини-превью)
         const previewRenderArea = document.getElementById('const-pdf-render-area');
         if (previewRenderArea && !previewRenderArea.classList.contains('hidden')) {
             let previewPinsContainer = document.getElementById('preview-pdf-pins');
-            if (!previewPinsContainer) {
-                previewPinsContainer = document.createElement('div');
-                previewPinsContainer.id = 'preview-pdf-pins';
-                previewPinsContainer.className = 'absolute inset-0 pointer-events-none overflow-hidden';
-                previewRenderArea.appendChild(previewPinsContainer);
+            if (previewPinsContainer) previewPinsContainer.innerHTML = pinsHtml;
+        }
+        // --- 4. ОТРИСОВКА ЗОН ПРИЕМОК (ЕСЛИ СЛОЙ ALL ИЛИ ZONES) ---
+        if (layer === 'ALL' || layer === 'ZONES') {
+            const reqs = window.ConstAcceptance?.requests?.filter(r => r.floorId === floorId && r.zone) || [];
+            
+            const zonesHtml = reqs.map(req => {
+                const z = req.zone;
+                let zoneColor = 'bg-blue-500/20 border-blue-500';
+                let labelColor = 'bg-blue-600';
+                
+                if (req.status === 'rejected') { zoneColor = 'bg-red-500/20 border-red-500'; labelColor = 'bg-red-600'; }
+                if (req.status === 'accepted') { zoneColor = 'bg-green-500/20 border-green-500'; labelColor = 'bg-green-600'; }
+
+                return `
+                <div class="zone-marker-layer absolute border-2 ${zoneColor} shadow-inner z-10 flex items-center justify-center cursor-pointer hover:bg-black/10 transition-colors" 
+                     style="left: ${z.x}%; top: ${z.y}%; width: ${z.w}%; height: ${z.h}%;"
+                     onclick="window.ConstAcceptance.openRequestDetails('${req.id}')"
+                     title="Заявка: ${req.contractor} (${req.workType})">
+                     <span class="${labelColor} text-white text-[8px] font-black px-1.5 py-0.5 rounded opacity-80 uppercase tracking-widest text-center leading-tight shadow-md">${req.workType}</span>
+                </div>`;
+            }).join('');
+
+            if (universalPinsContainer) universalPinsContainer.insertAdjacentHTML('afterbegin', zonesHtml);
+            if (previewRenderArea && !previewRenderArea.classList.contains('hidden')) {
+                const previewPinsContainer = document.getElementById('preview-pdf-pins');
+                if (previewPinsContainer) previewPinsContainer.insertAdjacentHTML('afterbegin', zonesHtml);
             }
-            previewPinsContainer.innerHTML = pinsHtml;
         }
     },
     // --- Используем существующую глобальную систему фото ---
-        handlePhotoUpload(event) {
+    handlePhotoUpload(event) {
         let defectId = document.getElementById('const-defect-id').value;
         if (!defectId) {
             // Защита: если ID нет (не должно случиться, но на всякий случай)
@@ -1483,3 +2265,598 @@ window.ConstDefectForm = {
         window.activePhotoContext = null;
     },
 };
+
+
+// ============================================================================
+// === МОДУЛЬ ПРИЕМКИ РАБОТ (ЖУРНАЛ ЗАЯВОК) ===
+// ============================================================================
+// ============================================================================
+// === МОДУЛЬ ПРИЕМКИ РАБОТ (ЖУРНАЛ ЗАЯВОК) ===
+// ============================================================================
+window.ConstAcceptance = {
+    requests: [],
+    currentFilter: 'pending',
+
+    // 1. Инициализация
+    async init() {
+        if (window.ConstManager.objects.length === 0) {
+            await window.ConstManager.init();
+        }
+        try {
+            if (typeof dbGetAll !== 'undefined') {
+                const reqs = await dbGetAll(STORES.CONST_ACCEPTANCE);
+                this.requests = (reqs || []).filter(x => !x._deleted);
+            }
+        } catch (e) {
+            console.error('[ConstAcceptance] Ошибка загрузки заявок:', e);
+        }
+        this.renderList();
+    },
+
+    // 2. Управление фильтрами (оставляем для совместимости, но кнопки мы удалили)
+    filter(status, btnEl) {
+        this.currentFilter = status;
+        this.renderList();
+    },
+
+    // 3. Отрисовка списка заявок (Канбан)
+    renderList() {
+        const container = document.getElementById('acceptance-list-container');
+        const objFilterEl = document.getElementById('acc-global-obj-filter');
+        if (!container) return;
+
+        // Заполняем фильтр объектов один раз
+        if (objFilterEl && objFilterEl.options.length === 1) {
+            let opts = '<option value="ALL">Все объекты</option>';
+            window.ConstManager.objects.sort((a,b)=>a.name.localeCompare(b.name)).forEach(o => {
+                opts += `<option value="${o.id}">${o.name}</option>`;
+            });
+            objFilterEl.innerHTML = opts;
+        }
+
+        const selectedObj = objFilterEl ? objFilterEl.value : 'ALL';
+        
+        // Фильтруем общую базу по объекту
+        let baseReqs = this.requests;
+        if (selectedObj !== 'ALL') {
+            baseReqs = baseReqs.filter(r => r.objectId === selectedObj);
+        }
+
+        if (baseReqs.length === 0) {
+            container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm mt-4 mx-1">Заявок пока нет</div>`;
+            return;
+        }
+
+        const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        const isEngineer = ['engineer', 'manager', 'deputy_manager'].includes(role);
+
+        const pending = baseReqs.filter(r => r.status === 'pending').sort((a, b) => new Date(a.requestedDate) - new Date(b.requestedDate));
+        const rejected = baseReqs.filter(r => r.status === 'rejected').sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const accepted = baseReqs.filter(r => r.status === 'accepted').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 15); 
+
+        const renderKanbanCard = (r) => {
+            const objName = window.ConstManager.objects.find(o => o.id === r.objectId)?.name || 'Объект';
+            const reqDate = r.requestedDate ? new Date(r.requestedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '-';
+            const isOverdue = r.status === 'pending' && new Date(r.requestedDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+
+            return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 mb-3 shadow-sm cursor-pointer hover:border-indigo-400 transition-colors active:scale-[0.98]" onclick="window.ConstAcceptance.openRequestDetails('${r.id}')">
+                <div class="flex justify-between items-start mb-2 border-b border-[var(--card-border)] pb-2">
+                    <div class="flex-1 min-w-0 pr-2">
+                        <div class="text-[9px] font-black uppercase tracking-widest text-indigo-500 mb-0.5 truncate">${objName}</div>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase truncate leading-tight">${r.workType}</div>
+                    </div>
+                </div>
+                <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug font-medium space-y-0.5 mb-2">
+                    <div class="truncate"><span class="font-bold text-slate-400">Локация:</span> ${r.location}</div>
+                    <div class="truncate"><span class="font-bold text-slate-400">Подрядчик:</span> ${r.contractor}</div>
+                </div>
+                <div class="flex justify-between items-center bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
+                    <div class="flex items-center gap-1.5 ${isOverdue ? 'text-red-500' : 'text-slate-700 dark:text-slate-300'}">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-[10px] font-black">${reqDate} | ${r.requestedTime || '--:--'}</span>
+                    </div>
+                    ${isEngineer && r.status === 'pending' ? `<button onclick="event.stopPropagation(); window.ConstAcceptance.focusOnZone('${r.id}')" class="text-indigo-600 bg-white border border-indigo-200 px-2 py-1 rounded text-[9px] font-bold active:scale-90 shadow-sm flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> План</button>` : ''}
+                    ${r.status === 'rejected' ? `<button onclick="event.stopPropagation(); window.ConstAcceptance.focusOnZone('${r.id}')" class="text-red-600 bg-white border border-red-200 px-2 py-1 rounded text-[9px] font-bold active:scale-90 shadow-sm flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Дефекты</button>` : ''}
+                </div>
+            </div>`;
+        };
+
+        container.innerHTML = `
+            <div class="flex overflow-x-auto snap-x custom-scrollbar gap-4 px-1 pb-4 pt-2 w-full h-[70vh]">
+                <div class="shrink-0 w-[85vw] sm:w-80 snap-start flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border border-[var(--card-border)] overflow-hidden">
+                    <div class="p-3 border-b border-[var(--card-border)] bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 font-black text-[11px] uppercase tracking-widest flex justify-between items-center shrink-0">
+                        <span>⏳ Ждут проверки</span>
+                        <span class="bg-white dark:bg-slate-800 text-blue-600 px-1.5 py-0.5 rounded shadow-sm border border-blue-200">${pending.length}</span>
+                    </div>
+                    <div class="p-3 overflow-y-auto flex-1 custom-scrollbar">
+                        ${pending.length > 0 ? pending.map(renderKanbanCard).join('') : '<div class="text-center py-4 text-[10px] font-bold text-slate-400 border border-dashed border-slate-300 rounded-xl">Заявок нет</div>'}
+                    </div>
+                </div>
+
+                <div class="shrink-0 w-[85vw] sm:w-80 snap-start flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border border-[var(--card-border)] overflow-hidden">
+                    <div class="p-3 border-b border-[var(--card-border)] bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-black text-[11px] uppercase tracking-widest flex justify-between items-center shrink-0">
+                        <span>❌ Отклонено СК</span>
+                        <span class="bg-white dark:bg-slate-800 text-red-600 px-1.5 py-0.5 rounded shadow-sm border border-red-200">${rejected.length}</span>
+                    </div>
+                    <div class="p-3 overflow-y-auto flex-1 custom-scrollbar">
+                        ${rejected.length > 0 ? rejected.map(renderKanbanCard).join('') : '<div class="text-center py-4 text-[10px] font-bold text-slate-400 border border-dashed border-slate-300 rounded-xl">Брака нет</div>'}
+                    </div>
+                </div>
+
+                <div class="shrink-0 w-[85vw] sm:w-80 snap-start flex flex-col h-full bg-slate-50/50 dark:bg-slate-900/20 rounded-2xl border border-[var(--card-border)] overflow-hidden">
+                    <div class="p-3 border-b border-[var(--card-border)] bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 font-black text-[11px] uppercase tracking-widest flex justify-between items-center shrink-0">
+                        <span>✅ Принято</span>
+                        <span class="bg-white dark:bg-slate-800 text-green-600 px-1.5 py-0.5 rounded shadow-sm border border-green-200">${accepted.length}</span>
+                    </div>
+                    <div class="p-3 overflow-y-auto flex-1 custom-scrollbar">
+                        ${accepted.length > 0 ? accepted.map(renderKanbanCard).join('') : '<div class="text-center py-4 text-[10px] font-bold text-slate-400 border border-dashed border-slate-300 rounded-xl">История пуста</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    // 4. Открытие модального окна (УМНОЕ - помнит контекст!)
+    openNewRequestModal(floorId = null, zoneInfo = null, restoreContext = null) {
+        const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        if (role === 'guest') return showToast('⚠️ Гости не могут предъявлять работы');
+
+        if (window.ConstManager.objects.length === 0) {
+            return showToast('⚠️ Сначала создайте объект в разделе "Дефекты -> Управление иерархией"');
+        }
+
+        // --- ВОССТАНОВЛЕНИЕ КОНТЕКСТА ---
+        let preObj = '', preBld = '', preFlr = '', preWork = '', preRoom = '', preVol = '', preDate = '', preTime = '';
+        if (restoreContext) {
+            preObj = restoreContext.obj; preBld = restoreContext.bld; preFlr = restoreContext.flr;
+            preWork = restoreContext.work; preRoom = restoreContext.room; preVol = restoreContext.vol;
+            preDate = restoreContext.date; preTime = restoreContext.time;
+        } else if (floorId && typeof floorId === 'string') {
+            // Если пришли с плана (Сценарий А)
+            const floor = window.ConstManager.floors.find(f => f.id === floorId);
+            preFlr = floor?.id || '';
+            preBld = floor?.building_id || '';
+            preObj = window.ConstManager.buildings.find(b => b.id === preBld)?.object_id || '';
+        }
+
+        // Запоминаем зону для сохранения
+        window.tempAcceptanceZone = zoneInfo;
+
+        const objOptions = window.ConstManager.objects.map(o => `<option value="${o.id}" ${o.id === preObj ? 'selected' : ''}>${o.name}</option>`).join('');
+
+        let tmplOptions = '<option value="">-- Выберите вид работ --</option>';
+        Object.keys(SYSTEM_TEMPLATES).sort().forEach(k => { tmplOptions += `<option value="sys_${k}" ${preWork === 'sys_'+k ? 'selected':''}>[СИС] ${SYSTEM_TEMPLATES[k].title}</option>`; });
+        if (typeof userTemplates !== 'undefined') {
+            Object.keys(userTemplates).sort().forEach(k => { tmplOptions += `<option value="user_${k}" ${preWork === 'user_'+k ? 'selected':''}>[МОЙ] ${userTemplates[k].title}</option>`; });
+        }
+
+        const html = `
+        <div id="acc-request-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4 backdrop-blur-sm" onclick="this.remove()">
+            <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-[var(--card-border)] animate-fadeIn" onclick="event.stopPropagation()">
+                <div class="p-4 bg-indigo-600 border-b border-indigo-700 flex justify-between items-center">
+                    <h3 class="font-black text-[13px] uppercase text-white flex items-center gap-2">📝 Заявка на приемку</h3>
+                    <button onclick="document.getElementById('acc-request-modal').remove()" class="text-indigo-200 hover:text-white active:scale-90 font-black text-lg leading-none">✕</button>
+                </div>
+                <div class="p-4 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    
+                    <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <label class="text-[10px] font-black text-indigo-500 uppercase mb-2 block flex justify-between items-center">
+                            <span>1. Локация</span>
+                            ${zoneInfo ? `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[8px] font-black shadow-sm border border-blue-200">✅ Зона выделена</span>` : `<button onclick="window.ConstAcceptance.goDrawZone()" class="bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded text-[9px] font-black uppercase active:scale-95 shadow-sm">🗺️ Выделить на плане</button>`}
+                        </label>
+                        <select id="req-obj" class="input-base text-[12px] font-bold mb-2" onchange="window.ConstAcceptance.onObjChange(this.value)">
+                            <option value="">-- Объект --</option>${objOptions}
+                        </select>
+                        <select id="req-bld" class="input-base text-[12px] font-bold mb-2" ${preObj ? '' : 'disabled'} onchange="window.ConstAcceptance.onBldChange(this.value)">
+                            <option value="">-- Корпус / Секция --</option>
+                        </select>
+                        <select id="req-flr" class="input-base text-[12px] font-bold" ${preBld ? '' : 'disabled'}>
+                            <option value="">-- План Этажа --</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="text-[10px] font-black text-indigo-500 uppercase mb-1 block">2. Данные о работах *</label>
+                        <select id="req-work" class="input-base text-[12px] font-bold mb-2 border-indigo-300">
+                            ${tmplOptions}
+                        </select>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Оси / Захватка</label>
+                                <input type="text" id="req-room" class="input-base text-[12px]" placeholder="Напр: Оси А-Б" value="${preRoom}">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объем</label>
+                                <input type="text" id="req-vol" class="input-base text-[12px]" placeholder="Напр: 45 м2" value="${preVol}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <label class="text-[10px] font-black text-indigo-500 uppercase mb-2 block">3. Когда готовы сдать?</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="date" id="req-date" class="input-base text-[12px] font-bold" value="${preDate}">
+                            <select id="req-time" class="input-base text-[12px] font-bold">
+                                <option value="09:00" ${preTime==='09:00'?'selected':''}>09:00 - 10:00</option>
+                                <option value="10:00" ${preTime==='10:00'?'selected':''}>10:00 - 11:00</option>
+                                <option value="11:00" ${preTime==='11:00'?'selected':''}>11:00 - 12:00</option>
+                                <option value="13:00" ${preTime==='13:00'?'selected':''}>13:00 - 14:00</option>
+                                <option value="14:00" ${preTime==='14:00'?'selected':''}>14:00 - 15:00</option>
+                                <option value="15:00" ${preTime==='15:00'?'selected':''}>15:00 - 16:00</option>
+                                <option value="16:00" ${preTime==='16:00'?'selected':''}>16:00 - 17:00</option>
+                            </select>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 flex gap-2">
+                    <button onclick="document.getElementById('acc-request-modal').remove()" class="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl text-[11px] font-bold uppercase active:scale-95 border border-slate-200">Отмена</button>
+                    <button onclick="window.ConstAcceptance.saveNewRequest()" class="flex-[1.5] bg-indigo-600 text-white py-3 rounded-xl text-[11px] font-black uppercase shadow-md active:scale-95">Отправить Инженеру</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
+        
+        // Восстанавливаем каскадные селекторы, если объект был предвыбран
+        if (preObj) this.onObjChange(preObj, preBld);
+        if (preBld) this.onBldChange(preBld, preFlr);
+
+        // Ставим завтрашний день, если даты нет
+        if (!preDate) {
+            const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+            document.getElementById('req-date').value = tmr.toISOString().split('T')[0];
+        }
+    },
+
+    // Вспомогательные функции для каскадных списков в модалке
+    onObjChange(objId, preSelectBld = null) {
+        const bldSel = document.getElementById('req-bld');
+        const flrSel = document.getElementById('req-flr');
+        if (!bldSel || !flrSel) return;
+
+        flrSel.innerHTML = '<option value="">-- План Этажа --</option>';
+        flrSel.disabled = true;
+
+        if (!objId) {
+            bldSel.innerHTML = '<option value="">-- Корпус / Секция --</option>';
+            bldSel.disabled = true;
+            return;
+        }
+
+        const validBlds = window.ConstManager.buildings.filter(b => b.object_id === objId);
+        bldSel.innerHTML = '<option value="">-- Корпус / Секция --</option>' + 
+            validBlds.map(b => `<option value="${b.id}" ${b.id === preSelectBld ? 'selected' : ''}>${b.name}</option>`).join('');
+        bldSel.disabled = false;
+    },
+
+    onBldChange(bldId, preSelectFlr = null) {
+        const flrSel = document.getElementById('req-flr');
+        if (!flrSel) return;
+
+        if (!bldId) {
+            flrSel.innerHTML = '<option value="">-- План Этажа --</option>';
+            flrSel.disabled = true;
+            return;
+        }
+
+        const validFlrs = window.ConstManager.floors.filter(f => f.building_id === bldId);
+        flrSel.innerHTML = '<option value="">-- План Этажа --</option>' + 
+            validFlrs.map(f => `<option value="${f.id}" ${f.id === preSelectFlr ? 'selected' : ''}>${f.name}</option>`).join('');
+        flrSel.disabled = false;
+    },
+
+    // Кнопка "Выделить на плане" изнутри заявки
+    goDrawZone() {
+        const obj = document.getElementById('req-obj').value;
+        const bld = document.getElementById('req-bld').value;
+        const flr = document.getElementById('req-flr').value;
+
+        if (!obj || !bld || !flr) return showToast('⚠️ Сначала выберите Объект, Корпус и Этаж!');
+
+        // Сохраняем введенный текст, чтобы он не пропал
+        window.tempAcceptanceContext = {
+            obj, bld, flr,
+            work: document.getElementById('req-work').value,
+            room: document.getElementById('req-room').value,
+            vol: document.getElementById('req-vol').value,
+            date: document.getElementById('req-date').value,
+            time: document.getElementById('req-time').value
+        };
+
+        document.getElementById('acc-request-modal').remove();
+        
+        window.ConstManager.switchView('plan');
+        window.ConstManager.currentFlrId = flr;
+        window.ConstManager.renderSelectors();
+        
+        const floorData = window.ConstManager.floors.find(f => f.id === flr);
+        if (!floorData) return;
+
+        window.UniversalPdfViewer.open(floorData.pdf_url, `Выделение зоны`, flr);
+        setTimeout(() => { window.UniversalPdfViewer.setZoneMode(true); }, 800);
+    },
+
+    // 5. Сохранение новой заявки
+    async saveNewRequest() {
+        const objId = document.getElementById('req-obj').value;
+        const bldId = document.getElementById('req-bld').value;
+        const flrId = document.getElementById('req-flr').value;
+        
+        const workSelect = document.getElementById('req-work');
+        const workKey = workSelect.value;
+        const workTitle = workKey ? workSelect.options[workSelect.selectedIndex].text.replace(/\[.*?\]\s*/, '') : '';
+        
+        const rm = document.getElementById('req-room').value.trim();
+        const vol = document.getElementById('req-vol').value.trim();
+        const dateStr = document.getElementById('req-date').value;
+        const timeStr = document.getElementById('req-time').value;
+
+        if (!objId || !bldId || !flrId || !workKey || !dateStr) return showToast('⚠️ Заполните все поля со звездочкой!');
+
+        // Берем данные, переданные с плана
+        const zoneInfo = window.tempAcceptanceZone;
+        const floor = window.ConstManager.floors.find(f => f.id === flrId);
+        const bld = window.ConstManager.buildings.find(b => b.id === bldId);
+        const loc = [bld?.name, `Этаж ${floor?.name}`, rm].filter(Boolean).join(', ');
+
+        const newReq = {
+            id: 'acc_' + Date.now().toString(36),
+            objectId: objId,
+            floorId: flrId, 
+            zone: zoneInfo, // Сохраняем прямоугольник: x, y, w, h
+            templateKey: workKey,
+            workType: workTitle,
+            location: loc,
+            section: bld?.name, 
+            floor: floor?.name,
+            room: rm,
+            volume: vol,
+            requestedDate: dateStr,
+            requestedTime: timeStr,
+            contractor: window.syncConfig?.engineerName || 'Подрядчик',
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            _deleted: false
+        };
+
+        this.requests.push(newReq);
+        if (typeof dbPut === 'function') await dbPut(STORES.CONST_ACCEPTANCE, newReq);
+
+        document.getElementById('acc-request-modal').remove();
+        showToast('✅ Заявка отправлена инженеру!');
+        
+        // Очищаем переменные
+        window.tempAcceptanceZone = null;
+        window.tempAcceptanceFloor = null;
+        window.tempAcceptanceObject = null;
+        window.tempAcceptanceContext = null;
+
+        this.renderList();
+    },
+
+    // 6. Детализация заявки
+    openRequestDetails(id) {
+        const req = this.requests.find(r => r.id === id);
+        if (!req) return;
+
+        const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+        const isEngineer = ['engineer', 'manager', 'deputy_manager'].includes(role);
+
+        const objName = window.ConstManager.objects.find(o => o.id === req.objectId)?.name || 'Неизвестный объект';
+
+        let actionBtns = '';
+
+        if (req.status === 'pending') {
+            if (isEngineer) {
+                actionBtns = `
+                    <div class="flex flex-col gap-2 mt-4 pt-4 border-t border-[var(--card-border)]">
+                        <button onclick="document.getElementById('acc-details-modal').remove(); window.ConstAcceptance.focusOnZone('${req.id}')" class="w-full bg-slate-100 text-slate-700 border border-slate-300 py-3 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 flex items-center justify-center gap-2">
+                            🗺️ Показать на плане
+                        </button>
+                        <button onclick="window.ConstAcceptance.startInspection('${req.id}')" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase shadow-md active:scale-95 flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            Начать проверку (Чек-лист)
+                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="window.ConstAcceptance.changeStatus('${req.id}', 'accepted')" class="flex-1 bg-green-50 text-green-600 border border-green-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm">✅ Принять (без ЦК)</button>
+                            <button onclick="window.ConstAcceptance.changeStatus('${req.id}', 'rejected')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm">❌ Отклонить</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                actionBtns = `
+                    <div class="mt-4 pt-4 border-t border-[var(--card-border)] text-center">
+                        <div class="text-[11px] font-bold text-blue-500 uppercase tracking-widest mb-3 animate-pulse">⏳ Инженер проверяет заявку...</div>
+                        <button onclick="window.ConstAcceptance.deleteRequest('${req.id}')" class="w-full bg-red-50 text-red-600 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 border border-red-200">Отозвать заявку</button>
+                    </div>
+                `;
+            }
+        } else {
+            let engineerOverrideBtn = isEngineer ? `<button onclick="window.ConstAcceptance.changeStatus('${req.id}', 'pending')" class="w-full mt-2 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 border border-slate-200">Вернуть в работу (Служебная)</button>` : '';
+            
+            actionBtns = `
+                <div class="mt-4 pt-4 border-t border-[var(--card-border)] text-center">
+                    <div class="text-[12px] font-black uppercase tracking-widest mb-1 ${req.status === 'accepted' ? 'text-green-600' : 'text-red-600'}">${req.status === 'accepted' ? '✅ Работы Приняты' : '❌ Работы Отклонены'}</div>
+                    ${req.status === 'rejected' ? '<div class="text-[10px] text-slate-500 mb-3">Дефекты перенесены в Реестр замечаний. Устраните их и подайте заявку заново.</div>' : ''}
+                    ${engineerOverrideBtn}
+                </div>
+            `;
+        }
+
+        const html = `
+        <div id="acc-details-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4 backdrop-blur-sm animate-fadeIn" onclick="this.remove()">
+            <div class="bg-[var(--card-bg)] w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-[var(--card-border)] animate-fadeIn" onclick="event.stopPropagation()">
+                <div class="p-4 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex justify-between items-center">
+                    <h3 class="font-black text-[13px] uppercase text-slate-800 dark:text-white flex items-center gap-2">📋 Детали заявки</h3>
+                    <button onclick="document.getElementById('acc-details-modal').remove()" class="text-slate-400 hover:text-red-500 active:scale-90 font-black text-lg leading-none">✕</button>
+                </div>
+                <div class="p-5">
+                    <div class="text-[10px] font-black uppercase text-indigo-500 mb-1">${objName}</div>
+                    <div class="text-[16px] font-black text-slate-800 dark:text-white leading-tight mb-4">${req.workType}</div>
+                    
+                    <div class="space-y-2 text-[12px] text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div class="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-1">
+                            <span class="font-bold text-slate-400">Локация:</span>
+                            <span class="font-medium text-right">${req.location}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-1">
+                            <span class="font-bold text-slate-400">Подрядчик:</span>
+                            <span class="font-medium text-right">${req.contractor}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-1">
+                            <span class="font-bold text-slate-400">Объём:</span>
+                            <span class="font-medium text-right">${req.volume || '-'}</span>
+                        </div>
+                        <div class="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-1">
+                            <span class="font-bold text-slate-400">Слот:</span>
+                            <span class="font-medium text-right">${req.requestedDate ? new Date(req.requestedDate).toLocaleDateString('ru-RU') : ''} | ${req.requestedTime || ''}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="font-bold text-slate-400">Создано:</span>
+                            <span class="font-medium text-right">${new Date(req.created_at).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                    </div>
+                    
+                    ${actionBtns}
+                </div>
+            </div>
+        </div>`;
+        
+        document.body.insertAdjacentHTML('beforeend', html);
+    },
+
+    async changeStatus(id, newStatus) {
+        const req = this.requests.find(r => r.id === id);
+        if (req) {
+            req.status = newStatus;
+            if (typeof dbPut === 'function') await dbPut(STORES.CONST_ACCEPTANCE, req);
+            
+            const modal = document.getElementById('acc-details-modal');
+            if (modal) modal.remove();
+            
+            showToast(`Статус заявки изменен на: ${newStatus === 'accepted' ? 'Принято' : (newStatus === 'rejected' ? 'Отклонено' : 'В работе')}`);
+            this.renderList();
+        }
+    },
+
+    async deleteRequest(id) {
+        if(!confirm('Отозвать и удалить заявку?')) return;
+        const req = this.requests.find(r => r.id === id);
+        if (req) {
+            req._deleted = true;
+            if (typeof dbPut === 'function') await dbPut(STORES.CONST_ACCEPTANCE, req);
+            this.requests = this.requests.filter(r => r.id !== id);
+            
+            const modal = document.getElementById('acc-details-modal');
+            if (modal) modal.remove();
+            
+            showToast('🗑️ Заявка отозвана');
+            this.renderList();
+        }
+    },
+
+    // --- Поиск и фокусировка на Зоне приемки на интерактивном плане ---
+    focusOnZone(reqId) {
+        const req = this.requests.find(r => r.id === reqId);
+        if (!req || !req.floorId || !req.zone) return showToast('⚠️ Для этой заявки не была выделена зона на плане');
+
+        document.getElementById('acc-details-modal')?.remove();
+
+        if (window.ConstManager.currentFlrId !== req.floorId) {
+            const floor = window.ConstManager.floors.find(f => f.id === req.floorId);
+            if (floor) {
+                window.ConstManager.currentObjId = window.ConstManager.buildings.find(b => b.id === floor.building_id)?.object_id;
+                window.ConstManager.currentBldId = floor.building_id;
+                window.ConstManager.currentFlrId = floor.id;
+                window.ConstManager.renderSelectors();
+            }
+        }
+
+        window.ConstManager.switchView('plan');
+        const floor = window.ConstManager.floors.find(f => f.id === req.floorId);
+        if (!floor) return;
+
+        const safeName = floor.name.replace(/'/g, "\\'");
+        window.UniversalPdfViewer.open(floor.pdf_url, `Приемка: ${safeName}`, floor.id);
+
+        setTimeout(() => {
+            const pz = window.UniversalPdfViewer.panzoomInstance;
+            if (!pz) return;
+
+            const wrapper = document.getElementById('universal-pdf-wrapper');
+            const container = document.getElementById('universal-pdf-container');
+            const pinsContainer = document.getElementById('universal-pdf-pins');
+            
+            const z = req.zone;
+            let zoneColor = 'bg-blue-500/20 border-blue-500';
+            let labelColor = 'bg-blue-600';
+            if (req.status === 'rejected') { zoneColor = 'bg-red-500/20 border-red-500'; labelColor = 'bg-red-600'; }
+            if (req.status === 'accepted') { zoneColor = 'bg-green-500/20 border-green-500'; labelColor = 'bg-green-600'; }
+
+            const zoneHtml = `
+                <div class="absolute border-2 ${zoneColor} shadow-inner z-10 flex items-center justify-center cursor-pointer hover:bg-black/10 transition-colors" 
+                     style="left: ${z.x}%; top: ${z.y}%; width: ${z.w}%; height: ${z.h}%;"
+                     onclick="window.ConstAcceptance.openRequestDetails('${req.id}')">
+                     <span class="${labelColor} text-white text-[8px] font-black px-1.5 py-0.5 rounded opacity-80 uppercase tracking-widest text-center leading-tight shadow-md">${req.workType}</span>
+                </div>
+            `;
+            pinsContainer.insertAdjacentHTML('beforeend', zoneHtml);
+
+            const centerX_percent = z.x + (z.w / 2);
+            const centerY_percent = z.y + (z.h / 2);
+
+            const cw = wrapper.clientWidth;
+            const ch = wrapper.clientHeight;
+            
+            const zoneWidthPx = (z.w / 100) * container.offsetWidth;
+            let targetScale = (cw / zoneWidthPx) * 0.6; 
+            if (targetScale > 4) targetScale = 4;
+            if (targetScale < 1) targetScale = 1;
+
+            const pointX_px = (centerX_percent / 100) * container.offsetWidth;
+            const pointY_px = (centerY_percent / 100) * container.offsetHeight;
+
+            const panX = (cw / 2) - (pointX_px * targetScale);
+            const panY = (ch / 2) - (pointY_px * targetScale);
+
+            pz.zoom(targetScale, { animate: true });
+            setTimeout(() => {
+                pz.pan(panX, panY, { animate: true, force: true });
+                showToast("📍 Зона сдачи подсвечена на плане!");
+            }, 50);
+
+        }, 600);
+    },
+
+    startInspection(id) {
+        const req = this.requests.find(r => r.id === id);
+        if (!req) return;
+
+        const modal = document.getElementById('acc-details-modal');
+        if (modal) modal.remove();
+
+        const objName = window.ConstManager.objects.find(o => o.id === req.objectId)?.name || '';
+
+        window.activeAcceptanceRequestId = id;
+
+        if (typeof startInspectionWithValues === 'function') {
+            startInspectionWithValues(req.contractor, req.templateKey, null, objName);
+        }
+
+        setTimeout(() => {
+            const secInp = document.getElementById('inp-section');
+            const flrInp = document.getElementById('inp-floor');
+            const rmInp = document.getElementById('inp-room');
+
+            if (secInp) secInp.value = req.section || '';
+            if (flrInp) flrInp.value = req.floor || '';
+            if (rmInp) rmInp.value = req.room || '';
+            
+            if(typeof updateLocationFromStructured === 'function') updateLocationFromStructured();
+            
+            showToast('📋 Режим приёмки активирован!');
+        }, 300);
+    }
+};
+

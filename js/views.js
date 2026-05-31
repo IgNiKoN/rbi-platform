@@ -36,6 +36,7 @@ function showModePlaceholder(modeName) {
     const names = {
         'transfer': 'Передача квартир',
         'warranty': 'Гарантийное обслуживание',
+        'safety': 'Охрана труда и ПБ',
         'uk': 'Управляющая компания'
     };
 
@@ -70,7 +71,7 @@ window.AppViews = {
     },
 
     renderReference() {
-        if (AppModeManager.currentMode !== 'quality') AppModeManager.changeMode('quality');
+        
         switchViewNode('tab-reference', false); // ТУТ FALSE
         if (typeof updateFabButton === 'function') updateFabButton('tab-reference');
 
@@ -101,13 +102,28 @@ window.AppViews = {
             window.ConstManager.init();
         }
     },
-    renderConstructionAcceptance() { showModePlaceholder('construction_acceptance'); },
-    renderConstructionUnits() { showModePlaceholder('construction_units'); },
+    renderConstructionAcceptance() { 
+        if (AppModeManager.currentMode !== 'construction') AppModeManager.changeMode('construction');
+        switchViewNode('tab-construction-acceptance', true); 
+        if (window.ConstAcceptance && typeof window.ConstAcceptance.init === 'function') window.ConstAcceptance.init(); 
+    },
+    
+    
     renderConstructionReports() { showModePlaceholder('construction_reports'); },
     
     // === РАЗДЕЛЫ-ЗАГЛУШКИ ===
-    renderTransfer() { showModePlaceholder('transfer'); },
+    renderTransfer() { 
+        // Если мы не в Стройконтроле, переключаемся на Стройконтроль
+        if (AppModeManager.currentMode !== 'construction') AppModeManager.changeMode('construction');
+        
+        switchViewNode('tab-transfer', true); 
+        
+        if (window.TransferManager && typeof window.TransferManager.init === 'function') {
+            window.TransferManager.init();
+        }
+    },
     renderWarranty() { showModePlaceholder('warranty'); },
+    renderSafety() { showModePlaceholder('safety'); }, // <-- ДОБАВИЛИ ЭТУ СТРОКУ
     renderUk() { showModePlaceholder('uk'); },
 
     renderNotFound() { showModePlaceholder('404'); }
@@ -122,16 +138,16 @@ document.addEventListener('DOMContentLoaded', () => {
     AppRouter.addRoute('#/quality/reference', window.AppViews.renderReference);
     AppRouter.addRoute('#/quality/settings', window.AppViews.renderSettings);
     
-    // Стройконтроль
+   // Стройконтроль
     AppRouter.addRoute('#/construction/defects', window.AppViews.renderConstructionDefects);
     AppRouter.addRoute('#/construction/acceptance', window.AppViews.renderConstructionAcceptance);
-    AppRouter.addRoute('#/construction/units', window.AppViews.renderConstructionUnits);
     AppRouter.addRoute('#/construction/reports', window.AppViews.renderConstructionReports);
-
+    AppRouter.addRoute('#/construction/transfer', window.AppViews.renderTransfer);
+    
     // Заглушки
-    AppRouter.addRoute('#/transfer/placeholder', window.AppViews.renderTransfer);
     AppRouter.addRoute('#/warranty/placeholder', window.AppViews.renderWarranty);
     AppRouter.addRoute('#/uk/placeholder', window.AppViews.renderUk);
+    AppRouter.addRoute('#/safety/placeholder', window.AppViews.renderSafety); // <-- ДОБАВИЛИ ЭТУ СТРОКУ
     
     AppRouter.addRoute('*', window.AppViews.renderNotFound);
     

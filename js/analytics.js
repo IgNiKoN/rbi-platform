@@ -172,6 +172,9 @@ function getFilteredAnalyticsData() {
 
     let arr = getAnalyticsDataSource(window.analyticsDataMode || 'local');
     const now = new Date();
+    // --- НОВОЕ: ЖЕСТКО ОТСЕКАЕМ ПРОВЕРКИ СТРОЙКОНТРОЛЯ ИЗ АНАЛИТИКИ КАЧЕСТВА ---
+    arr = arr.filter(i => i.inspection_type !== 'sk_acceptance');
+    // ---------------------------------------------------------------------------
 
     if (selPeriod === 'DAY') {
         arr = arr.filter(i => new Date(i.date).toDateString() === now.toDateString());
