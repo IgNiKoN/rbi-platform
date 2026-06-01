@@ -68,6 +68,11 @@ window.AppViews = {
         if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
         if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
         if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
+
+        // --- ВОЗВРАЩАЕМ ЛОГИКУ СВОРАЧИВАНИЯ ФИЛЬТРОВ ---
+        if (typeof initCollapsiblePanel === 'function') {
+            initCollapsiblePanel('analytics-filters-block', 'analytics-panel-body', 'analytics-panel-header', 'analytics-panel-toggle-icon');
+        }
     },
 
     renderReference() {

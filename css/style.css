@@ -1383,7 +1383,32 @@ body.nav-pos-top #tab-settings .sticky-top-panel {
         top: 70px !important;
     }
 }
+/* --- ПАНЕЛЬ ДЕТАЛИЗАЦИИ ПОДРЯДЧИКА (ЛИПНЕТ ПОД ФИЛЬТРАМИ) --- */
+#contractor-detail-header {
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    z-index: 35 !important; /* Ниже, чем фильтры (40), чтобы не наезжать на них */
+    transition: top 0.3s ease;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+}
 
+/* Мобильная версия (навигация снизу) */
+body.nav-pos-bottom #contractor-detail-header,
+body.nav-pos-auto #contractor-detail-header {
+    top: 65px !important; /* Высота свернутого фильтра + отступ */
+}
+
+/* Версия для ПК (навигация сверху) */
+body.nav-pos-top #contractor-detail-header {
+    top: 190px !important;
+}
+
+@media (min-width: 768px) {
+    body.nav-pos-auto #contractor-detail-header {
+        top: 190px !important;
+    }
+}
 /* 4. ПОДВКЛАДКИ */
 #analytics-subtabs-block,
 #engineer-subtabs-block,

@@ -1392,8 +1392,7 @@
 
                 <!-- Режим детализации подрядчика (Скрыт по умолчанию) -->
                 <div id="contractor-detail-view" class="hidden">
-                    <div
-                        class="sticky-top-panel z-40 bg-[var(--header-bg)] backdrop-blur-md border-b border-[var(--card-border)] p-3 mx-1 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
+                    <div id="contractor-detail-header" class="z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-[var(--card-border)] p-3 mx-1 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
                         <button onclick="hideContractorDetailView()"
                             class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95 px-2 py-1 bg-[var(--hover-bg)] rounded-lg">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3422,33 +3421,31 @@
                 </div>
             </div>
             <!-- НОВОЕ: Переключатель видов и фильтры -->
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3 mx-1">
-                <!-- Тумблер План / Реестр -->
-                <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg shadow-inner w-full sm:w-auto">
-                    <button onclick="window.ConstManager.switchView('plan')" id="const-btn-view-plan" class="flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">🗺️ План</button>
-                    <button onclick="window.ConstManager.switchView('list')" id="const-btn-view-list" class="flex-1 sm:flex-none px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all text-slate-500 dark:text-slate-400">📋 Реестр</button>
+            <!-- НОВОЕ: Переключатель видов и фильтры -->
+            <div class="flex flex-col gap-3 mb-3 mx-1">
+                <!-- Верхний ряд: Тумблер, Категория, Экспорт -->
+                <div class="flex justify-between items-center w-full">
+                    <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg shadow-inner w-auto shrink-0">
+                        <button onclick="window.ConstManager.switchView('plan')" id="const-btn-view-plan" class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">🗺️ План</button>
+                        <button onclick="window.ConstManager.switchView('list')" id="const-btn-view-list" class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all text-slate-500 dark:text-slate-400">📋 Реестр</button>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <select id="const-filter-category" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px] hidden sm:block">
+                            <option value="ALL">Все категории</option>
+                            <option value="B3">Критичные (B3)</option>
+                            <option value="B2">Значимые (B2)</option>
+                            <option value="B1">Мелкие (B1)</option>
+                        </select>
+                        <button onclick="window.ConstManager.exportDefectsToExcel()" class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm whitespace-nowrap shrink-0 flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Excel
+                        </button>
+                    </div>
                 </div>
-                
-                <!-- Фильтры -->
-                <div class="flex gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar">
-                    <button onclick="window.ConstManager.exportDefectsToExcel()" class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm whitespace-nowrap shrink-0 flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Excel
-                    </button>
-                    <select id="const-filter-status" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[110px]">
-                        <option value="ALL">Все статусы</option>
-                        <option value="open_all">🔥 Все открытые (В работе)</option>
-                        <option value="issued">🔴 Выдано</option>
-                        <option value="in_progress">🔵 В работе у подрядчика</option>
-                        <option value="rejected">⚪ Отклонено инженером</option>
-                        <option value="fixed">🟡 Устранено (Ждет СК)</option>
-                        <option value="closed">🟢 Закрыто</option>
-                    </select>
-                    <select id="const-filter-category" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px]">
-                        <option value="ALL">Все категории</option>
-                        <option value="B3">Критичные (B3)</option>
-                        <option value="B2">Значимые (B2)</option>
-                        <option value="B1">Мелкие (B1)</option>
-                    </select>
+
+                <!-- Нижний ряд: Интерактивные чипсы статусов -->
+                <div id="const-status-chips-container" class="flex gap-2 overflow-x-auto no-scrollbar w-full pb-1">
+                    <!-- Чипсы будут генерироваться через JavaScript -->
                 </div>
             </div>
             <!-- Контейнер для отображения PDF плана -->
@@ -3575,8 +3572,8 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.219',
-            sw: '17.8.219',
+            app: '17.8.220',
+            sw: '17.8.220',
             buildDate: '2026-06-01'
         };
     </script>

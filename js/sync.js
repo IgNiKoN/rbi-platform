@@ -1379,7 +1379,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     const isDeleted = data._deleted === true || data.is_deleted === true;
     const deletedAt = isDeleted ? (data._deletedAt || data.deleted_at || data.updatedAt || data.updated_at || new Date().toISOString()) : null;
     const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
-    
+
     // МАППИНГ НОВЫХ ТАБЛИЦ И БАКЕТОВ
     let tableName = ''; let isShared = false; let targetBucket = bucketName;
     switch (objectType) {
@@ -1460,7 +1460,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt,
             expires_at: data.expires_at || null
         };
-        } else if (objectType === 'const_defect') {
+    } else if (objectType === 'const_defect') {
         payload = {
             id: id,
             project_code: pCode,
@@ -1473,7 +1473,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             norm_text: data.normText || '',
             text: data.text || '',
             category: data.category || '',
-            deadline: data.deadline || null,
+            deadline: data.deadline ? new Date(data.deadline).toISOString() : null,
             contractor: data.contractor || '',
             description: data.description || '',
             photo: uploadedData.photo || null,
@@ -1498,7 +1498,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             floor: data.floor || '',
             room: data.room || '',
             volume: data.volume || '',
-            requested_date: data.requestedDate || null,
+            requested_date: data.requestedDate ? new Date(data.requestedDate).toISOString() : null,
             requested_time: data.requestedTime || '',
             contractor: data.contractor || '',
             status: data.status || 'pending',
@@ -1520,13 +1520,17 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
          };
-         } else if (objectType === 'const_building') {
+    } else if (objectType === 'const_building') {
         payload = {
             id: id,
             project_code: pCode,
             object_id: data.object_id || '',
             name: data.name || '',
             sort_order: data.sort_order || 0,
+            owner: data.owner || iName,
+            created_by: data.created_by || iName,
+            source: 'cloud',
+            sync_status: 'synced',
             is_deleted: isDeleted,
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
@@ -1542,6 +1546,10 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             pdf_name: data.pdf_name || '',
             pdf_size: data.pdf_size || '',
             is_active: data.is_active !== false,
+            owner: data.owner || iName,
+            created_by: data.created_by || iName,
+            source: 'cloud',
+            sync_status: 'synced',
             is_deleted: isDeleted,
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
@@ -1744,7 +1752,7 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
         case 'const_object': tableName = 'construction_objects'; isShared = true; break;
         case 'const_building': tableName = 'construction_buildings'; isShared = true; break;
         case 'const_floor': tableName = 'construction_floors'; isShared = true; break;
-        case 'const_defect': tableName = 'construction_defects'; break;
+        case 'const_defect': tableName = 'construction_defects'; isShared = true; break;
         case 'const_unit': tableName = 'construction_units'; isShared = true; break;
         case 'const_acceptance': tableName = 'construction_acceptance'; isShared = true; break;
         default: return [];
@@ -2766,7 +2774,7 @@ if (window.RbiStorageManager) {
                 { type: 'schedule', store: 'rbi_schedule_stages', memory: 'rbi_scheduleData' },
                 { type: 'fmea', store: 'rbi_fmea', memory: 'rbi_fmeaRecords' },
                 { type: 'etalon', store: 'rbi_etalon_acts', memory: 'etalonActsArray' },
-                 // --- СТРОЙКОНТРОЛЬ ---
+                // --- СТРОЙКОНТРОЛЬ ---
                 { type: 'const_object', store: 'construction_objects', memory: '_sys_dummy' },
                 { type: 'const_building', store: 'construction_buildings', memory: '_sys_dummy' },
                 { type: 'const_floor', store: 'construction_floors', memory: '_sys_dummy' },
@@ -3587,6 +3595,10 @@ if (window.RbiStorageManager) {
                 } else {
                     const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
                     const filterNew = (arr) => arr.filter(i => {
+                        // 1. Бронебойное правило: если статус не синхронизирован - берем 100%
+                        if (i.syncStatus === 'not_synced' || i.sync_status === 'not_synced') return true;
+                        
+                        // 2. Стандартные правила
                         if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
                         if (!lastPushTime) return true;
                         const t = new Date(i.updatedAt || i.updated_at || i.date || i.createdAt || 0).getTime();

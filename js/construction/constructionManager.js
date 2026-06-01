@@ -12,7 +12,7 @@ window.ConstManager = {
 
     // --- НОВОЕ: Переменные фильтров и видов ---
     currentView: 'plan', // 'plan' или 'list'
-    currentFilterStatus: 'ALL',
+    activeStatusFilters: [], // Пустой массив = выбраны все
     currentFilterCategory: 'ALL',
 
     // 1. Инициализация (загрузка данных из БД)
@@ -22,14 +22,12 @@ window.ConstManager = {
             // Грузим из локальной IndexedDB
             if (typeof dbGetAll !== 'undefined') {
                 // ЕДИНЫЙ СПРАВОЧНИК ОБЪЕКТОВ (Интеграция со всем приложением)
-                if (window.ObjectDirectory && window.ObjectDirectory.objects) {
-                    this.objects = window.ObjectDirectory.objects.map(obj => ({
-                        id: obj.canonical_key, // Используем единый системный ключ
-                        name: obj.display_name
-                    }));
-                } else {
-                    this.objects = [];
-                }
+                const storedObjs = await dbGetAll('project_objects');
+                const validObjs = (storedObjs || []).filter(o => !o._deleted && !o.is_deleted);
+                this.objects = validObjs.map(obj => ({
+                    id: obj.canonical_key,
+                    name: obj.display_name
+                }));
 
                 const b = await dbGetAll(STORES.CONST_BUILDINGS);
                 this.buildings = (b || []).filter(x => !x._deleted);
@@ -72,6 +70,7 @@ window.ConstManager = {
 
         this.renderAdminPanel();
         this.renderSelectors();
+        this.updateStatusChips(); // <-- ДОБАВИЛИ ЭТО
     },
 
     // 2. Отрисовка кнопки "Администрирование" (Только для Админа)
@@ -210,12 +209,17 @@ window.ConstManager = {
 
         if (this.currentFlrId && validFlrs.find(f => f.id === this.currentFlrId)) {
             flrSel.value = this.currentFlrId;
-            // Если этаж выбран, нужно показать его план
-            this.loadPdfForFloor(this.currentFlrId);
+            // Учитываем текущий вид (План или Реестр)
+            if (this.currentView === 'plan') {
+                this.loadPdfForFloor(this.currentFlrId);
+            } else {
+                this.renderDefectsList();
+            }
         } else {
             this.currentFlrId = null;
             flrSel.value = '';
             this.clearPdfView();
+            if (this.currentView === 'list') this.renderDefectsList();
         }
     },
 
@@ -226,21 +230,29 @@ window.ConstManager = {
         this.currentFlrId = null;
         this.updateBuildingSelector();
         this.updateFloorSelector();
+        this.updateStatusChips(); // <-- ДОБАВИЛИ
     },
 
     onBuildingChange() {
         this.currentBldId = document.getElementById('const-building-select').value;
         this.currentFlrId = null;
         this.updateFloorSelector();
+        this.updateStatusChips(); // <-- ДОБАВИЛИ
     },
 
     onFloorChange() {
         this.currentFlrId = document.getElementById('const-floor-select').value;
         if (this.currentFlrId) {
-            this.loadPdfForFloor(this.currentFlrId);
+            if (this.currentView === 'plan') {
+                this.loadPdfForFloor(this.currentFlrId);
+            } else {
+                this.renderDefectsList();
+            }
         } else {
             this.clearPdfView();
+            if (this.currentView === 'list') this.renderDefectsList();
         }
+        this.updateStatusChips(); // <-- ДОБАВИЛИ
     },
     onLayerChange() {
         const layerSel = document.getElementById('const-layer-select');
@@ -403,37 +415,47 @@ window.ConstManager = {
     },
 
     applyFilters() {
-        const statusEl = document.getElementById('const-filter-status');
         const categoryEl = document.getElementById('const-filter-category');
-        if (statusEl) this.currentFilterStatus = statusEl.value;
         if (categoryEl) this.currentFilterCategory = categoryEl.value;
 
         if (this.currentView === 'plan') {
             if (this.currentFlrId && window.ConstDefectForm && typeof window.ConstDefectForm.renderAllPins === 'function') {
                 window.ConstDefectForm.renderAllPins(this.currentFlrId, {
-                    status: this.currentFilterStatus,
+                    statuses: this.activeStatusFilters.length > 0 ? this.activeStatusFilters : ['issued', 'in_progress', 'fixed', 'closed', 'rejected'],
                     category: this.currentFilterCategory
                 });
             }
         } else {
             this.renderDefectsList();
         }
+        this.updateStatusChips(); // Обновляем счетчики при смене категории
     },
 
     exportDefectsToExcel() {
-        if (!this.currentFlrId) return showToast('⚠️ Выберите этаж для выгрузки');
+        let filtered = this.defects;
+        let fileNamePrefix = "Все_Объекты";
 
-        let filtered = this.defects.filter(d => d.floorId === this.currentFlrId);
-
-        // Умная фильтрация перед выгрузкой
-        if (this.currentFilterStatus !== 'ALL') {
-            if (this.currentFilterStatus === 'open_all') {
-                filtered = filtered.filter(d => ['issued', 'in_progress', 'rejected'].includes(d.status));
-            } else {
-                filtered = filtered.filter(d => d.status === this.currentFilterStatus);
-            }
+        // Фильтрация по иерархии
+        if (this.currentFlrId) {
+            filtered = filtered.filter(d => d.floorId === this.currentFlrId);
+            fileNamePrefix = this.floors.find(f => f.id === this.currentFlrId)?.name || 'Этаж';
+        } else if (this.currentBldId) {
+            const bldFloors = this.floors.filter(f => f.building_id === this.currentBldId).map(f => f.id);
+            filtered = filtered.filter(d => bldFloors.includes(d.floorId));
+            fileNamePrefix = this.buildings.find(b => b.id === this.currentBldId)?.name || 'Корпус';
+        } else if (this.currentObjId) {
+            const objBuildings = this.buildings.filter(b => b.object_id === this.currentObjId).map(b => b.id);
+            const objFloors = this.floors.filter(f => objBuildings.includes(f.building_id)).map(f => f.id);
+            filtered = filtered.filter(d => objFloors.includes(d.floorId));
+            fileNamePrefix = this.objects.find(o => o.id === this.currentObjId)?.name || 'Объект';
         }
-        if (this.currentFilterCategory !== 'ALL') {
+
+        // Умная фильтрация перед выгрузкой (по статусу и категории)
+        // Умная фильтрация перед выгрузкой (по статусу и категории)
+        if (this.activeStatusFilters.length > 0) {
+            filtered = filtered.filter(d => this.activeStatusFilters.includes(d.status));
+        }
+        if (this.currentFilterCategory && this.currentFilterCategory !== 'ALL') {
             filtered = filtered.filter(d => d.category === this.currentFilterCategory);
         }
 
@@ -447,7 +469,6 @@ window.ConstManager = {
             let dateClosed = '-';
             let commentsArr = [];
 
-            // Вытаскиваем даты и комментарии из истории
             if (d.history && d.history.length > 0) {
                 const fixedRecord = d.history.find(h => h.status === 'fixed');
                 if (fixedRecord) dateFixed = new Date(fixedRecord.date).toLocaleString('ru-RU');
@@ -460,15 +481,16 @@ window.ConstManager = {
                 });
             }
 
-            const objName = window.ConstManager.objects.find(o => o.id === this.currentObjId)?.name || '';
-            const bldName = window.ConstManager.buildings.find(b => b.id === this.currentBldId)?.name || '';
-            const flrName = window.ConstManager.floors.find(f => f.id === this.currentFlrId)?.name || '';
+            // Ищем привязки по ID этажа
+            const flr = window.ConstManager.floors.find(f => f.id === d.floorId);
+            const bld = flr ? window.ConstManager.buildings.find(b => b.id === flr.building_id) : null;
+            const obj = bld ? window.ConstManager.objects.find(o => o.id === bld.object_id) : null;
 
             return {
                 "№": index + 1,
-                "Объект": objName,
-                "Корпус": bldName,
-                "Этаж": flrName,
+                "Объект": obj?.name || '-',
+                "Корпус": bld?.name || '-',
+                "Этаж": flr?.name || '-',
                 "Координаты (X, Y)": `${parseFloat(d.x).toFixed(1)}%, ${parseFloat(d.y).toFixed(1)}%`,
                 "Статус": statusNames[d.status] || d.status,
                 "Категория": d.category,
@@ -489,10 +511,11 @@ window.ConstManager = {
         try {
             const worksheet = XLSX.utils.json_to_sheet(dataToExport);
             const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Реестр замечаний");
-
-            const floorName = window.ConstManager.floors.find(f => f.id === this.currentFlrId)?.name || 'Этаж';
-            XLSX.writeFile(workbook, `Реестр_СК_${floorName}_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Реестр");
+            
+            // Безопасное имя файла
+            const safeName = fileNamePrefix.replace(/[/\\?%*:|"<>]/g, '-');
+            XLSX.writeFile(workbook, `Реестр_СК_${safeName}_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
             showToast("✅ Полный реестр успешно выгружен в Excel!");
         } catch (e) {
             console.error(e);
@@ -504,26 +527,62 @@ window.ConstManager = {
         const container = document.getElementById('const-list-container');
         if (!container) return;
 
-        if (!this.currentFlrId) {
-            container.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Выберите этаж для просмотра замечаний</div>`;
-            return;
-        }
-
         if (!this.defects || !Array.isArray(this.defects)) {
             container.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Ошибка загрузки данных</div>`;
             return;
         }
 
-        // Фильтруем дефекты текущего этажа
-        let filtered = this.defects.filter(d => d.floorId === this.currentFlrId);
+        // --- УМНАЯ ФИЛЬТРАЦИЯ ИЕРАРХИИ ---
+        let filtered = this.defects;
+        let locationTitle = "Все объекты";
 
-        if (this.currentFilterStatus !== 'ALL') filtered = filtered.filter(d => d.status === this.currentFilterStatus);
-        if (this.currentFilterCategory !== 'ALL') filtered = filtered.filter(d => d.category === this.currentFilterCategory);
-
-        if (filtered.length === 0) {
-            container.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">По выбранным фильтрам замечаний нет</div>`;
-            return;
+        // Если выбран этаж - показываем только этот этаж
+        if (this.currentFlrId) {
+            filtered = filtered.filter(d => d.floorId === this.currentFlrId);
+            const flrName = this.floors.find(f => f.id === this.currentFlrId)?.name || 'Этаж';
+            locationTitle = `Уровень: ${flrName}`;
+        } 
+        // Если выбран только корпус - показываем все этажи корпуса
+        else if (this.currentBldId) {
+            const bldFloors = this.floors.filter(f => f.building_id === this.currentBldId).map(f => f.id);
+            filtered = filtered.filter(d => bldFloors.includes(d.floorId));
+            const bldName = this.buildings.find(b => b.id === this.currentBldId)?.name || 'Корпус';
+            locationTitle = `Уровень: ${bldName} (Все этажи)`;
+        } 
+        // Если выбран только объект - показываем все корпуса объекта
+        else if (this.currentObjId) {
+            const objBuildings = this.buildings.filter(b => b.object_id === this.currentObjId).map(b => b.id);
+            const objFloors = this.floors.filter(f => objBuildings.includes(f.building_id)).map(f => f.id);
+            filtered = filtered.filter(d => objFloors.includes(d.floorId));
+            const objName = this.objects.find(o => o.id === this.currentObjId)?.name || 'Объект';
+            locationTitle = `Уровень: ${objName} (Весь объект)`;
         }
+
+        // --- СЧЕТЧИКИ СТАТУСОВ ---
+        let countOpen = 0, countFixed = 0, countClosed = 0, countRejected = 0;
+        filtered.forEach(d => {
+            if (d.status === 'issued' || d.status === 'in_progress') countOpen++;
+            else if (d.status === 'fixed') countFixed++;
+            else if (d.status === 'closed') countClosed++;
+            else if (d.status === 'rejected') countRejected++;
+        });
+
+        // HTML заглушка для шапки реестра
+        const statsHtml = `
+            <div class="flex justify-between items-center mb-3">
+                <div class="text-[10px] font-black uppercase text-slate-500 tracking-widest">${locationTitle}</div>
+            </div>
+        `;
+
+        // --- ПРИМЕНЕНИЕ ВЫБРАННЫХ ФИЛЬТРОВ ---
+        if (this.activeStatusFilters.length > 0) {
+            filtered = filtered.filter(d => this.activeStatusFilters.includes(d.status));
+        }
+        if (this.currentFilterCategory && this.currentFilterCategory !== 'ALL') {
+            filtered = filtered.filter(d => d.category === this.currentFilterCategory);
+        }
+
+        // Сортировка: Сначала красные (B3), потом новые
 
         // Сортировка: Сначала красные (B3), потом новые
         // Вычисляем порядковые номера (от самых старых к новым), чтобы они совпадали с планом
@@ -620,6 +679,108 @@ window.ConstManager = {
         
         // НОВОЕ: Передаем defectId четвертым параметром прямо в просмотрщик!
         window.UniversalPdfViewer.open(floor.pdf_url, `План: ${safeName}`, floor.id, defectId);
+    },
+    // ==========================================
+    // ИНТЕРАКТИВНЫЕ ЧИПСЫ СТАТУСОВ (iOS STYLE)
+    // ==========================================
+    updateStatusChips() {
+        const container = document.getElementById('const-status-chips-container');
+        if (!container) return;
+
+        // 1. Собираем базу дефектов по текущей иерархии
+        let baseDefects = this.defects;
+        if (this.currentFlrId) {
+            baseDefects = baseDefects.filter(d => d.floorId === this.currentFlrId);
+        } else if (this.currentBldId) {
+            const bldFloors = this.floors.filter(f => f.building_id === this.currentBldId).map(f => f.id);
+            baseDefects = baseDefects.filter(d => bldFloors.includes(d.floorId));
+        } else if (this.currentObjId) {
+            const objBuildings = this.buildings.filter(b => b.object_id === this.currentObjId).map(b => b.id);
+            const objFloors = this.floors.filter(f => objBuildings.includes(f.building_id)).map(f => f.id);
+            baseDefects = baseDefects.filter(d => objFloors.includes(d.floorId));
+        }
+
+        // Если применен фильтр категорий (B1/B2/B3), учитываем его в счетчиках
+        if (this.currentFilterCategory && this.currentFilterCategory !== 'ALL') {
+            baseDefects = baseDefects.filter(d => d.category === this.currentFilterCategory);
+        }
+
+        // 2. Считаем количество
+        const counts = { issued: 0, in_progress: 0, fixed: 0, closed: 0, rejected: 0 };
+        baseDefects.forEach(d => { if (counts[d.status] !== undefined) counts[d.status]++; });
+
+        // 3. Стили для iOS дизайна (Мягкие тона для активных, белые для неактивных)
+        const STYLES = {
+            issued: {
+                active: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400',
+                badgeActive: 'bg-red-600 text-white',
+            },
+            in_progress: {
+                active: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400',
+                badgeActive: 'bg-blue-600 text-white',
+            },
+            fixed: {
+                active: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400',
+                badgeActive: 'bg-orange-500 text-white',
+            },
+            closed: {
+                active: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400',
+                badgeActive: 'bg-green-600 text-white',
+            },
+            rejected: {
+                active: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300',
+                badgeActive: 'bg-slate-500 text-white',
+            }
+        };
+
+        const inactiveClass = 'bg-white text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700';
+        const inactiveBadgeClass = 'bg-slate-100 text-slate-400 dark:bg-slate-900 dark:text-slate-500 border border-slate-200 dark:border-slate-700';
+
+        // 4. Рисуем кнопки
+        const createChip = (statusKey, label) => {
+            const isActive = this.activeStatusFilters.includes(statusKey);
+            const isAllMode = this.activeStatusFilters.length === 0;
+            const visuallyActive = isAllMode || isActive;
+            
+            const btnClass = visuallyActive ? STYLES[statusKey].active : inactiveClass;
+            const badgeClass = visuallyActive ? STYLES[statusKey].badgeActive : inactiveBadgeClass;
+            const shadow = visuallyActive ? 'shadow-sm' : '';
+
+            return `
+                <button onclick="window.ConstManager.toggleStatusFilter('${statusKey}')" 
+                        class="shrink-0 px-3 py-1.5 rounded-xl border text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 active:scale-95 ${btnClass} ${shadow}">
+                    ${label} 
+                    <span class="${badgeClass} px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-widest min-w-[20px] text-center">
+                        ${counts[statusKey] || 0}
+                    </span>
+                </button>
+            `;
+        };
+
+        container.innerHTML = `
+            ${createChip('issued', 'Выдано')}
+            ${createChip('in_progress', 'В работе')}
+            ${createChip('fixed', 'На проверке')}
+            ${createChip('closed', 'Закрыто')}
+            ${createChip('rejected', 'Отклонено')}
+        `;
+    },
+
+    toggleStatusFilter(statusKey) {
+        const idx = this.activeStatusFilters.indexOf(statusKey);
+        if (idx > -1) {
+            this.activeStatusFilters.splice(idx, 1); // Выключаем
+        } else {
+            this.activeStatusFilters.push(statusKey); // Включаем
+        }
+        
+        // Если выбрали все 5, сбрасываем фильтр (режим "Все")
+        if (this.activeStatusFilters.length === 5) {
+            this.activeStatusFilters = [];
+        }
+
+        this.updateStatusChips();
+        this.applyFilters();
     }
 };
 
@@ -900,9 +1061,11 @@ window.ConstAdmin = {
             sort_order: window.ConstManager.buildings.filter(b => b.object_id === objId).length + 1,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             _deleted: false,
             source: 'local',
-            sync_status: 'not_synced'
+            sync_status: 'not_synced',
+            syncStatus: 'not_synced'
         };
 
         window.ConstManager.buildings.push(newBld);
@@ -926,9 +1089,11 @@ window.ConstAdmin = {
             is_active: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             _deleted: false,
             source: 'local',
-            sync_status: 'not_synced'
+            sync_status: 'not_synced',
+            syncStatus: 'not_synced'
         };
 
         window.ConstManager.floors.push(newFlr);
@@ -2077,13 +2242,9 @@ window.ConstDefectForm = {
                 });
             }
 
-            // Стандартные фильтры
-            if (filters.status && filters.status !== 'ALL') {
-                if (filters.status === 'open_all') {
-                    defects = defects.filter(d => ['issued', 'in_progress', 'rejected'].includes(d.status));
-                } else {
-                    defects = defects.filter(d => d.status === filters.status);
-                }
+            // Умные фильтры по массиву статусов (из чипсов)
+            if (filters.statuses && filters.statuses.length > 0) {
+                defects = defects.filter(d => filters.statuses.includes(d.status));
             }
             if (filters.category && filters.category !== 'ALL') {
                 defects = defects.filter(d => d.category === filters.category);
@@ -2868,5 +3029,6 @@ window.ConstAcceptance = {
             showToast('📋 Режим приёмки активирован!');
         }, 300);
     }
+    
 };
 
