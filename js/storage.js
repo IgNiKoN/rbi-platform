@@ -2,7 +2,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 18; // БЫЛО 16, СТАЛО 17
+const DB_VERSION = 19; // БЫЛО 16, СТАЛО 17
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -13,8 +13,8 @@ const STORES = {
     CONST_BUILDINGS: 'construction_buildings',
     CONST_FLOORS: 'construction_floors',
     CONST_DEFECTS: 'construction_defects',
-    CONST_UNITS: 'construction_units',           // <-- НОВОЕ (Помещения/квартиры)
-    CONST_ACCEPTANCE: 'construction_acceptance', // <-- НОВОЕ (Заявки на приемку)
+    CONST_UNITS: 'construction_units',           
+    CONST_ACCEPTANCE: 'construction_acceptance',  // <-- НОВОЕ (Заявки на приемку)
     // ---------------------------------------
 
     OBJECT_QUEUE: 'object_normalization_queue',

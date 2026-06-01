@@ -1379,10 +1379,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     const isDeleted = data._deleted === true || data.is_deleted === true;
     const deletedAt = isDeleted ? (data._deletedAt || data.deleted_at || data.updatedAt || data.updated_at || new Date().toISOString()) : null;
     const updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
-    // Временно отключаем отправку строительного контроля в облако
-    if (objectType === 'const_object' || objectType === 'const_building' || objectType === 'const_floor') {
-        return data; // возвращаем данные без отправки
-    }
+    
     // МАППИНГ НОВЫХ ТАБЛИЦ И БАКЕТОВ
     let tableName = ''; let isShared = false; let targetBucket = bucketName;
     switch (objectType) {
@@ -1404,9 +1401,12 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
         case 'snapshot': tableName = 'shared_report_snapshots'; isShared = false; break;
         case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
-        //case 'const_object': tableName = 'construction_objects'; isShared = true; break;
-        //case 'const_building': tableName = 'construction_buildings'; isShared = true; break;
-        //case 'const_floor': tableName = 'construction_floors'; isShared = true; break;
+        case 'const_object': tableName = 'construction_objects'; isShared = true; break;
+        case 'const_building': tableName = 'construction_buildings'; isShared = true; break;
+        case 'const_floor': tableName = 'construction_floors'; isShared = true; break;
+        case 'const_defect': tableName = 'construction_defects'; targetBucket = 'construction-defects'; break;
+        case 'const_unit': tableName = 'construction_units'; isShared = true; break;
+        case 'const_acceptance': tableName = 'construction_acceptance'; isShared = true; break;
         default: return;
     }
 
@@ -1460,6 +1460,92 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt,
             expires_at: data.expires_at || null
         };
+        } else if (objectType === 'const_defect') {
+        payload = {
+            id: id,
+            project_code: pCode,
+            floor_id: data.floorId || data.floor_id || '',
+            x: data.x || 0,
+            y: data.y || 0,
+            template_key: data.templateKey || '',
+            item_id: data.itemId || '',
+            item_name: data.itemName || '',
+            norm_text: data.normText || '',
+            text: data.text || '',
+            category: data.category || '',
+            deadline: data.deadline || null,
+            contractor: data.contractor || '',
+            description: data.description || '',
+            photo: uploadedData.photo || null,
+            status: data.status || 'issued',
+            history: data.history || [],
+            created_by: data.created_by || iName,
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else if (objectType === 'const_acceptance') {
+        payload = {
+            id: id,
+            project_code: pCode,
+            object_id: data.objectId || '',
+            floor_id: data.floorId || '',
+            zone: data.zone || null,
+            template_key: data.templateKey || '',
+            work_type: data.workType || '',
+            location: data.location || '',
+            section: data.section || '',
+            floor: data.floor || '',
+            room: data.room || '',
+            volume: data.volume || '',
+            requested_date: data.requestedDate || null,
+            requested_time: data.requestedTime || '',
+            contractor: data.contractor || '',
+            status: data.status || 'pending',
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else if (objectType === 'const_unit') {
+         payload = {
+            id: id,
+            project_code: pCode,
+            building_id: data.building_id || '',
+            floor_id: data.floor_id || '',
+            name: data.name || '',
+            type: data.type || '',
+            sort_order: data.sort_order || 0,
+            status: data.status || 'none',
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+         };
+         } else if (objectType === 'const_building') {
+        payload = {
+            id: id,
+            project_code: pCode,
+            object_id: data.object_id || '',
+            name: data.name || '',
+            sort_order: data.sort_order || 0,
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
+    } else if (objectType === 'const_floor') {
+        payload = {
+            id: id,
+            project_code: pCode,
+            building_id: data.building_id || '',
+            name: data.name || '',
+            sort_order: data.sort_order || 0,
+            pdf_url: data.pdf_url || '',
+            pdf_name: data.pdf_name || '',
+            pdf_size: data.pdf_size || '',
+            is_active: data.is_active !== false,
+            is_deleted: isDeleted,
+            created_at: data.created_at || new Date().toISOString(),
+            updated_at: updatedAt
+        };
     } else if (objectType === 'assistant_kb') {
         payload = {
             id: id,
@@ -1507,7 +1593,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
     }
 
     // Заполнение специфичных полей для shared_* и project_* таблиц
-    if (objectType !== 'report' && objectType !== 'snapshot' && objectType !== 'assistant_kb' && objectType !== 'project_object' && objectType !== 'object_alias') {
+    if (!['report', 'snapshot', 'assistant_kb', 'project_object', 'object_alias', 'const_defect', 'const_acceptance', 'const_unit', 'const_building', 'const_floor', 'const_object'].includes(objectType)) {
         if (isShared) {
             payload.owner = data.owner || iName;
             payload.project_code = pCode; // Гарантируем наличие кода проекта
@@ -1655,6 +1741,12 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
         case 'report': tableName = 'shared_reports'; isShared = false; break;
         case 'report_template': tableName = 'shared_report_templates'; isShared = true; break;
         case 'assistant_kb': tableName = 'app_assistant_kb'; isShared = true; break;
+        case 'const_object': tableName = 'construction_objects'; isShared = true; break;
+        case 'const_building': tableName = 'construction_buildings'; isShared = true; break;
+        case 'const_floor': tableName = 'construction_floors'; isShared = true; break;
+        case 'const_defect': tableName = 'construction_defects'; break;
+        case 'const_unit': tableName = 'construction_units'; isShared = true; break;
+        case 'const_acceptance': tableName = 'construction_acceptance'; isShared = true; break;
         default: return [];
     }
 
@@ -2674,6 +2766,14 @@ if (window.RbiStorageManager) {
                 { type: 'schedule', store: 'rbi_schedule_stages', memory: 'rbi_scheduleData' },
                 { type: 'fmea', store: 'rbi_fmea', memory: 'rbi_fmeaRecords' },
                 { type: 'etalon', store: 'rbi_etalon_acts', memory: 'etalonActsArray' },
+                 // --- СТРОЙКОНТРОЛЬ ---
+                { type: 'const_object', store: 'construction_objects', memory: '_sys_dummy' },
+                { type: 'const_building', store: 'construction_buildings', memory: '_sys_dummy' },
+                { type: 'const_floor', store: 'construction_floors', memory: '_sys_dummy' },
+                { type: 'const_defect', store: 'construction_defects', memory: '_sys_dummy' },
+                { type: 'const_unit', store: 'construction_units', memory: '_sys_dummy' },
+                { type: 'const_acceptance', store: 'construction_acceptance', memory: '_sys_dummy' },
+                // ---------------------
                 // НОВЫЕ БЫСТРЫЕ ТАБЛИЦЫ СПРАВОЧНИКОВ:
                 { type: 'custom_doc', store: 'custom_docs', memory: 'customDocs' },
                 { type: 'custom_node', store: 'custom_nodes', memory: 'customNodes' },
@@ -3127,6 +3227,7 @@ if (window.RbiStorageManager) {
                         template_key: c.templateKey || '', template_title: c.templateTitle || '', location: c.location || '',
                         section: c.section || '', floor: c.floor || '', room: c.room || '', inspection_date: c.date || new Date().toISOString(),
                         metrics: c.metrics || {}, is_completed: c.isCompleted !== false, is_deleted: isDeleted, deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
+                        inspection_type: c.inspection_type || 'rbi_audit',
                         source: 'cloud', sync_status: 'synced', sync_block_reason: '', updated_at: new Date().toISOString()
                     });
 
@@ -3554,9 +3655,12 @@ if (window.RbiStorageManager) {
                     await syncTableData('rbi_schedule_stages', 'rbi_scheduleData', 'schedule');
                     await syncTableData('rbi_fmea', 'rbi_fmeaRecords', 'fmea');
                     await syncTableData('rbi_etalon_acts', 'etalonActsArray', 'etalon');
-                    //await syncTableData('construction_objects', '_sys_dummy', 'const_object');
-                    //await syncTableData('construction_buildings', '_sys_dummy', 'const_building');
-                    //await syncTableData('construction_floors', '_sys_dummy', 'const_floor');
+                    // Синхронизация модулей Стройконтроля (Иерархия, Дефекты на планах, Приемка)
+                    await syncTableData('construction_buildings', '_sys_dummy', 'const_building');
+                    await syncTableData('construction_floors', '_sys_dummy', 'const_floor');
+                    await syncTableData('construction_defects', '_sys_dummy', 'const_defect');
+                    await syncTableData('construction_units', '_sys_dummy', 'const_unit');
+                    await syncTableData('construction_acceptance', '_sys_dummy', 'const_acceptance');
 
                     // Синхронизация новых таблиц Справочников
                     // Синхронизация новых таблиц Справочников

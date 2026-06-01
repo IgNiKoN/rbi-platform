@@ -342,7 +342,7 @@
 
         <!-- Контейнер для Panzoom -->
         <div class="flex-1 relative overflow-hidden touch-none" id="universal-pdf-wrapper">
-            <div id="universal-pdf-container" class="absolute top-0 left-0 shadow-2xl" style="transform-origin: 0 0;">
+            <div id="universal-pdf-container" class="absolute top-0 left-0 shadow-2xl">
                 <!-- Сам рендер PDF (холст) -->
                 <canvas id="universal-pdf-canvas" class="block"></canvas>
                 <!-- Слой поверх PDF, куда будут падать точки (булавки) дефектов -->
@@ -704,9 +704,7 @@
                     <!-- Старый селектор чек-листа (остается без изменений, просто обернули) -->
                     <div id="header-checklist-container" class="relative flex items-center bg-indigo-50/80 dark:bg-indigo-900/30 px-3 h-8 rounded-[10px] border border-indigo-100 dark:border-indigo-800/50 cursor-pointer shadow-sm active:scale-95 transition-transform">
                         <span class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
-                            </svg>
+                            
                             Чек-лист ▾
                         </span>
                         <select id="checklist-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="changeTemplate(this.value)">
@@ -3577,9 +3575,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.218',
-            sw: '17.8.218',
-            buildDate: '2026-05-31'
+            app: '17.8.219',
+            sw: '17.8.219',
+            buildDate: '2026-06-01'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->

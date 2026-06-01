@@ -348,6 +348,9 @@ window.ConstManager = {
             const oldBtn = document.getElementById('interactive-plan-btn');
             if (oldBtn) oldBtn.remove();
 
+            // Сжимаем область чертежа снизу на 70px, чтобы освободить место для кнопки и избежать перекрытия
+            renderArea.style.bottom = '70px';
+
             const btnHtml = `
                 <div id="interactive-plan-btn" class="absolute bottom-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
                     <button onclick="window.UniversalPdfViewer.open('${floor.pdf_url}', 'План: ${safeName}', '${floor.id}')" class="pointer-events-auto bg-indigo-600 text-white px-5 py-3.5 rounded-2xl shadow-[0_5px_15px_rgba(79,70,229,0.4)] active:scale-95 text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform border border-indigo-400">
@@ -356,7 +359,7 @@ window.ConstManager = {
                     </button>
                 </div>
             `;
-            // Добавляем кнопку к главному контейнеру, чтобы она не прокручивалась вместе с планом
+            // Добавляем кнопку к главному контейнеру
             document.getElementById('const-plan-container').insertAdjacentHTML('beforeend', btnHtml);
 
             // 5. Показываем результат
@@ -1208,41 +1211,48 @@ window.UniversalPdfViewer = {
             const ctx = canvas.getContext('2d');
             await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 
-            container.style.visibility = 'visible';
+            // Вычисляем размеры для масштаба
+            const cw = wrapper.clientWidth || window.innerWidth;
+            const ch = wrapper.clientHeight || window.innerHeight;
+            
+            const scaleX = cw / viewport.width;
+            const scaleY = ch / viewport.height;
+            const initialScale = Math.min(scaleX, scaleY) * 0.95;
 
-            // Инициализация Panzoom
+            // БРОНЕБОЙНОЕ ЦЕНТРИРОВАНИЕ ЧЕРЕЗ CSS
+            // 1. Отвязываем контейнер от левого верхнего угла
+            container.classList.remove('top-0', 'left-0');
+            
+            // 2. Ставим центр чертежа ровно в центр экрана
+            container.style.left = '50%';
+            container.style.top = '50%';
+            container.style.marginLeft = `-${viewport.width / 2}px`;
+            container.style.marginTop = `-${viewport.height / 2}px`;
+            
+            // 3. Возвращаем стандартный центр для правильного зума к курсору
+            container.style.transformOrigin = '50% 50%';
+
+            // Инициализация Panzoom. Теперь координаты startX и startY = 0, 
+            // так как CSS уже идеально отцентрировал холст!
             this.panzoomInstance = Panzoom(container, {
                 maxScale: 15,
                 minScale: 0.05,
-                step: 0.3
+                step: 0.3,
+                startScale: initialScale,
+                startX: 0,
+                startY: 0
             });
 
-            // Центрирование и стартовый зум
-            // Даем браузеру 50 миллисекунд для отрисовки окна
-            setTimeout(() => {
-                if (!this.panzoomInstance) return;
-                
-                const cw = wrapper.clientWidth;
-                const ch = wrapper.clientHeight;
-                
-                const scaleX = cw / viewport.width;
-                const scaleY = ch / viewport.height;
-                const initialScale = Math.min(scaleX, scaleY) * 0.98;
+            // Показываем контейнер
+            container.style.visibility = 'visible';
 
-                const startX = (cw - (viewport.width * initialScale)) / 2;
-                const startY = (ch - (viewport.height * initialScale)) / 2;
-
-                this.panzoomInstance.zoom(initialScale, { animate: false });
-                this.panzoomInstance.pan(startX, startY, { animate: false, force: true });
-
-                // Рендерим точки со стартовым масштабом И ПОДСВЕТКОЙ
-                if (this.currentFloorId) {
-                    window.ConstDefectForm.renderAllPins(this.currentFloorId, {
-                        status: window.ConstManager.currentFilterStatus,
-                        category: window.ConstManager.currentFilterCategory
-                    }, initialScale, highlightDefectId);
-                }
-            }, 50);
+            // Рендерим точки дефектов
+            if (this.currentFloorId) {
+                window.ConstDefectForm.renderAllPins(this.currentFloorId, {
+                    status: window.ConstManager.currentFilterStatus,
+                    category: window.ConstManager.currentFilterCategory
+                }, initialScale, highlightDefectId);
+            }
 
             // --- ОБРАБОТЧИК ЗУМА ДЛЯ КЛАСТЕРОВ ---
             if (this._zoomListener) {
