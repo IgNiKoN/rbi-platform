@@ -1,0 +1,121 @@
+Структура папок
+Серийный номер тома: 0EB5-0999
+C:.
+|   favicon.ico
+|   index.html
+|   manifest.webmanifest
+|   readme
+|   report.html
+|   structure.txt
+|   sw.js
+|   
++---css
+|       style.css
+|       
++---data
+|       system_docs.js
+|       system_nodes.js
+|       system_twi.js
+|       
++---fonts
+|       BricolageGrotesque-Bold.woff2
+|       BricolageGrotesque-ExtraBold.woff2
+|       BricolageGrotesque-Light.woff2
+|       BricolageGrotesque-Medium.woff2
+|       BricolageGrotesque-Regular.woff2
+|       BricolageGrotesque-SemiBold.woff2
+|       Inter-Black.woff2
+|       Inter-Bold.woff2
+|       Inter-ExtraBold.woff2
+|       Inter-Medium.woff2
+|       Inter-Regular.woff2
+|       Inter-SemiBold.woff2
+|       PlayfairDisplay-Black.woff2
+|       PlayfairDisplay-BlackItalic.woff2
+|       PlayfairDisplay-Bold.woff2
+|       PlayfairDisplay-BoldItalic.woff2
+|       PlayfairDisplay-ExtraBold.woff2
+|       PlayfairDisplay-ExtraBoldItalic.woff2
+|       PlayfairDisplay-Italic.woff2
+|       PlayfairDisplay-Medium.woff2
+|       PlayfairDisplay-MediumItalic.woff2
+|       PlayfairDisplay-Regular.woff2
+|       PlayfairDisplay-SemiBold.woff2
+|       PlayfairDisplay-SemiBoldItalic.woff2
+|       
++---icons
+|       apple-touch-icon.png
+|       favicon-16x16.png
+|       favicon-32x32.png
+|       icon-192.png
+|       icon-512-2.png
+|       icon-512.png
+|       icon-maskable-512.png
+|       
++---js
+|   |   ai.js
+|   |   analytics.js
+|   |   app.js
+|   |   config.js
+|   |   contractorDirectory.js
+|   |   etalon.js
+|   |   export.js
+|   |   faq.js
+|   |   game.js
+|   |   math.js
+|   |   objectDirectory.js
+|   |   roles.js
+|   |   router.js
+|   |   sk.js
+|   |   storage.js
+|   |   sync.js
+|   |   task.js
+|   |   templates.js
+|   |   views.js
+|   |   
+|   \---construction
+|           constructionManager.js
+|           transferManager.js
+|           
++---libs
+|   |   chart.umd.min.js
+|   |   html2pdf.bundle.min.js
+|   |   panzoom.min.js
+|   |   qrcode.min.js
+|   |   Sortable.min.js
+|   |   supabase-js.min.js
+|   |   tailwindcdn.js
+|   |   xlsx.full.min.js
+|   |   
+|   \---pdfjs
+|           pdf.min.js
+|           pdf.worker.min.js
+|           
+\---Справка
+        RLS 2.docx
+        RLS.docx
+        ~$дачи в приложении RBI Quality Pro.docx
+        Архитектура и техничесеский стэк.docx
+        Бизнес ценность и философия системы..docx
+        Документ Microsoft Word (2).docx
+        Документ Microsoft Word.docx
+        Дополнение к сути.docx
+        Задачи в приложении RBI Quality Pro.docx
+        Задачи.docx
+        ИИ модули.docx
+        Математика.docx
+        Обновления и поддержка.docx
+        Описание вкладок и суть..docx
+        ПЕРЕХОД К СЕРВЕРНОЙ ЗАЩИТЕ.docx
+        ПК СК 2.docx
+        ПК СК.docx
+        РЛС 3.docx
+        РОАД МЭП И ПЛАН РАЗВИТИЯ.docx
+        Синхронизация данных в приложении RBI Quality Pro.docx
+        Синхронизация и ролевая модель.docx
+        Структура таблиц.docx
+        Суть приложения.docx
+        Таблицы.docx
+        Управление памятью.docx
+        управления памятью в приложении RBI Quality Pro.docx
+        
