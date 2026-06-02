@@ -322,21 +322,31 @@
         </div>
     </div>
     <!-- === УНИВЕРСАЛЬНЫЙ ПРОСМОТРЩИК PDF С PANZOOM === -->
-    <div id="universal-pdf-modal" class="fixed inset-0 bg-slate-900/95 z-[9999] hidden flex-col transition-opacity duration-300 opacity-0">
+    <div id="universal-pdf-modal"
+        class="fixed inset-0 bg-slate-900/95 z-[9999] hidden flex-col transition-opacity duration-300 opacity-0">
         <!-- Шапка -->
         <div class="bg-indigo-600 text-white p-4 flex justify-between items-center shadow-md z-20 shrink-0">
-            <div class="font-black text-sm uppercase tracking-widest truncate pr-4" id="universal-pdf-title">План этажа</div>
-            <button onclick="window.UniversalPdfViewer.close()" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center active:scale-90 shrink-0 border border-indigo-400 font-bold">✕</button>
+            <div class="font-black text-sm uppercase tracking-widest truncate pr-4" id="universal-pdf-title">План этажа
+            </div>
+            <button onclick="window.UniversalPdfViewer.close()"
+                class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center active:scale-90 shrink-0 border border-indigo-400 font-bold">✕</button>
         </div>
-        
+
         <!-- Панель инструментов (Тут в будущем будет кнопка "Поставить дефект") -->
         <!-- Панель инструментов (Тулбар) -->
-        <div id="universal-pdf-toolbar" class="bg-[var(--card-bg)] border-b border-[var(--card-border)] p-3 flex justify-between items-center z-20 shrink-0 shadow-sm hidden">
-            <div id="pdf-add-hint" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden animate-pulse">Кликните на чертеж ➔</div>
-            <div id="pdf-normal-hint" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Режим просмотра</div>
-            
-            <button id="pdf-btn-add-defect" onclick="window.UniversalPdfViewer.toggleAddMode()" class="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить дефект
+        <div id="universal-pdf-toolbar"
+            class="bg-[var(--card-bg)] border-b border-[var(--card-border)] p-3 flex justify-between items-center z-20 shrink-0 shadow-sm hidden">
+            <div id="pdf-add-hint"
+                class="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden animate-pulse">Кликните на
+                чертеж ➔</div>
+            <div id="pdf-normal-hint" class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Режим
+                просмотра</div>
+
+            <button id="pdf-btn-add-defect" onclick="window.UniversalPdfViewer.toggleAddMode()"
+                class="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                </svg> Добавить дефект
             </button>
         </div>
 
@@ -351,8 +361,15 @@
         </div>
 
         <!-- Лоадер -->
-        <div id="universal-pdf-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 text-white z-30 hidden backdrop-blur-sm">
-            <svg class="animate-spin h-10 w-10 mb-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        <div id="universal-pdf-loader"
+            class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 text-white z-30 hidden backdrop-blur-sm">
+            <svg class="animate-spin h-10 w-10 mb-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none"
+                viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+            </svg>
             <div class="font-bold text-xs uppercase tracking-widest animate-pulse">Загрузка чертежа...</div>
         </div>
     </div>
@@ -523,7 +540,8 @@
                 </button>
             </div>
             <div class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-900" id="viewer-node-content">
-                <div id="viewer-node-attachments" class="w-full bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm p-3 space-y-3">
+                <div id="viewer-node-attachments"
+                    class="w-full bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm p-3 space-y-3">
                     <!-- Сюда JS загрузит картинки и PDF -->
                 </div>
                 <div class="p-4 space-y-4">
@@ -686,13 +704,16 @@
 
                 <!-- ПРАВАЯ ЧАСТЬ: Переключатель Режима + Селектор Чек-листа -->
                 <div class="flex items-center gap-1.5 shrink-0">
-                    
+
                     <!-- Переключатель режима приложения (НОВОЕ) -->
-                    <div class="relative flex items-center bg-slate-100 dark:bg-slate-800 px-2 h-8 rounded-[10px] border border-slate-200 dark:border-slate-700 cursor-pointer shadow-sm active:scale-95 transition-transform z-50">
-                        <span id="current-mode-label" class="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
+                    <div
+                        class="relative flex items-center bg-slate-100 dark:bg-slate-800 px-2 h-8 rounded-[10px] border border-slate-200 dark:border-slate-700 cursor-pointer shadow-sm active:scale-95 transition-transform z-50">
+                        <span id="current-mode-label"
+                            class="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
                             Quality ▾
                         </span>
-                        <select id="app-mode-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="if(window.changeAppMode) window.changeAppMode(this.value)">
+                        <select id="app-mode-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onchange="if(window.changeAppMode) window.changeAppMode(this.value)">
                             <option value="quality" selected>Качество</option>
                             <option value="construction">Стройконтроль</option>
                             <option value="safety">Безопасность</option>
@@ -702,12 +723,15 @@
                     </div>
 
                     <!-- Старый селектор чек-листа (остается без изменений, просто обернули) -->
-                    <div id="header-checklist-container" class="relative flex items-center bg-indigo-50/80 dark:bg-indigo-900/30 px-3 h-8 rounded-[10px] border border-indigo-100 dark:border-indigo-800/50 cursor-pointer shadow-sm active:scale-95 transition-transform">
-                        <span class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase flex items-center gap-1.5">
-                            
+                    <div id="header-checklist-container"
+                        class="relative flex items-center bg-indigo-50/80 dark:bg-indigo-900/30 px-3 h-8 rounded-[10px] border border-indigo-100 dark:border-indigo-800/50 cursor-pointer shadow-sm active:scale-95 transition-transform">
+                        <span
+                            class="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase flex items-center gap-1.5">
+
                             Чек-лист ▾
                         </span>
-                        <select id="checklist-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="changeTemplate(this.value)">
+                        <select id="checklist-selector" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            onchange="changeTemplate(this.value)">
                             <option value="" disabled selected>Выбрать...</option>
                             <option value="HOME">🏠 Главный экран</option>
                             <optgroup label="Системные" id="system-group"></optgroup>
@@ -811,13 +835,12 @@
                     <!-- Подрядчик и Объект теперь делят экран пополам -->
                     <div class="relative"><input type="text" id="inp-contractor" class="input-base text-center"
                             placeholder="Подрядчик *" autocomplete="off"></div>
-                    <div class="relative" onmousedown="startSmartLock(event, 'inp-project')"
-                        ontouchstart="startSmartLock(event, 'inp-project')" onmouseup="cancelSmartLock()"
-                        onmouseleave="cancelSmartLock()" ontouchend="cancelSmartLock()">
-                        <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors"
+                    <div class="relative">
+                        <input type="text" id="inp-project" class="input-base text-center transition-colors"
                             placeholder="Объект *" autocomplete="off">
+
                         <span id="lock-inp-project"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-white hidden pointer-events-none">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                                 stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round"
@@ -847,11 +870,15 @@
     <!-- === ОСНОВНОЙ КОНТЕЙНЕР === -->
     <main id="app-root" class="max-w-4xl mx-auto px-4 pt-4 pb-20">
         <!-- === БАННЕР ПРЕДУПРЕЖДЕНИЯ ДЛЯ РЕЖИМА СТРОЙКОНТРОЛЬ === -->
-        <div id="construction-warning-banner" class="hidden mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-2xl shadow-sm items-start gap-3 mx-1 mt-2">
+        <div id="construction-warning-banner"
+            class="hidden mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-2xl shadow-sm items-start gap-3 mx-1 mt-2">
             <div class="text-2xl mt-1">🚧</div>
             <div>
-                <div class="text-[11px] font-black text-yellow-800 uppercase tracking-widest mb-0.5">Режим бета-тестирования</div>
-                <div class="text-[10px] text-yellow-700 font-medium leading-snug">Модуль "Стройконтроль" находится на стадии проектирования архитектуры. Облачная синхронизация для этого раздела временно отключена. Данные сохраняются только на вашем устройстве.</div>
+                <div class="text-[11px] font-black text-yellow-800 uppercase tracking-widest mb-0.5">Режим
+                    бета-тестирования</div>
+                <div class="text-[10px] text-yellow-700 font-medium leading-snug">Модуль "Стройконтроль" находится на
+                    стадии проектирования архитектуры. Облачная синхронизация для этого раздела временно отключена.
+                    Данные сохраняются только на вашем устройстве.</div>
             </div>
         </div>
 
@@ -1392,7 +1419,8 @@
 
                 <!-- Режим детализации подрядчика (Скрыт по умолчанию) -->
                 <div id="contractor-detail-view" class="hidden">
-                    <div id="contractor-detail-header" class="z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-[var(--card-border)] p-3 mx-1 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
+                    <div id="contractor-detail-header"
+                        class="z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-[var(--card-border)] p-3 mx-1 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
                         <button onclick="hideContractorDetailView()"
                             class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95 px-2 py-1 bg-[var(--hover-bg)] rounded-lg">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1941,12 +1969,16 @@
                                 </button>
                             </div>
                             <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
+                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь
+                                    со справочником НД</label>
                                 <select id="twi-linked-doc-id" class="input-base text-[12px]"></select>
                             </div>
                             <div class="pt-4 border-t border-slate-100 dark:border-slate-700">
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ссылка на видео (YouTube / Облако)</label>
-                                <input type="url" id="twi-video-link-input" class="input-base text-[12px]" placeholder="https://...">
+                                <label
+                                    class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ссылка
+                                    на видео (YouTube / Облако)</label>
+                                <input type="url" id="twi-video-link-input" class="input-base text-[12px]"
+                                    placeholder="https://...">
                             </div>
                         </div>
 
@@ -2247,12 +2279,16 @@
                             </div>
 
                             <div class="pt-2 border-t border-slate-100 dark:border-slate-700">
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложения (Фото / PDF)</label>
+                                <label
+                                    class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Вложения
+                                    (Фото / PDF)</label>
                                 <div id="node-attachments-list" class="space-y-2 mb-3"></div>
-                                <button onclick="document.getElementById('node-file-input').click()" class="w-full h-12 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold uppercase tracking-widest text-slate-500 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                                <button onclick="document.getElementById('node-file-input').click()"
+                                    class="w-full h-12 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[10px] font-bold uppercase tracking-widest text-slate-500 active:scale-95 transition-colors flex items-center justify-center gap-2">
                                     ➕ Добавить файл
                                 </button>
-                                <input type="file" id="node-file-input" accept="image/*, application/pdf" style="display:none;" onchange="handleNodeFileUpload(event)">
+                                <input type="file" id="node-file-input" accept="image/*, application/pdf"
+                                    style="display:none;" onchange="handleNodeFileUpload(event)">
                             </div>
                         </div>
 
@@ -2280,17 +2316,20 @@
                         </div>
 
                         <div>
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со справочником НД</label>
-                                <select id="node-linked-doc" class="input-base text-[12px]"></select>
-                            </div>
-                            <div>
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с TWI-картой</label>
-                                <select id="node-linked-twi" class="input-base text-[12px]"></select>
-                            </div>
-                            <div>
-                                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с Чек-листом</label>
-                                <select id="node-linked-checklist" class="input-base text-[12px]"></select>
-                            </div>
+                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь со
+                                справочником НД</label>
+                            <select id="node-linked-doc" class="input-base text-[12px]"></select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с
+                                TWI-картой</label>
+                            <select id="node-linked-twi" class="input-base text-[12px]"></select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Связь с
+                                Чек-листом</label>
+                            <select id="node-linked-checklist" class="input-base text-[12px]"></select>
+                        </div>
 
                         <!-- Дублирующая кнопка отмены внизу для удобства на длинных экранах -->
                         <button onclick="closeNodeConstructor()"
@@ -2598,6 +2637,8 @@
                                 <option value="auto">Системная</option>
                                 <option value="light">Светлая</option>
                                 <option value="dark">Тёмная</option>
+                                <option value="rbi-light">RBI Светлая</option>
+                                <option value="rbi-dark">RBI Тёмная</option>
                             </select>
                         </div>
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
@@ -2644,10 +2685,12 @@
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
                             <div>
                                 <div class="font-bold text-sm">Push-уведомления</div>
-                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Оповещения о новых задачах СК</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Оповещения о новых задачах СК
+                                </div>
                             </div>
                             <label class="toggle-switch">
-                                <input type="checkbox" id="set-push-notifications" onchange="window.togglePushSettings(this)">
+                                <input type="checkbox" id="set-push-notifications"
+                                    onchange="window.togglePushSettings(this)">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
@@ -3171,6 +3214,8 @@
                     </div>
                 </details>
 
+                
+
                 <!-- САМООБУЧЕНИЕ СИСТЕМЫ (AI) -->
                 <details id="ai-optimizer-settings"
                     class="bg-[var(--card-bg)] border border-purple-200 dark:border-purple-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3">
@@ -3382,40 +3427,48 @@
                     </div>
                 </div>
             </div>
-    </div>
-    <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ДЕФЕКТЫ НА ПЛАНЕ === -->
+        </div>
+        <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ДЕФЕКТЫ НА ПЛАНЕ === -->
         <div id="tab-construction-defects" class="view-section">
-            
+
             <!-- Панель выбора объекта и этажа -->
             <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
                 <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Выбор плана</h2>
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Выбор
+                        плана</h2>
                     <!-- Кнопка администрирования появится здесь через JS, если роль manager -->
                     <div id="const-admin-btn-container"></div>
                 </div>
-                
+
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
-                        <select id="const-object-select" class="input-base" onchange="if(window.ConstManager) window.ConstManager.onObjectChange()">
+                        <label
+                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
+                        <select id="const-object-select" class="input-base"
+                            onchange="if(window.ConstManager) window.ConstManager.onObjectChange()">
                             <option value="">Загрузка объектов...</option>
                         </select>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус / Секция</label>
-                        <select id="const-building-select" class="input-base" disabled onchange="if(window.ConstManager) window.ConstManager.onBuildingChange()">
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус /
+                            Секция</label>
+                        <select id="const-building-select" class="input-base" disabled
+                            onchange="if(window.ConstManager) window.ConstManager.onBuildingChange()">
                             <option value="">Выберите корпус...</option>
                         </select>
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Этаж</label>
-                        <select id="const-floor-select" class="input-base" disabled onchange="if(window.ConstManager) window.ConstManager.onFloorChange()">
+                        <select id="const-floor-select" class="input-base" disabled
+                            onchange="if(window.ConstManager) window.ConstManager.onFloorChange()">
                             <option value="">Выберите этаж...</option>
                         </select>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Слой (Визуализация)</label>
-                        <select id="const-layer-select" class="input-base" onchange="if(window.ConstManager) window.ConstManager.onLayerChange()">
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Слой
+                            (Визуализация)</label>
+                        <select id="const-layer-select" class="input-base"
+                            onchange="if(window.ConstManager) window.ConstManager.onLayerChange()">
                         </select>
                     </div>
                 </div>
@@ -3425,20 +3478,32 @@
             <div class="flex flex-col gap-3 mb-3 mx-1">
                 <!-- Верхний ряд: Тумблер, Категория, Экспорт -->
                 <div class="flex justify-between items-center w-full">
-                    <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg shadow-inner w-auto shrink-0">
-                        <button onclick="window.ConstManager.switchView('plan')" id="const-btn-view-plan" class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">🗺️ План</button>
-                        <button onclick="window.ConstManager.switchView('list')" id="const-btn-view-list" class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all text-slate-500 dark:text-slate-400">📋 Реестр</button>
+                    <div
+                        class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg shadow-inner w-auto shrink-0">
+                        <button onclick="window.ConstManager.switchView('plan')" id="const-btn-view-plan"
+                            class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">🗺️
+                            План</button>
+                        <button onclick="window.ConstManager.switchView('list')" id="const-btn-view-list"
+                            class="px-4 py-1.5 rounded-md text-[11px] font-black uppercase transition-all text-slate-500 dark:text-slate-400">📋
+                            Реестр</button>
                     </div>
-                    
+
                     <div class="flex gap-2">
-                        <select id="const-filter-category" onchange="window.ConstManager.applyFilters()" class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px] hidden sm:block">
+                        <select id="const-filter-category" onchange="window.ConstManager.applyFilters()"
+                            class="input-base !py-1.5 !text-[10px] font-bold min-w-[100px] hidden sm:block">
                             <option value="ALL">Все категории</option>
                             <option value="B3">Критичные (B3)</option>
                             <option value="B2">Значимые (B2)</option>
                             <option value="B1">Мелкие (B1)</option>
                         </select>
-                        <button onclick="window.ConstManager.exportDefectsToExcel()" class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm whitespace-nowrap shrink-0 flex items-center gap-1">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Excel
+                        <button onclick="window.ConstManager.exportDefectsToExcel()"
+                            class="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-sm whitespace-nowrap shrink-0 flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
+                                </path>
+                            </svg> Excel
                         </button>
                     </div>
                 </div>
@@ -3449,45 +3514,59 @@
                 </div>
             </div>
             <!-- Контейнер для отображения PDF плана -->
-            <div id="const-plan-container" class="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl h-[65vh] flex flex-col items-center justify-center relative overflow-hidden mx-1">
+            <div id="const-plan-container"
+                class="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl h-[65vh] flex flex-col items-center justify-center relative overflow-hidden mx-1">
                 <div class="text-center text-slate-400" id="const-plan-placeholder">
-                    <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7">
+                        </path>
+                    </svg>
                     <div class="text-xs font-bold uppercase tracking-widest">Выберите план для просмотра</div>
                 </div>
-                
+
                 <!-- Сюда JS будет вставлять холст с PDF -->
-                <div id="const-pdf-render-area" class="absolute inset-0 w-full h-full hidden overflow-auto touch-none"></div>
+                <div id="const-pdf-render-area" class="absolute inset-0 w-full h-full hidden overflow-auto touch-none">
+                </div>
             </div>
-             <!-- НОВОЕ: Контейнер для Реестра дефектов (Скрыт по умолчанию) -->
-        <div id="const-list-container" class="hidden mx-1 pb-8 space-y-3">
-            <!-- Сюда JS будет рендерить карточки дефектов -->
-        </div>
+            <!-- НОВОЕ: Контейнер для Реестра дефектов (Скрыт по умолчанию) -->
+            <div id="const-list-container" class="hidden mx-1 pb-8 space-y-3">
+                <!-- Сюда JS будет рендерить карточки дефектов -->
+            </div>
         </div>
         <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ШАХМАТКА (ПОМЕЩЕНИЯ) === -->
         <!-- === ВКЛАДКА: ПЕРЕДАЧА КВАРТИР === -->
         <div id="tab-transfer" class="view-section">
             <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
                 <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Шахматка объекта</h2>
+                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Шахматка
+                        объекта</h2>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
-                        <select id="transfer-object-select" class="input-base" onchange="if(window.TransferManager) window.TransferManager.onObjectChange()">
+                        <label
+                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект</label>
+                        <select id="transfer-object-select" class="input-base"
+                            onchange="if(window.TransferManager) window.TransferManager.onObjectChange()">
                             <option value="">Загрузка объектов...</option>
                         </select>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус / Секция</label>
-                        <select id="transfer-building-select" class="input-base" disabled onchange="if(window.TransferManager) window.TransferManager.onBuildingChange()">
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Корпус /
+                            Секция</label>
+                        <select id="transfer-building-select" class="input-base" disabled
+                            onchange="if(window.TransferManager) window.TransferManager.onBuildingChange()">
                             <option value="">Выберите корпус...</option>
                         </select>
                     </div>
                 </div>
             </div>
-            
+
             <div id="transfer-grid-container" class="mx-1 pb-8">
-                <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Выберите корпус для просмотра шахматки</div>
+                <div
+                    class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                    Выберите корпус для просмотра шахматки</div>
             </div>
         </div>
 
@@ -3495,74 +3574,108 @@
         <div id="tab-construction-acceptance" class="view-section">
             <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
                 <div class="flex justify-between items-center mb-3">
-                    <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                    <h2
+                        class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4">
+                            </path>
+                        </svg>
                         Журнал заявок
                     </h2>
-                    <button onclick="if(window.ConstAcceptance) window.ConstAcceptance.openNewRequestModal()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Предъявить
+                    <button onclick="if(window.ConstAcceptance) window.ConstAcceptance.openNewRequestModal()"
+                        class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg shadow-md active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1 transition-transform">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
+                        </svg> Предъявить
                     </button>
                 </div>
                 <!-- НОВЫЙ ФИЛЬТР ПО ОБЪЕКТУ -->
                 <div class="mb-2">
-                    <select id="acc-global-obj-filter" class="input-base !py-1.5 text-[11px] font-bold bg-[var(--hover-bg)]" onchange="window.ConstAcceptance.renderList()">
+                    <select id="acc-global-obj-filter"
+                        class="input-base !py-1.5 text-[11px] font-bold bg-[var(--hover-bg)]"
+                        onchange="window.ConstAcceptance.renderList()">
                         <option value="ALL">Все объекты</option>
                     </select>
                 </div>
             </div>
-            
+
             <div id="acceptance-list-container" class="mx-1 pb-8">
-                <div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Загрузка данных...</div>
+                <div
+                    class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                    Загрузка данных...</div>
             </div>
         </div>
-   <!-- === РЕЖИМ: ЗАГЛУШКА (ДЛЯ НОВЫХ МОДУЛЕЙ) === -->
+        <!-- === РЕЖИМ: ЗАГЛУШКА (ДЛЯ НОВЫХ МОДУЛЕЙ) === -->
         <div id="tab-mode-placeholder" class="view-section hidden">
             <div class="flex flex-col items-center justify-center py-20 px-4 text-center">
-                <div class="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-3xl flex items-center justify-center text-4xl mb-4 border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                <div
+                    class="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-3xl flex items-center justify-center text-4xl mb-4 border border-indigo-100 dark:border-indigo-800 shadow-sm">
                     🚧
                 </div>
-                <h2 class="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight mb-2">Модуль в разработке</h2>
-                <p id="placeholder-message" class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xs mx-auto mb-6">
+                <h2 class="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight mb-2">Модуль в
+                    разработке</h2>
+                <p id="placeholder-message"
+                    class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xs mx-auto mb-6">
                     Функционал находится на стадии проектирования и станет доступен в ближайших обновлениях.
                 </p>
-                <button onclick="window.revertToPreviousMode()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <button onclick="window.revertToPreviousMode()"
+                    class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
                     Вернуться назад
                 </button>
             </div>
-        </div> 
- </main>
+        </div>
+    </main>
     <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
     <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
     <!-- === НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ (iOS-like) === -->
     <nav id="main-bottom-nav" class="bottom-nav nav-auto ios-panel border-t-0 transition-opacity duration-300">
         <div class="nav-item" data-path="#/quality/audit">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01">
+                </path>
             </svg>
             <span class="nav-text">Осмотр</span>
         </div>
         <div class="nav-item" data-path="#/quality/engineer">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path
+                    d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z">
+                </path>
             </svg>
             <span class="nav-text">Инженер</span>
         </div>
         <div class="nav-item" data-path="#/quality/analytics">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                </path>
             </svg>
             <span class="nav-text">Аналитика</span>
         </div>
         <div class="nav-item" data-path="#/quality/reference">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
+                </path>
             </svg>
             <span class="nav-text">БЗ</span>
         </div>
         <div class="nav-item" data-path="#/quality/settings">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
+                </path>
                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
             </svg>
             <span class="nav-text">Настройки</span>
@@ -3572,9 +3685,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.220',
-            sw: '17.8.220',
-            buildDate: '2026-06-01'
+            app: '17.8.222',
+            sw: '17.8.222',
+            buildDate: '2026-06-02'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -3592,11 +3705,11 @@
     <script src="data/system_nodes.js"></script>
     <script src="data/system_twi.js"></script>
 
-     <!-- === НОВЫЙ МОДУЛЬ СТРОЙКОНТРОЛЯ === -->
+    <!-- === НОВЫЙ МОДУЛЬ СТРОЙКОНТРОЛЯ === -->
     <script src="js/construction/constructionManager.js"></script>
     <script src="js/construction/transferManager.js"></script>
 
-     <!-- === НОВЫЕ МОДУЛИ РОУТИНГА === -->
+    <!-- === НОВЫЕ МОДУЛИ РОУТИНГА === -->
     <script src="js/router.js"></script>
     <script src="js/views.js"></script>
 
@@ -4052,15 +4165,26 @@
     </div>
     <!-- === ФОРМА ДОБАВЛЕНИЯ/ПРОСМОТРА ДЕФЕКТА НА ПЛАНЕ === -->
     <!-- === ФОРМА ДОБАВЛЕНИЯ/ПРОСМОТРА ДЕФЕКТА НА ПЛАНЕ === -->
-    <div id="const-defect-modal" class="fixed inset-0 bg-slate-900/80 z-[10000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm" onclick="window.ConstDefectForm.close()">
-        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
-            
-            <div class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
-                <h3 id="const-defect-modal-title" class="font-black text-[13px] uppercase text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> 
+    <div id="const-defect-modal"
+        class="fixed inset-0 bg-slate-900/80 z-[10000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm"
+        onclick="window.ConstDefectForm.close()">
+        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]"
+            onclick="event.stopPropagation()">
+
+            <div
+                class="p-4 border-b border-[var(--card-border)] bg-[var(--hover-bg)] flex justify-between items-center shrink-0">
+                <h3 id="const-defect-modal-title"
+                    class="font-black text-[13px] uppercase text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                        </path>
+                    </svg>
                     Новое замечание
                 </h3>
-                <button onclick="window.ConstDefectForm.close()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90 font-black">✕</button>
+                <button onclick="window.ConstDefectForm.close()"
+                    class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 shadow-sm border border-slate-200 dark:border-slate-700 active:scale-90 font-black">✕</button>
             </div>
 
             <div class="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
@@ -4070,31 +4194,42 @@
                 <input type="hidden" id="const-defect-item-name">
 
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Вид работ (Чек-лист) *</label>
-                    <select id="const-defect-template" class="input-base text-[12px] font-bold" onchange="window.ConstDefectForm.onTemplateChange(this.value)">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Вид работ
+                        (Чек-лист) *</label>
+                    <select id="const-defect-template" class="input-base text-[12px] font-bold"
+                        onchange="window.ConstDefectForm.onTemplateChange(this.value)">
                         <!-- Список чек-листов загрузится из JS -->
                     </select>
                 </div>
 
                 <div class="relative">
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Нарушение *</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Нарушение
+                        *</label>
                     <!-- Видимое поле для поиска -->
-                    <input type="text" id="const-defect-item-search" class="input-base text-[12px] leading-snug" placeholder="Начните вводить нарушение..." autocomplete="off" oninput="window.ConstDefectForm.handleItemSearch(this.value)" onfocus="window.ConstDefectForm.handleItemSearch(this.value)">
+                    <input type="text" id="const-defect-item-search" class="input-base text-[12px] leading-snug"
+                        placeholder="Начните вводить нарушение..." autocomplete="off"
+                        oninput="window.ConstDefectForm.handleItemSearch(this.value)"
+                        onfocus="window.ConstDefectForm.handleItemSearch(this.value)">
                     <!-- Скрытое поле для ID (чтобы не сломать логику сохранения) -->
                     <input type="hidden" id="const-defect-item">
-                    
+
                     <!-- Выпадающий список с результатами поиска -->
-                    <div id="dd-const-defect-item" class="absolute top-[48px] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-[15000] hidden max-h-48 overflow-y-auto custom-scrollbar"></div>
+                    <div id="dd-const-defect-item"
+                        class="absolute top-[48px] left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl rounded-xl z-[15000] hidden max-h-48 overflow-y-auto custom-scrollbar">
+                    </div>
                 </div>
 
-                <div id="const-defect-norm-block" class="hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl shadow-inner">
+                <div id="const-defect-norm-block"
+                    class="hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5 rounded-xl shadow-inner">
                     <div class="text-[9px] font-black uppercase text-indigo-500 mb-1">Справочно (Норматив)</div>
-                    <div id="const-defect-norm-text" class="text-[10px] text-slate-600 dark:text-slate-400 font-medium"></div>
+                    <div id="const-defect-norm-text" class="text-[10px] text-slate-600 dark:text-slate-400 font-medium">
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Категория</label>
+                        <label
+                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Категория</label>
                         <select id="const-defect-category" class="input-base text-[11px] font-bold">
                             <option value="B1">B1 (Мелкий)</option>
                             <option value="B2" selected>B2 (Значимый)</option>
@@ -4102,38 +4237,55 @@
                         </select>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок устранения</label>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок
+                            устранения</label>
                         <input type="date" id="const-defect-deadline" class="input-base !py-2 text-[11px]">
                     </div>
                 </div>
 
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ответственный подрядчик *</label>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Ответственный
+                        подрядчик *</label>
                     <select id="const-defect-contractor" class="input-base text-[12px] font-bold"></select>
                 </div>
 
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Уточняющее описание</label>
-                    <textarea id="const-defect-desc" class="input-base h-16 resize-none text-[12px]" placeholder="Оси, размеры, детали..."></textarea>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Уточняющее
+                        описание</label>
+                    <textarea id="const-defect-desc" class="input-base h-16 resize-none text-[12px]"
+                        placeholder="Оси, размеры, детали..."></textarea>
                 </div>
                 <!-- НОВОЕ: Блок фото -->
                 <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Фотофиксация</label>
-                    <button id="const-defect-photo-btn" onclick="document.getElementById('const-defect-photo-input').click()" class="w-full bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 py-4 rounded-xl text-[10px] font-bold uppercase active:scale-95 transition-colors flex flex-col items-center justify-center gap-2">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+                    <label
+                        class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-2 block">Фотофиксация</label>
+                    <button id="const-defect-photo-btn"
+                        onclick="document.getElementById('const-defect-photo-input').click()"
+                        class="w-full bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 py-4 rounded-xl text-[10px] font-bold uppercase active:scale-95 transition-colors flex flex-col items-center justify-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z">
+                            </path>
+                        </svg>
                         Прикрепить фото
                     </button>
                     <!-- Скрытый инпут для выбора файла -->
-                    <input type="file" id="const-defect-photo-input" accept="image/*" class="hidden" onchange="window.ConstDefectForm.handlePhotoUpload(event)">
+                    <input type="file" id="const-defect-photo-input" accept="image/*" class="hidden"
+                        onchange="window.ConstDefectForm.handlePhotoUpload(event)">
                     <!-- Контейнер превью -->
-                    <div id="const-defect-photo-preview" class="hidden relative w-full h-40 mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm" data-photo="">
-                        <img id="const-defect-img" src="" class="w-full h-full object-cover cursor-pointer" onclick="window.ConstDefectForm.openDefectPhoto(document.getElementById('const-defect-id').value)">
-                        <button onclick="window.ConstDefectForm.removePhoto()" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
+                    <div id="const-defect-photo-preview"
+                        class="hidden relative w-full h-40 mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm"
+                        data-photo="">
+                        <img id="const-defect-img" src="" class="w-full h-full object-cover cursor-pointer"
+                            onclick="window.ConstDefectForm.openDefectPhoto(document.getElementById('const-defect-id').value)">
+                        <button onclick="window.ConstDefectForm.removePhoto()"
+                            class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
                     </div>
                 </div>
             </div>
 
-            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 flex gap-2 shrink-0" id="const-defect-actions">
+            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/50 flex gap-2 shrink-0"
+                id="const-defect-actions">
                 <!-- Сюда JS вставит кнопки Сохранить или Удалить -->
             </div>
         </div>

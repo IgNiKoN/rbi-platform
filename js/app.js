@@ -127,7 +127,18 @@ let appSettings = {
     taskFmeaDay: '5',         // Пятница
     taskMonthReportDay: '1'   // 1-е число месяца
 };
+const RBI_ALLOWED_THEMES = ['auto', 'light', 'dark', 'rbi-light', 'rbi-dark'];
 
+function rbiGetSavedThemePreference() {
+    const value = localStorage.getItem('rbi_theme_preference');
+    return RBI_ALLOWED_THEMES.includes(value) ? value : null;
+}
+
+function rbiSaveThemePreference(value) {
+    const theme = RBI_ALLOWED_THEMES.includes(value) ? value : 'auto';
+    localStorage.setItem('rbi_theme_preference', theme);
+    return theme;
+}
 // Универсальный помощник для статусов синхронизации
 window.setSyncStatus = function (record, status, reason = '') {
     record.source = status === 'synced' ? 'cloud' : 'local';
@@ -137,6 +148,8 @@ window.setSyncStatus = function (record, status, reason = '') {
     record.sync_block_reason = reason;
     return record;
 };
+
+
 
 // RBI NEW: безопасная подстановка local:// / cloud:// фото в интерфейсе
 window.rbiPhotoPlaceholder = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
@@ -642,11 +655,131 @@ window.loadContractorDirectoryToInspectionInput = async function () {
         console.warn('[Осмотр] Не удалось загрузить справочник подрядчиков:', e);
     }
 };
+
+window.loadObjectDirectoryToInspectionInput = async function () {
+    const input = document.getElementById('inp-project');
+    if (!input) return;
+
+    input.removeAttribute('list');
+
+    try {
+        let objectNames = [];
+
+        // 1. Берём объекты из ObjectDirectory
+        if (
+            typeof ObjectDirectory !== 'undefined' &&
+            Array.isArray(ObjectDirectory.objects) &&
+            ObjectDirectory.objects.length > 0
+        ) {
+            objectNames = ObjectDirectory.objects
+                .filter(o => !o._deleted && !o.is_deleted)
+                .map(o => o.display_name || o.name || o.canonical_key)
+                .filter(Boolean);
+        }
+
+        // 2. Если ObjectDirectory ещё не готов — берём из IndexedDB
+        if (objectNames.length === 0 && typeof dbGetAll !== 'undefined') {
+            const dirs = await dbGetAll('project_objects');
+            if (dirs) {
+                objectNames = dirs
+                    .filter(o => !o._deleted && !o.is_deleted)
+                    .map(o => o.display_name || o.name || o.canonical_key)
+                    .filter(Boolean);
+            }
+        }
+
+        // 3. Добавляем объекты из истории осмотров
+        if (typeof contractorArray !== 'undefined') {
+            const histNames = contractorArray
+                .map(i => i.project_display_name || i.projectName || i.project_canonical_key)
+                .filter(Boolean);
+
+            objectNames = objectNames.concat(histNames);
+        }
+
+        objectNames = [...new Set(objectNames.map(v => String(v).trim()).filter(Boolean))].sort();
+
+        if (!_smartInputMemoryCache) {
+            _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+        }
+
+        _smartInputMemoryCache['projectName'] = objectNames;
+        localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
+
+        initSmartInput('inp-project', 'projectName');
+        if (typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.initUI === 'function') {
+            ObjectDirectory.initUI();
+        }
+
+    } catch (e) {
+        console.warn('[Осмотр] Не удалось загрузить справочник объектов:', e);
+    }
+};
+window.refreshInspectionDirectoriesAfterSync = async function () {
+    try {
+        // Обновляем внутренние справочники из IndexedDB после pull
+        if (window.ContractorDirectory && typeof window.ContractorDirectory.init === 'function') {
+            await window.ContractorDirectory.init();
+        }
+
+        if (window.ObjectDirectory && typeof window.ObjectDirectory.init === 'function') {
+            await window.ObjectDirectory.init();
+        }
+
+        // Пересобираем выпадающие списки в шапке осмотра
+        if (typeof window.loadContractorDirectoryToInspectionInput === 'function') {
+            await window.loadContractorDirectoryToInspectionInput();
+        }
+
+        if (typeof window.loadObjectDirectoryToInspectionInput === 'function') {
+            await window.loadObjectDirectoryToInspectionInput();
+        }
+
+        if (typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.initUI === 'function') {
+            ObjectDirectory.initUI();
+        }
+
+        console.log('[Inspection] Справочники подрядчиков и объектов обновлены после синхронизации');
+
+    } catch (e) {
+        console.warn('[Inspection] Не удалось обновить справочники после синхронизации:', e);
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        if (
+            typeof window.triggerSync === 'function' &&
+            !window.triggerSync.__rbiInspectionRefreshWrapped
+        ) {
+            const originalTriggerSync = window.triggerSync;
+
+            window.triggerSync = async function (...args) {
+                const result = await originalTriggerSync.apply(this, args);
+
+                setTimeout(() => {
+                    if (typeof window.refreshInspectionDirectoriesAfterSync === 'function') {
+                        window.refreshInspectionDirectoriesAfterSync();
+                    }
+                }, 500);
+
+                return result;
+            };
+
+            window.triggerSync.__rbiInspectionRefreshWrapped = true;
+            console.log('[Inspection] triggerSync обёрнут для обновления справочников');
+        }
+    }, 1000);
+});
 // Автоматически подгружаем подрядчиков после запуска приложения
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         if (typeof window.loadContractorDirectoryToInspectionInput === 'function') {
             window.loadContractorDirectoryToInspectionInput();
+        }
+
+        if (typeof window.loadObjectDirectoryToInspectionInput === 'function') {
+            window.loadObjectDirectoryToInspectionInput();
         }
     }, 1500);
 });
@@ -741,7 +874,14 @@ function initSmartInput(inputId, dataField) {
     const input = document.getElementById(inputId);
     if (!input) return;
 
+    // Если уже инициализирован — не навешиваем повторные обработчики
+    if (input.dataset.smartInputReady === '1') return;
+    input.dataset.smartInputReady = '1';
+
     const wrapper = input.parentElement;
+    if (wrapper && getComputedStyle(wrapper).position === 'static') {
+        wrapper.style.position = 'relative';
+    }
     const dropdown = document.createElement('div');
     // ЖЕСТКО ЗАДАЕМ ID ДЛЯ ЗАКРЫТИЯ
     dropdown.id = 'dd_' + inputId;
@@ -749,6 +889,11 @@ function initSmartInput(inputId, dataField) {
     wrapper.appendChild(dropdown);
 
     const renderList = (filter = '') => {
+        if (input.readOnly || input.disabled) {
+            dropdown.classList.add('hidden');
+            return;
+        }
+
         let items = getSmartInputCache(dataField);
         if (filter) items = items.filter(i => String(i).toLowerCase().includes(filter.toLowerCase()));
 
@@ -1048,7 +1193,7 @@ function closeModal() {
 // === ДИНАМИЧЕСКИЕ ОТСТУПЫ ===
 function updateBodyPadding() {
     const headerEl = document.getElementById('main-header');
-    
+
     // Ищем нижнюю панель по новому ID или по классу
     const navEl = document.getElementById('main-bottom-nav') || document.querySelector('.bottom-nav');
 
@@ -1061,7 +1206,7 @@ function updateBodyPadding() {
     const isAcceptance = document.getElementById('tab-construction-acceptance')?.classList.contains('active');
     const isTransfer = document.getElementById('tab-transfer')?.classList.contains('active'); // <-- НОВОЕ
     const isPlaceholder = document.getElementById('tab-mode-placeholder')?.classList.contains('active');
-    
+
     // Шапка нужна на любой из этих вкладок
     const needsHeader = isAuditActive || isDefects || isAcceptance || isTransfer || isPlaceholder;
 
@@ -1073,18 +1218,18 @@ function updateBodyPadding() {
 
     if (needsHeader) {
         if (isNavTop && navEl) totalTop += navEl.offsetHeight;
-        
+
         if (headerEl && headerEl.style.display !== 'none') {
             const wasCollapsed = headerEl.classList.contains('header-collapsed');
             // Временно убираем класс, чтобы браузер мог посчитать реальную высоту
             if (wasCollapsed) headerEl.classList.remove('header-collapsed');
-            
+
             // Если мы в режиме стройконтроля, высота шапки будет меньше
             totalTop += headerEl.offsetHeight;
-            
+
             if (wasCollapsed) headerEl.classList.add('header-collapsed');
         }
-        
+
         document.body.style.paddingTop = `${totalTop + 15}px`;
         if (mainEl) mainEl.classList.add('pt-4'); // Для красоты внутри Осмотра/Дефектов
     } else {
@@ -1113,7 +1258,7 @@ function switchTab(tabId, navElement = null) {
         'tab-reference': '#/quality/reference',
         'tab-settings': '#/quality/settings'
     };
-    
+
     if (routeMap[tabId]) {
         AppRouter.navigate(routeMap[tabId]);
     }
@@ -1231,14 +1376,37 @@ async function loadSettings() {
     try {
         const data = await dbGet(STORES.SETTINGS, 'user_prefs');
         if (data) appSettings = { ...appSettings, ...data };
-    } catch (e) { console.error("Ошибка загрузки настроек", e); }
+
+        // Тема — локальная UI-настройка. Держим её отдельно, чтобы не было рассинхрона после кэша/синхры.
+        const savedTheme = rbiGetSavedThemePreference();
+
+        if (savedTheme) {
+            appSettings.theme = savedTheme;
+        } else if (!RBI_ALLOWED_THEMES.includes(appSettings.theme)) {
+            appSettings.theme = 'auto';
+            rbiSaveThemePreference('auto');
+        }
+
+    } catch (e) {
+        console.error("Ошибка загрузки настроек", e);
+        appSettings.theme = rbiGetSavedThemePreference() || 'auto';
+    }
 }
 
 async function saveSettings(key, value) {
+    if (key === 'theme') {
+        value = rbiSaveThemePreference(value);
+    }
+
     appSettings[key] = value;
+
     applySettingsToUI();
-    try { await dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings }); }
-    catch (e) { console.error("Ошибка сохранения настроек", e); }
+
+    try {
+        await dbPut(STORES.SETTINGS, { key: 'user_prefs', ...appSettings });
+    } catch (e) {
+        console.error("Ошибка сохранения настроек", e);
+    }
 }
 
 function renderSettingsTab() {
@@ -1420,7 +1588,8 @@ function resetSettingsToDefault() {
         autoBackupEnabled: false, autoBackupDay: '5', autoBackupShare: false, autoManagerEnabled: false, autoManagerDay: '5',
         brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'
     };
-
+    rbiSaveThemePreference('auto');
+    appSettings.theme = 'auto';
     // 2. Сохраняем в базу
     saveSettings('dummy', 'dummy');
 
@@ -1441,20 +1610,41 @@ function resetSettingsToDefault() {
 }
 
 function applySettingsToUI() {
-    let isDark = false;
-    if (appSettings.theme === 'dark') isDark = true;
-    else if (appSettings.theme === 'auto') {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) isDark = true;
+    let theme = appSettings.theme || 'auto';
+
+    if (theme === 'auto') {
+        const prefersDark =
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        theme = prefersDark ? 'dark' : 'light';
     }
 
-    if (isDark) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+    if (!['light', 'dark', 'rbi-light', 'rbi-dark'].includes(theme)) {
+        theme = 'light';
+    }
+
+    document.documentElement.setAttribute('data-theme', theme);
+
+    document.documentElement.classList.remove(
+        'light',
+        'dark',
+        'rbi-light',
+        'rbi-dark'
+    );
+
+    document.documentElement.classList.add(theme);
+
+    /*
+      Tailwind dark: классы работают только от класса dark.
+      Поэтому для rbi-dark тоже добавляем dark.
+    */
+    if (theme === 'dark' || theme === 'rbi-dark') {
         document.documentElement.classList.add('dark');
         document.documentElement.classList.remove('light');
     } else {
-        document.documentElement.setAttribute('data-theme', 'light');
-        document.documentElement.classList.remove('dark');
         document.documentElement.classList.add('light');
+        document.documentElement.classList.remove('dark');
     }
 
     if (appSettings.fastMode) document.body.classList.add('fast-mode');
@@ -1501,6 +1691,12 @@ function applySettingsToUI() {
     if (typeof RbiRoles !== 'undefined') RbiRoles.applyUIConstraints();
     // ДОБАВЛЕНО: Инициализируем выпадающий список объектов
     if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
+
+    // ВАЖНО: селект показывает именно выбранную настройку, а не вычисленную light/dark тему
+    const themeSelect = document.getElementById('set-theme');
+    if (themeSelect && themeSelect.value !== (appSettings.theme || 'auto')) {
+        themeSelect.value = appSettings.theme || 'auto';
+    }
 
 }
 
@@ -1896,7 +2092,7 @@ async function openTwiViewer(twiId) {
             card.pdfSize || ''
         );
         return;
-        
+
         badgeEl.innerText = 'PDF-Файл';
         badgeEl.className = 'bg-red-500 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm';
         infoPanel.classList.add('hidden');
@@ -3334,10 +3530,10 @@ async function saveProductToArray() {
             contractor_canonical_key: '',
             contractor_normalization_status: 'pending'
         };
-        // --- НОВОЕ: ОПРЕДЕЛЯЕМ РЕЖИМ РАБОТЫ (АУДИТ ИЛИ СТРОЙКОНТРОЛЬ) ---
+    // --- НОВОЕ: ОПРЕДЕЛЯЕМ РЕЖИМ РАБОТЫ (АУДИТ ИЛИ СТРОЙКОНТРОЛЬ) ---
     const isConstructionMode = (window.AppModeManager && window.AppModeManager.currentMode === 'construction') || window.activeAcceptanceRequestId;
     const inspType = isConstructionMode ? 'sk_acceptance' : 'rbi_audit';
-    
+
     // Если это Стройконтроль, сразу блокируем синхронизацию этой записи, чтобы не сломать Supabase
     const initialSyncStatus = isConstructionMode ? 'blocked' : 'not_synced';
     const initialSyncReason = isConstructionMode ? 'Модуль СК временно отключен от облака' : '';
@@ -3376,7 +3572,7 @@ async function saveProductToArray() {
         metrics: finalMetrics,
 
         inspection_type: inspType, // <-- НОВОЕ: Метка типа проверки (Аудит или Приемка)
-        
+
         // Двухконтурная модель данных.
         source: 'local',
         syncStatus: initialSyncStatus,     // <-- ИСПОЛЬЗУЕМ УМНЫЙ СТАТУС
@@ -3394,7 +3590,7 @@ async function saveProductToArray() {
     // === АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ДЕФЕКТОВ В РЕЕСТР СТРОЙКОНТРОЛЯ ===
     if (isConstructionMode && typeof window.ConstManager !== 'undefined') {
         let defectsCreated = 0;
-        
+
         // Срок по умолчанию: +14 дней
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + 14);
@@ -3404,7 +3600,7 @@ async function saveProductToArray() {
         for (let itemId in mergedState) {
             const stateVal = mergedState[itemId];
             if (stateVal === 'fail' || stateVal === 'fail_escalated') {
-                
+
                 // Достаем инфу о пункте из шаблона
                 const flatList = getFlatList(currentChecklist);
                 const itemInfo = flatList.find(x => String(x.id) === String(itemId));
@@ -3414,7 +3610,7 @@ async function saveProductToArray() {
                 let cleanNorm = itemInfo.t ? itemInfo.t.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ") : "";
                 let desc = `Нарушение: ${itemInfo.n}.`;
                 if (cleanNorm && cleanNorm !== 'Без норматива') desc += ` Требования: ${cleanNorm}`;
-                
+
                 if (mergedDetails[itemId] && mergedDetails[itemId].comment) {
                     desc += `\nУточнение инженера: ${mergedDetails[itemId].comment}`;
                 }
@@ -3425,7 +3621,7 @@ async function saveProductToArray() {
                 else if (itemInfo.w === 1) category = 'B1';
 
                 const newDefectId = 'def_auto_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
-                
+
                 // Переносим фото, если оно было
                 let defectPhoto = mergedPhotos[itemId] || null;
                 if (defectPhoto && window.photos) {
@@ -3452,7 +3648,7 @@ async function saveProductToArray() {
                     updated_at: new Date().toISOString(),
                     created_by: inspInput.value.trim() || 'Инженер',
                     // Доп. поле для понимания, где это было найдено
-                    locationDesc: locHidden.value.trim() 
+                    locationDesc: locHidden.value.trim()
                 };
 
                 window.ConstManager.defects.push(newDefect);
@@ -3462,7 +3658,7 @@ async function saveProductToArray() {
                 defectsCreated++;
             }
         }
-        
+
         if (defectsCreated > 0) {
             setTimeout(() => {
                 showToast(`🏗️ В реестр Стройконтроля автоматически добавлено ${defectsCreated} дефектов!`);
@@ -3524,7 +3720,7 @@ async function saveProductToArray() {
             }
             // Обновляем заявку в базе
             if (typeof dbPut === 'function') dbPut(STORES.CONST_ACCEPTANCE, req);
-            
+
             // Если вкладка приемки была отрендерена, обновляем её тихо
             if (window.ConstAcceptance.renderList) window.ConstAcceptance.renderList();
         }
@@ -4260,17 +4456,17 @@ async function saveEditedPhoto() {
     editorCtx.fillText(timestamp, 25, h - 20);
 
     let photoRef = editorCanvas.toDataURL('image/jpeg', 0.85);
-    
+
     // НОВОЕ: Если фото сделано Подрядчиком при устранении дефекта
     if (photoContext === 'defect_fix') {
         photoRef = await window.ensureLocalPhotoRef(photoRef, 'const_fix', {
             entityType: 'construction_defect_history',
             entityId: window.currentDefectFixId
         });
-        
+
         showToast("📸 Фото устранения прикреплено!");
         cancelPhotoEditor();
-        
+
         // Запускаем завершение смены статуса
         const userName = window.syncConfig?.engineerName || 'Подрядчик';
         const defect = window.ConstManager.defects.find(d => d.id === window.currentDefectFixId);
@@ -11758,7 +11954,7 @@ window.AppModeManager = {
         // Загружаем сохраненный режим или ставим quality по умолчанию
         const savedMode = localStorage.getItem('rbi_app_mode');
         this.currentMode = savedMode || 'quality';
-        
+
         // Синхронизируем выпадающий список в шапке
         const selector = document.getElementById('app-mode-selector');
         const label = document.getElementById('current-mode-label');
@@ -11774,7 +11970,7 @@ window.AppModeManager = {
 
     changeMode(newMode) {
         if (this.currentMode === newMode) return;
-        
+
         this.previousMode = this.currentMode;
         this.currentMode = newMode;
         localStorage.setItem('rbi_app_mode', newMode);
@@ -11914,18 +12110,18 @@ window.AppModeManager = {
         }
 
         nav.innerHTML = html;
-        
+
         // Восстанавливаем подсветку активного пункта меню
         if (window.AppRouter) window.AppRouter.updateNavHighlight(window.location.hash);
     }
 };
 
 // Глобальные прокси-функции для вызова из HTML
-window.changeAppMode = function(mode) {
+window.changeAppMode = function (mode) {
     AppModeManager.changeMode(mode);
 };
 
-window.revertToPreviousMode = function() {
+window.revertToPreviousMode = function () {
     AppModeManager.revertToPrevious();
 };
 
@@ -11933,7 +12129,7 @@ window.revertToPreviousMode = function() {
 // === МОДУЛЬ PUSH-УВЕДОМЛЕНИЙ (ТУМБЛЕР) ===
 // ============================================================================
 
-window.togglePushSettings = async function(element) {
+window.togglePushSettings = async function (element) {
     const isChecked = element.checked;
 
     if (isChecked) {
@@ -11946,7 +12142,7 @@ window.togglePushSettings = async function(element) {
 
         // Запрашиваем разрешение у системы
         const permission = await Notification.requestPermission();
-        
+
         if (permission === 'granted') {
             showToast("✅ Уведомления включены!");
             // Сохраняем в настройки
@@ -11979,7 +12175,7 @@ window.togglePushSettings = async function(element) {
 };
 
 // Функция для установки тумблера в правильное положение при загрузке страницы
-window.initPushToggleState = function() {
+window.initPushToggleState = function () {
     const toggle = document.getElementById('set-push-notifications');
     if (!toggle) return;
 

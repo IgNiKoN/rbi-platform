@@ -289,109 +289,113 @@ window.ObjectDirectory = {
     },
 
     initUI() {
-        const projectEl = document.getElementById('inp-project');
-        const projInputContainer = projectEl?.parentElement;
+        const projectInput = document.getElementById('inp-project');
+        if (!projectInput) return;
 
-        if (!projInputContainer) return;
+        const wrapper = projectInput.parentElement;
+        if (wrapper && getComputedStyle(wrapper).position === 'static') {
+            wrapper.style.position = 'relative';
+        }
 
         const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-        const isManagerRole = ['director', 'project_manager', 'deputy_manager', 'manager'].includes(currentRole);
-        const currentValue = projectEl ? (projectEl.dataset.displayName || projectEl.value || '') : '';
+        const isManagerRole = ['director', 'deputy_manager', 'manager'].includes(currentRole);
 
-        // 1. Определяем, какой список объектов показывать
         let availableObjects = [];
+
         if (isManagerRole) {
-            // Руководство видит ВСЕ объекты из справочника
-            availableObjects = this.objects || [];
+            availableObjects = Array.isArray(this.objects)
+                ? this.objects.filter(o => !o._deleted && !o.is_deleted)
+                : [];
         } else {
-            // Инженер видит ТОЛЬКО закрепленные
-            availableObjects = this.getAssignedProjectObjects();
+            availableObjects = this.getAssignedProjectObjects()
+                .filter(o => o && (o.display_name || o.canonical_key));
         }
 
-        // 2. Если список пуст (справочник пуст или инженеру ничего не назначили)
-        if (availableObjects.length === 0) {
-            projInputContainer.innerHTML = `
-                <input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="${isManagerRole ? 'Впишите объект...' : 'Впишите объект для доступа...'}" autocomplete="off" value="${currentValue}">
-                <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
-                </span>
-                ${!isManagerRole ? `<span class="absolute right-2 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" title="Введите объект и сохраните акт для отправки заявки"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></span>` : ''}
-            `;
-            if (typeof initSmartInput === 'function') initSmartInput('inp-project', 'projectName');
-            return;
+        const objectNames = [...new Set(
+            availableObjects
+                .map(o => String(o.display_name || o.name || o.canonical_key || '').trim())
+                .filter(Boolean)
+        )].sort();
+
+        if (typeof _smartInputMemoryCache !== 'undefined') {
+            if (!_smartInputMemoryCache) {
+                _smartInputMemoryCache = JSON.parse(localStorage.getItem('smart_input_cache') || '{}');
+            }
+
+            _smartInputMemoryCache['projectName'] = objectNames;
+            localStorage.setItem('smart_input_cache', JSON.stringify(_smartInputMemoryCache));
         }
 
-        // 3. Если объекты есть - Создаем умный выпадающий список
-        let displayValue = currentValue;
-        const matched = availableObjects.find(obj => obj.canonical_key === currentValue || obj.display_name === currentValue);
-        if (matched) displayValue = matched.display_name;
-        // Автовыбор, если объект ровно один (например, у инженера)
-        if (availableObjects.length === 1) displayValue = availableObjects[0].display_name;
+        // Убираем всё, что делает объект похожим на select/datalist
+        projectInput.removeAttribute('list');
+        projectInput.style.backgroundImage = 'none';
 
-        // Генерируем опции списка
-        const optionsHtml = availableObjects.map(obj => {
-            return `
-            <div class="dd-obj-item p-3 text-[12px] font-bold border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors text-slate-800 dark:text-slate-200"
-                onmousedown="
-                    const inp = document.getElementById('inp-project');
-                    inp.value = '${obj.display_name.replace(/'/g, "\\'")}';
-                    inp.dataset.displayName = '${obj.display_name.replace(/'/g, "\\'")}';
-                    inp.dataset.canonicalKey = '${obj.canonical_key}';
-                    document.getElementById('dd_inp-project-custom').classList.add('hidden');
-                    if(typeof updateLocationFromStructured === 'function') updateLocationFromStructured();
-                    if(typeof updateDataSummary === 'function') updateDataSummary();
-                ">
-                ${obj.display_name}
-            </div>`;
-        }).join('');
+        projectInput.className = 'input-base text-center transition-colors';
 
-        // Формируем чистый HTML инпута с поиском и выпадающим списком
-        const selectHtml = `
-            <input type="text" id="inp-project" 
-                class="input-base text-center pr-7 transition-colors cursor-pointer font-bold text-indigo-700 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800" 
-                placeholder="Выберите объект..." autocomplete="off" value="${displayValue}" ${availableObjects.length === 1 ? 'readonly' : ''}
-                data-display-name="${displayValue}"
-                data-canonical-key="${matched ? matched.canonical_key : ''}"
-                onmousedown="if(this.readOnly) return; document.getElementById('dd_inp-project-custom').classList.remove('hidden');"
-                oninput="
-                    const val = this.value.toLowerCase();
-                    const items = document.getElementById('dd_inp-project-custom').querySelectorAll('.dd-obj-item');
-                    items.forEach(el => {
-                        el.style.display = el.innerText.toLowerCase().includes(val) ? 'block' : 'none';
-                    });
-                ">
-            <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
-            </span>
-            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 pointer-events-none">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
-            </span>
-            <div id="dd_inp-project-custom" class="absolute top-full left-0 right-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl rounded-xl mt-1 z-[5000] hidden max-h-48 overflow-y-auto custom-scrollbar text-left">
-                ${optionsHtml}
-            </div>
-        `;
+        // Удаляем старый отдельный dropdown объекта, если он был создан прежней логикой
+        const oldCustomDropdown = document.getElementById('dd_inp-project-custom');
+        if (oldCustomDropdown) oldCustomDropdown.remove();
 
-        projInputContainer.innerHTML = selectHtml;
+        // Удаляем старую стрелку, если она была создана прежней логикой
+        if (wrapper) {
+            wrapper.querySelectorAll('[data-project-arrow="1"]').forEach(el => el.remove());
+        }
 
-        // Если объект только один (и мы его уже выбрали), визуально "гасим" инпут
-        if (availableObjects.length === 1) {
-            const newInp = document.getElementById('inp-project');
-            if (newInp) {
-                newInp.classList.add('opacity-80');
-                newInp.dataset.canonicalKey = availableObjects[0].canonical_key;
-                newInp.dataset.displayName = availableObjects[0].display_name;
+        const lockIcon = document.getElementById('lock-inp-project');
+
+        const shouldLock = !isManagerRole && availableObjects.length === 1;
+
+        if (shouldLock) {
+            const onlyObj = availableObjects[0];
+            const displayName = onlyObj.display_name || onlyObj.name || onlyObj.canonical_key || '';
+
+            projectInput.value = displayName;
+            projectInput.dataset.displayName = displayName;
+            projectInput.dataset.canonicalKey = onlyObj.canonical_key || displayName;
+
+            projectInput.setAttribute('readonly', 'true');
+
+            projectInput.className =
+                'input-base text-center transition-colors bg-indigo-600 text-white border-indigo-400 font-black cursor-default pr-8 project-locked';
+
+            if (lockIcon) {
+                lockIcon.classList.remove('hidden');
+                lockIcon.classList.add('project-lock-visible');
+            }
+        } else {
+            projectInput.removeAttribute('readonly');
+            projectInput.className = 'input-base text-center transition-colors';
+
+            if (lockIcon) {
+                lockIcon.classList.add('hidden');
+                lockIcon.classList.remove('project-lock-visible');
+            }
+
+            // Если текущее значение не входит в доступные объекты, не стираем его:
+            // пользователь мог вводить объект вручную до синхронизации.
+            const currentValue = String(projectInput.value || '').trim();
+            const matched = availableObjects.find(o =>
+                o.display_name === currentValue ||
+                o.canonical_key === currentValue
+            );
+
+            if (matched) {
+                projectInput.dataset.displayName = matched.display_name || currentValue;
+                projectInput.dataset.canonicalKey = matched.canonical_key || '';
             }
         }
 
-        // Глобальный слушатель клика, чтобы меню закрывалось, если кликнуть мимо
-        if (!window._ddProjectListenerAdded) {
-            document.addEventListener('mousedown', function _closeDd(e) {
-                const dd = document.getElementById('dd_inp-project-custom');
-                if (dd && !dd.classList.contains('hidden') && !e.target.closest('#dd_inp-project-custom') && e.target.id !== 'inp-project') {
-                    dd.classList.add('hidden');
-                }
-            });
-            window._ddProjectListenerAdded = true;
+        // Подключаем тот же кастомный dropdown, что и у подрядчика
+        if (typeof initSmartInput === 'function') {
+            initSmartInput('inp-project', 'projectName');
+        }
+
+        if (typeof updateLocationFromStructured === 'function') {
+            updateLocationFromStructured();
+        }
+
+        if (typeof updateDataSummary === 'function') {
+            updateDataSummary();
         }
     },
 
@@ -1000,7 +1004,7 @@ window.ObjectDirectory = {
             const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
             if (objIndex > -1) {
                 if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
-                
+
                 let addedCount = 0;
                 for (let syn of aiSynonyms) {
                     if (!this.aliases[syn]) {
@@ -1008,9 +1012,9 @@ window.ObjectDirectory = {
                         this.objects[objIndex].synonyms.push(syn);
 
                         // Сохраняем локально
-                        const newAlias = { id: 'alias_' + Date.now().toString(36) + Math.random().toString(36).substring(2,5), raw_name: syn, canonical_key: canonicalKey, project_code: pCode };
+                        const newAlias = { id: 'alias_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5), raw_name: syn, canonical_key: canonicalKey, project_code: pCode };
                         if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
-                        
+
                         // Сохраняем в облако
                         if (window.supabaseClient) {
                             await window.supabaseClient.from('object_aliases').upsert({
