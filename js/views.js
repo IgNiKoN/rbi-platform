@@ -93,6 +93,7 @@ window.AppViews = {
 
     renderSettings() {
         switchViewNode('tab-settings', false); // ТУТ FALSE
+        if (typeof renderSettingsTab === 'function') renderSettingsTab(); // <-- ВСТАВКА: Отрисовка данных из памяти
         if (typeof updateStorageInfo === 'function') updateStorageInfo();
         if (typeof updateFabButton === 'function') updateFabButton('tab-settings');
     },

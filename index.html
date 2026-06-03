@@ -491,9 +491,10 @@
                 Детали дефекта
             </div>
             <div class="mb-4">
-                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1.5 block">Причина дефекта
-                    (Справочник)</label>
-                <select id="modal-cause-select" class="input-base w-full" onchange="generateAiHintForDefect()"></select>
+                <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1.5 block">Причины дефекта
+                    (Можно выбрать несколько)</label>
+                <!-- ВСТАВКА: Контейнер для чекбоксов вместо селекта -->
+                <div id="modal-cause-checkboxes" class="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto custom-scrollbar p-2 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl" onchange="generateAiHintForDefect()"></div>
                 <!-- Сюда будет падать ответ нейросети -->
                 <div id="ai-hint-block"
                     class="mt-2 text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-2 hidden shadow-inner leading-snug">
@@ -1107,6 +1108,7 @@
             </div>
 
             <!-- Подвкладка: ЗАДАЧИ -->
+             
             <div id="eng-sub-tasks" class="eng-sub-section mx-1 mt-2">
                 <div
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
@@ -1570,6 +1572,15 @@
 
                 <!-- ВЬЮХА 2: АРХИВ ОТЧЕТОВ -->
                 <div id="history-reports-view" class="hidden">
+                    <!-- ВСТАВКА: Панель массового удаления отчетов -->
+                    <div id="hist-reports-actions-row" class="flex justify-between items-center px-1 pb-3 mb-3 border-b border-[var(--card-border)]">
+                        <label class="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 cursor-pointer">
+                            <input type="checkbox" id="reports-select-all" class="w-4 h-4 accent-indigo-600 rounded" onchange="window.toggleAllReports(this)"> Выбрать всё
+                        </label>
+                        <button onclick="window.deleteSelectedReports()" class="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg active:scale-90 flex items-center gap-1 text-[10px] font-black uppercase border border-red-200 shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить выбранные
+                        </button>
+                    </div>
                     <div id="reports-list" class="pb-8"></div>
                 </div>
             </div>
@@ -2384,8 +2395,7 @@
                         </svg>
                     </button>
                     <button onclick="resetSettingsToDefault()"
-                        class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg uppercase tracking-widest border border-red-100 dark:border-red-800/50 shadow-sm active:scale-95 transition-colors">Сбросить
-                        всё</button>
+                        class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg uppercase tracking-widest border border-red-100 dark:border-red-800/50 shadow-sm active:scale-95 transition-colors">По умолчанию</button>
                 </div>
             </div>
 
@@ -2473,12 +2483,13 @@
                                     </label>
                                     <div id="corporate-pwd-field"
                                         class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
-                                        <label
-                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Пароль
-                                            доступа к ИИ</label>
-                                        <input type="password" id="set-ai-corp-pwd"
-                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
-                                            placeholder="Введите пароль..." onchange="toggleSetting('aiCorpPwd', this)">
+                                        <form onsubmit="event.preventDefault();">
+                                            <!-- ВСТАВКА: Скрытый логин -->
+                                            <input type="text" autocomplete="username" style="display:none;" value="admin">
+                                            
+                                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Пароль доступа к ИИ</label>
+                                            <input type="password" id="set-ai-corp-pwd" autocomplete="new-password" class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900" placeholder="Введите пароль..." onchange="toggleSetting('aiCorpPwd', this)">
+                                        </form>
                                     </div>
 
                                     <!-- Режим 3: Личный ключ -->
@@ -2497,16 +2508,17 @@
                                             </svg> Мой персональный API-ключ
                                         </span>
                                     </label>
+                                    
                                     <div id="personal-key-field"
                                         class="hidden bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner ml-6">
-                                        <label
-                                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">API-ключ
-                                            DeepSeek</label>
-                                        <input type="password" id="set-ai-key"
-                                            class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900"
-                                            placeholder="sk-..." onchange="toggleSetting('apiKey', this)">
-                                        <div class="text-[8px] text-slate-400 mt-1.5 leading-snug">Сохраняется только на
-                                            вашем устройстве.</div>
+                                        <form onsubmit="event.preventDefault();">
+                                            <!-- ВСТАВКА: Скрытый логин -->
+                                            <input type="text" autocomplete="username" style="display:none;" value="admin">
+                                            
+                                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">API-ключ DeepSeek</label>
+                                            <input type="password" id="set-ai-key" autocomplete="new-password" class="input-base font-mono text-[10px] bg-slate-50 dark:bg-slate-900" placeholder="sk-..." onchange="toggleSetting('apiKey', this)">
+                                            <div class="text-[8px] text-slate-400 mt-1.5 leading-snug">Сохраняется только на вашем устройстве.</div>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -3214,7 +3226,16 @@
                     </div>
                 </details>
 
-                
+                 <!-- ИСТОРИЯ ИЗМЕНЕНИЙ (CHANGELOG) -->
+                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex justify-between items-center mb-3">
+                    <div>
+                        <div class="font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight">История обновлений</div>
+                        <div class="text-[10px] text-[var(--text-muted)] mt-1">Что нового в версиях (Changelog)</div>
+                    </div>
+                    <button onclick="rbi_openChangelogModal()" class="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-transform shadow-sm">
+                        Читать
+                    </button>
+                </div>
 
                 <!-- САМООБУЧЕНИЕ СИСТЕМЫ (AI) -->
                 <details id="ai-optimizer-settings"
@@ -3682,12 +3703,77 @@
         </div>
     </nav>
 
+    <!-- === МОДАЛКА ИСТОРИИ ИЗМЕНЕНИЙ (CHANGELOG) === -->
+    <div id="changelog-modal-overlay" class="fixed inset-0 bg-slate-900/70 z-[8000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0" onclick="rbi_closeChangelogModal()">
+        <div class="bg-[var(--bg-main)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform transform translate-y-full flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50" onclick="event.stopPropagation()">
+            
+            <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-t-3xl sm:rounded-t-2xl z-10">
+                <div class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    История обновлений
+                </div>
+                <button onclick="rbi_closeChangelogModal()" class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">✕</button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50" id="changelog-list-container">
+                <!-- Сюда JS загрузит список версий -->
+            </div>
+            
+        </div>
+    </div>
+    <!-- === ПОЛНОЦЕННЫЙ КАЛЕНДАРЬ ЗАДАЧ === -->
+    <div id="task-calendar-modal" class="fixed inset-0 bg-slate-900/90 z-[9000] hidden flex-col transition-opacity duration-300 opacity-0" onclick="rbi_closeCalendarModal()">
+        <div class="bg-[var(--bg-main)] w-full h-full max-w-3xl mx-auto flex flex-col shadow-2xl overflow-hidden relative" onclick="event.stopPropagation()">
+            
+            <!-- Шапка календаря -->
+            <div class="bg-indigo-600 text-white p-4 flex justify-between items-center shadow-md z-10 shrink-0">
+                <div class="font-black text-[14px] uppercase tracking-widest flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Календарь задач
+                </div>
+                <button onclick="rbi_closeCalendarModal()" class="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center font-black active:scale-90 border border-indigo-400">✕</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-900">
+                <!-- Управление месяцами и сетка -->
+                <div class="bg-white dark:bg-slate-800 p-4 border-b border-slate-200 dark:border-slate-700 shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <button onclick="rbi_changeCalendarMonth(-1)" class="w-10 h-10 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center font-black text-slate-600 dark:text-slate-300 active:scale-90">←</button>
+                        <div id="calendar-month-label" class="font-black text-[16px] text-slate-800 dark:text-white uppercase tracking-widest">Май 2024</div>
+                        <button onclick="rbi_changeCalendarMonth(1)" class="w-10 h-10 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center font-black text-slate-600 dark:text-slate-300 active:scale-90">→</button>
+                    </div>
+                    
+                    <!-- Дни недели -->
+                    <div class="grid grid-cols-7 gap-1 text-center mb-2">
+                        <div class="text-[10px] font-black text-slate-400 uppercase">Пн</div><div class="text-[10px] font-black text-slate-400 uppercase">Вт</div><div class="text-[10px] font-black text-slate-400 uppercase">Ср</div><div class="text-[10px] font-black text-slate-400 uppercase">Чт</div><div class="text-[10px] font-black text-slate-400 uppercase">Пт</div><div class="text-[10px] font-black text-red-400 uppercase">Сб</div><div class="text-[10px] font-black text-red-400 uppercase">Вс</div>
+                    </div>
+                    <!-- Сетка дат -->
+                    <div id="calendar-grid" class="grid grid-cols-7 gap-1 sm:gap-2">
+                        <!-- Генерируется JS -->
+                    </div>
+                </div>
+
+                <!-- Список задач под календарем -->
+                <div class="p-4">
+                    <div id="calendar-selected-date-label" class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 mb-3 tracking-widest border-b border-slate-200 dark:border-slate-700 pb-2">Выберите дату</div>
+                    <div id="calendar-tasks-list" class="space-y-3">
+                        <div class="text-center py-6 text-slate-400 text-[11px] font-bold uppercase border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800">Кликните на число в календаре</div>
+                    </div>
+                    
+                    <!-- Задачи без даты -->
+                    <div class="text-[12px] font-black uppercase text-slate-500 mb-3 tracking-widest border-b border-slate-200 dark:border-slate-700 pb-2 mt-8">Задачи без дедлайна</div>
+                    <div id="calendar-nodate-list" class="space-y-3 pb-8">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.8.222',
-            sw: '17.8.222',
-            buildDate: '2026-06-02'
+            app: '17.9.0',
+            sw: '17.9.0',
+            buildDate: '2026-06-03'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -3726,6 +3812,7 @@
     <script src="js/export.js"></script>
     <script src="js/game.js"></script>
     <script src="js/sk.js"></script>
+    <script src="js/changelog.js"></script>
 
     <!-- Скрипт для модалок зума фото (Pinch-to-zoom + Pan + Double Tap) -->
     <script>
@@ -4710,7 +4797,7 @@
                     <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                         stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
-                    </svg> Новая задача
+                    </svg> Новое поручение
                 </div>
                 <button onclick="rbi_closeTaskModal()"
                     class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
@@ -4718,39 +4805,33 @@
 
             <div class="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название задачи
-                        *</label>
-                    <input type="text" id="manual-task-title" class="input-base"
-                        placeholder="Напр: Провести воркшоп...">
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Название задачи *</label>
+                    <input type="text" id="manual-task-title" class="input-base" placeholder="Краткая суть...">
                 </div>
                 <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Тип
-                        (Категория)</label>
-                    <select id="manual-task-type" class="input-base">
-                        <option value="control">Контрольная (Проверка)</option>
-                        <option value="method">Методическая (Инструкции, FMEA)</option>
-                        <option value="meeting">Коммуникационная (Совещание)</option>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Описание (Подробно)</label>
+                    <textarea id="manual-task-prompt" class="input-base h-16 resize-none text-[12px]" placeholder="Что именно нужно сделать..."></textarea>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Категория (Где отображать)</label>
+                    <select id="manual-task-urgency" class="input-base font-bold">
+                        <option value="planned">Плановые (На эту неделю)</option>
+                        <option value="future">Будущие (Отложенные)</option>
                     </select>
                 </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик (Из
-                        истории)</label>
-                    <select id="manual-task-contractor" class="input-base"></select>
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок
-                        (Дедлайн)</label>
-                    <input type="date" id="manual-task-date" class="input-base !py-2 text-[12px]">
-                </div>
-                <div>
-                    <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Исполнитель (Кому
-                        назначить)</label>
-                    <select id="manual-task-engineer"
-                        class="input-base font-bold text-slate-800 dark:text-white bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"></select>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Срок (Дедлайн)</label>
+                        <input type="date" id="manual-task-date" class="input-base !py-2 text-[12px]">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Исполнитель</label>
+                        <select id="manual-task-engineer" class="input-base font-bold text-slate-800 dark:text-white bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"></select>
+                    </div>
                 </div>
                 <button onclick="rbi_saveManualTask()"
                     class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-2 mt-2">
-                    Добавить в план
+                    Создать поручение
                 </button>
             </div>
         </div>

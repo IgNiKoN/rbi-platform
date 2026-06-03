@@ -399,6 +399,10 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
         });
         domObserver.observe(document.body, { childList: true, subtree: true });
+        // <-- ВСТАВКА: Принудительно отрисовываем тумблеры после загрузки всех данных
+        setTimeout(() => {
+            if (typeof renderSettingsTab === 'function') renderSettingsTab();
+        }, 500);
     } catch (error) { console.error("Ошибка при загрузке:", error); }
 });
 
@@ -2488,23 +2492,20 @@ async function deleteSelectedHistory() {
     if (!confirm(`Удалить выбранные проверки (${ids.length} шт)?`)) return;
 
     // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
-    // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление)
+    // НОВАЯ ЛОГИКА: Soft Delete (Мягкое удаление с правильными флагами для облака)
     for (let id of ids) {
-        // Сравниваем строго как строки
         let item = contractorArray.find(i => String(i.id) === String(id));
         if (item) {
             item._deleted = true;
+            item.is_deleted = true; // <-- КРИТИЧЕСКИ ВАЖНО ДЛЯ ОБЛАКА
             item._deletedAt = new Date().toISOString();
             item.updatedAt = item._deletedAt;
             item.updated_at = item._deletedAt;
 
-            // Удаление тоже должно пройти через синхронизацию.
-            // Пока это локальное изменение.
-            item.source = item.source || 'local';
+            item.source = 'local'; // <-- КРИТИЧЕСКИ ВАЖНО (иначе облако проигнорирует)
             item.syncStatus = 'not_synced';
             item.sync_status = 'not_synced';
             item.syncBlockReason = '';
-            item.sync_block_reason = '';
 
             await dbPut(STORES.HISTORY, item);
         }
@@ -2530,7 +2531,10 @@ async function deleteSelectedHistory() {
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     // <---
-
+    // Принудительно обновляем Аналитику и Задачи, чтобы всё пересчиталось без удаленных проверок
+    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+    if (typeof gameForceUpdatePlan === 'function') gameForceUpdatePlan(true); // <-- ДОБАВЛЕНО
+    updateDataSummary();
     showToast(`✅ Удалено успешно (${ids.length} шт)`);
 }
 
@@ -4171,26 +4175,27 @@ let currentCommentId = null;
 
 function toggleCommentField(id) {
     currentCommentId = id;
-    const select = document.getElementById('modal-cause-select');
+    const container = document.getElementById('modal-cause-checkboxes');
     const textarea = document.getElementById('modal-cause-comment');
 
-    // Заполняем селектор причин один раз
-    if (select.options.length === 0) {
-        let html = '<option value="">Не выбрано (Без причины)</option>';
-        DEFECT_CAUSES.forEach(c => html += `<option value="${c.code}">${c.name}</option>`);
-        select.innerHTML = html;
-    }
-
     const currentData = details[id] || {};
-    select.value = currentData.causeCode || '';
+    const savedCodes = currentData.causeCode ? currentData.causeCode.split(',') : [];
 
-    // Если комментарий содержит причину в скобках [Причина], вырезаем её для чистого отображения в textarea
+    // Генерируем чекбоксы
+    let html = '';
+    DEFECT_CAUSES.forEach(c => {
+        const isChecked = savedCodes.includes(c.code) ? 'checked' : '';
+        html += `<label class="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-slate-700 dark:text-slate-300"><input type="checkbox" value="${c.code}" class="cause-checkbox w-4 h-4 accent-indigo-600 rounded cursor-pointer" ${isChecked}> ${c.name}</label>`;
+    });
+    container.innerHTML = html;
+
+    // Вырезаем причину из начала текста, чтобы в поле ввода был чистый текст
     let pureComment = currentData.comment || '';
     if (pureComment.startsWith('[')) {
         pureComment = pureComment.replace(/^\[.*?\]\s*/, '');
     }
     textarea.value = pureComment;
-    // Скрываем и очищаем блок AI-подсказки при новом открытии окна
+
     const aiHint = document.getElementById('ai-hint-block');
     if (aiHint) { aiHint.innerHTML = ''; aiHint.classList.add('hidden'); }
     document.getElementById('comment-modal-overlay').style.display = 'flex';
@@ -4205,17 +4210,24 @@ function closeCommentModal() {
 
 function saveCommentModal() {
     if (!currentCommentId) return;
-    const code = document.getElementById('modal-cause-select').value;
+
+    // Собираем все выбранные галочки
+    const checkboxes = document.querySelectorAll('.cause-checkbox:checked');
+    const checkedCodes = Array.from(checkboxes).map(cb => cb.value);
+    const code = checkedCodes.join(','); // Сохраняем в базу через запятую
+
     const text = document.getElementById('modal-cause-comment').value.trim();
 
     details[currentCommentId] = details[currentCommentId] || {};
     details[currentCommentId].causeCode = code;
 
-    let causeName = code ? DEFECT_CAUSES.find(c => c.code === code)?.name : '';
+    // Собираем красивые названия причин
+    let causeNames = checkedCodes.map(cCode => DEFECT_CAUSES.find(c => c.code === cCode)?.name).filter(Boolean).join(', ');
+
     // Формируем красивый итоговый комментарий для карточки
     let finalComment = text;
-    if (causeName) {
-        finalComment = text ? `[${causeName}] ${text}` : `[${causeName}]`;
+    if (causeNames) {
+        finalComment = text ? `[${causeNames}] ${text}` : `[${causeNames}]`;
     }
 
     details[currentCommentId].comment = finalComment;
@@ -4223,13 +4235,9 @@ function saveCommentModal() {
     updateCardDOM(currentCommentId);
     saveSessionData();
 
-    // ---> НАЧАЛО ВСТАВКИ ДЛЯ ГЕЙМИФИКАЦИИ <---
-    // Если длина комментария больше 15 символов, считаем его развернутым
     if (typeof gameLogAction === 'function' && text.length > 15) {
         gameLogAction('comment_written', currentCommentId);
     }
-    // ---> КОНЕЦ ВСТАВКИ <---
-
     closeCommentModal();
 }
 
@@ -5170,7 +5178,11 @@ async function saveCustomTemplate() {
         Array.from(itemsEl).forEach(itemEl => {
             const name = itemEl.querySelector('.item-name-input').value.trim();
             const weight = parseInt(itemEl.querySelector('.item-weight-select').value);
-            const ndId = itemEl.querySelector('.item-nd-select').value; // <-- Берем ID норматива
+
+            // <-- ВСТАВКА: Безопасное чтение селекта (защита от краша)
+            const ndSelect = itemEl.querySelector('.item-nd-select');
+            const ndId = ndSelect ? ndSelect.value : null;
+
             const norm = itemEl.querySelector('.item-norm-input').value.trim();
 
             if (!name) isValid = false;
@@ -5212,6 +5224,13 @@ async function saveCustomTemplate() {
         // Обновляем списки селекторов и список в настройках
         renderSelector();
         renderSettingsTab();
+
+        // <-- ВСТАВКА: Мгновенное обновление списка шаблонов в панели
+        const manageBody = document.getElementById('ref-manage-body');
+        if (manageBody && manageBody.style.opacity === '1') {
+            toggleManagePanel();
+            setTimeout(() => toggleManagePanel(), 50);
+        }
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
@@ -5331,6 +5350,13 @@ async function deleteUserTemplate(slug) {
         showToast("🗑️ Чек-лист удален");
         renderSelector();
         renderSettingsTab();
+
+        // <-- ВСТАВКА: Мгновенное обновление списка шаблонов
+        const manageBody = document.getElementById('ref-manage-body');
+        if (manageBody && manageBody.style.opacity === '1') {
+            toggleManagePanel();
+            setTimeout(() => toggleManagePanel(), 50);
+        }
 
         // Если удалили тот, что был выбран - сбрасываем на HOME
         if (currentTemplateKey === `user_${slug}`) {
@@ -9799,13 +9825,20 @@ window.rbi_deleteMeeting = async function (id) {
     if (!confirm("Удалить этот протокол?")) return;
     if (meetIndex !== -1) {
         window.rbi_meetingsData[meetIndex]._deleted = true;
+        window.rbi_meetingsData[meetIndex].is_deleted = true; // <-- ДЛЯ ОБЛАКА
         window.rbi_meetingsData[meetIndex]._deletedAt = new Date().toISOString();
         window.rbi_meetingsData[meetIndex].updatedAt = window.rbi_meetingsData[meetIndex]._deletedAt;
+
+        window.rbi_meetingsData[meetIndex].source = 'local';
+        window.rbi_meetingsData[meetIndex].syncStatus = 'not_synced';
+        window.rbi_meetingsData[meetIndex].sync_status = 'not_synced';
+
         await dbPut(STORES.MEETINGS, window.rbi_meetingsData[meetIndex]);
     }
 
     window.rbi_meetingsData = window.rbi_meetingsData.filter(m => !m._deleted);
     rbi_renderMeetingTab();
+    if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true); // Пересчет задач
     showToast("🗑️ Протокол удален");
 
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -11123,6 +11156,12 @@ window.exportLibraryToJsCode = async function (skipSyncCheck = false) {
 
 // === ЛОГИКА УНИВЕРСАЛЬНОГО МЕНЮ (3 ТОЧКИ) ===
 window.openUniversalActionSheet = function (id, type, title, isOwner, extraData) {
+    // <-- ВСТАВКА: Режим Бога для администратора (разрешаем удалять и менять всё)
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    if (['manager', 'deputy_manager'].includes(role)) {
+        isOwner = true;
+    }
+
     const sheet = document.getElementById('universal-action-sheet');
     document.getElementById('uas-title').innerText = title;
 
@@ -11552,15 +11591,29 @@ window.rbi_toggleFeedbackLike = async function (id) {
 };
 
 window.rbi_deleteFeedback = async function (id) {
-    if (!confirm("Вы уверены, что хотите удалить свое предложение?")) return;
-
     const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
     if (idx === -1) return;
 
-    // Стандартная логика мягкого удаления (Soft Delete)
+    const f = window.rbi_feedbackData[idx];
+    const currentEng = appSettings.engineerName || 'Инженер';
+    const isOwner = f.author === currentEng;
+    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const isAdmin = ['manager', 'deputy_manager'].includes(role);
+
+    if (!isOwner && !isAdmin) return showToast("⚠️ Нет прав на удаление");
+
+    const msg = (isAdmin && !isOwner) ? "Удалить предложение пользователя из бэклога?" : "Вы уверены, что хотите удалить свое предложение?";
+    if (!confirm(msg)) return;
+
+    // Стандартная логика мягкого удаления с ЖЕЛЕЗОБЕТОННЫМИ флагами для облака
     window.rbi_feedbackData[idx]._deleted = true;
+    window.rbi_feedbackData[idx].is_deleted = true; // <-- Для облака
     window.rbi_feedbackData[idx]._deletedAt = new Date().toISOString();
     window.rbi_feedbackData[idx].updatedAt = window.rbi_feedbackData[idx]._deletedAt;
+
+    window.rbi_feedbackData[idx].source = 'local';
+    window.rbi_feedbackData[idx].syncStatus = 'not_synced';
+    window.rbi_feedbackData[idx].sync_status = 'not_synced';
 
     // Сохраняем в локальную базу устройства
     await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
@@ -11571,8 +11624,9 @@ window.rbi_deleteFeedback = async function (id) {
 
     showToast("🗑️ Предложение удалено");
 
-    // Перерисовываем список, чтобы карточка исчезла с экрана
-    rbi_renderFeedbackTab();
+    // Перерисовываем списки (тихо)
+    if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
+    if (typeof rbi_renderDevFeedbackTab === 'function') rbi_renderDevFeedbackTab();
 };
 
 // Открытие модального окна для редактирования своего предложения
@@ -11694,6 +11748,10 @@ window.rbi_renderDevFeedbackTab = function () {
                         <button onclick="rbi_updateFeedbackNotes('${f.id}')" class="bg-emerald-600 text-white px-3 rounded-lg text-[10px] font-bold active:scale-95 shadow-sm">OK</button>
                     </div>
                 </div>
+            </div>
+            <!-- ВСТАВКА: Кнопка удаления для админа -->
+            <div class="mt-3 pt-2 border-t border-slate-100 flex justify-end">
+                <button onclick="rbi_deleteFeedback('${f.id}')" class="text-[9px] font-bold text-red-500 hover:text-red-700 uppercase flex items-center gap-1 active:scale-95"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить из бэклога</button>
             </div>
         </div>`;
     }).join('');

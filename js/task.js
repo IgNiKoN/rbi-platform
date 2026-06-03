@@ -28,7 +28,14 @@ window.rbi_openTaskModal = function () {
     const eSelect = document.getElementById('manual-task-engineer');
     if (eSelect) {
         const currentEng = document.getElementById('inp-inspector')?.value.trim() || (typeof appSettings !== 'undefined' ? appSettings.engineerName : 'Инженер');
-        const uniqueEngs = [...new Set(contractorArray.map(c => c.inspectorName).filter(Boolean))].sort();
+        let allNames = contractorArray.map(c => c.inspectorName).filter(Boolean);
+        
+        // <-- ВСТАВКА: Достаем вообще всех инженеров из глобального серверного рейтинга
+        if (window.serverGlobalRating) {
+            allNames = allNames.concat(window.serverGlobalRating.map(r => r.name));
+        }
+        const uniqueEngs = [...new Set(allNames)].sort();
+        
         // Добавляем себя, если нас еще нет в базе
         if (!uniqueEngs.includes(currentEng)) uniqueEngs.unshift(currentEng);
 
@@ -61,68 +68,38 @@ window.rbi_closeTaskModal = function () {
 
 window.rbi_saveManualTask = async function () {
     if (typeof isDemoMode !== 'undefined' && isDemoMode) return showToast("В демо-режиме сохранение отключено");
+    
     const title = document.getElementById('manual-task-title').value.trim();
-    const typeCat = document.getElementById('manual-task-type').value;
-    const contr = document.getElementById('manual-task-contractor').value;
+    const promptText = document.getElementById('manual-task-prompt').value.trim();
+    const urgencyVal = document.getElementById('manual-task-urgency').value; // 'planned' или 'future'
     const dateStr = document.getElementById('manual-task-date').value;
-
-    // Считываем кому назначена задача
-    const assignee = document.getElementById('manual-task-engineer')?.value || document.getElementById('inp-inspector')?.value || 'Инженер';
+    const assignee = document.getElementById('manual-task-engineer')?.value || 'Инженер';
 
     if (!title) return showToast("⚠️ Укажите название задачи!");
 
-    const tDate = dateStr ? new Date(dateStr) : new Date();
-    tDate.setHours(12, 0, 0, 0);
-
-    let iconType = 'Контроль';
-    if (typeCat === 'method') iconType = 'ППР';
-    if (typeCat === 'meeting') iconType = 'Совещание';
-
-    const projectInput = document.getElementById('inp-project');
-    const projectValue = projectInput?.value || 'Все';
+    const tDate = dateStr ? new Date(dateStr) : null;
+    if (tDate) tDate.setHours(12, 0, 0, 0);
 
     const newTask = {
         id: 'task_man_' + Date.now().toString(36),
         type: 'manual',
-        task_origin: 'manual',
-
-        category: typeCat,
-        icon: iconType,
-        contractor: contr || "Служебная",
-
-        // Старое поле оставляем для совместимости
-        project: projectValue,
-
-        // Новые поля для облака и фильтрации
-        project_canonical_key: projectValue === 'Все' ? '' : projectValue,
-        project_display_name: projectInput?.dataset?.displayName || projectValue,
-
-        templateKey: '',
-        workTitle: 'Поручение',
+        taskType: 'Поручение',
+        category: 'other',
+        icon: 'Отчет', // Универсальная иконка
+        contractor: "Поручение",
         title: title,
-
-        prompt: ['manager', 'deputy_manager'].includes(window.RbiRoles ? window.RbiRoles.getCurrentRole() : '')
-            ? '⭐ Поручение от Руководителя. Требует обязательного выполнения.'
-            : 'Создано инженером вручную.',
-
-        // Привязка к исполнителю
+        prompt: promptText || 'Без описания',
+        urgency: urgencyVal, // <--- ЖЕСТКАЯ ПРИВЯЗКА К КАТЕГОРИИ
         engineerName: assignee,
         inspectorName: assignee,
-
         status: 'pending',
         priorityLvl: 2,
-        date: tDate.toISOString(),
+        date: tDate ? tDate.toISOString() : null, // Может быть без даты
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-
-        // Новая двухконтурная модель
         source: 'local',
         syncStatus: 'not_synced',
         sync_status: 'not_synced',
-        syncBlockReason: '',
-        sync_block_reason: '',
-        importedFromBackup: false,
-
         _deleted: false
     };
 
@@ -130,9 +107,9 @@ window.rbi_saveManualTask = async function () {
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, newTask);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    showToast("✅ Задача добавлена в план!");
+    showToast("✅ Поручение создано!");
     rbi_closeTaskModal();
-    rbi_renderTasksList();
+    executeRenderTasks(); // Вызываем напрямую, чтобы мгновенно обновить
 };
 
 window.gameForceUpdatePlan = async function (silent = false) {
@@ -518,6 +495,16 @@ window.rbi_renderTasksList = async function () {
 
     let activeTasks = window.rbi_tasksData;
     const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    // <-- ВСТАВКА: Жесткая сортировка. Карточки больше никогда не будут прыгать
+    activeTasks = [...activeTasks].sort((a, b) => {
+        // 1. Сначала сортируем по приоритету (Критичные (4) всегда выше)
+        if (b.priorityLvl !== a.priorityLvl) return b.priorityLvl - a.priorityLvl;
+        
+        // 2. Если приоритет одинаковый, сортируем по дате (Ближайшие сверху)
+        const dateA = new Date(a.date || 0).getTime();
+        const dateB = new Date(b.date || 0).getTime();
+        return dateA - dateB;
+    });
     const currentEng = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
     
@@ -536,7 +523,8 @@ window.rbi_renderTasksList = async function () {
         }
 
         const allEngsInTasks = [...new Set(activeTasks.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
-        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = currentEng;
+        // ВСТАВКА: По умолчанию для руководителей показываем ВСЕХ инженеров, чтобы при F5 список не был пустым
+        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = 'ALL';
 
         if (window.taskEngineerFilter !== 'ALL') {
             activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === window.taskEngineerFilter);
@@ -556,7 +544,14 @@ window.rbi_renderTasksList = async function () {
         activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === currentEng || t.contractor === 'Системная');
     }
     // -----------------------------------------------------
-
+    // --- ВСТАВКА: Фильтрация по клику на Календарь ---
+    if (window.selectedCalendarDate) {
+        activeTasks = activeTasks.filter(t => {
+            if (!t.date) return false;
+            return t.date.split('T')[0] === window.selectedCalendarDate;
+        });
+    }
+    // ------------------------------------------------
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startW = getStartOfWeek(today);
@@ -570,11 +565,13 @@ window.rbi_renderTasksList = async function () {
     let globalActionsHtml = `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
             <button onclick="gameForceUpdatePlan()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Синхронизировать</button>
-            <button onclick="rbi_openTaskModal()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> Новая задача</button>
-            <button onclick="generateAiRoutePlan()" class="bg-slate-50 text-slate-700 border border-slate-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg> AI-Маршрут</button>
+            <button onclick="rbi_openTaskModal()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> Новое поручение</button>
+            
+            <!-- КНОПКА КАЛЕНДАРЯ -->
+            <button onclick="rbi_openCalendarModal()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Календарь</button>
+            
             <button onclick="gameToggleAbsence()" class="bg-slate-50 text-slate-700 border border-slate-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Статус / Отпуск</button>
         </div>
-        <div id="ai-route-container" class="hidden mb-4 bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-800 leading-relaxed shadow-sm"></div>
     `;
 
     if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) {
@@ -582,9 +579,11 @@ window.rbi_renderTasksList = async function () {
         return;
     }
 
+    // ВСТАВКА: Умная сортировка задач с учетом ручного приоритета и сбор дат для календаря
     let overdue = []; let todayTasks = []; let weekTasks = []; let monthTasks = [];
     let archiveTasks = [];
     let weekTotal = 0; let weekDone = 0;
+    window.rbiCalendarDates = {}; // Хранилище дат для календаря
 
     activeTasks.forEach(t => {
         if (t._deleted) return;
@@ -601,7 +600,18 @@ window.rbi_renderTasksList = async function () {
 
         if (t.status === 'paused') { monthTasks.push(t); weekTotal++; return; }
 
-        const tDate = t.date ? new Date(t.date) : new Date();
+        // --- ЖЕСТКОЕ ПРАВИЛО: РУЧНОЙ ВЫБОР ИМЕЕТ ПРИОРИТЕТ НАД ДАТОЙ ---
+        if (t.type === 'manual' && t.urgency) {
+            if (t.urgency === 'planned') {
+                weekTasks.push(t); weekTotal++; return;
+            } else if (t.urgency === 'future') {
+                monthTasks.push(t); weekTotal++; return;
+            }
+        }
+
+        // Если это автоматическая задача — раскидываем по датам
+        if (!t.date) { weekTasks.push(t); weekTotal++; return; } // Без даты -> в плановые
+        const tDate = new Date(t.date);
         tDate.setHours(0, 0, 0, 0);
 
         if (tDate.getTime() < today.getTime()) { overdue.push(t); weekTotal++; }
@@ -778,32 +788,33 @@ window.rbi_openTaskAction = async function (taskId) {
     // ВЕРХНЯЯ ЧАСТЬ МОДАЛКИ (ИНФО БЛОКИ)
     body.innerHTML = `
         <div class="mb-4">
-            <div class="text-[16px] font-black text-slate-800 dark:text-white leading-tight mb-1">${task.contractor}</div>
-            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">${task.templateTitle || task.workTitle || task.taskType}</div>
+            <div class="text-[16px] font-black text-slate-800 dark:text-white leading-tight mb-1">${task.contractor || 'Без подрядчика'}</div>
+            <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest">${task.templateTitle || task.workTitle || task.taskType || 'Поручение'}</div>
         </div>
 
         <div class="bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-2xl p-4 mb-4 shadow-sm">
             <div class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2 flex items-center gap-1.5">
-                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Цель задачи
+                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Суть задачи
             </div>
-            <div class="text-[12px] text-slate-700 dark:text-slate-300 font-medium leading-relaxed">${task.prompt}</div>
+            <div class="text-[12px] text-slate-700 dark:text-slate-300 font-medium leading-relaxed">${task.prompt || 'Описание отсутствует'}</div>
         </div>
 
         <div class="flex gap-2 mb-4">
             <div class="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm text-center">
                 <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Прогресс</div>
-                <div class="text-[16px] font-black text-slate-800 dark:text-white"><span class="${task.done >= task.target ? 'text-green-500' : 'text-indigo-600'}">${task.done}</span> из ${task.target}</div>
+                <div class="text-[16px] font-black text-slate-800 dark:text-white"><span class="${task.done >= task.target ? 'text-green-500' : 'text-indigo-600'}">${task.done || 0}</span> из ${task.target || 1}</div>
             </div>
             <div class="flex-1 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm text-center">
-                <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Срок (Дедлайн)</div>
-                <div class="text-[16px] font-black ${new Date(task.date) < new Date() && task.status !== 'done' ? 'text-red-500' : 'text-slate-800 dark:text-white'}">${task.date ? new Date(task.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '-'}</div>
+                <div class="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Дедлайн</div>
+                <div class="text-[16px] font-black ${new Date(task.date) < new Date() && task.status !== 'done' ? 'text-red-500' : 'text-slate-800 dark:text-white'}">${task.date ? new Date(task.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : 'Без срока'}</div>
             </div>
         </div>
 
+        ${task.type === 'manual' ? '' : `
         <div class="border border-[var(--card-border)] bg-[var(--card-bg)] rounded-2xl p-4 mb-2 shadow-sm">
             <div class="text-[10px] font-black px-2 py-1 rounded border uppercase w-fit mb-2 ${logicColor}">${logicTitle}</div>
             <div class="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed font-medium">${logicDesc}</div>
-        </div>
+        </div>`}
     `;
 
     // НИЖНЯЯ ЧАСТЬ МОДАЛКИ (КНОПКИ ДЕЙСТВИЙ)
@@ -1521,4 +1532,137 @@ window.rbi_generateAutoTasks = async function (silent = false) {
         // Перерисовываем список задач во вкладке Инженера
         if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
     }, 500);
+};
+
+// ==========================================
+// ПОЛНОЦЕННЫЙ КАЛЕНДАРЬ ЗАДАЧ
+// ==========================================
+let currentCalendarDate = new Date();
+
+window.rbi_openCalendarModal = function() {
+    const modal = document.getElementById('task-calendar-modal');
+    currentCalendarDate = new Date(); // Сбрасываем на текущий месяц
+    
+    rbi_renderCalendarGrid();
+    
+    // Сначала скрываем списки
+    document.getElementById('calendar-tasks-list').innerHTML = `<div class="text-center py-6 text-slate-400 text-[11px] font-bold uppercase border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm">Кликните на число в календаре</div>`;
+    document.getElementById('calendar-selected-date-label').innerText = 'Выберите дату';
+    
+    rbi_renderNoDateTasks(); // Отрисовываем задачи без дедлайна
+    
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
+    setTimeout(() => { modal.classList.remove('opacity-0'); }, 10);
+};
+
+window.rbi_closeCalendarModal = function() {
+    const modal = document.getElementById('task-calendar-modal');
+    modal.classList.add('opacity-0');
+    setTimeout(() => {
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }, 300);
+};
+
+window.rbi_changeCalendarMonth = function(offset) {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + offset);
+    rbi_renderCalendarGrid();
+};
+
+window.rbi_renderCalendarGrid = function() {
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    
+    const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+    document.getElementById('calendar-month-label').innerText = `${monthNames[month]} ${year}`;
+    
+    const grid = document.getElementById('calendar-grid');
+    grid.innerHTML = '';
+    
+    const firstDay = new Date(year, month, 1).getDay();
+    const startOffset = firstDay === 0 ? 6 : firstDay - 1; 
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    // Собираем даты задач
+    const taskDates = {};
+    window.rbi_tasksData.forEach(t => {
+        if (!t._deleted && t.status !== 'done' && t.status !== 'blocked' && t.date) {
+            const dateStr = t.date.split('T')[0];
+            taskDates[dateStr] = (taskDates[dateStr] || 0) + 1;
+        }
+    });
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    let html = '';
+    for (let i = 0; i < startOffset; i++) {
+        html += `<div></div>`;
+    }
+    
+    for (let i = 1; i <= daysInMonth; i++) {
+        // Защита от часовых поясов
+        const dIso = new Date(Date.UTC(year, month, i)).toISOString().split('T')[0];
+        const isToday = dIso === todayStr;
+        const taskCount = taskDates[dIso] || 0;
+        
+        let bgClass = isToday ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-slate-700';
+        let dotHtml = taskCount > 0 ? `<div class="w-1.5 h-1.5 rounded-full ${isToday ? 'bg-white' : 'bg-red-500'} absolute bottom-1.5 left-1/2 -translate-x-1/2"></div>` : '';
+        
+        html += `
+            <div onclick="rbi_showTasksForDate('${dIso}')" class="relative flex flex-col items-center justify-center h-12 sm:h-14 rounded-xl cursor-pointer active:scale-90 transition-transform ${bgClass}">
+                <div class="text-[14px] sm:text-[16px] font-black leading-none">${i}</div>
+                ${dotHtml}
+            </div>
+        `;
+    }
+    grid.innerHTML = html;
+};
+
+// Функция отрисовки карточки задачи для Календаря
+function renderCalendarTaskCard(t) {
+    const icon = t.icon ? (RBI_TASK_ICONS[t.icon] || RBI_TASK_ICONS['Контроль']) : RBI_TASK_ICONS['Контроль'];
+    let priorityColor = t.priorityLvl === 4 ? 'text-red-600 bg-red-50 border-red-200' : 'text-green-600 bg-green-50 border-green-200';
+    let priorityText = t.priorityLvl === 4 ? 'Крит.' : 'Обычная';
+    
+    return `
+    <div onclick="rbi_closeCalendarModal(); setTimeout(()=>rbi_openTaskAction('${t.id}'),300)" class="cursor-pointer w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex flex-col relative shadow-sm active:scale-[0.98] hover:border-indigo-400 transition-all">
+        <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] text-slate-500 flex items-center justify-center border border-[var(--card-border)] shrink-0">${icon}</div>
+            <div class="flex-1 min-w-0">
+                <div class="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-0.5">${t.taskType || t.title}</div>
+                <div class="text-[13px] font-black text-slate-800 dark:text-white leading-tight truncate">${t.contractor || 'Без подрядчика'}</div>
+            </div>
+        </div>
+        <div class="text-[11px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-2 font-medium mb-3">${t.prompt || 'Без описания'}</div>
+        <div class="border-t border-slate-100 dark:border-slate-700 pt-2 flex justify-between items-center">
+            <span class="text-[8px] font-black uppercase px-2 py-1 rounded border ${priorityColor}">${priorityText}</span>
+            <span class="text-[10px] font-bold text-slate-400">${t.engineerName || 'Инженер'}</span>
+        </div>
+    </div>`;
+}
+
+window.rbi_showTasksForDate = function(dateStr) {
+    document.getElementById('calendar-selected-date-label').innerText = `Задачи на: ${new Date(dateStr).toLocaleDateString('ru-RU')}`;
+    const list = document.getElementById('calendar-tasks-list');
+    
+    const tasks = window.rbi_tasksData.filter(t => !t._deleted && t.status !== 'done' && t.status !== 'blocked' && t.date && t.date.split('T')[0] === dateStr);
+    
+    if (tasks.length === 0) {
+        list.innerHTML = `<div class="text-center py-6 text-slate-400 text-[11px] font-bold uppercase border border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800">На этот день задач нет</div>`;
+    } else {
+        list.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">` + tasks.map(renderCalendarTaskCard).join('') + `</div>`;
+    }
+};
+
+window.rbi_renderNoDateTasks = function() {
+    const list = document.getElementById('calendar-nodate-list');
+    // Ищем задачи, у которых вообще нет даты (например, старые ручные)
+    const tasks = window.rbi_tasksData.filter(t => !t._deleted && t.status !== 'done' && t.status !== 'blocked' && !t.date);
+    
+    if (tasks.length === 0) {
+        list.innerHTML = `<div class="text-center py-4 text-slate-400 text-[10px] font-bold uppercase">Все задачи привязаны к датам</div>`;
+    } else {
+        list.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">` + tasks.map(renderCalendarTaskCard).join('') + `</div>`;
+    }
 };

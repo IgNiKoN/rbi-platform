@@ -2509,12 +2509,19 @@ window.rbi_deleteFmea = async function (id) {
     if (!confirm("Удалить этот FMEA отчет?")) return;
     if (record) {
         record._deleted = true;
+        record.is_deleted = true; // <-- ДЛЯ ОБЛАКА
         record.updatedAt = new Date().toISOString();
+        
+        record.source = 'local';
+        record.syncStatus = 'not_synced';
+        record.sync_status = 'not_synced';
+
         await dbPut(STORES.FMEA, record);
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
     }
     rbi_renderFmeaRegistry();
+    if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true); // Пересчет задач
     showToast("🗑️ Отчет удален");
 };
 // НОВАЯ ФУНКЦИЯ: Просмотр FMEA в интерфейсе

@@ -497,6 +497,7 @@ function renderContractorsSubTab(data) {
         const trendContrsData = buildTrendChartData(data, 'contractorName', selectedChartFilters.contrs, trendGroupings.contrs);
         const ctxTrendC = document.getElementById('chart_eng_trend_contrs')?.getContext('2d');
         if (ctxTrendC) {
+            if (chartInstances['chart_eng_trend_contrs']) chartInstances['chart_eng_trend_contrs'].destroy(); // <-- ВСТАВКА: Очистка Canvas
             chartInstances['chart_eng_trend_contrs'] = new Chart(ctxTrendC, { type: 'line', data: trendContrsData, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { position: 'right', labels: { boxWidth: 8, font: { size: 9 } } } } } });
         }
 
@@ -507,6 +508,7 @@ function renderContractorsSubTab(data) {
         });
         const ctxCauses = document.getElementById('chart_eng_causes')?.getContext('2d');
         if (ctxCauses && causesData.length > 0) {
+            if (chartInstances['chart_eng_causes']) chartInstances['chart_eng_causes'].destroy(); // <-- ВСТАВКА: Очистка Canvas
             chartInstances['chart_eng_causes'] = new Chart(ctxCauses, { type: 'bar', indexAxis: 'y', data: { labels: causesLabels, datasets: [{ data: causesData, backgroundColor: '#f59e0b', borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
         }
 
@@ -517,6 +519,7 @@ function renderContractorsSubTab(data) {
 
         const ctxComp = document.getElementById('chart_eng_compare')?.getContext('2d');
         if (ctxComp && compData.length > 0) {
+            if (chartInstances['chart_eng_compare']) chartInstances['chart_eng_compare'].destroy(); // <-- ВСТАВКА: Очистка Canvas
             chartInstances['chart_eng_compare'] = new Chart(ctxComp, { type: 'bar', data: { labels: compLabels, datasets: [{ data: compData, backgroundColor: compColors, borderRadius: 4 }] }, options: { animation: false, responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } } });
         }
     }, 100);
@@ -2460,6 +2463,8 @@ window.renderReportsList = function() {
 
         return `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
+        <!-- ВСТАВКА: Чекбокс для массового удаления -->
+            <input type="checkbox" class="report-checkbox absolute top-2 left-2 w-5 h-5 accent-indigo-600 rounded cursor-pointer z-10" value="${r.id}" onclick="event.stopPropagation()">
             
             <div class="h-24 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-900 flex items-center justify-center relative">
                 <div class="w-12 h-14 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between p-1.5 relative overflow-hidden">
@@ -2603,10 +2608,12 @@ window.deleteReport = async function(id) {
     
     const idx = reportsArray.findIndex(x => x.id === id);
     if (idx > -1) {
-        // Ставим обе метки, чтобы и локальный код, и синхронизатор поняли, что это удаление
+        // Ставим ЖЕЛЕЗОБЕТОННЫЕ метки удаления
         reportsArray[idx].is_deleted = true;
         reportsArray[idx]._deleted = true; 
         reportsArray[idx]._deletedAt = new Date().toISOString();
+        reportsArray[idx].deleted_at = reportsArray[idx]._deletedAt;
+        
         reportsArray[idx].updated_at = new Date().toISOString();
         reportsArray[idx].updatedAt = reportsArray[idx].updated_at;
         
@@ -2615,12 +2622,51 @@ window.deleteReport = async function(id) {
         reportsArray[idx].sync_status = 'not_synced';
         reportsArray[idx].syncStatus = 'not_synced';
         
-        await dbPut(STORES.REPORTS, reportsArray[idx]); // Мягкое удаление
-
-        reportsArray = reportsArray.filter(x => !x.is_deleted && !x._deleted);
-        renderReportsList();
-        
-        localStorage.setItem('rbi_cloud_dirty', '1');
-        if (typeof triggerSync === 'function') triggerSync('silent');
+        await dbPut(STORES.REPORTS, reportsArray[idx]); // Мягкое удаление локально
     }
+
+    reportsArray = reportsArray.filter(x => !x.is_deleted && !x._deleted);
+    renderReportsList();
+    
+    // Команда синхронизатору
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+};
+
+window.toggleAllReports = function(checkbox) {
+    const checkboxes = document.querySelectorAll('.report-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+};
+
+window.deleteSelectedReports = async function() {
+    const checkboxes = document.querySelectorAll('.report-checkbox:checked');
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (ids.length === 0) return showToast('Выберите отчеты для удаления');
+    if (!confirm(`Удалить выбранные отчеты (${ids.length} шт)?`)) return;
+
+    for (let id of ids) {
+        const record = reportsArray.find(x => x.id === id);
+        if (record) {
+            record.is_deleted = true;
+            record._deleted = true; 
+            record._deletedAt = new Date().toISOString();
+            record.updated_at = new Date().toISOString();
+            record.updatedAt = record.updated_at;
+            record.source = 'local';
+            record.sync_status = 'not_synced';
+            record.syncStatus = 'not_synced';
+            
+            await dbPut(STORES.REPORTS, record); 
+        }
+    }
+
+    reportsArray = reportsArray.filter(x => !x.is_deleted && !x._deleted);
+    document.getElementById('reports-select-all').checked = false;
+    renderReportsList();
+    
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+    
+    showToast(`✅ Удалено отчетов: ${ids.length}`);
 };

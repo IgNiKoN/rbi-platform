@@ -1400,9 +1400,9 @@ window.UniversalPdfViewer = {
             // Инициализация Panzoom. Теперь координаты startX и startY = 0, 
             // так как CSS уже идеально отцентрировал холст!
             this.panzoomInstance = Panzoom(container, {
-                maxScale: 15,
-                minScale: 0.05,
-                step: 0.3,
+                maxScale: 10,
+                minScale: 0.3,
+                step: 0.1,
                 startScale: initialScale,
                 startX: 0,
                 startY: 0

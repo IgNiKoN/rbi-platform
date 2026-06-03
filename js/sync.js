@@ -740,7 +740,7 @@ window.renderSyncUI = function () {
 
             <div class="p-4 bg-[var(--hover-bg)]">
                 <button onclick="window.triggerSync('manual')" class="w-full bg-[var(--card-bg)] text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 mb-2 flex items-center justify-center gap-2 transition-colors hover:border-indigo-400">
-    ${cloudStatus === 'pending' ? '🔎 Проверить статус' : '🔄 Синхронизировать сейчас'}
+    ${cloudStatus === 'pending' ? '🔎 Проверить статус' : ' Синхронизировать сейчас'}
 </button>
                 <button onclick="window.disconnectSync()" class="w-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 py-3 rounded-xl font-bold text-[11px] uppercase shadow-sm active:scale-95 transition-colors">Отключить облако</button>
             </div>
@@ -757,10 +757,13 @@ window.renderSyncUI = function () {
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Код компании *</label>
                         <input type="text" id="sync-code" class="input-base" placeholder="Например: RBI-COMPANY">
                     </div>
-                    <div>
+                    <form onsubmit="event.preventDefault();">
+                        <!-- ВСТАВКА: Скрытый логин -->
+                        <input type="text" autocomplete="username" style="display:none;" value="admin">
+                        
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">ПИН-код (Опционально)</label>
-                        <input type="password" id="sync-pin" class="input-base" placeholder="4 цифры" maxlength="4" inputmode="numeric">
-                    </div>
+                        <input type="password" id="sync-pin" autocomplete="new-password" class="input-base" placeholder="4 цифры" maxlength="4" inputmode="numeric">
+                    </form>
                 </div>
             </div>
             <div class="p-4 bg-[var(--hover-bg)]">
@@ -1507,7 +1510,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             updated_at: updatedAt
         };
     } else if (objectType === 'const_unit') {
-         payload = {
+        payload = {
             id: id,
             project_code: pCode,
             building_id: data.building_id || '',
@@ -1519,7 +1522,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             is_deleted: isDeleted,
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
-         };
+        };
     } else if (objectType === 'const_building') {
         payload = {
             id: id,
@@ -2423,7 +2426,6 @@ if (window.RbiStorageManager) {
             .from('rbi_inspections')
             .select('*')
             .eq('project_code', pCode)
-            .eq('is_deleted', false)
             .order('inspection_date', { ascending: false })
             .limit(500); // Ограничиваем загрузку, чтобы не повесить телефон
 
@@ -2526,6 +2528,14 @@ if (window.RbiStorageManager) {
 
                 if (existingLocal && localTime >= cloudTime) {
                     // Наша локальная версия новее (например, мы её только что удалили). Пропускаем облачную!
+                    continue;
+                }
+
+                // <-- ВСТАВКА: Если из облака прилетела метка "Удалено", стираем локально
+                if (h.is_deleted) {
+                    if (existingLocal) {
+                        await dbDelete('app_history', String(h.id));
+                    }
                     continue;
                 }
                 // -----------------------------------------------------------
@@ -2646,7 +2656,11 @@ if (window.RbiStorageManager) {
 
                     if (typeof restoreSession === 'function') {
                         setTimeout(() => {
-                            restoreSession();
+                            // <-- ВСТАВКА: Защита. Не восстанавливаем сессию, если инженер сейчас на вкладке Осмотра
+                            const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
+                            if (!isAuditActive) {
+                                restoreSession();
+                            }
                         }, 500);
                     }
                 }
@@ -3251,13 +3265,16 @@ if (window.RbiStorageManager) {
                         });
                     }
 
-                    // Помечаем, что всё ок
+                    // Помечаем, что всё ок (и для живых, и для удаленных!)
+                    c.source = 'cloud'; c.syncStatus = 'synced'; c.sync_status = 'synced';
+                    c.syncBlockReason = ''; c.sync_block_reason = ''; c.importedFromBackup = false;
+                    c.updatedAt = new Date().toISOString(); c.updated_at = c.updatedAt;
+
                     if (!isDeleted) {
-                        c.photos = uploadedPhotos; c.source = 'cloud'; c.syncStatus = 'synced'; c.sync_status = 'synced';
-                        c.syncBlockReason = ''; c.sync_block_reason = ''; c.importedFromBackup = false;
-                        c.updatedAt = new Date().toISOString(); c.updated_at = c.updatedAt;
-                        localHistoryToUpdate.push(c);
+                        c.photos = uploadedPhotos;
                     }
+                    // ВСТАВКА: Обязательно сохраняем локально, чтобы статус стал synced и перестал спамить облако
+                    localHistoryToUpdate.push(c);
                 }
 
                 // 🚀 ПАКЕТНАЯ ОТПРАВКА В БАЗУ (Вжух и готово!)
@@ -3597,7 +3614,7 @@ if (window.RbiStorageManager) {
                     const filterNew = (arr) => arr.filter(i => {
                         // 1. Бронебойное правило: если статус не синхронизирован - берем 100%
                         if (i.syncStatus === 'not_synced' || i.sync_status === 'not_synced') return true;
-                        
+
                         // 2. Стандартные правила
                         if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
                         if (!lastPushTime) return true;
@@ -3697,8 +3714,11 @@ if (window.RbiStorageManager) {
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
                     // --- НОВОЕ: ОТПРАВКА ОТЧЕТОВ И HTML СНИМКОВ ---
                     let reportsToPush = filterNew(await dbGetAll(STORES.REPORTS) || []);
-                    // Отправляем только свои отчеты
-                    reportsToPush = reportsToPush.filter(r => r.created_by === iName || !r.created_by);
+                    
+                    // <-- ИСПРАВЛЕНИЕ: Админы и Замы могут отправлять (в том числе удаления) чужие отчеты
+                    if (!['manager', 'deputy_manager'].includes(projectObjectPushRole)) {
+                        reportsToPush = reportsToPush.filter(r => r.created_by === iName || !r.created_by);
+                    }
 
                     for (const rep of reportsToPush) {
                         try {
@@ -4225,6 +4245,9 @@ if (window.RbiStorageManager) {
         } catch (storageCleanupError) {
             console.warn('[StorageManager] Ошибка автоочистки после полной синхронизации:', storageCleanupError);
         }
+        // <-- ВСТАВКА: Тихо обновляем Бэклог и в ручном, и в фоновом режиме (если вкладка открыта)
+        if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
+        if (typeof rbi_renderDevFeedbackTab === 'function') rbi_renderDevFeedbackTab();
         if (mode === 'manual') {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();
