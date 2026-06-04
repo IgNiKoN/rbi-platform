@@ -1552,8 +1552,9 @@ window.rbi_generateGlobalAi = async function () {
 // === AI: САМООБУЧЕНИЕ СИСТЕМЫ (ОПТИМИЗАТОР ПАРАМЕТРОВ) ===
 window.runSelfLearningAi = async function () {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента в Настройках!");
-    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    if (!['manager', 'deputy_manager'].includes(role)) return showToast("⛔ Доступно только Администратору");
+    if (window.RbiRoles && !window.RbiRoles.isAdmin()) {
+        return showToast("⛔ Доступно только Администратору");
+    }
 
     // Защита от двойного запуска
     if (window._selfLearningRunning) return showToast("⏳ Уже выполняется...");

@@ -1410,6 +1410,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
         case 'const_defect': tableName = 'construction_defects'; targetBucket = 'construction-defects'; break;
         case 'const_unit': tableName = 'construction_units'; isShared = true; break;
         case 'const_acceptance': tableName = 'construction_acceptance'; isShared = true; break;
+        case 'object_queue': tableName = 'object_normalization_queue'; isShared = true; break;
         default: return;
     }
 
@@ -1769,7 +1770,12 @@ window.pullCloudObjects = async function (objectType, lastPullTimeStr = '', mode
     // ЖЕСТКАЯ ИЗОЛЯЦИЯ ПРОЕКТОВ (Главное правило!)
     query = query.eq('project_code', pCode);
 
-    if (lastPullTimeStr) query = query.gt('updated_at', lastPullTimeStr);
+    // ИСПРАВЛЕНИЕ: Не тянем мусор из базы при первой синхронизации
+    if (!lastPullTimeStr) {
+        query = query.eq('is_deleted', false);
+    } else {
+        query = query.gt('updated_at', lastPullTimeStr);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
@@ -2005,7 +2011,7 @@ window.triggerSync = async function (mode = 'silent') {
                 }
 
                 // Руководящим ролям автоматически включаем режим "Вся команда"
-                if (['director', 'project_manager', 'deputy_manager', 'manager'].includes(fetchedRole)) {
+                if (window.RbiRoles && window.RbiRoles.isLeadership()) {
                     if (window.syncConfig.syncMode !== 'full') {
                         window.syncConfig.syncMode = 'full';
                         localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
@@ -2014,7 +2020,7 @@ window.triggerSync = async function (mode = 'silent') {
                 }
 
                 // АВТОМАТИЧЕСКИ Включаем ИИ для штатных сотрудников
-                if (['director', 'project_manager', 'deputy_manager', 'manager', 'engineer'].includes(fetchedRole)) {
+                if (fetchedRole !== 'guest' && fetchedRole !== 'contractor') {
                     if (typeof appSettings !== 'undefined' && !appSettings.aiEnabled) {
                         appSettings.aiEnabled = true;
                         appSettings.aiAuthMode = 'role'; // Используем корпоративный пароль
@@ -2428,6 +2434,12 @@ if (window.RbiStorageManager) {
             .eq('project_code', pCode)
             .order('inspection_date', { ascending: false })
             .limit(500); // Ограничиваем загрузку, чтобы не повесить телефон
+
+        // ИСПРАВЛЕНИЕ "Воскрешения" файлов: 
+        // Если это первая полная синхронизация (нет lastPullAt), скачиваем ТОЛЬКО живые проверки.
+        if (!lastPullAt) {
+            inspectionsQuery = inspectionsQuery.eq('is_deleted', false);
+        }
 
         // --- НОВОЕ: Фильтрация PULL по ролям ---
         const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
@@ -3108,8 +3120,8 @@ if (window.RbiStorageManager) {
         if (canPush) {
             currentHistory = typeof dbGetAll === 'function' ? (await dbGetAll('app_history') || []) : [];
 
-            const currentPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-            if (!['manager', 'deputy_manager'].includes(currentPushRole)) {
+            // Если не админ, отправляем только свои проверки
+            if (window.RbiRoles && !window.RbiRoles.isAdmin()) {
                 currentHistory = currentHistory.filter(i => i.inspectorName === iName);
             }
 
@@ -3280,8 +3292,18 @@ if (window.RbiStorageManager) {
                 // 🚀 ПАКЕТНАЯ ОТПРАВКА В БАЗУ (Вжух и готово!)
                 if (inspectionsBatch.length > 0) {
                     const { error } = await window.supabaseClient.from('rbi_inspections').upsert(inspectionsBatch, { onConflict: 'id' });
-                    if (error) throw error;
-                    actuallyPushedChecks += inspectionsBatch.length;
+                    if (error) {
+                        console.warn('[Sync] Ошибка RLS: нет прав на отправку некоторых проверок', error.message);
+                        // Помечаем их локально как заблокированные
+                        localHistoryToUpdate.forEach(c => {
+                            c.syncStatus = 'blocked';
+                            c.sync_status = 'blocked';
+                            c.syncBlockReason = 'Ошибка прав доступа (RLS)';
+                            c.sync_block_reason = c.syncBlockReason;
+                        });
+                    } else {
+                        actuallyPushedChecks += inspectionsBatch.length;
+                    }
                 }
 
                 // Бьем на куски по 1000 строк (лимит Supabase)
@@ -3605,10 +3627,11 @@ if (window.RbiStorageManager) {
         // =====================================================
         if (canPush) {
             try {
-                const projectObjectPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+                const canCreatePush = window.RbiRoles ? window.RbiRoles.canCreate() : false;
+                const projectObjectPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest'; // <-- ВОТ ЭТА СТРОКА
 
-                if (!['engineer', 'deputy_manager', 'manager'].includes(projectObjectPushRole)) {
-                    console.log('[Sync] Push прочих проектных модулей пропущен для роли:', projectObjectPushRole);
+                if (!canCreatePush) {
+                    console.log('[Sync] Push прочих проектных модулей пропущен из-за ограничений роли');
                 } else {
                     const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
                     const filterNew = (arr) => arr.filter(i => {
@@ -3627,8 +3650,10 @@ if (window.RbiStorageManager) {
                         if (typeof dbGetAll !== 'function') return;
                         let items = filterNew(await dbGetAll(storeName) || []);
 
-                        // --- ИСПРАВЛЕНИЕ ЗАЩИТЫ: Инженер может отправлять в облако только СВОИ записи ---
-                        if (projectObjectPushRole === 'engineer') {
+                        // --- ИСПРАВЛЕНИЕ ЗАЩИТЫ: Если не админ, отправляем только СВОИ записи ---
+                        // ИСКЛЮЧЕНИЕ: Бэклог (feedback), так как инженеры могут лайкать чужие идеи!
+                        const isAdminPush = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
+                        if (!isAdminPush && objectType !== 'feedback') {
                             items = items.filter(obj => {
                                 const objOwner = obj.owner || obj.author || obj.inspectorName || obj.engineerName || '';
                                 return !objOwner || objOwner === iName;
@@ -3665,12 +3690,16 @@ if (window.RbiStorageManager) {
                                 await dbPut(storeName, updated);
 
                                 if (window[memoryArrayName] && Array.isArray(window[memoryArrayName])) {
-                                    const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
-
-                                    if (idx !== -1) {
-                                        window[memoryArrayName][idx] = updated;
+                                    // НОВОЕ: Если элемент удален, чистим его из ОЗУ. Иначе - обновляем/добавляем
+                                    if (updated._deleted || updated.is_deleted) {
+                                        window[memoryArrayName] = window[memoryArrayName].filter(x => String(x.id) !== String(updated.id));
                                     } else {
-                                        window[memoryArrayName].push(updated);
+                                        const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
+                                        if (idx !== -1) {
+                                            window[memoryArrayName][idx] = updated;
+                                        } else {
+                                            window[memoryArrayName].push(updated);
+                                        }
                                     }
                                 }
                             }
@@ -3704,9 +3733,16 @@ if (window.RbiStorageManager) {
                         ? window.RbiRoles.canManageObjects()
                         : false;
 
+                    // Отправка справочника объектов (только для Админов)
                     if (canManageObjects) {
                         await syncTableData('project_objects', '_sys_obj_dummy', 'project_object');
                         await syncTableData('object_aliases', '_sys_alias_dummy', 'object_alias');
+                    }
+
+                    // Отправка заявок на новые объекты (могут все, кто может создавать проверки)
+                    const canCreate = window.RbiRoles ? window.RbiRoles.canCreate() : false;
+                    if (canCreate) {
+                        await syncTableData('object_normalization_queue', '_sys_obj_queue_dummy', 'object_queue');
                     }
 
                     await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
@@ -3714,9 +3750,10 @@ if (window.RbiStorageManager) {
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
                     // --- НОВОЕ: ОТПРАВКА ОТЧЕТОВ И HTML СНИМКОВ ---
                     let reportsToPush = filterNew(await dbGetAll(STORES.REPORTS) || []);
-                    
-                    // <-- ИСПРАВЛЕНИЕ: Админы и Замы могут отправлять (в том числе удаления) чужие отчеты
-                    if (!['manager', 'deputy_manager'].includes(projectObjectPushRole)) {
+
+                    // Админы могут отправлять (в том числе удалять) чужие отчеты
+                    const isAdmin = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
+                    if (!isAdmin) {
                         reportsToPush = reportsToPush.filter(r => r.created_by === iName || !r.created_by);
                     }
 
@@ -3781,13 +3818,14 @@ if (window.RbiStorageManager) {
                     if (typeof dbGetAll === 'function' && window.supabaseClient) {
                         let skRecs = await dbGetAll(STORES.SK_RECORDS) || [];
 
-                        const skPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
                         const skCurrentUser = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : iName;
+                        const canManageSk = window.RbiRoles ? window.RbiRoles.canManageSK() : false;
+                        const isAdmin = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
 
-                        // ПК СК отправляют только инженер, заместитель и администратор.
-                        if (!['engineer', 'deputy_manager', 'manager'].includes(skPushRole)) {
+                        // ПК СК отправляют только те, кому разрешено
+                        if (!canManageSk) {
                             skRecs = [];
-                        } else if (skPushRole === 'engineer') {
+                        } else if (!isAdmin) {
                             // Инженер отправляет только свои загруженные записи.
                             skRecs = skRecs.filter(r => {
                                 const uploadedBy =
@@ -3936,13 +3974,11 @@ if (window.RbiStorageManager) {
                     // contractor_directory / contractor_aliases / contractor_normalization_queue
                     // =====================================================
                     if (typeof dbGetAll === 'function' && window.supabaseClient && typeof STORES !== 'undefined') {
-                        const contractorRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+                        const isAdminContractors = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
+                        const canPushQueue = window.RbiRoles ? window.RbiRoles.canCreate() : false;
 
-                        // Создавать/обновлять связи подрядчиков могут инженер, зам и админ.
-                        // Остальные только читают после pull.
-                        const canPushContractors = ['engineer', 'deputy_manager', 'manager'].includes(contractorRole);
-
-                        if (canPushContractors) {
+                        // 1. Справочник и Алиасы отправляют ТОЛЬКО Админы
+                        if (isAdminContractors) {
                             try {
                                 const contractorItems = await dbGetAll(STORES.CONTRACTOR_DIRECTORY) || [];
                                 const contractorsToPush = contractorItems.filter(c => {
@@ -4014,7 +4050,10 @@ if (window.RbiStorageManager) {
                                 pushErrors++;
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }
+                        } // <-- ЗАКРЫЛИ БЛОК АДМИНА
 
+                        // 2. Очередь заявок отправляют все Инженеры
+                        if (canPushQueue) {
                             try {
                                 const queueItems = await dbGetAll(STORES.CONTRACTOR_QUEUE) || [];
 
@@ -4078,13 +4117,24 @@ if (window.RbiStorageManager) {
                         }
                     }
                     // Отправка Чек-листов (Это объект-словарь, а не массив)
-                    if (typeof userTemplates !== 'undefined') {
-                        const tmplArray = Object.values(userTemplates);
+                    if (typeof dbGetAll === 'function') {
+                        const storedTmpls = await dbGetAll('user_templates') || [];
+                        const tmplArray = storedTmpls.map(t => t.data);
+                        
                         for (const obj of filterNew(tmplArray)) {
                             const updated = await window.pushCloudObject('user_template', obj.id, obj, 'library-checklists');
                             if (updated) {
-                                userTemplates[updated.id] = updated;
+                                updated.syncStatus = 'synced';
+                                updated.sync_status = 'synced';
                                 await dbPut('user_templates', { slug: updated.id, data: updated });
+                                
+                                if (typeof userTemplates !== 'undefined') {
+                                    if (updated._deleted || updated.is_deleted) {
+                                        delete userTemplates[updated.id];
+                                    } else {
+                                        userTemplates[updated.id] = updated;
+                                    }
+                                }
                             }
                         }
                     }
@@ -4134,7 +4184,75 @@ if (window.RbiStorageManager) {
                 referenceOk
             });
         }
+        // =====================================================
+        // 10. АВТО-ОЧИСТКА УДАЛЕННЫХ ЗАПИСЕЙ И ФАЙЛОВ ИЗ ПАМЯТИ
+        // =====================================================
+        try {
+            const storesToClean = [
+                'app_history', 'rbi_etalon_acts', 'rbi_tasks', 'rbi_meetings',
+                'rbi_practices', 'rbi_interventions', 'rbi_fmea', 'sk_records',
+                'user_templates', 'custom_docs', 'custom_nodes', 'twi_cards',
+                'feedback_list', 'app_reports', 'project_objects', 'object_aliases'
+            ];
+            
+            let hardDeletedCount = 0;
+            // 1. Физическое удаление "мертвых" карточек
+            for (let store of storesToClean) {
+                const items = await dbGetAll(store);
+                if (items) {
+                    for (let item of items) {
+                        const isDel = item._deleted === true || item.is_deleted === true || (item.data && item.data._deleted === true);
+                        const isSynced = item.syncStatus === 'synced' || item.sync_status === 'synced';
+                        
+                        if (isDel && isSynced) {
+                            const key = item.id || item.slug;
+                            if (key) {
+                                await dbDelete(store, key);
+                                hardDeletedCount++;
+                            }
+                        }
+                    }
+                }
+            }
 
+            // 2. Тихая зачистка осиротевших фото (если карточка удалена, её фото больше не нужны)
+            if (hardDeletedCount > 0) {
+                const usedPhotos = new Set();
+                const extractFiles = (obj) => {
+                    if (!obj) return;
+                    if (typeof obj === 'string') {
+                        if (obj.startsWith('local://') || obj.startsWith('http')) usedPhotos.add(obj);
+                    } else if (typeof obj === 'object') {
+                        Object.values(obj).forEach(extractFiles);
+                    }
+                };
+
+                const allStores = ['app_history', 'rbi_etalon_acts', 'rbi_tasks', 'rbi_meetings', 'rbi_practices', 'rbi_fmea', 'sk_records'];
+                for (let store of allStores) {
+                    const items = await dbGetAll(store);
+                    if (items) items.forEach(extractFiles);
+                }
+                if (typeof customTwiCards !== 'undefined') extractFiles(customTwiCards);
+                if (typeof customNodes !== 'undefined') extractFiles(customNodes);
+                if (typeof customDocs !== 'undefined') extractFiles(customDocs);
+
+                const allPhotos = await dbGetAll('app_photos');
+                if (allPhotos) {
+                    for (let p of allPhotos) {
+                        if (!usedPhotos.has(p.id)) {
+                            await dbDelete('app_photos', p.id);
+                            if (PhotoManager.cache && PhotoManager.cache[p.id]) {
+                                URL.revokeObjectURL(PhotoManager.cache[p.id]);
+                                delete PhotoManager.cache[p.id];
+                            }
+                        }
+                    }
+                }
+                console.log(`[Sync] Авто-очистка: навсегда удалено ${hardDeletedCount} записей и очищен кэш фото.`);
+            }
+        } catch (e) {
+            console.warn('[Sync] Ошибка авто-очистки удаленных записей:', e);
+        }
         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
         if (typeof window.downloadMissingCloudFiles === 'function' && appSettings.autoCacheCloudFiles) {
             const now = Date.now();
@@ -4170,14 +4288,21 @@ if (window.RbiStorageManager) {
                     }
 
                     // Ручная синхронизация может обновить только НЕактивные экраны
-                    if (activeTab !== 'tab-reference') {
-                        if (typeof renderTwiList === 'function') renderTwiList();
-                        if (typeof renderDocsList === 'function') renderDocsList();
-                        if (typeof renderNodesList === 'function') renderNodesList();
-                    }
+                    // Обновляем UI только если нет открытых окон поверх
+                    if (!document.body.classList.contains('modal-open')) {
+                        if (activeTab !== 'tab-reference') {
+                            if (typeof renderTwiList === 'function') renderTwiList();
+                            if (typeof renderDocsList === 'function') renderDocsList();
+                            if (typeof renderNodesList === 'function') renderNodesList();
+                        }
 
-                    if (activeTab !== 'tab-audit' && !currentTemplateKey && typeof renderSelector === 'function') {
-                        renderSelector();
+                        if (activeTab !== 'tab-audit' && !currentTemplateKey && typeof renderSelector === 'function') {
+                            renderSelector();
+                        }
+
+                        if (activeTab !== 'tab-analytics' && typeof updateAllDynamicFilters === 'function') {
+                            updateAllDynamicFilters();
+                        }
                     }
 
                     if (activeTab !== 'tab-analytics' && typeof updateAllDynamicFilters === 'function') {
@@ -4205,24 +4330,22 @@ if (window.RbiStorageManager) {
         if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
 
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
-        // НОВОЕ: Принудительно очищаем оперативную память от дублей, загружая свежие задачи прямо из IndexedDB
-        if (typeof dbGetAll === 'function') {
-            const freshTasks = await dbGetAll('rbi_tasks');
-            if (freshTasks) window.rbi_tasksData = freshTasks.filter(t => !t._deleted);
-        }
+        // Запускаем пересчет только если не открыто модальное окно (чтобы не сломать UX)
+        const isModalOpen = document.body.classList.contains('modal-open');
 
-        // 1. Автоматически пересчитываем задачи из Графика СМР (если прилетели новые этапы)
-        if (typeof window.rbi_generateAutoTasks === 'function') {
-            await window.rbi_generateAutoTasks(true);
-        }
-        // 1.5. Проверяем аномалии в ПК Стройконтроль и создаем задачу
-        if (typeof window.sk_generateAnomalyTasks === 'function') {
-            await window.sk_generateAnomalyTasks();
-        }
+        if (!isModalOpen) {
+            if (typeof dbGetAll === 'function') {
+                const freshTasks = await dbGetAll('rbi_tasks');
+                if (freshTasks) window.rbi_tasksData = freshTasks.filter(t => !t._deleted);
+            }
 
-        // 2. Пересчитываем рутинные задачи (Аудиты, Эталоны) после получения свежей истории из облака
-        if (typeof gameForceUpdatePlan === 'function') {
-            await gameForceUpdatePlan(true); // Запускаем чистильщик-генератор вместо обычной генерации
+            if (typeof window.rbi_generateAutoTasks === 'function') await window.rbi_generateAutoTasks(true);
+            if (typeof window.sk_generateAnomalyTasks === 'function') await window.sk_generateAnomalyTasks();
+            if (typeof gameForceUpdatePlan === 'function') await gameForceUpdatePlan(true);
+        } else {
+            // Флагированно откладываем обновление на потом
+            window.syncDirtyFlags.tasks = true;
+            window.syncDirtyFlags.history = true;
         }
         // RBI NEW: мягкая автоочистка после полного успешного цикла синхронизации.
         // Ставим здесь, а не после профиля, чтобы сначала завершились проверки, задачи, справочники и интерфейсные флаги.

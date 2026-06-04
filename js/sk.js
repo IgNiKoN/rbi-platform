@@ -68,9 +68,9 @@ function sk_getCurrentRole() {
     return window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
 }
 
-// Загружать ПК СК могут инженер, заместитель и администратор
+// Загружать ПК СК могут те, у кого есть флаг canManageSK
 function sk_canUploadRecords() {
-    return ['engineer', 'deputy_manager', 'manager'].includes(sk_getCurrentRole());
+    return window.RbiRoles ? window.RbiRoles.canManageSK() : false;
 }
 
 // Удаление ПК СК:
@@ -80,11 +80,11 @@ function sk_canUploadRecords() {
 function sk_canDeleteRecord(record) {
     if (!record) return false;
 
-    const role = sk_getCurrentRole();
-
-    if (['manager', 'deputy_manager'].includes(role)) {
+    if (window.RbiRoles && window.RbiRoles.isAdmin()) {
         return true;
     }
+    
+    const role = sk_getCurrentRole();
 
     if (role !== 'engineer') {
         return false;
@@ -118,8 +118,8 @@ function sk_filterRecordsByAccess(records) {
         ? window.RbiRoles.getAssignedContractor()
         : (appSettings?.contractorName || appSettings?.assignedContractor || '');
 
-    // Админ, зам и директор видят всё
-    if (['manager', 'deputy_manager', 'director'].includes(role)) {
+    // Высшее руководство (кроме РП) видит всё
+    if (window.RbiRoles && window.RbiRoles.isLeadership() && role !== 'project_manager') {
         return records;
     }
 
@@ -368,7 +368,7 @@ window.sk_renderMainTab = async function () {
 
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
     const canSeeHr = role !== 'guest'; 
-    const canUploadSk = ['engineer', 'deputy_manager', 'manager'].includes(role);
+    const canUploadSk = window.RbiRoles ? window.RbiRoles.canManageSK() : false;
 
     const hrBtnHtml = canSeeHr ? `<button onclick="sk_switchView('hr')" id="sk-btn-hr" class="shrink-0 px-4 bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 border border-[var(--card-border)] py-2 rounded-lg text-[10px] font-bold uppercase active:scale-95 transition-colors shadow-sm flex items-center gap-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg> Инженеры СК</button>` : '';
 
@@ -450,13 +450,13 @@ window.sk_renderMainTab = async function () {
 // Функция очистки данных Стройконтроля
 window.sk_clearData = async function () {
     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    const canManage = window.RbiRoles ? window.RbiRoles.canManageSK() : false;
 
-    // Гостям, подрядчикам, директорам и РП очистка недоступна
-    if (['guest', 'contractor', 'project_manager', 'director'].includes(role)) {
+    if (!canManage) {
         return showToast("⛔ У вашей роли нет прав для очистки базы ПК СК");
     }
 
-    const isManager = ['manager', 'deputy_manager'].includes(role);
+    const isManager = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
     const confirmText = isManager
         ? "Удалить ВСЕ загруженные замечания Стройконтроля? (Справочник объемов сохранится)"
         : "Удалить ВСЕ ВАШИ загруженные замечания Стройконтроля? (Чужие записи останутся)";
@@ -2630,8 +2630,7 @@ window.sk_saveCategoryLink = async function (rawCategory) {
 };
 // === ПК СК: кто может утверждать подрядчиков ===
 function sk_canApproveContractorLink() {
-    const role = sk_getCurrentRole();
-    return ['manager', 'deputy_manager'].includes(role);
+    return window.RbiRoles ? window.RbiRoles.isAdmin() : false;
 }
 // === ПК СК: модалка связывания подрядчиков ===
 window.sk_openContractorLinkModal = async function () {

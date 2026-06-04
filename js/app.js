@@ -219,7 +219,8 @@ const audioFail = new Audio("data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwM
 let __saveSessionTimer = null;
 // --- Глобальный отлов ошибок для разработчика ---
 async function sendErrorLogToCloud(message, stack) {
-    if (!window.supabaseClient || !window.syncConfig || !window.syncConfig.enabled) return;
+    // ЗАЩИТА: Если нет интернета - не пытаемся отправить ошибку, иначе будет бесконечный цикл
+    if (!navigator.onLine || !window.supabaseClient || !window.syncConfig || !window.syncConfig.enabled) return;
     try {
         // Оборачиваем объект в массив [] - это надежнее для Supabase
         await window.supabaseClient.from('rbi_error_logs').insert([{
@@ -1879,7 +1880,7 @@ function renderReferenceTab() {
             <div class="p-2 space-y-2">`;
 
         filteredItems.forEach(i => {
-            const safeNormText = (i.t || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeNormText = (i.t || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ').replace(/\r/g, '');
             const specificItemCards = itemCards.filter(c => String(c.itemId) === String(i.id));
 
             // Проверяем наличие TWI
@@ -2461,25 +2462,17 @@ async function deleteSelectedHistory() {
     // engineer — только свои проверки;
     // deputy_manager / manager — любые;
     // остальные роли не удаляют проектные проверки.
-    const deleteRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    const currentEngineerName = window.RbiRoles
-        ? window.RbiRoles.getCurrentEngineerName()
-        : (appSettings?.engineerName || '');
-
-    if (!['engineer', 'deputy_manager', 'manager'].includes(deleteRole)) {
+    if (window.RbiRoles && !window.RbiRoles.canCreate()) {
         return showToast('⛔ Ваша роль не позволяет удалять проверки');
     }
 
     let canDeleteAll = true;
-
     for (let id of ids) {
         let item = contractorArray.find(i => String(i.id) === String(id));
-
         if (!item) continue;
-
+        
         const ownerName = item.inspectorName || item.inspector_name || '';
-
-        if (deleteRole === 'engineer' && ownerName !== currentEngineerName) {
+        if (window.RbiRoles && !window.RbiRoles.canDelete(ownerName)) {
             canDeleteAll = false;
             break;
         }
@@ -3321,15 +3314,8 @@ function updateUI() {
 // === СОХРАНЕНИЕ В ИСТОРИЮ (С ЖЕЛЕЗНОЙ ПРИВЯЗКОЙ ИМЕНИ) ===
 async function saveProductToArray() {
     // Ролевая защита создания проверки.
-    // Создавать проектные проверки могут только engineer, deputy_manager, manager.
     if (window.RbiRoles && !window.RbiRoles.canCreate()) {
         return showToast("⛔ Ваша роль не позволяет создавать проверки");
-    }
-
-    const currentCreateRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'engineer';
-
-    if (!['engineer', 'deputy_manager', 'manager'].includes(currentCreateRole)) {
-        return showToast("⛔ Создавать проверки могут только инженер, заместитель или администратор");
     }
     const projInput = document.getElementById('inp-project');
     const inspInput = document.getElementById('inp-inspector');
@@ -3759,9 +3745,7 @@ function resetChecklist() {
 }
 
 async function clearHistory() {
-    const clearRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-
-    if (!['manager', 'deputy_manager'].includes(clearRole)) {
+    if (window.RbiRoles && !window.RbiRoles.isAdmin()) {
         return showToast("⛔ Полная очистка истории доступна только администратору или заместителю");
     }
     if (!confirm('Удалить ВСЮ историю проверок? Сами чек-листы и настройки останутся.')) return;
@@ -5982,41 +5966,21 @@ window.openDocViewer = async function (docId) {
     }
 };
 // === ПРАВА НА БАЗУ ЗНАНИЙ ===
-// Смотреть базу знаний могут все.
-// Создавать/редактировать могут engineer, deputy_manager, manager.
-// Удалять чужие материалы могут deputy_manager, manager.
 
 function rbi_getCurrentRoleSafe() {
-    return window.RbiRoles ? window.RbiRoles.getCurrentRole() : (appSettings?.userRole || 'guest');
+    return window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
 }
 
 function rbi_getCurrentUserNameSafe() {
-    if (window.RbiRoles && typeof window.RbiRoles.getCurrentEngineerName === 'function') {
-        return window.RbiRoles.getCurrentEngineerName();
-    }
-
-    return window.syncConfig?.engineerName ||
-        appSettings?.engineerName ||
-        document.getElementById('inp-inspector')?.value?.trim() ||
-        'Инженер';
+    return window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : 'Инженер';
 }
 
 function rbi_canEditKnowledgeBase() {
-    const role = rbi_getCurrentRoleSafe();
-    return ['engineer', 'deputy_manager', 'manager'].includes(role);
+    return window.RbiRoles ? window.RbiRoles.canEditKnowledgeBase() : false;
 }
 
 function rbi_canDeleteKnowledgeItem(ownerName) {
-    const role = rbi_getCurrentRoleSafe();
-    const currentUser = rbi_getCurrentUserNameSafe();
-
-    if (['deputy_manager', 'manager'].includes(role)) return true;
-
-    if (role === 'engineer') {
-        return !ownerName || ownerName === currentUser;
-    }
-
-    return false;
+    return window.RbiRoles ? window.RbiRoles.canDelete(ownerName) : false;
 }
 
 function rbi_requireKnowledgeEditRight() {
@@ -6024,7 +5988,6 @@ function rbi_requireKnowledgeEditRight() {
         showToast('⛔ Ваша роль не позволяет редактировать базу знаний');
         return false;
     }
-
     return true;
 }
 // ==========================================
@@ -11157,8 +11120,7 @@ window.exportLibraryToJsCode = async function (skipSyncCheck = false) {
 // === ЛОГИКА УНИВЕРСАЛЬНОГО МЕНЮ (3 ТОЧКИ) ===
 window.openUniversalActionSheet = function (id, type, title, isOwner, extraData) {
     // <-- ВСТАВКА: Режим Бога для администратора (разрешаем удалять и менять всё)
-    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    if (['manager', 'deputy_manager'].includes(role)) {
+    if (window.RbiRoles && window.RbiRoles.isAdmin()) {
         isOwner = true;
     }
 
@@ -11595,10 +11557,9 @@ window.rbi_deleteFeedback = async function (id) {
     if (idx === -1) return;
 
     const f = window.rbi_feedbackData[idx];
-    const currentEng = appSettings.engineerName || 'Инженер';
+    const currentEng = window.RbiRoles ? window.RbiRoles.getCurrentEngineerName() : (appSettings.engineerName || 'Инженер');
     const isOwner = f.author === currentEng;
-    const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    const isAdmin = ['manager', 'deputy_manager'].includes(role);
+    const isAdmin = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
 
     if (!isOwner && !isAdmin) return showToast("⚠️ Нет прав на удаление");
 
@@ -11607,7 +11568,7 @@ window.rbi_deleteFeedback = async function (id) {
 
     // Стандартная логика мягкого удаления с ЖЕЛЕЗОБЕТОННЫМИ флагами для облака
     window.rbi_feedbackData[idx]._deleted = true;
-    window.rbi_feedbackData[idx].is_deleted = true; // <-- Для облака
+    window.rbi_feedbackData[idx].is_deleted = true;
     window.rbi_feedbackData[idx]._deletedAt = new Date().toISOString();
     window.rbi_feedbackData[idx].updatedAt = window.rbi_feedbackData[idx]._deletedAt;
 
@@ -11616,7 +11577,7 @@ window.rbi_deleteFeedback = async function (id) {
     window.rbi_feedbackData[idx].sync_status = 'not_synced';
 
     // Сохраняем в локальную базу устройства
-    await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
+    await dbPut('feedback_list', window.rbi_feedbackData[idx]);
 
     // Даем команду облаку на синхронизацию
     localStorage.setItem('rbi_cloud_dirty', '1');

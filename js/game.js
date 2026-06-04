@@ -2511,7 +2511,7 @@ window.rbi_deleteFmea = async function (id) {
         record._deleted = true;
         record.is_deleted = true; // <-- ДЛЯ ОБЛАКА
         record.updatedAt = new Date().toISOString();
-        
+
         record.source = 'local';
         record.syncStatus = 'not_synced';
         record.sync_status = 'not_synced';
@@ -3218,10 +3218,8 @@ window.gameLoadContractorDirectory = async function () {
 };
 
 // === Панель руководителя: Изменить название подрядчика ===
+// === Панель руководителя: Изменить название подрядчика ===
 window.gameEditContractor = async function (canonicalKey, currentName) {
-    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
-
-    // Спрашиваем новое имя
     const newName = prompt('Введите новое корректное название подрядчика:', currentName);
     if (!newName || newName.trim() === '' || newName === currentName) return;
 
@@ -3231,32 +3229,26 @@ window.gameEditContractor = async function (canonicalKey, currentName) {
         const pCode = window.syncConfig?.projectCode || 'RBI';
         const nowIso = new Date().toISOString();
 
-        // 1. Обновляем в облаке Supabase
-        const { error } = await window.supabaseClient
-            .from('contractor_directory')
-            .update({ display_name: newName.trim(), updated_at: nowIso })
-            .eq('project_code', pCode)
-            .eq('canonical_key', canonicalKey);
-
-        if (error) throw error;
-
-        // 2. Обновляем локально на устройстве (IndexedDB)
+        // Обновляем ТОЛЬКО локально на устройстве
         if (typeof dbGetAll === 'function') {
             const localDirs = await dbGetAll('contractor_directory') || [];
             const item = localDirs.find(c => c.canonical_key === canonicalKey && c.project_code === pCode);
             if (item) {
                 item.display_name = newName.trim();
                 item.updated_at = nowIso;
+                item.source = 'local';
                 item.sync_status = 'not_synced';
                 await dbPut('contractor_directory', item);
             }
         }
 
         showToast('✏️ Название подрядчика успешно обновлено');
-        gameLoadContractorDirectory(); // Перерисовываем список
+        gameLoadContractorDirectory();
 
-        // Обновляем локальный кэш
         if (window.ContractorDirectory) await window.ContractorDirectory.init();
+
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
 
     } catch (e) {
         console.error('[gameEditContractor]', e);
@@ -3266,8 +3258,6 @@ window.gameEditContractor = async function (canonicalKey, currentName) {
 
 // === Панель руководителя: Удалить подрядчика из справочника ===
 window.gameDeleteContractor = async function (canonicalKey) {
-    if (!window.supabaseClient) return showToast('❌ Облако не подключено');
-
     if (!confirm('Вы уверены, что хотите удалить подрядчика из справочника?\n\nНовые заявки от него снова будут падать в очередь на подтверждение.')) return;
 
     showToast('⏳ Удаление из справочника...');
@@ -3276,16 +3266,7 @@ window.gameDeleteContractor = async function (canonicalKey) {
         const pCode = window.syncConfig?.projectCode || 'RBI';
         const nowIso = new Date().toISOString();
 
-        // 1. Мягкое удаление в облаке Supabase (is_deleted = true)
-        const { error } = await window.supabaseClient
-            .from('contractor_directory')
-            .update({ is_deleted: true, updated_at: nowIso })
-            .eq('project_code', pCode)
-            .eq('canonical_key', canonicalKey);
-
-        if (error) throw error;
-
-        // 2. Удаляем локально на устройстве
+        // Удаляем ТОЛЬКО локально на устройстве (Ставим флаги удаления)
         if (typeof dbGetAll === 'function') {
             const localDirs = await dbGetAll('contractor_directory') || [];
             const item = localDirs.find(c => c.canonical_key === canonicalKey && c.project_code === pCode);
@@ -3293,17 +3274,17 @@ window.gameDeleteContractor = async function (canonicalKey) {
                 item._deleted = true;
                 item.is_deleted = true;
                 item.updated_at = nowIso;
+                item.source = 'local';
+                item.sync_status = 'not_synced';
                 await dbPut('contractor_directory', item);
             }
         }
 
         showToast('🗑️ Подрядчик удален из справочника');
-        gameLoadContractorDirectory(); // Перерисовываем список
+        gameLoadContractorDirectory();
 
-        // Обновляем локальный кэш, чтобы система забыла этого подрядчика
         if (window.ContractorDirectory) await window.ContractorDirectory.init();
 
-        // Запускаем фоновую синхронизацию, чтобы другие инженеры тоже получили сигнал об удалении
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
 
@@ -4070,19 +4051,31 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
                 const canonicalKey = action.replace('link_', '');
                 if (!projectsArray.includes(canonicalKey)) projectsArray.push(canonicalKey);
 
-                // Сохраняем как синоним в базу объектов
+                // Сохраняем как синоним локально (в облако отправит sync.js)
                 if (req.raw_name && req.raw_name !== canonicalKey) {
-                    const { data: objRows } = await window.supabaseClient.from('project_objects').select('id, synonyms').eq('project_code', projectCode).eq('canonical_key', canonicalKey).limit(1);
-                    if (objRows && objRows.length > 0) {
-                        const oldSynonyms = Array.isArray(objRows[0].synonyms) ? objRows[0].synonyms : [];
+                    const localObjs = await dbGetAll('project_objects') || [];
+                    const targetObj = localObjs.find(o => o.canonical_key === canonicalKey && o.project_code === projectCode);
+                    
+                    if (targetObj) {
+                        const oldSynonyms = Array.isArray(targetObj.synonyms) ? targetObj.synonyms : [];
                         if (!oldSynonyms.includes(req.raw_name)) {
-                            await window.supabaseClient.from('project_objects').update({
-                                synonyms: [...oldSynonyms, req.raw_name], updated_at: new Date().toISOString()
-                            }).eq('id', objRows[0].id);
+                            targetObj.synonyms.push(req.raw_name);
+                            targetObj.updated_at = new Date().toISOString();
+                            targetObj.sync_status = 'not_synced';
+                            targetObj.source = 'local';
+                            await dbPut('project_objects', targetObj);
 
-                            await window.supabaseClient.from('object_aliases').upsert({
-                                project_code: projectCode, raw_name: req.raw_name, canonical_key: canonicalKey, updated_at: new Date().toISOString()
-                            }, { onConflict: 'project_code,raw_name' });
+                            const newAlias = {
+                                id: 'alias_' + Date.now().toString(36),
+                                project_code: projectCode,
+                                raw_name: req.raw_name,
+                                canonical_key: canonicalKey,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString(),
+                                sync_status: 'not_synced',
+                                source: 'local'
+                            };
+                            await dbPut('object_aliases', newAlias);
                         }
                     }
                 }
@@ -4505,7 +4498,7 @@ window.rbi_exportFmeaExcel = function (fmeaId) {
         const worksheet = XLSX.utils.json_to_sheet(dataToExport);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "FMEA Анализ");
-        
+
         // Скачиваем файл
         XLSX.writeFile(workbook, `FMEA_${record.periodName}_${new Date().toLocaleDateString('ru-RU')}.xlsx`);
         showToast("✅ FMEA успешно выгружен в Excel!");

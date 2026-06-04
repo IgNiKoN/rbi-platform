@@ -155,7 +155,6 @@ window.gameForceUpdatePlan = async function (silent = false) {
     window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
 
     await gameGenerateWeeklyPlan(true);
-    rbi_renderTasksList();
 
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
@@ -199,24 +198,14 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
                     }
                 }
             });
-
-            const tasksToDelete = window.rbi_tasksData.filter(t =>
-                t.type === 'auto' && t.status === 'pending' && (!t.done || t.done === 0) && t.taskType === 'Аудит'
-            );
-
-            for (let t of tasksToDelete) {
-                t._deleted = true;
-                t.updatedAt = new Date().toISOString();
-                if (typeof dbPut === 'function') await dbPut(STORES.TASKS, t);
-            }
-            window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
+           
         }
 
         let newTasksCount = 0;
 
         // Определяем, для кого генерируем задачи
         let engineersToProcess = [myName];
-        if (['manager', 'deputy_manager'].includes(currentRole)) {
+        if (window.RbiRoles && window.RbiRoles.isAdmin()) {
             const allEngs = [...new Set(contractorArray.map(c => c.inspectorName).filter(Boolean))];
             if (allEngs.length > 0) engineersToProcess = allEngs;
             if (!engineersToProcess.includes(myName)) engineersToProcess.push(myName);
@@ -516,7 +505,7 @@ window.rbi_renderTasksList = async function () {
         return;
     }
 
-    if (['manager', 'deputy_manager', 'director', 'project_manager'].includes(currentRole)) {
+    if (window.RbiRoles && window.RbiRoles.isLeadership()) {
         // Для руководства фильтруем сначала по объектам (РП видит только свои)
         if (currentRole === 'project_manager' && assignedProjects.length > 0) {
             activeTasks = activeTasks.filter(t => assignedProjects.includes(t.project_canonical_key || t.project));

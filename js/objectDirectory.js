@@ -4,10 +4,9 @@ window.ObjectDirectory = {
     objects: [], // Эталонный массив объектов из БД
     aliases: {}, // Кэш алиасов (кривое название -> эталон)
 
-    // Загрузка эталонного справочника из IndexedDB
+    // Загрузка эталонного справочника ТОЛЬКО из локальной базы (Offline-First)
     async init() {
         try {
-            // 1. Сначала грузим из локальной базы для мгновенного отображения
             if (typeof dbGetAll !== 'undefined') {
                 const storedObjs = await dbGetAll('project_objects');
                 if (storedObjs) this.objects = storedObjs.filter(o => !o._deleted);
@@ -17,32 +16,6 @@ window.ObjectDirectory = {
                     storedAliases.forEach(a => {
                         this.aliases[a.raw_name] = a.canonical_key;
                     });
-                }
-            }
-
-            // 2. Затем тихо тянем свежак из Supabase (если есть интернет и мы авторизованы)
-            if (navigator.onLine && window.supabaseClient && window.syncConfig?.projectCode) {
-                const { data: cloudObjs } = await window.supabaseClient
-                    .from('project_objects')
-                    .select('*')
-                    .eq('project_code', window.syncConfig.projectCode);
-
-                if (cloudObjs) {
-                    for (let cObj of cloudObjs) {
-                        const localObj = this.objects.find(o => o.id === cObj.id);
-                        const cTime = new Date(cObj.updated_at || 0).getTime();
-                        const lTime = localObj ? new Date(localObj.updated_at || 0).getTime() : 0;
-
-                        if (!localObj || cTime > lTime) {
-                            cObj._deleted = cObj.is_deleted;
-                            await dbPut('project_objects', cObj);
-
-                            const idx = this.objects.findIndex(o => o.id === cObj.id);
-                            if (idx >= 0) this.objects[idx] = cObj;
-                            else this.objects.push(cObj);
-                        }
-                    }
-                    this.objects = this.objects.filter(o => !o._deleted);
                 }
             }
         } catch (e) {
@@ -591,7 +564,7 @@ window.ObjectDirectory = {
                         Заявки из ПК СК (Excel)
                     </div>
                     ${directoryQueue.map(q => {
-                    const raw = String(q.raw_name || '').replace(/"/g, '&quot;');
+                    const raw = String(q.raw_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ').replace(/\r/g, '');
                     const qid = String(q.id || '').replace(/"/g, '&quot;');
                     const selectId = 'obj_queue_action_' + qid;
                     return `
@@ -626,7 +599,7 @@ window.ObjectDirectory = {
                         Заявки на доступ: ${safeEng}
                     </div>
                     ${reqs.map((req, idx) => {
-                        const raw = String(req.raw_name || '').replace(/"/g, '&quot;');
+                        const raw = String(req.raw_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ').replace(/\r/g, '');
                         const selectId = 'req_action_' + user.inspector_id + '_' + idx;
                         return `
                             <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2">
@@ -905,7 +878,6 @@ window.ObjectDirectory = {
 
         if (!alias) return showToast("⚠️ Введите текст синонима!");
 
-        // Проверяем, не занят ли синоним
         if (this.aliases[alias]) {
             if (!predefinedValue) showToast("⚠️ Такой синоним уже привязан к другому объекту!");
             return;
@@ -918,49 +890,34 @@ window.ObjectDirectory = {
             const currentUser = window.syncConfig?.engineerName || 'Админ';
             const nowIso = new Date().toISOString();
 
-            // 1. Обновляем локальные словари
+            // 1. Обновляем локальные словари и БД объектов
             this.aliases[alias] = canonicalKey;
 
             const objIndex = this.objects.findIndex(o => o.canonical_key === canonicalKey);
             if (objIndex > -1) {
                 if (!this.objects[objIndex].synonyms) this.objects[objIndex].synonyms = [];
                 this.objects[objIndex].synonyms.push(alias);
+                this.objects[objIndex].sync_status = 'not_synced';
+                this.objects[objIndex].updated_at = nowIso;
+                
+                if (typeof dbPut === 'function') await dbPut('project_objects', this.objects[objIndex]);
             }
 
-            // 2. Отправляем в Supabase (Обновляем массив синонимов у объекта)
-            if (window.supabaseClient) {
-                const { data: primaryData } = await window.supabaseClient
-                    .from('project_objects')
-                    .select('synonyms')
-                    .eq('project_code', pCode)
-                    .eq('canonical_key', canonicalKey)
-                    .single();
-
-                let newSynonyms = Array.isArray(primaryData?.synonyms) ? primaryData.synonyms : [];
-                if (!newSynonyms.includes(alias)) newSynonyms.push(alias);
-
-                await window.supabaseClient
-                    .from('project_objects')
-                    .update({ synonyms: newSynonyms, updated_at: nowIso })
-                    .eq('project_code', pCode)
-                    .eq('canonical_key', canonicalKey);
-
-                // 3. Создаем запись в таблице алиасов
-                await window.supabaseClient.from('object_aliases').upsert({
-                    project_code: pCode, raw_name: alias, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
-                }, { onConflict: 'project_code,raw_name' });
-            }
-
-            // 4. Локальное сохранение
+            // 2. Локальное сохранение алиаса
             const newAlias = {
                 id: 'alias_' + Date.now().toString(36),
                 raw_name: alias,
                 canonical_key: canonicalKey,
-                project_code: pCode
+                project_code: pCode,
+                created_by: currentUser,
+                created_at: nowIso,
+                updated_at: nowIso,
+                source: 'local',
+                sync_status: 'not_synced'
             };
+            
             if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
 
-            // Если это ручной ввод, очищаем инпут и показываем тост
             if (!predefinedValue) {
                 if (inputEl) inputEl.value = '';
                 showToast("🔗 Синоним привязан!");
@@ -1011,25 +968,28 @@ window.ObjectDirectory = {
                         this.aliases[syn] = canonicalKey;
                         this.objects[objIndex].synonyms.push(syn);
 
-                        // Сохраняем локально
-                        const newAlias = { id: 'alias_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5), raw_name: syn, canonical_key: canonicalKey, project_code: pCode };
+                        // Сохраняем ТОЛЬКО локально (Cloud подтянет sync.js)
+                        const newAlias = { 
+                            id: 'alias_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 5), 
+                            raw_name: syn, 
+                            canonical_key: canonicalKey, 
+                            project_code: pCode,
+                            created_by: currentUser,
+                            created_at: nowIso,
+                            updated_at: nowIso,
+                            source: 'local',
+                            sync_status: 'not_synced'
+                        };
                         if (typeof dbPut === 'function') await dbPut('object_aliases', newAlias);
-
-                        // Сохраняем в облако
-                        if (window.supabaseClient) {
-                            await window.supabaseClient.from('object_aliases').upsert({
-                                project_code: pCode, raw_name: syn, canonical_key: canonicalKey, created_by: currentUser, created_at: nowIso, updated_at: nowIso
-                            }, { onConflict: 'project_code,raw_name' });
-                            addedCount++;
-                        }
+                        addedCount++;
                     }
                 }
 
-                // Обновляем массив синонимов самого объекта в облаке
-                if (window.supabaseClient && addedCount > 0) {
-                    await window.supabaseClient.from('project_objects')
-                        .update({ synonyms: this.objects[objIndex].synonyms, updated_at: nowIso })
-                        .eq('project_code', pCode).eq('canonical_key', canonicalKey);
+                // Обновляем массив синонимов самого объекта локально
+                if (addedCount > 0) {
+                    this.objects[objIndex].updated_at = nowIso;
+                    this.objects[objIndex].sync_status = 'not_synced';
+                    if (typeof dbPut === 'function') await dbPut('project_objects', this.objects[objIndex]);
                 }
 
                 showToast("✅ Синонимы от ИИ успешно привязаны!");
@@ -1058,17 +1018,10 @@ window.ObjectDirectory = {
             targetObj.updated_at = new Date().toISOString();
 
             try {
-                // 1. Сохраняем в локальную БД телефона
+                // 1. Сохраняем удаление в локальную БД телефона
                 if (typeof dbPut === 'function') await dbPut('project_objects', targetObj);
 
-                // 2. БРОНЕБОЙНО: Мгновенно бьем в облако (Supabase), чтобы он не вернулся при пулле!
-                if (navigator.onLine && window.supabaseClient) {
-                    await window.supabaseClient.from('project_objects')
-                        .update({ is_deleted: true, updated_at: new Date().toISOString() })
-                        .eq('id', id);
-                }
-
-                // 3. Жестко вырезаем объект из оперативной памяти
+                // 2. Жестко вырезаем объект из оперативной памяти
                 this.objects.splice(objIndex, 1);
 
                 showToast("🗑️ Объект удален");

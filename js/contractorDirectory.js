@@ -5,9 +5,9 @@ window.ContractorDirectory = {
     contractors: [],
     aliases: {},
 
+    // Загрузка эталонного справочника ТОЛЬКО из локальной базы (Offline-First)
     async init() {
         try {
-            // 1. Локальная база
             if (typeof dbGetAll === 'function' && typeof STORES !== 'undefined') {
                 const storedContractors = await dbGetAll(STORES.CONTRACTOR_DIRECTORY);
                 if (storedContractors) {
@@ -21,41 +21,6 @@ window.ContractorDirectory = {
                             this.aliases[this.cleanString(a.raw_name)] = a.canonical_key;
                         }
                     });
-                }
-            }
-
-            // 2. Облако
-            if (navigator.onLine && window.supabaseClient && window.syncConfig?.projectCode) {
-                const pCode = window.syncConfig.projectCode;
-
-                const { data: cloudContractors, error: cErr } = await window.supabaseClient
-                    .from('contractor_directory')
-                    .select('*')
-                    .eq('project_code', pCode)
-                    .eq('is_deleted', false);
-
-                if (!cErr && Array.isArray(cloudContractors)) {
-                    for (const c of cloudContractors) {
-                        c._deleted = c.is_deleted === true;
-                        await dbPut(STORES.CONTRACTOR_DIRECTORY, c);
-                    }
-
-                    this.contractors = cloudContractors.filter(c => !c.is_deleted);
-                }
-
-                const { data: cloudAliases, error: aErr } = await window.supabaseClient
-                    .from('contractor_aliases')
-                    .select('*')
-                    .eq('project_code', pCode);
-
-                if (!aErr && Array.isArray(cloudAliases)) {
-                    for (const a of cloudAliases) {
-                        await dbPut(STORES.CONTRACTOR_ALIASES, a);
-
-                        if (a.raw_name && a.canonical_key) {
-                            this.aliases[this.cleanString(a.raw_name)] = a.canonical_key;
-                        }
-                    }
                 }
             }
         } catch (e) {
@@ -272,19 +237,9 @@ window.ContractorDirectory = {
 
         if (typeof dbPut === 'function') {
             await dbPut(STORES.CONTRACTOR_ALIASES, alias);
-        }
-
-        if (window.supabaseClient && pCode) {
-            try {
-                await window.supabaseClient
-                    .from('contractor_aliases')
-                    .upsert(alias, {
-                        onConflict: 'project_code,raw_name'
-                    });
-            } catch (e) {
-                console.warn('[ContractorDirectory] Алиас сохранён локально, но не ушёл в облако:', e);
-                localStorage.setItem('rbi_cloud_dirty', '1');
-            }
+            // Сигнализируем синхронизатору, что появились новые данные
+            localStorage.setItem('rbi_cloud_dirty', '1');
+            if (typeof triggerSync === 'function') triggerSync('silent');
         }
 
         return true;
