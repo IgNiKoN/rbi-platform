@@ -2931,6 +2931,10 @@ window.rbi_saveFmea = async function (periodName) {
     else window.rbi_fmeaRecords.push(fmeaRecord);
 
     await dbPut(STORES.FMEA, fmeaRecord);
+    // ОЧЕРЕДЬ
+    if (window.SyncQueueManager && !isDemoMode) {
+        window.SyncQueueManager.enqueue('SAVE_FMEA', fmeaRecord);
+    }
     window.currentEditingFmeaId = null; // Сбрасываем ID
 
     localStorage.setItem('rbi_cloud_dirty', '1');

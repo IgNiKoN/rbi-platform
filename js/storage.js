@@ -2,7 +2,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 19; // БЫЛО 16, СТАЛО 17
+const DB_VERSION = 20; // БЫЛО 16, СТАЛО 17
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -57,7 +57,8 @@ const STORES = {
     FEEDBACK_LIST: 'feedback_list',
     ASSISTANT_KB: 'app_assistant_kb',
     FILE_REGISTRY: 'file_registry_cache',
-    STORAGE_EVENTS: 'storage_events'
+    STORAGE_EVENTS: 'storage_events',
+    SYNC_QUEUE: 'sync_queue'
 };
 
 /**

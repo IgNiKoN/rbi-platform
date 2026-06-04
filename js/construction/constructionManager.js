@@ -2161,7 +2161,10 @@ window.ConstDefectForm = {
                 return;
             }
         }
-
+        // ОЧЕРЕДЬ
+        if (window.SyncQueueManager && typeof isDemoMode !== 'undefined' && !isDemoMode) {
+            window.SyncQueueManager.enqueue('SAVE_CONST_DEFECT', defectData);
+        }
         this.close();
         showToast('✅ Замечание сохранено на плане!');
         

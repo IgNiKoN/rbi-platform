@@ -4586,3 +4586,83 @@ window.forceSyncObjects = async function () {
         if (typeof showToast === 'function') showToast('❌ Ошибка принудительной отправки');
     }
 };
+
+// ============================================================================
+// === МЕНЕДЖЕР ОЧЕРЕДИ СИНХРОНИЗАЦИИ (TRANSACTIONAL OUTBOX) ===
+// ============================================================================
+
+window.SyncQueueManager = {
+    isProcessing: false,
+
+    // 1. Положить действие в локальную очередь
+    async enqueue(actionType, payload) {
+        try {
+            const queueItem = {
+                id: 'q_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
+                action_type: actionType,
+                payload: payload,
+                project_code: window.syncConfig?.projectCode || 'LOCAL',
+                engineer_name: window.syncConfig?.engineerName || 'Инженер',
+                device_id: window.syncConfig?.deviceId || 'unknown',
+                created_at: new Date().toISOString()
+            };
+
+            await window.dbPut('sync_queue', queueItem);
+            console.log(`[Queue] Добавлено в очередь: ${actionType}`);
+            
+            // Пытаемся сразу отправить, если есть сеть
+            this.process();
+        } catch (e) {
+            console.error('[Queue] Ошибка добавления в очередь:', e);
+        }
+    },
+
+    // 2. Обработать очередь (отправить в Supabase)
+    async process() {
+        if (this.isProcessing || !navigator.onLine || !window.supabaseClient) return;
+
+        try {
+            this.isProcessing = true;
+            
+            // Берем все задачи из локальной очереди
+            const queueItems = await window.dbGetAll('sync_queue') || [];
+            if (queueItems.length === 0) return; // Очередь пуста
+
+            // Сортируем от старых к новым (FIFO)
+            queueItems.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            // Отправляем по одной, чтобы гарантировать порядок
+            for (const item of queueItems) {
+                const { error } = await window.supabaseClient
+                    .from('rbi_sync_queue')
+                    .insert([{
+                        project_code: item.project_code,
+                        engineer_name: item.engineer_name,
+                        action_type: item.action_type,
+                        payload: item.payload,
+                        device_id: item.device_id,
+                        created_at: item.created_at
+                    }]);
+
+                if (error) {
+                    console.warn('[Queue] Ошибка отправки элемента в облако. Останавливаем обработку.', error);
+                    break; // Прерываем цикл, попробуем позже
+                }
+
+                // Если успешно отправлено — удаляем из локальной базы телефона
+                await window.dbDelete('sync_queue', item.id);
+                console.log(`[Queue] Успешно отправлено и удалено из локальной БД: ${item.action_type}`);
+            }
+
+        } catch (e) {
+            console.error('[Queue] Ошибка обработки очереди:', e);
+        } finally {
+            this.isProcessing = false;
+        }
+    }
+};
+
+// Привязываем обработку очереди к восстановлению интернета
+window.addEventListener('online', () => {
+    if (window.SyncQueueManager) window.SyncQueueManager.process();
+});

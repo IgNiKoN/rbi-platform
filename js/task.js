@@ -105,6 +105,10 @@ window.rbi_saveManualTask = async function () {
 
     window.rbi_tasksData.unshift(newTask);
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, newTask);
+    // ОЧЕРЕДЬ
+    if (window.SyncQueueManager && !isDemoMode) {
+        window.SyncQueueManager.enqueue('SAVE_TASK', newTask);
+    }
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
     showToast("✅ Поручение создано!");
@@ -1032,6 +1036,10 @@ window.rbi_markTaskDone = async function (taskId, silent = false) {
         task.updatedAt = new Date().toISOString();
 
         if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+        // ОЧЕРЕДЬ
+        if (window.SyncQueueManager && !isDemoMode) {
+            window.SyncQueueManager.enqueue('UPDATE_TASK_STATUS', { taskId: task.id, status: 'done' });
+        }
 
         document.getElementById('task-details-modal').style.display = 'none';
         document.body.classList.remove('modal-open');
@@ -1060,6 +1068,7 @@ window.rbi_resumeTask = async function (taskId) {
     task.history.unshift(`[${new Date().toLocaleDateString('ru-RU')}] Возобновлена инженером.`);
     task.updatedAt = new Date().toISOString();
     if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+    
     showToast("🔄 Задача снова активна");
 
     // ИСПРАВЛЕНИЕ: Жестко закрываем окно

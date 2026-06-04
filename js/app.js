@@ -3576,6 +3576,12 @@ async function saveProductToArray() {
     contractorArray.push(newItem);
     if (!isDemoMode) {
         await dbPut(STORES.HISTORY, newItem);
+        
+        // ---> ВСТАВКА ОЧЕРЕДИ: Логируем создание проверки в неубиваемую очередь
+        if (window.SyncQueueManager) {
+            window.SyncQueueManager.enqueue('SAVE_INSPECTION', newItem);
+        }
+        // <---
     }
     // === АВТОМАТИЧЕСКОЕ СОЗДАНИЕ ДЕФЕКТОВ В РЕЕСТР СТРОЙКОНТРОЛЯ ===
     if (isConstructionMode && typeof window.ConstManager !== 'undefined') {
@@ -10323,6 +10329,10 @@ window.rbi_saveMeetingMemo = async function () {
 
     window.rbi_meetingsData.push(meet);
     await dbPut(STORES.MEETINGS, meet);
+    // ОЧЕРЕДЬ
+    if (window.SyncQueueManager && !isDemoMode) {
+        window.SyncQueueManager.enqueue('SAVE_MEETING', meet);
+    }
 
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof gameLogAction === 'function') gameLogAction('meeting_memo_created', meet.id);
@@ -10477,6 +10487,10 @@ window.rbi_saveIntervention = async function () {
 
     window.rbi_interventionsData.push(item);
     await dbPut(STORES.INTERVENTIONS, item);
+    // ОЧЕРЕДЬ
+    if (window.SyncQueueManager && !isDemoMode) {
+        window.SyncQueueManager.enqueue('SAVE_INTERVENTION', item);
+    }
 
     if (typeof gameLogAction === 'function') gameLogAction('intervention_logged', item.id);
 
@@ -10900,6 +10914,10 @@ window.rbi_savePractice = async function () {
 
     window.rbi_practicesData.push(practice);
     await dbPut(STORES.PRACTICES, practice);
+    // ОЧЕРЕДЬ
+    if (window.SyncQueueManager && !isDemoMode) {
+        window.SyncQueueManager.enqueue('SAVE_PRACTICE', practice);
+    }
 
     if (typeof gameLogAction === 'function') gameLogAction('practice_created', practice.id);
 
