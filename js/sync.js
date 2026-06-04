@@ -465,11 +465,16 @@ window.initSync = async function () {
         }, 5000);
 
         setInterval(() => {
-            if (
-                localStorage.getItem('rbi_cloud_dirty') === '1' ||
-                localStorage.getItem('rbi_force_full_pull') === '1'
-            ) {
-                window.triggerSync('silent');
+            // 🛡️ ЗАЩИТА 1: "Спящий режим". 
+            // Если вкладка свернута или неактивна (например, ПК оставлен включенным),
+            // мы запрещаем ей отправлять данные (PUSH), чтобы она не перетирала работу с телефона.
+            // Но мы разрешаем ей скачивать новые данные (PULL), если стоит флаг rbi_force_full_pull.
+            const isTabActive = document.visibilityState === 'visible';
+            
+            if (localStorage.getItem('rbi_force_full_pull') === '1') {
+                window.triggerSync('silent'); // Скачиваем обновления
+            } else if (isTabActive && localStorage.getItem('rbi_cloud_dirty') === '1') {
+                window.triggerSync('silent'); // Отправляем данные ТОЛЬКО если вкладка открыта перед глазами
             }
         }, 60000);
 
@@ -2659,31 +2664,40 @@ if (window.RbiStorageManager) {
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
 
                 if (cloudTime > localTime) {
-                    await dbPut('app_state', {
-                        key: 'current_session',
-                        timestamp: cloudTime,
-                        templateKey: cloudDraft.template_key || '',
-                        project: localSession?.project || '',
-                        inspector: iName,
-                        contractor: cloudDraft.contractor_name || '',
-                        location: cloudDraft.location || '',
-                        section: cloudDraft.section || '',
-                        floor: cloudDraft.floor || '',
-                        room: cloudDraft.room || '',
-                        state: cloudDraft.state || {},
-                        details: cloudDraft.details || {},
-                        photos: cloudDraft.photos || {},
-                        customExpertConclusions: cloudDraft.custom_expert_conclusions || {}
-                    });
+                    // НОВАЯ ЗАЩИТА: Если мы сейчас находимся на вкладке Осмотра,
+                    // и черновик прилетел с ДРУГОГО устройства (не совпадает deviceId),
+                    // мы игнорируем его, чтобы не стереть то, что юзер сейчас вводит!
+                    const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
+                    const isFromAnotherDevice = cloudDraft.device_id !== window.syncConfig.deviceId;
 
-                    if (typeof restoreSession === 'function') {
-                        setTimeout(() => {
-                            // <-- ВСТАВКА: Защита. Не восстанавливаем сессию, если инженер сейчас на вкладке Осмотра
-                            const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
-                            if (!isAuditActive) {
-                                restoreSession();
-                            }
-                        }, 500);
+                    if (isAuditActive && isFromAnotherDevice) {
+                        console.log('[Sync] 🛡️ Конфликт черновиков предотвращен! Облачный черновик с другого устройства проигнорирован.');
+                    } else {
+                        // Если мы не в осмотре (например, смотрим графики), смело обновляем черновик в фоне
+                        await dbPut('app_state', {
+                            key: 'current_session',
+                            timestamp: cloudTime,
+                            templateKey: cloudDraft.template_key || '',
+                            project: localSession?.project || '',
+                            inspector: iName,
+                            contractor: cloudDraft.contractor_name || '',
+                            location: cloudDraft.location || '',
+                            section: cloudDraft.section || '',
+                            floor: cloudDraft.floor || '',
+                            room: cloudDraft.room || '',
+                            state: cloudDraft.state || {},
+                            details: cloudDraft.details || {},
+                            photos: cloudDraft.photos || {},
+                            customExpertConclusions: cloudDraft.custom_expert_conclusions || {}
+                        });
+
+                        if (typeof restoreSession === 'function') {
+                            setTimeout(() => {
+                                if (!document.getElementById('tab-audit')?.classList.contains('active')) {
+                                    restoreSession();
+                                }
+                            }, 500);
+                        }
                     }
                 }
             }
@@ -3413,7 +3427,12 @@ if (window.RbiStorageManager) {
                     (typeof weeklyPlanData !== 'undefined' && weeklyPlanData.tasks && weeklyPlanData.tasks.length > 0) ? new Date(weeklyPlanData.tasks[0].updatedAt || 0).getTime() : 0
                 );
 
-                if (profileLastUpdated === 0 || profileLastUpdated >= lastPushTime) {
+                // 🛡️ ЗАЩИТА 2: Строгая проверка свежести профиля
+                // Устройство отправит свой XP в облако ТОЛЬКО если оно реально заработало новый опыт
+                // ПОСЛЕ последней синхронизации.
+                const isProfileReallyNewer = profileLastUpdated > lastPushTime;
+
+                if (isProfileReallyNewer) {
                     let currentAuthUserId = null;
                     let currentAuthEmail = '';
 
