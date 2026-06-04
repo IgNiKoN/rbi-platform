@@ -1965,10 +1965,12 @@ window.triggerSync = async function (mode = 'silent') {
                 }
 
                 let needUiUpdate = false;
+                let roleOrModeChanged = false; // <-- Флаг для сброса кэша времени
 
                 if (appSettings.userRole !== fetchedRole) {
                     appSettings.userRole = fetchedRole;
                     needUiUpdate = true;
+                    roleOrModeChanged = true; // Роль изменилась -> нужен полный pull
                 }
 
                 if (appSettings.cloudStatus !== fetchedCloudStatus) {
@@ -2016,7 +2018,15 @@ window.triggerSync = async function (mode = 'silent') {
                         window.syncConfig.syncMode = 'full';
                         localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
                         needUiUpdate = true;
+                        roleOrModeChanged = true; // Права расширились -> нужен полный pull
                     }
+                }
+
+                // СБРОС КЭША ВРЕМЕНИ: Если права расширились, заставляем приложение скачать всю историю заново
+                if (roleOrModeChanged) {
+                    localStorage.setItem('rbi_force_full_pull', '1');
+                    localStorage.removeItem('rbi_sync_last_pull_at');
+                    console.log('[Sync] Роль изменилась. Запрошен полный PULL базы.');
                 }
 
                 // АВТОМАТИЧЕСКИ Включаем ИИ для штатных сотрудников
