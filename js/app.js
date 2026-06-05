@@ -3785,34 +3785,49 @@ async function clearHistory() {
 async function fullFactoryReset() {
     if (!confirm('УДАЛИТЬ ВООБЩЕ ВСЁ?\n\nЭто действие необратимо! Все ваши проверки, настройки, TWI-карты и загруженные документы будут уничтожены. Приложение вернется к первоначальному виду.')) return;
 
-    // Показываем лоадер, чтобы пользователь не кликал ничего в процессе
+    // Показываем лоадер
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
     if (loader && loaderText) {
-        loaderText.innerText = "Удаление данных и очистка кэша...";
+        loaderText.innerText = "Уничтожение базы данных...";
         loader.style.display = 'flex';
         setTimeout(() => loader.classList.remove('opacity-0'), 10);
     }
 
     try {
-        // Очищаем все хранилища базы данных
-        // Очищаем все хранилища базы данных
-        // Очищаем ВСЕ хранилища базы данных
-        const allStores = Object.values(STORES);
-        for (const storeName of allStores) {
-            await dbClear(storeName);
+        // 1. Очищаем локальные хранилища
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // 2. Закрываем активное соединение с БД, чтобы избежать блокировок
+        if (typeof window._dbPromise !== 'undefined' && window._dbPromise) {
+            try {
+                const db = await window._dbPromise;
+                db.close();
+            } catch(e) {}
+            window._dbPromise = null;
         }
 
-        // Очищаем локальное хранилище (кэш инпутов, даты бэкапов)
-        localStorage.clear();
+        // 3. ЖЕСТКО удаляем всю базу данных целиком (самый надежный способ)
+        // DB_NAME берется из storage.js ('RBI_QUALITY_DB')
+        const req = indexedDB.deleteDatabase(typeof DB_NAME !== 'undefined' ? DB_NAME : 'RBI_QUALITY_DB');
+        
+        await new Promise((resolve) => {
+            req.onsuccess = resolve;
+            req.onerror = resolve; // Игнорируем ошибки, идем дальше
+            req.onblocked = () => {
+                console.warn("БД заблокирована другим процессом, браузер удалит ее при перезапуске.");
+                resolve();
+            };
+        });
 
-        // ЖЕСТКАЯ ОЧИСТКА КЭША PWA (Удаляем старые файлы приложения)
+        // 4. Очистка кэша PWA (удаление старых файлов)
         if ('caches' in window) {
             const cacheNames = await caches.keys();
             await Promise.all(cacheNames.map(name => caches.delete(name)));
         }
 
-        // Сбрасываем Service Worker
+        // 5. Сброс Service Worker
         if ('serviceWorker' in navigator) {
             const registrations = await navigator.serviceWorker.getRegistrations();
             for (let registration of registrations) {
@@ -3820,18 +3835,14 @@ async function fullFactoryReset() {
             }
         }
 
-        showToast('✅ Данные успешно удалены. Перезагрузка...');
-
-        // Перезагружаем страницу с очищенным кэшем
-        setTimeout(() => {
-            window.location.href = window.location.pathname + '?reset=' + Date.now();
-        }, 1500);
+        // 6. Перезагрузка страницы со сбросом кэша
+        window.location.href = window.location.pathname + '?reset=' + Date.now();
 
     } catch (e) {
-        console.error(e);
-        alert('Ошибка при очистке данных: ' + e.message);
+        console.error('Сбой при очистке:', e);
+        // Резервный выход: если что-то упало, всё равно чистим LS и перезагружаем
         localStorage.clear();
-        window.location.reload();
+        window.location.href = window.location.pathname + '?reset=' + Date.now();
     }
 }
 

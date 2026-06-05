@@ -4588,15 +4588,20 @@ window.forceSyncObjects = async function () {
 };
 
 // ============================================================================
-// === МЕНЕДЖЕР ОЧЕРЕДИ СИНХРОНИЗАЦИИ (TRANSACTIONAL OUTBOX) ===
+// === МЕНЕДЖЕР ОЧЕРЕДИ СИНХРОНИЗАЦИИ (БЕЗОПАСНЫЙ РЕЖИМ) ===
 // ============================================================================
 
 window.SyncQueueManager = {
     isProcessing: false,
+    pendingTimer: null,
 
-    // 1. Положить действие в локальную очередь
-    async enqueue(actionType, payload) {
+    // 1. Положить действие в локальную очередь (Без блокировки UI)
+    enqueue(actionType, payload) {
         try {
+            // Если демо-режим или облако выключено - ничего не делаем
+            if (typeof isDemoMode !== 'undefined' && isDemoMode) return;
+            if (!window.syncConfig || !window.syncConfig.enabled) return;
+
             const queueItem = {
                 id: 'q_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5),
                 action_type: actionType,
@@ -4607,32 +4612,41 @@ window.SyncQueueManager = {
                 created_at: new Date().toISOString()
             };
 
-            await window.dbPut('sync_queue', queueItem);
-            console.log(`[Queue] Добавлено в очередь: ${actionType}`);
+            // Fire-and-forget: сохраняем в БД, не дожидаясь ответа (чтобы не вешать интерфейс)
+            if (typeof window.dbPut === 'function') {
+                window.dbPut('sync_queue', queueItem).catch(e => console.warn('[Queue] Игнор ошибки БД', e));
+            }
+
+            // Откладываем сетевой запрос на 3 секунды (Дебаунс)
+            // Если юзер быстро сохраняет 5 задач, мы подождем, пока он закончит, и отправим разом
+            clearTimeout(this.pendingTimer);
+            this.pendingTimer = setTimeout(() => {
+                this.process();
+            }, 3000);
             
-            // Пытаемся сразу отправить, если есть сеть
-            this.process();
         } catch (e) {
-            console.error('[Queue] Ошибка добавления в очередь:', e);
+            console.warn('[Queue] Ошибка добавления в очередь:', e);
         }
     },
 
-    // 2. Обработать очередь (отправить в Supabase)
+    // 2. Обработать очередь (Бережная отправка)
     async process() {
         if (this.isProcessing || !navigator.onLine || !window.supabaseClient) return;
 
         try {
             this.isProcessing = true;
             
-            // Берем все задачи из локальной очереди
+            // Берем задачи из локальной очереди
             const queueItems = await window.dbGetAll('sync_queue') || [];
-            if (queueItems.length === 0) return; // Очередь пуста
+            if (queueItems.length === 0) return;
 
             // Сортируем от старых к новым (FIFO)
             queueItems.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-            // Отправляем по одной, чтобы гарантировать порядок
-            for (const item of queueItems) {
+            // Защита сети: отправляем не больше 10 записей за один проход!
+            const batch = queueItems.slice(0, 10);
+
+            for (const item of batch) {
                 const { error } = await window.supabaseClient
                     .from('rbi_sync_queue')
                     .insert([{
@@ -4644,14 +4658,22 @@ window.SyncQueueManager = {
                         created_at: item.created_at
                     }]);
 
+                // Если Supabase завис или выдал ошибку — прерываем цикл, попробуем в следующий раз
                 if (error) {
-                    console.warn('[Queue] Ошибка отправки элемента в облако. Останавливаем обработку.', error);
-                    break; // Прерываем цикл, попробуем позже
+                    console.warn('[Queue] Ошибка отправки в облако (Возможен блок провайдера). Тормозим.', error.message);
+                    break; 
                 }
 
-                // Если успешно отправлено — удаляем из локальной базы телефона
+                // Успешно — удаляем из памяти телефона
                 await window.dbDelete('sync_queue', item.id);
-                console.log(`[Queue] Успешно отправлено и удалено из локальной БД: ${item.action_type}`);
+                
+                // ДАЕМ БРАУЗЕРУ ПОДЫШАТЬ: микро-пауза между запросами
+                await new Promise(r => setTimeout(r, 150));
+            }
+
+            // Если в очереди осталось больше 10 записей, планируем следующий заход через 2 секунды
+            if (queueItems.length > 10) {
+                setTimeout(() => this.process(), 2000);
             }
 
         } catch (e) {
@@ -4664,5 +4686,7 @@ window.SyncQueueManager = {
 
 // Привязываем обработку очереди к восстановлению интернета
 window.addEventListener('online', () => {
-    if (window.SyncQueueManager) window.SyncQueueManager.process();
+    if (window.SyncQueueManager) {
+        setTimeout(() => window.SyncQueueManager.process(), 2000);
+    }
 });
