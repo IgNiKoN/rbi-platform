@@ -236,12 +236,29 @@ async function sendErrorLogToCloud(message, stack) {
 
 // Ловим ошибки промисов (асинхронные)
 window.addEventListener('unhandledrejection', event => {
-    sendErrorLogToCloud(event.reason?.message || event.reason, event.reason?.stack);
+    const msg = String(event.reason?.message || event.reason || '');
+    const stack = String(event.reason?.stack || '');
+    
+    // Игнорируем фоновые ошибки от расширений Chrome (AdBlock, Adobe, VPN и т.д.)
+    if (msg.includes('message channel closed') || stack.includes('chrome-extension://')) return;
+    
+    sendErrorLogToCloud(msg, stack);
 });
 
 // Ловим обычные ошибки интерфейса (синхронные)
 window.addEventListener('error', event => {
-    sendErrorLogToCloud(event.message, event.error?.stack);
+    const msg = String(event.message || '');
+    const stack = String(event.error?.stack || '');
+    const filename = String(event.filename || '');
+    
+    // Игнорируем чужой код плагинов (чтобы не засорять консоль и нашу базу)
+    if (filename.includes('chrome-extension://') || 
+        msg.includes('showOneChild') || 
+        msg.includes('ActionableCoachmark')) {
+        return;
+    }
+
+    sendErrorLogToCloud(msg, stack);
 });
 document.addEventListener("DOMContentLoaded", async () => {
     try {
@@ -2470,7 +2487,7 @@ async function deleteSelectedHistory() {
     for (let id of ids) {
         let item = contractorArray.find(i => String(i.id) === String(id));
         if (!item) continue;
-        
+
         const ownerName = item.inspectorName || item.inspector_name || '';
         if (window.RbiRoles && !window.RbiRoles.canDelete(ownerName)) {
             canDeleteAll = false;
@@ -3576,7 +3593,7 @@ async function saveProductToArray() {
     contractorArray.push(newItem);
     if (!isDemoMode) {
         await dbPut(STORES.HISTORY, newItem);
-        
+
         // ---> ВСТАВКА ОЧЕРЕДИ: Логируем создание проверки в неубиваемую очередь
         if (window.SyncQueueManager) {
             window.SyncQueueManager.enqueue('SAVE_INSPECTION', newItem);
@@ -3804,14 +3821,14 @@ async function fullFactoryReset() {
             try {
                 const db = await window._dbPromise;
                 db.close();
-            } catch(e) {}
+            } catch (e) { }
             window._dbPromise = null;
         }
 
         // 3. ЖЕСТКО удаляем всю базу данных целиком (самый надежный способ)
         // DB_NAME берется из storage.js ('RBI_QUALITY_DB')
         const req = indexedDB.deleteDatabase(typeof DB_NAME !== 'undefined' ? DB_NAME : 'RBI_QUALITY_DB');
-        
+
         await new Promise((resolve) => {
             req.onsuccess = resolve;
             req.onerror = resolve; // Игнорируем ошибки, идем дальше
@@ -11574,6 +11591,11 @@ window.rbi_toggleFeedbackLike = async function (id) {
     window.rbi_feedbackData[idx].likes = likes;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
 
+    // ВАЖНО: Флаги для синхронизатора (чтобы лайки тоже синхронизировались)
+    window.rbi_feedbackData[idx].sync_status = 'not_synced';
+    window.rbi_feedbackData[idx].syncStatus = 'not_synced';
+    window.rbi_feedbackData[idx].source = 'local';
+
     await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
@@ -11673,7 +11695,15 @@ window.rbi_saveEditedFeedback = async function (id) {
 };
 
 // --- ПАНЕЛЬ РАЗРАБОТЧИКА ---
+window.isFeedbackEditing = false; // Глобальный флаг-замок
+
 window.rbi_renderDevFeedbackTab = function () {
+    // 🛡 ПРОВЕРКА ЗАМКА: Если мы только что сохранили статус или текст, 
+    // жестко блокируем перерисовку, чтобы карточка не улетела из-под пальцев!
+    if (window.rbiDisableFeedbackRerender) {
+        return; 
+    }
+
     const listContainer = document.getElementById('manager-dev-list');
     const roadmapContainer = document.getElementById('manager-roadmap-list');
     if (!listContainer || !roadmapContainer) return;
@@ -11696,7 +11726,7 @@ window.rbi_renderDevFeedbackTab = function () {
         `).join('');
     }
 
-    // 2. Отрисовка обычного фидбека (Бэклог команды)
+    // 2. Отрисовка бэклога
     const feedback = allData.filter(f => !f.is_roadmap).sort((a, b) => {
         const order = { 'new': 1, 'in_progress': 2, 'done': 3, 'rejected': 4 };
         if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
@@ -11724,7 +11754,8 @@ window.rbi_renderDevFeedbackTab = function () {
             <div class="mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Управление статусом</label>
-                    <select class="input-base text-[11px] !py-1.5" onchange="rbi_updateFeedbackStatus('${f.id}', this.value)">
+                    <select class="input-base text-[11px] !py-1.5 transition-colors duration-300" 
+                        onchange="rbi_updateFeedbackStatus('${f.id}', this.value, this)">
                         <option value="new" ${f.status === 'new' ? 'selected' : ''}>🔵 Новое</option>
                         <option value="in_progress" ${f.status === 'in_progress' ? 'selected' : ''}>🟡 В работе</option>
                         <option value="done" ${f.status === 'done' ? 'selected' : ''}>🟢 Готово</option>
@@ -11735,11 +11766,10 @@ window.rbi_renderDevFeedbackTab = function () {
                     <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Ответ разработчика</label>
                     <div class="flex gap-1">
                         <input type="text" id="dev-note-${f.id}" class="input-base text-[11px] !py-1.5" placeholder="Напишите ответ..." value="${f.developer_notes || ''}">
-                        <button onclick="rbi_updateFeedbackNotes('${f.id}')" class="bg-emerald-600 text-white px-3 rounded-lg text-[10px] font-bold active:scale-95 shadow-sm">OK</button>
+                        <button onclick="rbi_updateFeedbackNotes('${f.id}', this)" class="bg-emerald-600 text-white px-3 rounded-lg text-[10px] font-bold active:scale-95 shadow-sm transition-colors duration-300 w-10 shrink-0">OK</button>
                     </div>
                 </div>
             </div>
-            <!-- ВСТАВКА: Кнопка удаления для админа -->
             <div class="mt-3 pt-2 border-t border-slate-100 flex justify-end">
                 <button onclick="rbi_deleteFeedback('${f.id}')" class="text-[9px] font-bold text-red-500 hover:text-red-700 uppercase flex items-center gap-1 active:scale-95"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить из бэклога</button>
             </div>
@@ -11747,33 +11777,67 @@ window.rbi_renderDevFeedbackTab = function () {
     }).join('');
 };
 
-window.rbi_updateFeedbackStatus = async function (id, newStatus) {
+window.rbi_updateFeedbackStatus = async function (id, newStatus, selectEl) {
+    // ЖЕЛЕЗОБЕТОННЫЙ ЗАМОК: запрещаем перерисовку экрана на 5 секунд
+    window.rbiDisableFeedbackRerender = true;
+
     const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
     if (idx === -1) return;
+    
     window.rbi_feedbackData[idx].status = newStatus;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    window.rbi_feedbackData[idx].sync_status = 'not_synced';
+    window.rbi_feedbackData[idx].syncStatus = 'not_synced';
+    window.rbi_feedbackData[idx].source = 'local';
 
     await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    showToast("Статус обновлен");
+    
+    // Визуальная подсветка (мигает зеленым)
+    if (selectEl) {
+        const originalBg = selectEl.style.backgroundColor;
+        selectEl.style.backgroundColor = '#dcfce7'; 
+        setTimeout(() => { selectEl.style.backgroundColor = originalBg; }, 1000);
+    }
+    showToast("✅ Статус обновлен");
+
+    // Снимаем замок после завершения фоновой синхронизации
+    setTimeout(() => { window.rbiDisableFeedbackRerender = false; }, 5000);
 };
 
-window.rbi_updateFeedbackNotes = async function (id) {
+// Добавили параметр btnElement для красивой анимации кнопки без перезагрузки страницы
+window.rbi_updateFeedbackNotes = async function (id, btnEl) {
+    // ЖЕЛЕЗОБЕТОННЫЙ ЗАМОК: запрещаем перерисовку экрана на 5 секунд
+    window.rbiDisableFeedbackRerender = true;
+
     const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
     if (idx === -1) return;
     const note = document.getElementById(`dev-note-${id}`).value.trim();
+    
     window.rbi_feedbackData[idx].developer_notes = note;
     window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+    window.rbi_feedbackData[idx].sync_status = 'not_synced';
+    window.rbi_feedbackData[idx].syncStatus = 'not_synced';
+    window.rbi_feedbackData[idx].source = 'local';
 
     await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
-    showToast("Ответ сохранен");
+    
+    if (btnEl) {
+        const originalText = btnEl.innerHTML;
+        btnEl.innerHTML = "✓";
+        btnEl.classList.replace('bg-emerald-600', 'bg-green-500');
+        setTimeout(() => {
+            btnEl.innerHTML = originalText;
+            btnEl.classList.replace('bg-green-500', 'bg-emerald-600');
+        }, 2000);
+    }
+    showToast("✅ Ответ разработчика сохранен");
 
-    // <-- НОВОЕ: Мгновенно обновляем интерфейс, чтобы увидеть ответ
-    rbi_renderDevFeedbackTab();
-    if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
+    // Снимаем замок
+    setTimeout(() => { window.rbiDisableFeedbackRerender = false; }, 5000);
 };
 
 window.rbi_exportFeedbackJson = function () {
