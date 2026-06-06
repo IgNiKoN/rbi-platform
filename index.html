@@ -3771,9 +3771,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.10.6',
-            sw: '17.10.6',
-            buildDate: '2026-06-05'
+            app: '17.10.7',
+            sw: '17.10.7',
+            buildDate: '2026-06-06'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -4969,55 +4969,53 @@
         </div>
     </div>
     <script>
+    const MIN_SPLASH_TIME = 1400;
+    const MAX_SPLASH_TIME = 3500; // ЖЕСТКИЙ ТАЙМАУТ: Прячем сплэш максимум через 3.5 секунды
 
-        const MIN_SPLASH_TIME = 1400;
+    const splashDelay = new Promise(resolve => {
+        setTimeout(resolve, MIN_SPLASH_TIME);
+    });
 
-        // minimum delay
-        const splashDelay =
-            new Promise(resolve => {
-
-                setTimeout(resolve, MIN_SPLASH_TIME);
-
+    const appReady = new Promise(resolve => {
+        // 1. Если приложение загрузилось из кэша мгновенно (событие load уже прошло)
+        if (document.readyState === 'complete') {
+            resolve();
+        } else {
+            // 2. Ждем штатной загрузки
+            window.addEventListener('load', () => {
+                requestAnimationFrame(() => resolve());
             });
+            
+            // 3. Защита от зависания: если нет сети или сервер не отвечает, форсируем запуск
+            setTimeout(resolve, MAX_SPLASH_TIME);
+        }
+    });
 
-        // app ready
-        const appReady =
-            new Promise(resolve => {
+    // Функция скрытия
+    function hideSplashScreen() {
+        const splash = document.getElementById('splash-screen');
+        if (!splash) return;
+        splash.classList.add('hidden');
+        setTimeout(() => {
+            splash.remove();
+        }, 600);
+    }
 
-                window.addEventListener('load', () => {
+    // Запускаем гонку: что произойдет быстрее (штатная загрузка или жесткий таймаут)
+    Promise.all([
+        splashDelay,
+        Promise.race([appReady, new Promise(res => setTimeout(res, MAX_SPLASH_TIME))])
+    ]).then(() => {
+        hideSplashScreen();
+    }).catch(err => {
+        // На случай непредвиденного сбоя в JS — всё равно открываем приложение
+        console.warn("Сбой загрузки сплэш-экрана, принудительный запуск:", err);
+        hideSplashScreen();
+    });
 
-                    requestAnimationFrame(() => {
-
-                        resolve();
-
-                    });
-
-                });
-
-            });
-
-        // wait both
-        Promise.all([
-            splashDelay,
-            appReady
-        ]).then(() => {
-
-            const splash =
-                document.getElementById('splash-screen');
-
-            if (!splash) return;
-
-            splash.classList.add('hidden');
-
-            setTimeout(() => {
-
-                splash.remove();
-
-            }, 600);
-
-        });
-
-    </script>
+    // Ультимативный предохранитель (гарантия 100%, что экран исчезнет)
+    setTimeout(hideSplashScreen, MAX_SPLASH_TIME + MIN_SPLASH_TIME);
+</script>
 </body>
 
 </html>
