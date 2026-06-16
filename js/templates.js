@@ -353,7 +353,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "kirpich": {
-        title: "Устройство кладки из кирпича",
+        title: "Кладка из кирпича",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -436,7 +436,7 @@ const SYSTEM_TEMPLATES = {
         ]
     },
     "krovlya": {
-        title: "Устройство кровель (экспл., не экспл., инверсионная)",
+        title: "Кровля (экспл., не экспл., инверсионная)",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -485,7 +485,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "monolit": {
-        title: "Устройство монолитных работ (Стены, колонны)",
+        title: "Монолитные работы (Стены, колонны)",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -565,7 +565,7 @@ const SYSTEM_TEMPLATES = {
         ]
     },
     "mk": {
-        title: "Монтаж металлоконструкций",
+        title: "Металлоконструкции",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -721,7 +721,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "dveri_met": {
-        title: "Монтаж металлических дверей",
+        title: "Двери металлические",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -754,7 +754,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "okna_pvh": {
-        title: "Монтаж окон ПВХ",
+        title: "Окна ПВХ",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -1100,7 +1100,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "svai_vdavlivanie": {
-        title: "Устройство свай (вдавливание)",
+        title: "Сваи (вдавливание)",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -1141,7 +1141,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "polusuhaya_styazhka": {
-        title: "Устройство полусухой стяжки",
+        title: "Стяжка",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [
@@ -1186,7 +1186,7 @@ const SYSTEM_TEMPLATES = {
     },
 
     "fasad_shtukatur": {
-        title: "Устройство штукатурного фасада",
+        title: "Фасад штукатурный",
         templateVersion: "1.0",
         groups: [
             { group: "1. Документация", items: [

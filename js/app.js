@@ -270,6 +270,15 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
         });
         // -------------------------------------------------------------------
+        
+        // Мгновенное сохранение черновика при сворачивании браузера / переключении вкладок
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                if (typeof saveSessionData === 'function') saveSessionData();
+            }
+        });
+
+        // -------------------------------------------------------------------
         // Запускаем облако до загрузки остальных настроек
         if (typeof initSync === 'function') await initSync();
         if (
@@ -536,6 +545,12 @@ async function restoreSession() {
         applySmartLocks(); // Применяем замки после загрузки сессии
 
         if (typeof updateDataSummary === 'function') updateDataSummary();
+
+        // ПРИНУДИТЕЛЬНЫЙ РЕНДЕР АНАЛИТИКИ (ЕСЛИ МЫ НА ЭТОЙ ВКЛАДКЕ ПОСЛЕ F5)
+        const activeTab = document.querySelector('.view-section.active');
+        if (activeTab && activeTab.id === 'tab-analytics' && typeof renderCurrentAnalyticsTab === 'function') {
+            renderCurrentAnalyticsTab();
+        }
     } catch (e) {
         console.error('Ошибка восстановления:', e);
     }
@@ -6713,7 +6728,19 @@ async function saveTwiCard() {
 
     if (!title) return showToast("⚠️ Укажите название!");
     if (currentTwiType !== 'PDF' && !checklistKey) return showToast("⚠️ Укажите привязку к чек-листу!");
-
+    // ЗАЩИТА ОТ ДУБЛИКАТОВ: Проверяем, нет ли уже такой карты в базе (для типа Технадзор)
+    if (currentTwiType === 'INSPECTOR' && !currentEditingTwiId) {
+        const itemId = document.getElementById('twi-item-select').value;
+        const existingCard = customTwiCards.find(c => 
+            c.checklistKey === checklistKey && 
+            String(c.itemId) === String(itemId) && 
+            c.type === 'INSPECTOR' && 
+            !c._deleted
+        );
+        if (existingCard) {
+            return showToast("⚠️ TWI-карта для этого пункта уже создана другим инженером! Обновите базу.");
+        }
+    }
     let cardData = {
         id: currentEditingTwiId || 'twi_' + Date.now().toString(36),
         title: title, checklistKey: checklistKey, checklistName: checklistName, type: currentTwiType,

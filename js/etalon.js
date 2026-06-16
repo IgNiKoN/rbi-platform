@@ -72,6 +72,23 @@ window.openEtalonConstructor = function(contractor, templateKey, templateTitle, 
     }
     // Добавляем первый пустой элемент по умолчанию
     addEtalonElement();
+    // === ДОБАВЛЯЕМ КНОПКУ ЗАГРУЗКИ PDF ===
+    const pdfBlockHtml = `
+        <div id="etalon-pdf-wrap" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div class="font-black text-[10px] text-indigo-500 uppercase tracking-widest mb-2">Готовый PDF-Акт (Опционально)</div>
+            <div id="etalon-pdf-preview" data-pdf="" class="hidden mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl flex justify-between items-center">
+                <div class="min-w-0 pr-3">
+                    <div class="text-[11px] font-black text-slate-800 dark:text-white truncate" id="etalon-pdf-name">doc.pdf</div>
+                </div>
+                <button onclick="window.removeEtalonPdf()" class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-red-500 font-black shadow-sm border border-slate-200 active:scale-90 shrink-0">✕</button>
+            </div>
+            <button id="etalon-pdf-upload-btn" onclick="document.getElementById('etalon-pdf-input').click()" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
+                📄 Прикрепить готовый PDF
+            </button>
+            <input type="file" id="etalon-pdf-input" accept="application/pdf" class="hidden" onchange="window.handleEtalonPdfUpload(event)">
+        </div>
+    `;
+    document.getElementById('etalon-elements-container').insertAdjacentHTML('afterend', pdfBlockHtml);
     // ИСПРАВЛЕНИЕ: Динамически внедряем кнопки "Сохранить" и "Печать"
     const headerContainer = document.getElementById('etalon-title-text').parentElement;
     headerContainer.innerHTML = `
@@ -205,7 +222,13 @@ window.saveEtalonAct = async function(printAfter = false) {
         isCompleted: true,
         state: { '9901': 'ok' }, 
         photos: {},
-        details: { participants: participants, deviations: deviations, elements: elements },
+        details: { 
+            participants: participants, 
+            deviations: deviations, 
+            elements: elements,
+            pdfData: document.getElementById('etalon-pdf-preview')?.dataset.pdf || null,
+            pdfName: document.getElementById('etalon-pdf-name')?.innerText || ''
+        },
         metrics: { final: 100, baseUrkPerc: 100, checkedCount: 1, totalCount: 1, n_B1_fail: 0, n_B2_fail: 0, n_B3_fail: 0, kc: 1, kcrit: 1, statusTxt: "ЭТАЛОН", statusCls: "tag-blue" },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -352,6 +375,22 @@ if (el.photo) {
     `;
 
     document.getElementById('etalon-view-body').innerHTML = bodyHtml;
+    // Если прикреплен PDF, выводим кнопку для его открытия
+    if (d.pdfData) {
+        const pdfBtnHtml = `
+            <div class="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex justify-between items-center cursor-pointer active:scale-95 transition-transform" onclick="document.getElementById('etalon-view-modal').style.display='none'; document.body.classList.remove('modal-open'); setTimeout(() => { window.openFakePdfViewer('${d.pdfData}', '${d.pdfName}'); }, 300);">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-red-100 text-red-600 rounded-lg flex items-center justify-center font-black">PDF</div>
+                    <div>
+                        <div class="text-[11px] font-bold text-slate-800 dark:text-white">${d.pdfName}</div>
+                        <div class="text-[9px] text-slate-500">Внешний Акт-Эталон</div>
+                    </div>
+                </div>
+                <span class="text-[10px] font-bold text-red-600 bg-white dark:bg-slate-800 px-2 py-1 rounded border border-red-200">Открыть</span>
+            </div>
+        `;
+        document.getElementById('etalon-view-body').insertAdjacentHTML('beforeend', pdfBtnHtml);
+    }
     
     // БЕЗОПАСНАЯ ВСТАВКА 3-Х КНОПОК (БЕЗ ОШИБКИ НА ВТОРОЙ КЛИК)
     const footerDiv = document.getElementById('etalon-view-body').nextElementSibling;
@@ -431,4 +470,32 @@ window.editEtalonAct = async function(id) {
                 </div>`;
         }
     }
+};
+
+window.handleEtalonPdfUpload = function (event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 5 МБ."); }
+    
+    showToast("⚙️ Сохранение PDF...");
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+        const localUrl = await PhotoManager.saveLocal(e.target.result, 'etalon_pdf');
+        
+        const cont = document.getElementById('etalon-pdf-preview');
+        cont.dataset.pdf = localUrl;
+        document.getElementById('etalon-pdf-name').innerText = file.name;
+        
+        cont.classList.remove('hidden');
+        document.getElementById('etalon-pdf-upload-btn').classList.add('hidden');
+        event.target.value = '';
+    }
+    reader.readAsDataURL(file);
+};
+
+window.removeEtalonPdf = function () {
+    const cont = document.getElementById('etalon-pdf-preview');
+    cont.dataset.pdf = '';
+    cont.classList.add('hidden');
+    document.getElementById('etalon-pdf-upload-btn').classList.remove('hidden');
 };

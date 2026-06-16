@@ -1076,7 +1076,7 @@ window.initCloudConnection = async function () {
 
         const { error: insertError } = await window.supabaseClient
             .from('rbi_engineer_profiles')
-            .insert(newProfile);
+            .upsert(newProfile, { onConflict: 'inspector_id' });
 
         if (insertError) {
             console.error('[Sync] Ошибка создания профиля:', insertError);
@@ -2683,16 +2683,14 @@ if (window.RbiStorageManager) {
                 const localTime = localSession ? (localSession.timestamp || 0) : 0;
 
                 if (cloudTime > localTime) {
-                    // НОВАЯ ЗАЩИТА: Если мы сейчас находимся на вкладке Осмотра,
-                    // и черновик прилетел с ДРУГОГО устройства (не совпадает deviceId),
-                    // мы игнорируем его, чтобы не стереть то, что юзер сейчас вводит!
+                    // ЖЕЛЕЗНЫЙ ЩИТ: Если инженер сейчас на вкладке "Осмотр" - ЗАПРЕЩАЕМ облаку трогать его экран!
+                    // Это решает проблему пропадающих фоток и сброса данных прямо во время работы.
                     const isAuditActive = document.getElementById('tab-audit')?.classList.contains('active');
-                    const isFromAnotherDevice = cloudDraft.device_id !== window.syncConfig.deviceId;
 
-                    if (isAuditActive && isFromAnotherDevice) {
-                        console.log('[Sync] 🛡️ Конфликт черновиков предотвращен! Облачный черновик с другого устройства проигнорирован.');
+                    if (isAuditActive) {
+                        console.log('[Sync] 🛡️ Инженер заполняет чек-лист. Облачный черновик проигнорирован, чтобы не стереть данные.');
                     } else {
-                        // Если мы не в осмотре (например, смотрим графики), смело обновляем черновик в фоне
+                        // Обновляем локальный черновик только если инженер гуляет по другим вкладкам (Аналитика, Настройки)
                         await dbPut('app_state', {
                             key: 'current_session',
                             timestamp: cloudTime,
@@ -3796,6 +3794,42 @@ if (window.RbiStorageManager) {
                     await syncTableData('feedback_list', 'rbi_feedbackData', 'feedback');
                     await syncTableData('report_templates', 'userReportTemplates', 'report_template');
                     await syncTableData('app_assistant_kb', 'appAssistantData', 'assistant_kb'); // <-- ОТПРАВКА БАЗЫ ИИ В ОБЛАКО
+                    // --- АВТОМАТИЧЕСКАЯ ДЕДУПЛИКАЦИЯ TWI (РЕШЕНИЕ ОФЛАЙН-КОНФЛИКТОВ) ---
+                    if (typeof customTwiCards !== 'undefined' && customTwiCards.length > 0) {
+                        const twiMap = new Map();
+                        for (let i = 0; i < customTwiCards.length; i++) {
+                            const c = customTwiCards[i];
+                            // Проверяем только живые карты Технадзора с привязкой к конкретному пункту
+                            if (c._deleted || c.type !== 'INSPECTOR' || !c.itemId || c.itemId === 'ALL') continue;
+                            
+                            const dupKey = `${c.checklistKey}_${c.itemId}`;
+                            if (twiMap.has(dupKey)) {
+                                // Конфликт! Два инженера создали карту в офлайне.
+                                const existing = twiMap.get(dupKey);
+                                const timeExisting = new Date(existing.createdAt || 0).getTime();
+                                const timeCurrent = new Date(c.createdAt || 0).getTime();
+                                
+                                // Выживает та, что создана раньше. Проигравшая удаляется.
+                                let loser = timeCurrent > timeExisting ? c : existing;
+                                let winner = timeCurrent > timeExisting ? existing : c;
+                                
+                                // Мягко удаляем проигравшую карточку (она отправится в облако как удаленная)
+                                loser._deleted = true;
+                                loser.is_deleted = true;
+                                loser.updatedAt = new Date().toISOString();
+                                loser.source = 'local';
+                                loser.syncStatus = 'not_synced';
+                                await dbPut('twi_cards', loser);
+                                
+                                twiMap.set(dupKey, winner); // Оставляем победителя
+                            } else {
+                                twiMap.set(dupKey, c);
+                            }
+                        }
+                        // Очищаем оперативную память от "убитых" дубликатов
+                        customTwiCards = customTwiCards.filter(c => !c._deleted);
+                    }
+                    // --- КОНЕЦ ДЕДУПЛИКАЦИИ ---
                     // --- НОВОЕ: ОТПРАВКА ОТЧЕТОВ И HTML СНИМКОВ ---
                     let reportsToPush = filterNew(await dbGetAll(STORES.REPORTS) || []);
 

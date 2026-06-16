@@ -1,156 +1,119 @@
 /* Файл: css/style.css */
-#splash-screen {
+/* Файл: css/style.css */
 
+/* Файл: css/style.css */
+
+/* === ПРЕМИАЛЬНАЯ ЗАСТАВКА (SPLASH SCREEN) === */
+#splash-screen {
     position: fixed;
     inset: 0;
-
-    background: #020617;
-
+    /* Очень глубокий темный фон, чтобы слиться с краями твоей иконки */
+    background: radial-gradient(circle at 50% 40%, #0a0b16 0%, #030408 60%, #000000 100%);
     z-index: 999999;
-
     display: flex;
     align-items: center;
     justify-content: center;
-
-    transition:
-        opacity .5s ease,
-        visibility .5s ease;
+    transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.6s;
 }
 
 #splash-screen.hidden {
-
     opacity: 0;
     visibility: hidden;
-
 }
 
 .splash-content {
-
     display: flex;
     flex-direction: column;
     align-items: center;
-
+    transform: translateY(-5%);
 }
 
 .splash-logo {
-
-    width: 140px;
-    height: 140px;
-
-    animation: pulse 2s infinite;
-
+    width: 116px;
+    height: 116px;
+    object-fit: cover;
+    /* Закругляем углы как у дорогих приложений iOS */
+    border-radius: 26px;
+    /* Тонкая стеклянная рамка по контуру картинки */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    /* Парящая анимация для иконки с фоном */
+    animation: premiumAppIconFloat 3.5s ease-in-out infinite;
 }
 
 .splash-title {
-
-    margin-top: 24px;
-
-    font-size: 26px;
+    margin-top: 32px;
+    font-size: 24px;
     font-weight: 900;
-
-    letter-spacing: 4px;
-
-    color: white;
-
-    text-shadow:
-        0 0 12px rgba(255, 255, 255, .08);
-
+    letter-spacing: 5px;
+    color: #ffffff;
+    text-shadow: 0 4px 15px rgba(0, 0, 0, 0.8);
 }
 
 .splash-pro {
-
-    margin-left: 10px;
-
-    background:
-        linear-gradient(90deg,
-            #c7d2fe,
-            #818cf8,
-            #4f46e5,
-            #312e81,
-            #4f46e5,
-            #818cf8,
-            #c7d2fe);
-
-    background-size: 300% auto;
-
+    margin-left: 8px;
+    background: linear-gradient(90deg, #c7d2fe, #818cf8, #4f46e5, #c7d2fe);
+    background-size: 200% auto;
     background-clip: text;
     -webkit-background-clip: text;
-
     color: transparent;
     -webkit-text-fill-color: transparent;
-
-    animation:
-        proFlow 4s linear infinite;
-
-    filter:
-        drop-shadow(0 0 10px rgba(99, 102, 241, .45));
-
+    animation: proFlow 3s linear infinite;
+    filter: drop-shadow(0 2px 8px rgba(99, 102, 241, 0.5));
 }
 
 .splash-subtitle {
-
     margin-top: 8px;
-
-    color: rgba(255, 255, 255, .45);
-
-    font-size: 11px;
-
-    letter-spacing: 3px;
-
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
 }
 
+/* Элегантная и быстрая полоса загрузки */
 .splash-loader {
-
-    width: 180px;
-    height: 4px;
-
-    margin-top: 24px;
-
-    background: rgba(255, 255, 255, .08);
-
-    overflow: hidden;
-
+    width: 140px;
+    height: 3px;
+    margin-top: 30px;
+    background: rgba(255, 255, 255, 0.05); 
     border-radius: 999px;
-
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5) inset;
 }
 
 .loader-bar {
-
-    width: 40%;
-    height: 100%;
-
-    background: #3b82f6;
-
-    animation: loading 1.2s infinite;
-
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 50%;
+    background: linear-gradient(90deg, transparent, #818cf8, #4f46e5, transparent);
+    animation: fastSweep 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-@keyframes loading {
-
-    0% {
-        transform: translateX(-120%);
+/* === АНИМАЦИИ ЗАСТАВКИ === */
+@keyframes premiumAppIconFloat {
+    0%, 100% { 
+        transform: translateY(0) scale(1); 
+        /* Мягкая тень внизу и легкое синее свечение вокруг */
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.6), 0 0 15px rgba(79, 70, 229, 0.15); 
     }
-
-    100% {
-        transform: translateX(320%);
+    50% { 
+        transform: translateY(-12px) scale(1.02); 
+        /* При подъеме тень отдаляется, а свечение усиливается */
+        box-shadow: 0 25px 35px rgba(0, 0, 0, 0.8), 0 0 35px rgba(79, 70, 229, 0.4); 
     }
-
 }
 
-@keyframes pulse {
+@keyframes fastSweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+}
 
-    0% {
-        transform: scale(.96);
-    }
-
-    50% {
-        transform: scale(1);
-    }
-
-    100% {
-        transform: scale(.96);
-    }
-
+@keyframes proFlow {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
 }
 
 /* Локальные шрифты Inter (только WOFF2) */

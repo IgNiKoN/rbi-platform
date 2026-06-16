@@ -1,7 +1,7 @@
 /* Файл: js/analytics.js */
 // === МОДУЛЬ АНАЛИТИКИ И ДАШБОРДОВ ===
 // Задаем стартовую вкладку по умолчанию! Именно из-за этого был пустой экран при входе
-let currentActiveAnalyticsTab = 'sub-contractors';
+let currentActiveAnalyticsTab = localStorage.getItem('rbi_active_analytics_tab') || 'sub-contractors';
 // Источник аналитики:
 // local — все данные на устройстве;
 // cloud — только синхронизированные/облачные данные.
@@ -121,6 +121,7 @@ function renderOnePagerModeToggle() {
 // ЕДИНАЯ ФУНКЦИЯ ПЕРЕКЛЮЧЕНИЯ ПОДВКЛАДОК АНАЛИТИКИ
 function switchAnalyticsSubTab(tabId, btnElement) {
     currentActiveAnalyticsTab = tabId;
+    localStorage.setItem('rbi_active_analytics_tab', tabId);
 
     // Скрываем все секции
     document.querySelectorAll('.analytics-sub-section').forEach(el => el.classList.add('hidden'));
@@ -1633,7 +1634,27 @@ function showContractorDetailView(contractorName) {
             <td class="p-2 text-center text-[11px] text-red-600 font-black">${d.b3}</td>
         </tr>`;
     }).join('');
-
+    // --- Генерируем HTML для списка дефектов ---
+    let defectsListHtml = '';
+    const allDefectsForList = [];
+    Object.keys(cB3Counts).forEach(k => allDefectsForList.push({name: k, count: cB3Counts[k].count, type: 'B3'}));
+    Object.keys(cFailCounts).forEach(k => allDefectsForList.push({name: k, count: cFailCounts[k].count, type: 'B2'}));
+    
+    allDefectsForList.sort((a,b) => b.count - a.count); // Сортируем по частоте
+    
+    if (allDefectsForList.length > 0) {
+        defectsListHtml = allDefectsForList.map(d => `
+            <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700 py-2 last:border-0">
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 pr-4 leading-snug">${d.name}</div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded ${d.type === 'B3' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}">${d.type}</span>
+                    <span class="text-[11px] font-black text-slate-500 w-8 text-right">${d.count} шт</span>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        defectsListHtml = '<div class="text-center text-slate-400 text-[10px] font-bold py-2">Дефектов B2 и B3 не зафиксировано</div>';
+    }
     const totalDefects = sumB1 + sumB2 + sumB3;
     const pB1 = totalDefects > 0 ? Math.round((sumB1 / totalDefects) * 100) : 0;
     const pB2 = totalDefects > 0 ? Math.round((sumB2 / totalDefects) * 100) : 0;
@@ -1815,7 +1836,15 @@ function showContractorDetailView(contractorName) {
                 </div>
             </details>
         </div>
-
+        <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
+            <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                <span class="flex items-center gap-2">📋 Реестр частых дефектов</span>
+                <span class="transition-transform group-open:rotate-180">▼</span>
+            </summary>
+            <div class="p-3 border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30">
+                ${defectsListHtml}
+            </div>
+        </details>
         <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
             <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
                 <span class="flex items-center gap-2">📸 Фотогалереи (Брак и Эталоны)</span>
