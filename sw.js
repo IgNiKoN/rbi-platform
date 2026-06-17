@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.10.9';
-const SW_VERSION = '17.10.9';
+const APP_VERSION = '17.10.10';
+const SW_VERSION = '17.10.10';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -204,4 +204,14 @@ self.addEventListener('notificationclick', function(event) {
     event.waitUntil(
         clients.openWindow(event.notification.data.url)
     );
+});
+
+// ==========================================
+// ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЭША
+// ==========================================
+self.addEventListener('message', (event) => {
+    // Если получаем команду SKIP_WAITING от кнопки "Обновить" в интерфейсе
+    if (event.data === 'SKIP_WAITING') {
+        self.skipWaiting(); // Заставляем новый Service Worker немедленно взять управление на себя
+    }
 });

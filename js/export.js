@@ -457,7 +457,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         let urkGrowth = pPrevAvgUrk ? (pAvgUrk - pPrevAvgUrk) : 0;
         let ikoDrop = pPrevIKO ? (parseFloat(pPrevIKO) - parseFloat(IKO)) : 0;
 
-        return { name: pName, data: pData, avgUrk: pAvgUrk, prevAvgUrk: pPrevAvgUrk, IKO: IKO, prevIKO: pPrevIKO, urkGrowth, ikoDrop, redZone };
+        return { name: pName, data: pData, avgUrk: pAvgUrk, prevAvgUrk: pPrevAvgUrk, IKO: IKO, prevIKO: pPrevIKO, urkGrowth, ikoDrop, redZone, prevCount: prevPData.length };
     });
 
     // ==========================================
@@ -625,6 +625,20 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const pData = proj.data;
 
         const pChecksCount = pData.length;
+        // --- ВСТАВКА: ОПРЕДЕЛЯЕМ ЛОКАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ ШАБЛОНА ---
+        const currAvgUrk = proj.avgUrk;
+        const prevAvgUrk = proj.prevAvgUrk;
+        const prevIko = proj.prevIKO;
+        const prevChecks = proj.prevCount || 0;
+        const mData = {
+            IKO: proj.IKO,
+            redZonePerc: proj.redZone
+        };
+        let pdfIkoColor = '#64748b';
+        if (parseFloat(mData.IKO) >= 0.6) pdfIkoColor = '#dc2626';
+        else if (parseFloat(mData.IKO) >= 0.3) pdfIkoColor = '#d97706';
+        else pdfIkoColor = '#16a34a';
+        // ------------------------------------------------------------
         const pContractorsCount = new Set(pData.map(i => i.contractorName).filter(Boolean)).size;
 
         let pIkoColor = "#64748b";
@@ -747,14 +761,14 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                 <tr>
                     <td style="padding: 0 4px 8px 0; width:50%;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Глобальный УрК</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${globalAvgUrk}%</td><td>${renderTrend(globalAvgUrk, prevGlobalAvgUrk, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                     <td style="padding: 0 0 8px 4px; width:50%;">
-                        <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
+                        <div style="background: ${parseFloat(globalIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(globalIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pdfIkoColorGlobal}; line-height: 1;">${globalIKO}</td><td>${renderTrend(globalIKO, prevGlobalIko, trendLabel, true)}</td></tr></table>
                         </div>
                     </td>
                 </tr>
@@ -762,32 +776,18 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                     <td style="padding: 0 4px 8px 0;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                             <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevChecks, trendLabel)}</td></tr></table>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevGlobalChecks, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                     <td style="padding: 0 0 8px 4px;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                             <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currContractorsCount}</td><td>${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}</td></tr></table>
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 0 4px 0 0;">
-                        <div style="background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px solid #fecaca; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                            <div style="font-size: ${fsSmall}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                            <div style="font-size: ${fsNum}; font-weight: 900; color: #dc2626; margin-top: 5px; line-height: 1;">${mData.redZonePerc}%</div>
-                        </div>
-                    </td>
-                    <td style="padding: 0 0 0 4px;">
-                        <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box; position: relative; overflow: hidden;">
-                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900; position:relative; z-index:2;">Тренд (6 нед)</div>
-                            <div style="position:absolute; bottom:0; left:0; width:100%; height: 50%;">${imgSpark}</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${uniqueContractorsGlobal}</td><td>${renderTrend(uniqueContractorsGlobal, prevGlobalContrs, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                 </tr>
             </table>
-        `,
+            `,
             'trend_chart': `
             <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
                 <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
@@ -804,14 +804,14 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
             'top_b2_photos': gridB2,
             'top_ok_photos': gridOK,
             'ai_summary': `
-            <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
+            <div class="no-break" style="background: ${isDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+                <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
                 <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
             </div>
         `
         };
 
-        let content = '';
+        let projectContent = '';
 
         // Если был передан активный шаблон из конструктора
         if (window._currentActiveTemplate) {
@@ -820,7 +820,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
 
             if (t.layout === 'one') {
                 // Одна сплошная колонка
-                content = activeBlocks.map(b => blocksMap[b] || '').join('');
+                projectContent = activeBlocks.map(b => blocksMap[b] || '').join('');
             } else {
                 // Две колонки (Делим массив блоков пополам)
                 const mid = Math.ceil(activeBlocks.length / 2);
@@ -830,7 +830,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                 let w1 = '50%', w2 = '50%';
                 if (t.layout === 'two_uneven') { w1 = '35%'; w2 = '65%'; }
 
-                content = `
+                projectContent = `
                 <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                     <tr>
                         <td style="width: ${w1}; vertical-align: top; padding-right: 15px;">${leftBlocks}</td>
@@ -842,12 +842,13 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
 
             // Добавляем текст подвала (Footer), если он указан в шаблоне
             if (t.footer_text) {
-                content += `<div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${t.footer_text}</div>`;
+                projectContent += `<div style="text-align: center; font-size: 10px; color: #94a3b8; margin-top: 20px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${t.footer_text}</div>`;
             }
 
         } else {
             // КЛАССИЧЕСКИЙ СТАНДАРТНЫЙ МАКЕТ (Если шаблон не выбран)
-            content = `
+            projectContent = `
+            <h2 style="font-size: ${mode === 'browser' ? '14pt' : '20px'}; color: #4f46e5; text-transform: uppercase; margin-bottom: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;">Аналитика по объекту: ${proj.name}</h2>
             <table style="width: 100%; border-collapse: collapse; table-layout: fixed;">
                 <tr>
                     <td style="width: 32%; vertical-align: top; padding-right: 15px;">
@@ -866,10 +867,13 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         `;
         }
 
-        printPdfShell(window._currentActiveTemplate ? window._currentActiveTemplate.name : "Сводка для Руководства", content, "A3", "landscape", mode);
+        // СШИВАЕМ ОТЧЕТЫ: приклеиваем страницу текущего объекта к основному документу с разрывом страницы
+        content += '<div class="pdf-page-break page-break-before"></div>' + projectContent;
     }
 
-    printPdfShell("Сводный Отчет Компании", content, "A3", "landscape", mode);
+    // ВЫЗЫВАЕМ ПЕЧАТЬ ОДИН РАЗ ДЛЯ ВСЕГО ДОКУМЕНТА (ВНЕ ЦИКЛА)
+    const finalReportName = window._currentActiveTemplate ? window._currentActiveTemplate.name : "Сводный Отчет Компании";
+    printPdfShell(finalReportName, content, "A3", "landscape", mode);
 }
 
 
@@ -1675,11 +1679,24 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     const publicToken = generatePublicReportToken();
 
     let qrDataUrl = null;
-    try {
-        if (typeof QRCode !== 'undefined') {
-            qrDataUrl = await generateQrCodeDataUrl(`https://app.rbi-q.ru/report.html?token=${publicToken}`);
-        }
-    } catch (e) { console.warn("QR не сгенерирован", e); }
+    let showQr = true;
+
+    // Убираем QR с технических отчетов
+    if (title.includes('База проверок') || title.includes('График СМР') || title.includes('Дашборд СК') || title.includes('FMEA') || title.includes('Протокол') || title.includes('Воркшоп') || title.includes('Инструктаж') || title.includes('КС-2') || title.includes('Акт-Эталон') || title.includes('Тендер')) {
+        showQr = false;
+    }
+
+    if (window._currentActiveTemplate && window._currentActiveTemplate.show_qr === false) {
+        showQr = false;
+    }
+
+    if (showQr) {
+        try {
+            if (typeof QRCode !== 'undefined') {
+                qrDataUrl = await generateQrCodeDataUrl(`https://app.rbi-q.ru/report.html?token=${publicToken}`);
+            }
+        } catch (e) { console.warn("QR не сгенерирован", e); }
+    }
 
     const headerHtml = await getBrandedHeader(title, mode, qrDataUrl);
     const fullHtml = headerHtml + content;
@@ -3952,7 +3969,7 @@ async function getBrandedHeader(title, mode, qrCodeDataUrl = null) {
     }
 
     const qrHtml = qrCodeDataUrl
-        ? `<div style="width:60px; height:60px; border:2px solid ${brandColor}; padding:2px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div>`
+        ? `<div style="width:70px; height:70px; border:2px solid ${appSettings.brandColor || '#4f46e5'}; padding:3px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div><div style="font-size: 6px; color: #94a3b8; text-align: center; margin-top: 2px;">После синхр.</div>`
         : '';
 
     const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
@@ -4049,57 +4066,114 @@ async function preparePublicReportHtml(rawHtml) {
             <style>
                 .qr-public-report {
                     width: 100%;
-                    max-width: 1180px;
+                    max-width: 100%;
                     margin: 0 auto;
                     background: #ffffff;
                     color: #0f172a;
-                    font-family: Arial, sans-serif;
-                    box-sizing: border-box;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    padding: 15px;
                 }
-
-                .qr-public-report * {
-                    box-sizing: border-box;
-                }
-
-                .qr-public-report img {
-                    max-width: 100%;
-                    height: auto;
-                    cursor: zoom-in;
-                }
+                .qr-public-report * { box-sizing: border-box !important; }
+                .qr-public-report img { max-width: 100%; border-radius: 8px; }
 
                 @media (max-width: 768px) {
-                    .qr-public-report {
-                        padding: 0;
+                    /* 1. Снимаем жесткие ограничения высоты для текста, чтобы не обрезался */
+                    .qr-public-report div, 
+                    .qr-public-report span,
+                    .qr-public-report p {
+                        height: auto !important;
+                        min-height: 0 !important;
+                        max-height: none !important;
+                        overflow: visible !important;
+                        white-space: normal !important;
                     }
 
-                    .qr-public-report table,
-                    .qr-public-report tbody,
-                    .qr-public-report tr,
-                    .qr-public-report td,
-                    .qr-public-report th {
+                    /* 2. Ломаем каркас главных колонок (выстраиваем вертикально) */
+                    .qr-public-report > table,
+                    .qr-public-report > table > tbody,
+                    .qr-public-report > table > tbody > tr,
+                    .qr-public-report > div > table,
+                    .qr-public-report > div > table > tbody,
+                    .qr-public-report > div > table > tbody > tr {
                         display: block !important;
                         width: 100% !important;
-                        box-sizing: border-box !important;
                     }
 
-                    .qr-public-report td,
-                    .qr-public-report th {
-                        padding-left: 0 !important;
-                        padding-right: 0 !important;
+                    .qr-public-report > table > tbody > tr > td,
+                    .qr-public-report > div > table > tbody > tr > td {
+                        display: block !important;
+                        width: 100% !important;
+                        padding: 0 !important;
+                        margin-bottom: 24px !important;
+                        border: none !important;
+                    }
+
+                    /* 3. ФОТОГРАФИИ ДРУГ ПОД ДРУГОМ */
+                    /* Разрываем ячейки с фото (которые были по 20%, 25%, 33%) в вертикальные блоки */
+                    .qr-public-report td[style*="width: 20"],
+                    .qr-public-report td[style*="width: 25"],
+                    .qr-public-report td[style*="width: 33.3"] {
+                        display: block !important;
+                        width: 100% !important;
+                        padding: 0 !important;
+                        margin-bottom: 20px !important;
+                    }
+
+                    /* Делаем сами фотки красивыми, высокими и обрезанными по центру */
+                    .qr-public-report img:not([src^="data:image/png"]) {
+                        width: 100% !important;
+                        height: 250px !important;
+                        object-fit: cover !important;
+                        display: block !important;
                         margin-bottom: 10px !important;
                     }
 
-                    .qr-public-report div {
-                        max-width: 100% !important;
+                    /* 4. ВОЗВРАЩАЕМ К ЖИЗНИ ГРАФИКИ */
+                    /* Даем им жесткую высоту, чтобы они не схлопывались в ноль */
+                    .qr-public-report img[src^="data:image/png"] {
+                        height: 200px !important;
+                        min-height: 200px !important;
+                        width: 100% !important;
+                        object-fit: contain !important;
+                        display: block !important;
+                        margin: 15px 0 !important;
                     }
 
-                    .qr-public-report img {
+                    /* 5. СПАСАЕМ МИНИ-ТАБЛИЦЫ (Рейтинги и цифры) */
+                    /* У таблиц рейтингов margin-bottom: 6px, а у цифр margin-top: 5px */
+                    /* Оставляем их горизонтальными! */
+                    .qr-public-report table[style*="margin-bottom:6px"],
+                    .qr-public-report table[style*="margin-top:5px"] {
+                        display: table !important;
                         width: 100% !important;
-                        max-width: 100% !important;
-                        height: auto !important;
-                        max-height: none !important;
-                        object-fit: contain !important;
                     }
+                    .qr-public-report table[style*="margin-bottom:6px"] tbody,
+                    .qr-public-report table[style*="margin-top:5px"] tbody { display: table-row-group !important; }
+                    .qr-public-report table[style*="margin-bottom:6px"] tr,
+                    .qr-public-report table[style*="margin-top:5px"] tr { display: table-row !important; }
+                    .qr-public-report table[style*="margin-bottom:6px"] td,
+                    .qr-public-report table[style*="margin-top:5px"] td {
+                        display: table-cell !important;
+                        width: auto !important;
+                        padding-bottom: 8px !important;
+                    }
+
+                    /* 6. УМЕНЬШАЕМ ОГРОМНЫЕ ШРИФТЫ */
+                    .qr-public-report div[style*="font-size: 64px"],
+                    .qr-public-report div[style*="font-size: 48px"],
+                    .qr-public-report div[style*="font-size: 42px"],
+                    .qr-public-report div[style*="font-size: 36px"],
+                    .qr-public-report div[style*="font-size: 32px"],
+                    .qr-public-report div[style*="font-size: 28pt"],
+                    .qr-public-report div[style*="font-size: 24pt"] {
+                        font-size: 28px !important;
+                        line-height: 1.2 !important;
+                    }
+                    
+                    /* Шапка отчета и заголовки */
+                    .qr-public-report h1 { font-size: 20px !important; line-height: 1.3 !important; margin-bottom: 8px !important; text-align: center !important;}
+                    .qr-public-report h2 { font-size: 16px !important; margin-bottom: 8px !important; text-align: left !important;}
+                    .qr-public-report h3 { font-size: 14px !important; margin-bottom: 8px !important; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
                 }
             </style>
         `;
@@ -4120,6 +4194,7 @@ async function urlToDataUrl(url) {
 }
 // Универсальное сохранение отчета в IndexedDB и облако
 // Универсальное сохранение отчета в IndexedDB и облако
+// Универсальное сохранение отчета в IndexedDB и облако
 async function saveReportToLocal(reportData, htmlContent) {
     const reportId = reportData.forcedId || 'rep_' + Date.now().toString(36);
     const publicToken = reportData.publicToken || generatePublicReportToken();
@@ -4134,6 +4209,10 @@ async function saveReportToLocal(reportData, htmlContent) {
         if (found) canonicalKey = found.canonical_key;
     }
 
+    // 1. ИСПРАВЛЕНИЕ: СНАЧАЛА генерируем HTML-снимок
+    const publicHtmlContent = await preparePublicReportHtml(htmlContent);
+
+    // 2. ЗАТЕМ создаем запись отчета
     const reportRecord = {
         id: reportId,
         project_code: window.syncConfig?.projectCode || 'local',
@@ -4157,6 +4236,7 @@ async function saveReportToLocal(reportData, htmlContent) {
         },
 
         public_token: publicToken,
+        snapshot_html: publicHtmlContent, // Теперь переменная существует!
         created_by: appSettings.engineerName || 'Инженер',
 
         source: 'local',
@@ -4177,12 +4257,8 @@ async function saveReportToLocal(reportData, htmlContent) {
         else reportsArray.unshift(reportRecord);
     }
 
-    // HTML-снимок для публичной QR-ссылки.
-    // Внешний пользователь получает только этот html_content по public_token.
+    // Резервный старый вариант в RAM на всякий случай
     if (!window._tempSnapshots) window._tempSnapshots = {};
-
-    const publicHtmlContent = await preparePublicReportHtml(htmlContent);
-
     window._tempSnapshots[reportId] = {
         id: 'snap_' + reportId,
         report_id: reportId,

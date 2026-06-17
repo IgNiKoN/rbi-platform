@@ -584,10 +584,10 @@ window.extractTextFromPdf = async function (pdfDataUrl) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
-        
+
         // ДОБАВЛЕНО: Очищаем текст от невидимого мусора, который ломает базу
         fullText = fullText.replace(/[\0\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
-        
+
         return fullText;
     } catch (err) {
         console.error("Ошибка парсинга PDF:", err);
@@ -1228,30 +1228,43 @@ window.sk_aiMapColumns = async function () {
 
 // === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
 // === 13. ИИ АВТО-МАППИНГ КАТЕГОРИЙ ПО ТЕКСТУ ЗАМЕЧАНИЯ ===
-window.sk_autoMapCategories = async function (silent = false) {
+// Добавили второй параметр forceAll
+window.sk_autoMapCategories = async function (silent = false, forceAll = false) {
     if (typeof appSettings === 'undefined' || !appSettings.aiEnabled) {
         if (!silent) showToast("⚠️ Включите AI для авто-распределения категорий!");
         return 0;
+    }
+
+    if (forceAll && !silent) {
+        if (!confirm("Внимание! ИИ заново проанализирует ВСЕ замечания в базе (кроме тех, что вы привязали вручную). Это может занять около минуты. Продолжить?")) return 0;
     }
 
     if (!silent && !skAiRunning) showToast("🤖 ИИ запускает анализ категорий...");
 
     const allowedCleanCats = [];
     if (typeof SYSTEM_TEMPLATES !== 'undefined') Object.keys(SYSTEM_TEMPLATES).forEach(k => allowedCleanCats.push(SYSTEM_TEMPLATES[k].title));
-    if (typeof userTemplates !== 'undefined') Object.keys(userTemplates).forEach(k => allowedCleanCats.push(userTemplates[k].title));
     if (allowedCleanCats.length === 0) allowedCleanCats.push("Общестроительные работы");
 
-    // Ищем записи, где категория кривая или не задана
-    const recordsToFix = window.skRecords.filter(r =>
-        !r.category ||
-        r.category === 'Без категории' ||
-        r.category.trim() === '' ||
-        /^\d+$/.test(r.category)
-    );
+    // Ищем записи для обработки
+    let recordsToFix = [];
+    if (forceAll) {
+        // Если нажали "Перепроверить всё" - берем все живые записи, КРОМЕ тех, что инженер исправил руками (category_corrected)
+        recordsToFix = window.skRecords.filter(r => !r._deleted && !r.is_deleted && !r.category_corrected);
+    } else {
+        // Старая логика: берем только "Без категории" и мусорные
+        recordsToFix = window.skRecords.filter(r =>
+            !r.category ||
+            r.category === 'Без категории' ||
+            r.category.trim() === '' ||
+            /^\d+$/.test(r.category)
+        );
+    }
 
-    // ВАЖНО: Оставляем старое название переменной (uniqueTexts), чтобы не ломать код ниже, 
-    // но кладем в нее связку "Подрядчик + Текст", чтобы ИИ был умнее.
-    const uniqueTexts = [...new Set(recordsToFix.map(r => `${r.contractor} ||| ${r.text}`).filter(t => t && t.length > 5))];
+    // Собираем уникальные связки: Подрядчик + Локация + Текст
+    const uniqueTexts = [...new Set(recordsToFix.map(r => {
+        const loc = r.project_loc || r.structure || 'Локация не указана';
+        return `${r.contractor} ||| ${loc} ||| ${r.text}`;
+    }).filter(t => t && t.length > 10))];
 
     if (uniqueTexts.length === 0) {
         if (!silent) showToast("✅ Все замечания уже распределены по категориям.");
@@ -1270,12 +1283,17 @@ window.sk_autoMapCategories = async function (silent = false) {
         const batch = uniqueTexts.slice(startIndex, startIndex + BATCH_SIZE);
         const batchStr = batch.map((t, idx) => `${idx}: "${t.substring(0, 200)}"`).join('\n');
 
-        const promptSystem = `Ты — эксперт строительного контроля. Тебе передан список дефектов в формате "Имя подрядчика ||| Текст замечания".
-Твоя задача — классифицировать каждый дефект. Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length - 1}), значение - строго один из видов работ: [${allowedCleanCats.join(', ')}]. 
-ПРАВИЛА:
-1. Внимательно смотри на имя подрядчика. Если большинство его дефектов относятся к отделке, то спорные дефекты (например, "мусор" или "царапины") тоже относи к отделке.
-2. Избегай ответа "Без категории". Логика: "арматура" - это Монолит; "пена" - Окна.
-Без пояснений.`;
+        const promptSystem = `Ты — Главный эксперт строительного контроля. Твоя задача — классифицировать дефекты строго по утвержденному списку видов работ.
+Доступные виды работ (Категории): [${allowedCleanCats.join(', ')}].
+
+Тебе передан список в формате: "Имя подрядчика ||| Локация ||| Текст замечания".
+Верни ТОЛЬКО JSON-объект: ключ - индекс (0..${batch.length - 1}), значение - строго одно название из списка выше.
+
+ПРАВИЛА ЖЕСТКОЙ ЛОГИКИ:
+1. ИМЯ ПОДРЯДЧИКА — это ГЛАВНАЯ подсказка. Если подрядчик обычно ставит окна, то "мусор" или "пена" от него — это категория "Окна ПВХ".
+2. ЛОКАЦИЯ — вторая подсказка. Если локация "Кровля", ищи кровельные категории. Если "Фасад" — фасадные.
+3. АССОЦИАЦИИ: "Арматура, бетон, пилон" -> Монолитные работы. "Кронштейн, утеплитель, вата" -> Фасад. "Профиль, стекло, пена" -> Окна/Витражи. "Шпаклевка, краска, линолеум, обои" -> Отделка.
+4. ЗАПРЕЩЕНО придумывать свои категории. Используй ТОЛЬКО названия из списка. Без пояснений и маркдауна.`;
 
         try {
             const res = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: batchStr }], { temperature: 0.1, max_tokens: 5000 });
@@ -1288,13 +1306,18 @@ window.sk_autoMapCategories = async function (silent = false) {
                 for (let i = 0; i < batch.length; i++) {
                     const cleanVal = aiMap[i] || aiMap[String(i)];
                     if (cleanVal && allowedCleanCats.includes(cleanVal)) {
-                        // Разбираем строку обратно на Подрядчика и Текст
+                        // Разбираем строку обратно
                         const parts = batch[i].split(' ||| ');
                         const cName = parts[0];
-                        const tText = parts[1];
+                        const locName = parts[1];
+                        const tText = parts[2];
 
                         // Находим все записи и обновляем
-                        const targetRecords = window.skRecords.filter(r => r.contractor === cName && r.text === tText);
+                        const targetRecords = window.skRecords.filter(r => 
+                            r.contractor === cName && 
+                            r.text === tText &&
+                            (r.project_loc === locName || r.structure === locName || (locName === 'Локация не указана'))
+                        );
                         targetRecords.forEach(rec => {
                             rec.ai_category = cleanVal;
                             // Жестко заменяем категорию
@@ -1303,6 +1326,14 @@ window.sk_autoMapCategories = async function (silent = false) {
                                 rec.category_corrected = true;
                             }
                             rec._updatedAt = new Date().toISOString();
+                            rec.updated_at = rec._updatedAt;
+                            rec.updatedAt = rec._updatedAt;
+                            
+                            // ВАЖНО: Сбрасываем статус, чтобы улетело в облако!
+                            rec.source = 'local';
+                            rec.syncStatus = 'not_synced';
+                            rec.sync_status = 'not_synced';
+                            
                             batchRecordsToUpdate.push(rec);
                         });
                     }
@@ -1482,6 +1513,14 @@ window.sk_predictRisksAi = async function (silent = false) {
                         batch[j].predicted_risk = ans.risk;
                         batch[j].predicted_reason = ans.reason || '';
                         batch[j]._updatedAt = new Date().toISOString();
+                        batch[j].updated_at = batch[j]._updatedAt;
+                        batch[j].updatedAt = batch[j]._updatedAt;
+                        
+                        // ВАЖНО: Сбрасываем статус, чтобы улетело в облако!
+                        batch[j].source = 'local';
+                        batch[j].syncStatus = 'not_synced';
+                        batch[j].sync_status = 'not_synced';
+                        
                         await dbPut(STORES.SK_RECORDS, batch[j]);
                         processed++;
                     }

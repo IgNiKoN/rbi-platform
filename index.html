@@ -3286,7 +3286,12 @@
                     </button>
                 </div>
 
-                <div class="text-center mt-4 mb-6">
+                <div class="flex flex-col gap-3 items-center mt-4 mb-6">
+                    <button onclick="window.checkForUpdates()"
+                        class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-colors uppercase shadow-sm flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Проверить обновления
+                    </button>
                     <button onclick="fullFactoryReset()"
                         class="text-[10px] font-bold text-red-500 bg-red-50 px-4 py-2 rounded-lg hover:bg-red-100 border border-red-200 transition-colors uppercase shadow-sm">⚠️
                         Полный сброс (Удалить всё)</button>
@@ -3768,12 +3773,24 @@
             </div>
         </div>
     </div>
+
+    <!-- === УВЕДОМЛЕНИЕ ОБ ОБНОВЛЕНИИ PWA === -->
+    <div id="pwa-update-banner" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-[10000] hidden bg-indigo-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex-row items-center gap-3 w-[90%] max-w-sm border border-indigo-400 animate-fadeIn" style="display: none;">
+        <div class="flex-1">
+            <div class="text-[12px] font-black uppercase tracking-widest mb-0.5">Доступно обновление</div>
+            <div class="text-[10px] font-medium opacity-90 leading-tight">Вышла новая версия. Нажмите, чтобы применить.</div>
+        </div>
+        <button id="pwa-update-btn" class="bg-white text-indigo-600 px-3 py-2 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform shrink-0">
+            Обновить
+        </button>
+    </div>
+
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.10.9',
-            sw: '17.10.9',
-            buildDate: '2026-06-16'
+            app: '17.10.10',
+            sw: '17.10.10',
+            buildDate: '2026-06-17'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -3934,18 +3951,72 @@
 
     <!-- === ПОДКЛЮЧЕНИЕ PWA SERVICE WORKER === -->
     <script>
+        let newWorker;
+        // Логика ручной проверки обновлений
+        window.checkForUpdates = function() {
+            if ('serviceWorker' in navigator) {
+                if (typeof showToast === 'function') showToast("🔄 Проверяем наличие новых версий...");
+                navigator.serviceWorker.getRegistration().then(reg => {
+                    if (reg) {
+                        // Заставляем браузер сходить на сервер и проверить sw.js
+                        reg.update().then(() => {
+                            // Ждем 1.5 секунды. Если вылезет плашка, значит обнова есть.
+                            setTimeout(() => {
+                                const banner = document.getElementById('pwa-update-banner');
+                                if (!banner || banner.style.display === 'none') {
+                                    if (typeof showToast === 'function') showToast("✅ У вас установлена самая актуальная версия!");
+                                }
+                            }, 1500);
+                        });
+                    } else {
+                        if (typeof showToast === 'function') showToast("❌ Ошибка: Service Worker не активен");
+                    }
+                });
+            } else {
+                if (typeof showToast === 'function') showToast("Ваш браузер не поддерживает обновления");
+            }
+        };
+        // Логика нажатия на кнопку "Обновить"
+        document.getElementById('pwa-update-btn')?.addEventListener('click', () => {
+            if (newWorker) {
+                // Отправляем команду в sw.js, которую мы написали на Шаге 1
+                newWorker.postMessage('SKIP_WAITING');
+            }
+        });
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
                     .then(registration => {
                         console.log('Service Worker успешно зарегистрирован:', registration.scope);
+                        
+                        // Следим за появлением нового файла sw.js (нового кэша)
+                        registration.addEventListener('updatefound', () => {
+                            newWorker = registration.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                // Когда новый кэш скачан и готов к работе
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // Показываем нашу красивую плашку
+                                    document.getElementById('pwa-update-banner').style.display = 'flex';
+                                }
+                            });
+                        });
                     })
                     .catch(error => {
                         console.log('Ошибка регистрации Service Worker:', error);
                     });
+
+                // Когда новый Service Worker берет управление, просто перезагружаем страницу
+                let refreshing;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (refreshing) return;
+                    refreshing = true;
+                    window.location.reload();
+                });
             });
         }
     </script>
+
     <!-- === ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ PDF (ВСЕГДА ВИДНА НА НУЖНЫХ ВКЛАДКАХ) === -->
     <!-- === ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ PDF (ВСЕГДА ВИДНА НА НУЖНЫХ ВКЛАДКАХ) === -->
     <button id="fab-download-btn" onclick="handleFabDownload()"

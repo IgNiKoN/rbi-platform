@@ -482,26 +482,14 @@ window.rbi_renderTasksList = async function () {
     const container = document.getElementById('rbi-tasks-container');
     if (!container) return;
 
-    // ЗАЩИТА: Не перерисовываем задачи, если вкладка скрыта (убирает мерцание)
+    // ЗАЩИТА: Не перерисовываем задачи, если вкладка скрыта
     const tasksTab = document.getElementById('eng-sub-tasks');
     if (tasksTab && tasksTab.classList.contains('hidden')) return;
 
     let activeTasks = window.rbi_tasksData;
     const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
-    // <-- ВСТАВКА: Жесткая сортировка. Карточки больше никогда не будут прыгать
-    activeTasks = [...activeTasks].sort((a, b) => {
-        // 1. Сначала сортируем по приоритету (Критичные (4) всегда выше)
-        if (b.priorityLvl !== a.priorityLvl) return b.priorityLvl - a.priorityLvl;
-        
-        // 2. Если приоритет одинаковый, сортируем по дате (Ближайшие сверху)
-        const dateA = new Date(a.date || 0).getTime();
-        const dateB = new Date(b.date || 0).getTime();
-        return dateA - dateB;
-    });
     const currentEng = document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
     const assignedProjects = window.RbiRoles ? window.RbiRoles.getAssignedProjects() : [];
-    
-    let managerFilterHtml = '';
 
     // Гости и подрядчики вообще не видят план
     if (['guest', 'contractor'].includes(currentRole)) {
@@ -509,42 +497,87 @@ window.rbi_renderTasksList = async function () {
         return;
     }
 
+    // --- 1. БАЗОВАЯ ФИЛЬТРАЦИЯ ПО РОЛИ ---
     if (window.RbiRoles && window.RbiRoles.isLeadership()) {
-        // Для руководства фильтруем сначала по объектам (РП видит только свои)
         if (currentRole === 'project_manager' && assignedProjects.length > 0) {
             activeTasks = activeTasks.filter(t => assignedProjects.includes(t.project_canonical_key || t.project));
         }
-
-        const allEngsInTasks = [...new Set(activeTasks.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
-        // ВСТАВКА: По умолчанию для руководителей показываем ВСЕХ инженеров, чтобы при F5 список не был пустым
-        if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = 'ALL';
-
-        if (window.taskEngineerFilter !== 'ALL') {
-            activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === window.taskEngineerFilter);
-        }
-
-        managerFilterHtml = `
-            <div class="mb-4 bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800 p-3 rounded-xl shadow-sm flex items-center justify-between gap-3">
-                <div class="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-400 tracking-widest shrink-0">План инженера:</div>
-                <select class="input-base !py-1.5 text-[11px] font-bold flex-1" onchange="window.taskEngineerFilter = this.value; rbi_renderTasksList()">
-                    <option value="ALL" ${window.taskEngineerFilter === 'ALL' ? 'selected' : ''}>Вся команда (Общий список)</option>
-                    ${allEngsInTasks.map(e => `<option value="${e}" ${window.taskEngineerFilter === e ? 'selected' : ''}>${e}</option>`).join('')}
-                </select>
-            </div>
-        `;
     } else {
         // Инженер видит только свои задачи и системные рассылки
         activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === currentEng || t.contractor === 'Системная');
     }
-    // -----------------------------------------------------
-    // --- ВСТАВКА: Фильтрация по клику на Календарь ---
+
+    // --- 2. ФИЛЬТРАЦИЯ ПО КАЛЕНДАРЮ ---
     if (window.selectedCalendarDate) {
-        activeTasks = activeTasks.filter(t => {
-            if (!t.date) return false;
-            return t.date.split('T')[0] === window.selectedCalendarDate;
-        });
+        activeTasks = activeTasks.filter(t => t.date && t.date.split('T')[0] === window.selectedCalendarDate);
     }
-    // ------------------------------------------------
+
+    // --- 3. ДАННЫЕ ДЛЯ ВЫПАДАЮЩИХ СПИСКОВ ---
+    const allEngsInTasks = [...new Set(activeTasks.map(t => t.engineerName || t.inspectorName).filter(Boolean))].sort();
+    const allProjs = [...new Set(activeTasks.map(t => t.project_canonical_key || t.project || t.projectName).filter(Boolean))].sort();
+    const allContrs = [...new Set(activeTasks.map(t => t.contractor || t.contractorName).filter(Boolean))].sort();
+    const allTypes = [...new Set(activeTasks.map(t => t.taskType || t.category || t.icon).filter(Boolean))].sort();
+
+    if (typeof window.taskEngineerFilter === 'undefined') window.taskEngineerFilter = 'ALL';
+    window.taskTypeFilter = window.taskTypeFilter || 'ALL';
+    window.taskStatusFilter = window.taskStatusFilter || 'ACTIVE';
+    window.taskProjectFilter = window.taskProjectFilter || 'ALL';
+    window.taskContractorFilter = window.taskContractorFilter || 'ALL';
+
+    // --- 4. ПРИМЕНЯЕМ ПОЛЬЗОВАТЕЛЬСКИЕ ФИЛЬТРЫ ---
+    if (window.taskEngineerFilter !== 'ALL') activeTasks = activeTasks.filter(t => (t.engineerName || t.inspectorName) === window.taskEngineerFilter);
+    if (window.taskTypeFilter !== 'ALL') activeTasks = activeTasks.filter(t => (t.taskType || t.category || t.icon) === window.taskTypeFilter);
+    if (window.taskProjectFilter !== 'ALL') activeTasks = activeTasks.filter(t => (t.project_canonical_key || t.project || t.projectName || '') === window.taskProjectFilter);
+    if (window.taskContractorFilter !== 'ALL') activeTasks = activeTasks.filter(t => (t.contractor || t.contractorName || '') === window.taskContractorFilter);
+
+    if (window.taskStatusFilter !== 'ALL') {
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        if (window.taskStatusFilter === 'DONE') activeTasks = activeTasks.filter(t => t.status === 'done');
+        else if (window.taskStatusFilter === 'PENDING') activeTasks = activeTasks.filter(t => t.status === 'pending');
+        else if (window.taskStatusFilter === 'OVERDUE') activeTasks = activeTasks.filter(t => t.status !== 'done' && t.date && new Date(t.date) < todayStart);
+    }
+
+    // Жесткая сортировка (Критичные всегда выше, потом по дате)
+    activeTasks = [...activeTasks].sort((a, b) => {
+        if (b.priorityLvl !== a.priorityLvl) return b.priorityLvl - a.priorityLvl;
+        return new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
+    });
+
+    // --- 5. ГЕНЕРИРУЕМ БЛОК ВЫПАДАЮЩИХ ФИЛЬТРОВ ---
+    let managerFilterHtml = `
+        <div class="mb-4 bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm flex flex-col gap-2">
+            <div class="text-[10px] font-black uppercase text-[var(--text-muted)] tracking-widest flex items-center gap-1.5">
+                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg> 
+                ${window.RbiRoles && window.RbiRoles.isLeadership() ? 'Панель Руководителя (Фильтры)' : 'Мои Фильтры Задач'}
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                ${window.RbiRoles && window.RbiRoles.isLeadership() ? `
+                <select class="input-base !py-1.5 text-[10px] font-bold bg-[var(--hover-bg)]" onchange="window.taskEngineerFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskEngineerFilter === 'ALL' ? 'selected' : ''}>👤 Все инженеры</option>
+                    ${allEngsInTasks.map(e => `<option value="${e.replace(/"/g, '&quot;')}" ${window.taskEngineerFilter === e ? 'selected' : ''}>${e}</option>`).join('')}
+                </select>` : ''}
+                <select class="input-base !py-1.5 text-[10px] font-bold bg-[var(--hover-bg)]" onchange="window.taskTypeFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskTypeFilter === 'ALL' ? 'selected' : ''}>📋 Все типы</option>
+                    ${allTypes.map(t => `<option value="${t.replace(/"/g, '&quot;')}" ${window.taskTypeFilter === t ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+                <select class="input-base !py-1.5 text-[10px] font-bold bg-[var(--hover-bg)]" onchange="window.taskStatusFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskStatusFilter === 'ALL' ? 'selected' : ''}>📌 Все статусы</option>
+                    <option value="ACTIVE" ${window.taskStatusFilter === 'ACTIVE' ? 'selected' : ''}>🕒 В работе</option>
+                    <option value="OVERDUE" ${window.taskStatusFilter === 'OVERDUE' ? 'selected' : ''}>🚨 Просрочка</option>
+                    <option value="DONE" ${window.taskStatusFilter === 'DONE' ? 'selected' : ''}>✅ Выполнено</option>
+                </select>
+                <select class="input-base !py-1.5 text-[10px] font-bold bg-[var(--hover-bg)]" onchange="window.taskProjectFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskProjectFilter === 'ALL' ? 'selected' : ''}>🏢 Все объекты</option>
+                    ${allProjs.map(p => `<option value="${p.replace(/"/g, '&quot;')}" ${window.taskProjectFilter === p ? 'selected' : ''}>${p}</option>`).join('')}
+                </select>
+                <select class="input-base !py-1.5 text-[10px] font-bold bg-[var(--hover-bg)]" onchange="window.taskContractorFilter = this.value; rbi_renderTasksList()">
+                    <option value="ALL" ${window.taskContractorFilter === 'ALL' ? 'selected' : ''}>👷 Все подрядчики</option>
+                    ${allContrs.map(c => `<option value="${c.replace(/"/g, '&quot;')}" ${window.taskContractorFilter === c ? 'selected' : ''}>${c}</option>`).join('')}
+                </select>
+            </div>
+        </div>
+    `;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startW = getStartOfWeek(today);
@@ -559,28 +592,22 @@ window.rbi_renderTasksList = async function () {
         <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
             <button onclick="gameForceUpdatePlan()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Синхронизировать</button>
             <button onclick="rbi_openTaskModal()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg> Новое поручение</button>
-            
-            <!-- КНОПКА КАЛЕНДАРЯ -->
             <button onclick="rbi_openCalendarModal()" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Календарь</button>
-            
             <button onclick="gameToggleAbsence()" class="bg-slate-50 text-slate-700 border border-slate-200 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Статус / Отпуск</button>
         </div>
     `;
 
     if (typeof engineerAbsence !== 'undefined' && engineerAbsence.isActive) {
-        container.innerHTML = globalActionsHtml + `<div class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-600 shadow-sm"><div class="font-black uppercase mb-1 text-lg flex items-center justify-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"></path></svg> Режим: ${engineerAbsence.reason}</div>Инспекции приостановлены. Хорошего отдыха!</div>`;
+        container.innerHTML = globalActionsHtml + `<div class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-600 shadow-sm"><div class="font-black uppercase mb-1 text-lg flex items-center justify-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"></path></svg> Режим: ${engineerAbsence.reason}</div>Инспекции приостановлены.</div>`;
         return;
     }
 
-    // ВСТАВКА: Умная сортировка задач с учетом ручного приоритета и сбор дат для календаря
     let overdue = []; let todayTasks = []; let weekTasks = []; let monthTasks = [];
     let archiveTasks = [];
     let weekTotal = 0; let weekDone = 0;
-    window.rbiCalendarDates = {}; // Хранилище дат для календаря
+    window.rbiCalendarDates = {}; 
 
     activeTasks.forEach(t => {
-        if (t._deleted) return;
-
         if (t.status === 'done' || t.status === 'blocked') {
             archiveTasks.push(t);
             const tDate = t.date ? new Date(t.date) : new Date();
@@ -593,17 +620,13 @@ window.rbi_renderTasksList = async function () {
 
         if (t.status === 'paused') { monthTasks.push(t); weekTotal++; return; }
 
-        // --- ЖЕСТКОЕ ПРАВИЛО: РУЧНОЙ ВЫБОР ИМЕЕТ ПРИОРИТЕТ НАД ДАТОЙ ---
         if (t.type === 'manual' && t.urgency) {
-            if (t.urgency === 'planned') {
-                weekTasks.push(t); weekTotal++; return;
-            } else if (t.urgency === 'future') {
-                monthTasks.push(t); weekTotal++; return;
-            }
+            if (t.urgency === 'planned') { weekTasks.push(t); weekTotal++; return; } 
+            else if (t.urgency === 'future') { monthTasks.push(t); weekTotal++; return; }
         }
 
-        // Если это автоматическая задача — раскидываем по датам
-        if (!t.date) { weekTasks.push(t); weekTotal++; return; } // Без даты -> в плановые
+        if (!t.date) { weekTasks.push(t); weekTotal++; return; }
+        
         const tDate = new Date(t.date);
         tDate.setHours(0, 0, 0, 0);
 
@@ -619,6 +642,8 @@ window.rbi_renderTasksList = async function () {
     if (progBar) progBar.style.width = weekTotal > 0 ? `${(weekDone / weekTotal) * 100}%` : '0%';
 
     const renderCard = (t, isOverdue, isArchive = false) => {
+        // Определяем отдельную категорию для Эталонов
+        let itemCategory = t.taskType === 'Эталон' ? 'etalon' : (t.category || 'other');
         const icon = t.icon ? (RBI_TASK_ICONS[t.icon] || RBI_TASK_ICONS['Контроль']) : RBI_TASK_ICONS['Контроль'];
         const dateStr = t.date ? new Date(t.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : 'Без даты';
 
@@ -637,20 +662,18 @@ window.rbi_renderTasksList = async function () {
             progressHtml = `<div class="text-[9px] font-black ${isDone ? 'text-green-600' : 'text-indigo-600'} bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded shadow-sm border border-slate-200 dark:border-slate-700">${t.done} / ${t.target}</div>`;
         }
 
-        const currentInspector = document.getElementById('inp-inspector')?.value.trim() || (typeof appSettings !== 'undefined' ? appSettings.engineerName : 'Инженер');
         let assigneeBadge = '';
-        if (t.engineerName && t.engineerName !== currentInspector && t.engineerName !== 'Система' && t.contractor !== 'Системная') {
+        if (t.engineerName && t.engineerName !== currentEng && t.engineerName !== 'Система' && t.contractor !== 'Системная') {
             assigneeBadge = `<div class="text-[8px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 uppercase font-black tracking-widest mt-1 w-fit flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg> ${t.engineerName.split(' ')[0]}</div>`;
         }
 
-        // --- НОВОЕ: БЕЙДЖ ДОЛГА ---
         let debtBadge = '';
         if (t.carryOverCount && t.carryOverCount > 0 && !isArchive) {
             debtBadge = `<div class="absolute -top-2 -right-2 bg-red-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-md uppercase tracking-widest animate-pulse border border-white dark:border-slate-800">Долг: ${t.carryOverCount} нед.</div>`;
         }
 
         return `
-        <div data-category="${t.category || 'other'}" onclick="rbi_openTaskAction('${t.id}')" class="task-card-item cursor-pointer w-full ${bgClass} border ${borderClass} rounded-2xl p-3 flex flex-col justify-between relative shadow-sm transition-transform active:scale-[0.98] hover:border-indigo-300 dark:hover:border-indigo-600 ${opacityClass}">
+        <div data-category="${itemCategory}" onclick="rbi_openTaskAction('${t.id}')" class="task-card-item cursor-pointer w-full ${bgClass} border ${borderClass} rounded-2xl p-3 flex flex-col justify-between relative shadow-sm transition-transform active:scale-[0.98] hover:border-indigo-300 dark:hover:border-indigo-600 ${opacityClass}">
             ${debtBadge}
             <div>
                 <div class="flex items-start justify-between gap-3 mb-2">
@@ -676,18 +699,21 @@ window.rbi_renderTasksList = async function () {
         </div>`;
     };
 
+    // --- 6. НОВЫЕ РАСШИРЕННЫЕ ЧИПСЫ ---
     const filterHtml = `
         <div class="flex gap-1.5 mb-4 pb-1 overflow-x-auto no-scrollbar" id="hub-filters">
-            <button onclick="rbi_filterTaskHub('all', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все задачи</button>
+            <button onclick="rbi_filterTaskHub('all', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все</button>
             <button onclick="rbi_filterTaskHub('control', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Аудиты</button>
-            <button onclick="rbi_filterTaskHub('method', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Качество</button>
+            <button onclick="rbi_filterTaskHub('etalon', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Эталоны</button>
             <button onclick="rbi_filterTaskHub('meeting', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Планерки</button>
+            <button onclick="rbi_filterTaskHub('report', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Отчеты / FMEA</button>
+            <button onclick="rbi_filterTaskHub('method', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">ППР / TWI</button>
+            <button onclick="rbi_filterTaskHub('dev', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Обучение</button>
+            <button onclick="rbi_filterTaskHub('other', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Ручные</button>
         </div>
     `;
 
     let accordionsHtml = '';
-
-    // СЕТКА 2 на телефоне, 3 на планшете, 4 на ПК
     const gridClass = "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3 pb-2";
 
     const activeToday = [...overdue.map(t => renderCard(t, true)), ...todayTasks.map(t => renderCard(t, false))];
@@ -699,12 +725,12 @@ window.rbi_renderTasksList = async function () {
     if (monthTasks.length > 0) accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (${monthTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${monthTasks.map(t => renderCard(t, false)).join('')}</div></details>`;
 
     if (archiveTasks.length > 0) {
-        const recentArchive = archiveTasks.sort((a, b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date)).slice(0, 10);
-        accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Завершенные (${archiveTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${recentArchive.map(t => renderCard(t, false, true)).join('')}</div></details>`;
+        const recentArchive = archiveTasks.sort((a, b) => new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date)).slice(0, 15);
+        accordionsHtml += `<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Недавно завершенные (${archiveTasks.length})</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="${gridClass}">${recentArchive.map(t => renderCard(t, false, true)).join('')}</div></details>`;
     }
 
-    if (weekTotal === 0 && archiveTasks.length === 0) {
-        container.innerHTML = globalActionsHtml + managerFilterHtml + `<div class="bg-[var(--card-bg)] border border-dashed border-[var(--card-border)] rounded-2xl p-8 text-center shadow-sm mt-4"><div class="text-[14px] font-black text-slate-400 uppercase tracking-wider mb-2">План чист</div><div class="text-[11px] text-slate-500 font-medium">Система пока не сформировала задачи. Сделайте проверку или обновите план.</div></div>`;
+    if (activeToday.length === 0 && weekTasks.length === 0 && monthTasks.length === 0 && archiveTasks.length === 0) {
+        container.innerHTML = globalActionsHtml + managerFilterHtml + filterHtml + `<div class="bg-[var(--card-bg)] border border-dashed border-[var(--card-border)] rounded-2xl p-8 text-center shadow-sm mt-4"><div class="text-[14px] font-black text-slate-400 uppercase tracking-wider mb-2">План чист</div><div class="text-[11px] text-slate-500 font-medium">Нет задач по выбранным фильтрам.</div></div>`;
         return;
     }
 

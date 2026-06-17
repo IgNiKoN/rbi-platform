@@ -2915,14 +2915,39 @@ window.rbi_saveFmea = async function (periodName) {
 
     let fmeaId = window.currentEditingFmeaId || ('fmea_' + Date.now().toString(36));
 
+    // Получаем привязку к объекту
+    const projectInput = document.getElementById('inp-project')?.value || '';
+    const engineerName = document.getElementById('inp-inspector')?.value || (typeof appSettings !== 'undefined' ? appSettings.engineerName : 'Инженер');
+
+    let canonicalKey = projectInput;
+    if (typeof ObjectDirectory !== 'undefined' && ObjectDirectory.objects?.length) {
+        const found = ObjectDirectory.objects.find(o =>
+            o.display_name === projectInput || o.canonical_key === projectInput
+        );
+        if (found) canonicalKey = found.canonical_key;
+    }
+
     const fmeaRecord = {
         id: fmeaId,
+        project_code: window.syncConfig?.projectCode || 'LOCAL',
+        project_canonical_key: canonicalKey,
+        project_display_name: projectInput,
+        engineerName: engineerName,
+        inspectorName: engineerName,
+        author: engineerName,
         date: new Date().toISOString(),
-        author: document.getElementById('inp-inspector')?.value || 'Инженер',
         title: `FMEA Анализ от ${new Date().toLocaleDateString('ru-RU')}`,
         periodName: periodName,
         defects: defects,
-        updatedAt: new Date().toISOString()
+        source: 'local',
+        syncStatus: 'not_synced',
+        sync_status: 'not_synced',
+        syncBlockReason: '',
+        sync_block_reason: '',
+        _deleted: false,
+        is_deleted: false,
+        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString()
     };
 
     // Обновляем массив без дубликатов
@@ -3098,55 +3123,7 @@ window.rbi_createEmptyFmea = function () {
     // Скроллим к рабочей области
     workspace.scrollIntoView({ behavior: 'smooth' });
 };
-window.gameAddAssignedProjectFromSelect = function (domId, canonicalKey) {
-    if (!canonicalKey) return;
 
-    const input = document.getElementById(`proj_input_${domId}`);
-    if (!input) return;
-
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
-
-    if (!arr.includes(canonicalKey)) arr.push(canonicalKey);
-
-    input.value = arr.join(', ');
-    window.gameRenderAssignedProjectChips(domId);
-};
-
-window.gameRemoveAssignedProjectChip = function (domId, canonicalKey) {
-    const input = document.getElementById(`proj_input_${domId}`);
-    if (!input) return;
-
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
-
-    input.value = arr.filter(v => v !== canonicalKey).join(', ');
-    window.gameRenderAssignedProjectChips(domId);
-};
-
-window.gameRenderAssignedProjectChips = function (domId) {
-    const input = document.getElementById(`proj_input_${domId}`);
-    const box = document.getElementById(`proj_chips_${domId}`);
-    if (!input || !box) return;
-
-    const arr = input.value
-        ? input.value.split(',').map(v => v.trim()).filter(Boolean)
-        : [];
-
-    if (!arr.length) {
-        box.innerHTML = '<span class="text-[8px] text-slate-400 font-bold">Объекты не назначены</span>';
-        return;
-    }
-
-    box.innerHTML = arr.map(key => `
-        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black">
-            ${key}
-            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${key}')" class="text-red-500 font-black">×</button>
-        </span>
-    `).join('');
-};
 
 // === Панель руководителя: Справочник подрядчиков (Отрисовка) ===
 window.gameLoadContractorDirectory = async function () {
@@ -3512,29 +3489,20 @@ window.gameDeleteContractorRequest = async function (requestId) {
     }
 };
 
-// === Панель руководителя: чипы закреплённых объектов ===
+// === Панель руководителя: чипы закреплённых объектов (ИСПРАВЛЕНО) ===
 window.gameAddAssignedProjectFromSelect = function (domId, canonicalKey) {
     if (!canonicalKey) return;
-
     const input = document.getElementById(`proj_input_${domId}`);
     if (!input) return;
 
     let projectsArray = [];
-    if (input.dataset.projectsArray) {
-        try {
-            projectsArray = JSON.parse(input.dataset.projectsArray);
-        } catch (e) { }
-    } else if (input.value) {
-        let separator = input.value.includes(';;;') ? ';;;' : ',';
-        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
-    }
+    try { projectsArray = JSON.parse(input.value || '[]'); } catch (e) { projectsArray = []; }
 
     if (!projectsArray.includes(canonicalKey)) {
         projectsArray.push(canonicalKey);
     }
 
-    input.dataset.projectsArray = JSON.stringify(projectsArray);
-    input.value = projectsArray.join(';;;');
+    input.value = JSON.stringify(projectsArray);
     window.gameRenderAssignedProjectChips(domId);
 };
 
@@ -3543,18 +3511,10 @@ window.gameRemoveAssignedProjectChip = function (domId, canonicalKey) {
     if (!input) return;
 
     let projectsArray = [];
-    if (input.dataset.projectsArray) {
-        try {
-            projectsArray = JSON.parse(input.dataset.projectsArray);
-        } catch (e) { }
-    } else if (input.value) {
-        let separator = input.value.includes(';;;') ? ';;;' : ',';
-        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
-    }
+    try { projectsArray = JSON.parse(input.value || '[]'); } catch (e) { projectsArray = []; }
 
     projectsArray = projectsArray.filter(v => v !== canonicalKey);
-    input.dataset.projectsArray = JSON.stringify(projectsArray);
-    input.value = projectsArray.join(';;;');
+    input.value = JSON.stringify(projectsArray);
     window.gameRenderAssignedProjectChips(domId);
 };
 
@@ -3564,38 +3524,33 @@ window.gameRenderAssignedProjectChips = function (domId) {
     if (!input || !box) return;
 
     let projectsArray = [];
-    if (input.dataset.projectsArray) {
-        try {
-            projectsArray = JSON.parse(input.dataset.projectsArray);
-        } catch (e) { }
-    }
-    if (!projectsArray.length && input.value) {
-        let separator = input.value.includes(';;;') ? ';;;' : ',';
-        projectsArray = input.value.split(separator).map(v => v.trim()).filter(Boolean);
-        input.dataset.projectsArray = JSON.stringify(projectsArray);
-    }
+    try { projectsArray = JSON.parse(input.value || '[]'); } catch (e) { projectsArray = []; }
 
     if (projectsArray.length === 0) {
         box.innerHTML = '<span class="text-[8px] text-slate-400 font-bold">Объекты не назначены</span>';
         return;
     }
 
-    const escapeHtml = (str) => String(str).replace(/[&<>]/g, function (m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
+    box.innerHTML = projectsArray.map(key => {
+        // Подтягиваем красивое название из справочника, если есть
+        let displayName = key;
+        if (typeof ObjectDirectory !== 'undefined' && ObjectDirectory.objects) {
+            const obj = ObjectDirectory.objects.find(o => o.canonical_key === key);
+            if (obj) displayName = obj.display_name;
+        }
 
-    box.innerHTML = projectsArray.map(key => `
-        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black">
-            ${escapeHtml(key)}
-            <button onclick="gameRemoveAssignedProjectChip('${domId}', '${escapeHtml(key)}')" class="text-red-500 font-black leading-none">×</button>
+        const safeKey = String(key).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const safeName = String(displayName).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        return `
+        <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-1 text-[9px] font-black shadow-sm">
+            ${safeName}
+            <button onclick="event.preventDefault(); gameRemoveAssignedProjectChip('${domId}', '${safeKey}')" class="text-red-500 hover:text-red-700 font-black leading-none ml-1 active:scale-90">✕</button>
         </span>
-    `).join('');
-
-    input.value = projectsArray.join(';;;');
+        `;
+    }).join('');
 };
+
 window.gameLoadRoles = async function () {
     if (!window.supabaseClient) return showToast("Облако не подключено");
 
@@ -3634,17 +3589,13 @@ window.gameLoadRoles = async function () {
     const safeId = (v) => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 
     try {
-        // 1. Справочник объектов для выбора закреплённых объектов
-        const { data: projectObjectsRaw, error: objErr } = await window.supabaseClient
-            .from('project_objects')
-            .select('canonical_key, display_name, is_deleted')
-            .eq('project_code', pCode)
-            .or('is_deleted.is.null,is_deleted.eq.false')
-            .order('display_name', { ascending: true });
-
-        if (objErr) throw objErr;
-
-        const projectObjects = Array.isArray(projectObjectsRaw) ? projectObjectsRaw : [];
+        // 1. БЕРЕМ ОБЪЕКТЫ ИЗ ЛОКАЛЬНОГО СПРАВОЧНИКА (чтобы мгновенно видеть добавленные вручную)
+        if (typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.init === 'function') {
+            await ObjectDirectory.init(); // Убеждаемся, что кэш свежий
+        }
+        const projectObjects = (typeof ObjectDirectory !== 'undefined') 
+            ? ObjectDirectory.objects.filter(o => !o._deleted && !o.is_deleted) 
+            : [];
 
         // 2. Справочник подрядчиков для назначения роли contractor
         const { data: contractorDirectoryRaw, error: contrErr } = await window.supabaseClient
@@ -3700,7 +3651,8 @@ window.gameLoadRoles = async function () {
                     ? user.settings.assignedProjects
                     : [];
 
-            const projectsStr = projectsArray.join(';;;');
+            // Подготавливаем JSON-массив объектов
+            const projectsJsonStr = JSON.stringify(projectsArray).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
 
             const currentSettings = user.settings || {};
             const requestedProjects = Array.isArray(currentSettings.requestedProjects)
@@ -3825,7 +3777,7 @@ window.gameLoadRoles = async function () {
                                 <label class="text-[8px] font-black text-indigo-700 dark:text-indigo-400 uppercase block">Закреплённые объекты</label>
                                 <button onclick="document.getElementById('proj_input_${domId}').value=''; gameRenderAssignedProjectChips('${domId}')" class="text-[8px] text-red-500 font-bold hover:underline">Очистить всё</button>
                             </div>
-                            <input type="hidden" id="proj_input_${domId}" value="${projectsStr}" data-projects-array='${JSON.stringify(projectsArray)}'>
+                            <input type="hidden" id="proj_input_${domId}" value="${projectsJsonStr}">
                             <select class="input-base !py-1.5 !text-[10px] mb-2 bg-white dark:bg-slate-800" onchange="gameAddAssignedProjectFromSelect('${domId}', this.value); this.value='';">
                                 <option value="">+ Добавить объект из справочника</option>
                                 ${projectObjects.map(o => `<option value="${esc(o.canonical_key)}">${esc(o.display_name)}</option>`).join('')}
@@ -3995,14 +3947,10 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
     let projectsArray = [];
 
     if (inputEl) {
-        if (inputEl.dataset.projectsArray) {
-            try {
-                projectsArray = JSON.parse(inputEl.dataset.projectsArray);
-            } catch (e) { }
-        }
-        if (!projectsArray.length && inputEl.value) {
-            let separator = inputEl.value.includes(';;;') ? ';;;' : ',';
-            projectsArray = inputEl.value.split(separator).map(p => p.trim()).filter(Boolean);
+        try { 
+            projectsArray = JSON.parse(inputEl.value || '[]'); 
+        } catch (e) { 
+            projectsArray = []; 
         }
     }
 
@@ -4131,7 +4079,8 @@ window.gameSaveUserAccess = async function (inspectorId, engineerName) {
         if (error) throw error;
 
         showToast(`✅ Права успешно сохранены!`);
-
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        if (typeof triggerSync === 'function') triggerSync('silent');
         if (typeof gameLoadRoles === 'function') {
             gameLoadRoles(); // Полностью перерисовываем список в новом дизайне
         }

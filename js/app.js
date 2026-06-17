@@ -7159,7 +7159,9 @@ function toggleManagePanel() {
                 html += `<div class="text-[10px] text-slate-400 italic py-2 text-center bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">Созданных чек-листов пока нет</div>`;
             } else {
                 html += customKeys.map(key => {
-                    const isOwner = !userTemplates[key].owner || userTemplates[key].owner === currentEngineer;
+                    const isAdmin = window.RbiRoles ? window.RbiRoles.isAdmin() : false;
+                    const isOwner = isAdmin || !userTemplates[key].owner || userTemplates[key].owner === currentEngineer;
+                    
                     const actionBtns = isOwner
                         ? `<button onclick="editUserTemplate('${key}')" class="bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded text-[9px] font-bold active:scale-90">Изменить</button>
                            <button onclick="deleteUserTemplate('${key}')" class="bg-red-50 text-red-600 border border-red-200 px-2 py-1 rounded text-[9px] font-bold active:scale-90">Удалить</button>`
@@ -9832,6 +9834,14 @@ window.rbi_saveEditedMeeting = async function () {
 
     meet.memoText = document.getElementById('saved-memo-text').value;
     meet.updatedAt = new Date().toISOString();
+    meet.updated_at = meet.updatedAt;
+    
+    // ВАЖНО: Говорим облаку, что протокол изменен и его нужно отправить заново!
+    meet.source = 'local';
+    meet.syncStatus = 'not_synced';
+    meet.sync_status = 'not_synced';
+    meet.syncBlockReason = '';
+    meet.sync_block_reason = '';
 
     await dbPut(STORES.MEETINGS, meet);
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -10825,7 +10835,7 @@ window.rbi_renderPracticesTab = async function () {
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_openPracticeViewer('${item.id}')">
                 <div class="h-28 sm:h-32 border-b border-[var(--card-border)] relative">
                     ${previewHtml}
-                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'practice', '${item.title.replace(/'/g, "\\'")}', ${isOwner}, '${pubStatus}')" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'practice', '${item.title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', ${isOwner}, '${pubStatus}')" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
                     </button>
                     ${!item.isPublished ? `<div class="absolute bottom-2 left-2 bg-yellow-500 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">Черновик</div>` : ''}
@@ -10849,7 +10859,7 @@ window.rbi_renderPracticesTab = async function () {
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openEtalonViewer('${item.id}')">
                 <div class="h-28 sm:h-32 border-b border-[var(--card-border)] relative">
                     ${previewHtml}
-                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'etalon', '${item.contractorName.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${item.id}', 'etalon', '${item.contractorName.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
                     </button>
                 </div>
@@ -11016,9 +11026,12 @@ window.rbi_deletePractice = async function (id) {
     if (!confirm("Вы уверены, что хотите удалить эту практику? Она удалится у всей команды.")) return;
     if (pIndex === -1) return;
 
-    // Мягкое удаление
+    // Мягкое удаление с правильными флагами для облака
     window.rbi_practicesData[pIndex]._deleted = true;
+    window.rbi_practicesData[pIndex].is_deleted = true; // <-- ЖЕСТКИЙ ФЛАГ
     window.rbi_practicesData[pIndex].updatedAt = new Date().toISOString();
+    window.rbi_practicesData[pIndex].updated_at = window.rbi_practicesData[pIndex].updatedAt;
+    
     window.rbi_practicesData[pIndex].source = 'local';
     window.rbi_practicesData[pIndex].syncStatus = 'not_synced';
     window.rbi_practicesData[pIndex].sync_status = 'not_synced';
@@ -11908,8 +11921,15 @@ window.rbi_deleteRoadmapItem = async function (id) {
     if (!confirm("Удалить этот пункт из планов?")) return;
     const idx = window.rbi_feedbackData.findIndex(f => f.id === id);
     if (idx > -1) {
+        // ЖЕЛЕЗОБЕТОННЫЕ ФЛАГИ ДЛЯ ОБЛАКА
         window.rbi_feedbackData[idx]._deleted = true;
+        window.rbi_feedbackData[idx].is_deleted = true; // Обязательно для Supabase
+        window.rbi_feedbackData[idx].source = 'local';
+        window.rbi_feedbackData[idx].syncStatus = 'not_synced';
+        window.rbi_feedbackData[idx].sync_status = 'not_synced';
         window.rbi_feedbackData[idx].updatedAt = new Date().toISOString();
+        window.rbi_feedbackData[idx].updated_at = window.rbi_feedbackData[idx].updatedAt;
+
         await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
@@ -12332,6 +12352,68 @@ window.initPushToggleState = function () {
 document.addEventListener("DOMContentLoaded", () => {
     setTimeout(window.initPushToggleState, 500);
 });
+
+// === ФУНКЦИЯ: Очистка локальных данных при смене закрепленных объектов (С БРОНЕЖИЛЕТОМ) ===
+window.purgeDataOutsideAssignedProjects = async function (assignedKeysArray) {
+     const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
+    if (['director', 'deputy_manager', 'manager'].includes(role)) {
+        return; // Молча выходим, ничего не удаляем
+    }
+    // Если массив пустой - значит у инженера забрали все объекты. Чистим всё скачанное.
+    const keysToKeep = assignedKeysArray || []; 
+    if (typeof showToast === 'function') showToast("🧹 Обновление прав: очистка неактуальных данных...");
+
+    const storesToClean = [
+        STORES.HISTORY, STORES.TASKS, STORES.FMEA, 
+        STORES.MEETINGS, STORES.INTERVENTIONS, STORES.SK_RECORDS, STORES.PRACTICES
+    ];
+
+    let deletedCount = 0;
+    let photosToDelete = new Set(); // Собираем осиротевшие фото
+
+    for (let store of storesToClean) {
+        try {
+            const items = await dbGetAll(store);
+            if (!items) continue;
+
+            for (let item of items) {
+                // БРОНЕЖИЛЕТ: Если запись создана офлайн и еще не улетела в облако — не трогаем её!
+                if (item.syncStatus === 'not_synced' || item.sync_status === 'not_synced' || item.source === 'local') {
+                    continue; 
+                }
+
+                // Ищем привязку к объекту
+                const pKey = item.project_canonical_key || item.projectName || item.project || item.project_display_name || '';
+                
+                // Если объект указан, но его нет в новом списке разрешенных -> удаляем физически
+                if (pKey && pKey !== 'Все' && pKey !== 'Системная' && !keysToKeep.includes(pKey)) {
+                    
+                    // Сначала собираем ссылки на локальные фото, чтобы удалить и их
+                    if (item.photos) Object.values(item.photos).forEach(p => { if(String(p).startsWith('local://')) photosToDelete.add(p); });
+                    if (item.photo && String(item.photo).startsWith('local://')) photosToDelete.add(item.photo);
+
+                    await dbDelete(store, item.id || item.slug);
+                    deletedCount++;
+                }
+            }
+        } catch (e) {
+            console.warn(`[Purge] Ошибка очистки хранилища ${store}:`, e);
+        }
+    }
+
+    // Удаляем осиротевшие локальные фото
+    if (photosToDelete.size > 0 && typeof dbDelete === 'function') {
+        for (let photoId of photosToDelete) {
+            await dbDelete(STORES.PHOTOS, photoId);
+        }
+    }
+
+    if (deletedCount > 0) {
+        console.log(`[Purge] Удалено ${deletedCount} неактуальных записей и ${photosToDelete.size} фото.`);
+        // Перезагружаем страницу, чтобы сбросить оперативную память
+        setTimeout(() => { window.location.reload(); }, 1500);
+    }
+};
 /* ============================================================================ */
 /* ЗДЕСЬ ДОЛЖЕН ЗАКАНЧИВАТЬСЯ ФАЙЛ APP.JS                                       */
 /* ============================================================================ */

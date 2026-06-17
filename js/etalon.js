@@ -417,7 +417,15 @@ window.deleteEtalonAct = async function(id) {
     if(!confirm("Удалить этот Акт-Эталон?")) return;
     if (record) {
         record._deleted = true;
+        record.is_deleted = true; // <-- ЖЕСТКИЙ ФЛАГ ДЛЯ ОБЛАКА
         record.updatedAt = new Date().toISOString();
+        record.updated_at = record.updatedAt;
+        
+        // Переводим в статус "Не синхронизировано", чтобы улетело в облако
+        record.source = 'local';
+        record.syncStatus = 'not_synced';
+        record.sync_status = 'not_synced';
+
         await dbPut(STORES.ETALON_ACTS, record);
         
         // ЖЕСТКАЯ ОЧИСТКА МАССИВОВ В ОЗУ ДЛЯ МГНОВЕННОГО ОБНОВЛЕНИЯ ЭКРАНА

@@ -2005,6 +2005,16 @@ window.triggerSync = async function (mode = 'silent') {
                             appSettings.assignedProjects = fetchedProjects;
                             appSettings.pendingAssignedProjects = [];
                             needUiUpdate = true;
+
+                            // 1. Команды для синхронизатора (качаем заново)
+                            localStorage.setItem('rbi_force_full_pull', '1');
+                            localStorage.setItem('rbi_cloud_dirty', '1');
+                            localStorage.removeItem('rbi_sync_last_pull_at');
+
+                            // 2. Запускаем физическую чистку телефона от чужих объектов
+                            if (typeof window.purgeDataOutsideAssignedProjects === 'function') {
+                                window.purgeDataOutsideAssignedProjects(fetchedProjects);
+                            }
                         }
                     } else {
                         if (!Array.isArray(appSettings.assignedProjects)) {
@@ -2730,7 +2740,6 @@ if (window.RbiStorageManager) {
                 .from('rbi_tasks')
                 .select('*')
                 .eq('project_code', pCode)
-                .eq('is_deleted', false)
                 .eq('task_data->>type', 'manual');
 
             const role = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
@@ -2771,7 +2780,13 @@ if (window.RbiStorageManager) {
             else if (window.syncConfig.syncMode === 'personal') {
                 taskQuery = taskQuery.eq('engineer_name', iName);
             }
-
+            // Если это полная синхронизация - берем только живые. 
+            // Если быстрая - берем все измененные (включая удаленные)
+            if (!lastPullAt) {
+                taskQuery = taskQuery.eq('is_deleted', false);
+            } else {
+                taskQuery = taskQuery.gt('updated_at', lastPullAt);
+            }
             const { data: taskRows } = await taskQuery;
 
             if (taskRows && typeof dbPut === 'function') {
@@ -2783,6 +2798,23 @@ if (window.RbiStorageManager) {
                     const existingLocal = await dbGet('rbi_tasks', row.id);
                     const localTime = existingLocal ? new Date(existingLocal.updatedAt || existingLocal.updated_at || 0).getTime() : 0;
                     const cloudTime = new Date(row.updated_at || 0).getTime();
+                    // --- ВСТАВКА: ЕСЛИ ОБЛАКО ГОВОРИТ, ЧТО ЗАДАЧА УДАЛЕНА ---
+                    if (row.is_deleted === true) {
+                        if (existingLocal) {
+                            existingLocal._deleted = true;
+                            existingLocal.is_deleted = true;
+                            existingLocal.deleted_at = row.deleted_at || row.updated_at;
+                            existingLocal._deletedAt = existingLocal.deleted_at;
+                            existingLocal.source = 'cloud';
+                            existingLocal.syncStatus = 'synced';
+                            existingLocal.sync_status = 'synced';
+                            await dbPut('rbi_tasks', existingLocal);
+                        }
+                        // Удаляем из оперативной памяти
+                        window.rbi_tasksData = window.rbi_tasksData.filter(t => String(t.id) !== String(row.id));
+                        continue; // Переходим к следующей задаче
+                    }
+                    // ---------------------------------------------------------
 
                     // Если локально мы удалили задачу, а облако пытается ее вернуть - игнорируем!
                     if (!existingLocal || cloudTime > localTime) {
@@ -3861,8 +3893,25 @@ if (window.RbiStorageManager) {
                                 await window.rbiRegisterObjectFilesToRegistry('report', rep.id, rep, 'reports');
                             }
 
-                            // 3. Отправляем HTML-снимок для QR-кода (если он есть)
-                            if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
+                            // 3. Отправляем HTML-снимок для QR-кода (берем надежно из базы)
+                            if (rep.snapshot_html) {
+                                const snap = {
+                                    id: 'snap_' + rep.id,
+                                    report_id: rep.id,
+                                    public_token: rep.public_token || rep.metadata?.public_token || rep.id,
+                                    html_content: rep.snapshot_html,
+                                    is_public: rep.is_public !== false,
+                                    is_deleted: rep.is_deleted === true || rep._deleted === true,
+                                    created_at: rep.created_at || new Date().toISOString(),
+                                    updated_at: rep.updated_at || new Date().toISOString(),
+                                    expires_at: null
+                                };
+                                await window.pushCloudObject('snapshot', snap.id, snap);
+                                
+                                // После успешной отправки удаляем тяжелый HTML из базы телефона для экономии места
+                                rep.snapshot_html = null;
+                            } else if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
+                                // Резервный старый вариант из оперативной памяти
                                 const snap = window._tempSnapshots[rep.id];
                                 await window.pushCloudObject('snapshot', snap.id || ('snap_' + rep.id), snap);
                                 delete window._tempSnapshots[rep.id];

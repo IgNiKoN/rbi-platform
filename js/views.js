@@ -64,12 +64,25 @@ window.AppViews = {
 
     renderAnalytics() {
         if (AppModeManager.currentMode !== 'quality') AppModeManager.changeMode('quality');
-        switchViewNode('tab-analytics', false); // ТУТ FALSE
+        switchViewNode('tab-analytics', false); // Шапка скрыта
         if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
-        if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+        
+        // ВОССТАНАВЛИВАЕМ АКТИВНУЮ ПОДВКЛАДКУ
+        if (typeof currentActiveAnalyticsTab !== 'undefined') {
+            // Ищем кнопку по ID вкладки и имитируем клик по ней
+            const btn = document.querySelector(`button[onclick*="switchAnalyticsSubTab('${currentActiveAnalyticsTab}')"]`);
+            if (btn && typeof switchAnalyticsSubTab === 'function') {
+                switchAnalyticsSubTab(currentActiveAnalyticsTab, btn);
+            } else if (typeof renderCurrentAnalyticsTab === 'function') {
+                renderCurrentAnalyticsTab();
+            }
+        } else if (typeof renderCurrentAnalyticsTab === 'function') {
+            renderCurrentAnalyticsTab();
+        }
+
         if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
 
-        // --- ВОЗВРАЩАЕМ ЛОГИКУ СВОРАЧИВАНИЯ ФИЛЬТРОВ ---
+        // ВОЗВРАЩАЕМ ЛОГИКУ СВОРАЧИВАНИЯ ФИЛЬТРОВ
         if (typeof initCollapsiblePanel === 'function') {
             initCollapsiblePanel('analytics-filters-block', 'analytics-panel-body', 'analytics-panel-header', 'analytics-panel-toggle-icon');
         }
