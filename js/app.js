@@ -5242,6 +5242,11 @@ async function saveCustomTemplate() {
 
     newTemplate.id = slug; // Дублируем ключ в id для синхронизатора
     newTemplate.owner = appSettings.engineerName || 'Инженер';
+    newTemplate.source = 'local';
+    newTemplate.syncStatus = 'not_synced';
+    newTemplate.sync_status = 'not_synced';
+    newTemplate.is_deleted = false;
+    newTemplate._deleted = false;
     newTemplate.createdAt = new Date().toISOString();
     newTemplate.updatedAt = new Date().toISOString();
 
@@ -5369,6 +5374,10 @@ async function deleteUserTemplate(slug) {
     // Мягкое удаление
     if (userTemplates[slug]) {
         userTemplates[slug]._deleted = true;
+        userTemplates[slug].is_deleted = true;
+        userTemplates[slug].source = 'local';
+        userTemplates[slug].syncStatus = 'not_synced';
+        userTemplates[slug].sync_status = 'not_synced';
         userTemplates[slug]._deletedAt = new Date().toISOString();
         userTemplates[slug].updatedAt = userTemplates[slug]._deletedAt;
 
@@ -9148,7 +9157,7 @@ window.rbi_renderEngineerTab = async function () {
     }
 
     if (currentActiveEngineerTab === 'eng-sub-tasks') {
-        rbi_renderTasksList();
+        rbi_renderTasksList(true); // Принудительно отрисовываем при входе на вкладку
     } else if (currentActiveEngineerTab === 'eng-sub-meetings') {
         rbi_renderMeetingTab();
     } else if (currentActiveEngineerTab === 'eng-sub-impact') {
@@ -11047,15 +11056,25 @@ window.rbi_deletePractice = async function (id) {
     showToast("🗑️ Практика успешно удалена.");
     rbi_renderPracticesTab();
 };
-// --- ЛОГИКА РУЧНЫХ ПРАКТИК ---
+window.currentPracticePhotosMulti = { before: [], process: [], after: [] };
+window.currentPracticeDocs = []; 
+
 window.rbi_openManualPracticeModal = function () {
     document.getElementById('man-prac-title').value = '';
     document.getElementById('man-prac-problem').value = '';
     document.getElementById('man-prac-solution').value = '';
-    document.getElementById('man-prac-btn-before').innerHTML = '<svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Фото 1';
-    document.getElementById('man-prac-btn-after').innerHTML = '<svg class="w-5 h-5 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Фото 2';
-    document.getElementById('man-prac-btn-before').dataset.base64 = '';
-    document.getElementById('man-prac-btn-after').dataset.base64 = '';
+    
+    document.getElementById('man-prac-project').value = document.getElementById('inp-project')?.value || '';
+    document.getElementById('man-prac-contractor').value = document.getElementById('inp-contractor')?.value || '';
+    document.getElementById('man-prac-work').value = document.getElementById('current-checklist-label')?.innerText || '';
+    document.getElementById('man-prac-dates').value = new Date().toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    
+    // Сброс всех массивов
+    window.currentPracticePhotosMulti = { before: [], process: [], after: [] };
+    window.currentPracticeDocs = [];
+    
+    window.rbi_renderPracPhotosUI();
+    window.renderPracticeDocsUI();
 
     document.getElementById('manual-practice-modal').style.display = 'flex';
     document.body.classList.add('modal-open');
@@ -11066,53 +11085,203 @@ window.rbi_closeManualPracticeModal = function () {
     document.body.classList.remove('modal-open');
 };
 
-window.rbi_handleManualPracticePhoto = function (event, type) {
+// Загрузка фото в массивы
+window.rbi_handlePracPhotoMulti = function (event) {
     const file = event.target.files[0];
     if (!file) return;
+    const type = window.currentPracPhotoType;
     compressImageToBase64(file, 1000, 0.8, async (base64) => {
-        const localUrl = await PhotoManager.saveLocal(base64, 'prac');
-        const btn = document.getElementById(`man-prac-btn-${type}`);
-        btn.dataset.base64 = localUrl;
-        btn.innerHTML = `<img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover">`;
+        const localUrl = await PhotoManager.saveLocal(base64, 'prac_img');
+        window.currentPracticePhotosMulti[type].push(localUrl);
+        window.rbi_renderPracPhotosUI();
+        event.target.value = '';
     });
 };
 
+// Отрисовка миниатюр фото
+window.rbi_renderPracPhotosUI = function() {
+    ['before', 'process', 'after'].forEach(type => {
+        const list = document.getElementById(`prac-photos-${type}-list`);
+        if(list) {
+            list.innerHTML = window.currentPracticePhotosMulti[type].map((url, i) => `
+                <div class="relative w-full h-16 rounded overflow-hidden border border-slate-200">
+                    <img src="${window.getPhotoSrc(url)}" class="w-full h-full object-cover cursor-pointer" onclick="openPhotoViewer('${url}')">
+                    <button onclick="window.currentPracticePhotosMulti['${type}'].splice(${i}, 1); window.rbi_renderPracPhotosUI()" class="absolute top-1 right-1 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">✕</button>
+                </div>
+            `).join('');
+        }
+    });
+};
 
+// Загрузка PDF с описаниями
+window.rbi_handlePracDocMulti = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return showToast("PDF слишком большой! Максимум 5 МБ."); }
+    
+    showToast("⚙️ Прикрепляю PDF...");
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const localUrl = await PhotoManager.saveLocal(e.target.result, 'prac_pdf');
+        window.currentPracticeDocs.push({ url: localUrl, name: file.name, size: (file.size / 1024 / 1024).toFixed(1) + ' MB', desc: '' });
+        window.renderPracticeDocsUI();
+        event.target.value = '';
+    };
+    reader.readAsDataURL(file);
+};
+
+window.renderPracticeDocsUI = function() {
+    const list = document.getElementById('prac-docs-list');
+    if (!list) return;
+    list.innerHTML = window.currentPracticeDocs.map((doc, i) => `
+        <div class="p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2 min-w-0 pr-2">
+                    <div class="text-red-500 font-black text-xs">PDF</div>
+                    <div class="min-w-0"><div class="text-[10px] font-bold text-slate-800 dark:text-white truncate">${doc.name}</div></div>
+                </div>
+                <button onclick="window.currentPracticeDocs.splice(${i}, 1); window.renderPracticeDocsUI()" class="text-red-500 font-black px-2 active:scale-90 shrink-0">✕</button>
+            </div>
+            <input type="text" class="input-base text-[10px] !py-1 w-full" placeholder="Краткое описание документа..." value="${doc.desc || ''}" onchange="window.currentPracticeDocs[${i}].desc = this.value">
+        </div>
+    `).join('');
+};
 
 window.rbi_saveManualPractice = async function () {
     const title = document.getElementById('man-prac-title').value.trim();
     if (!title) return showToast("⚠️ Введите Название Практики!");
 
+    // Сохраняем в новую структуру массивов
     const practice = {
         id: 'prac_' + Date.now().toString(36),
-        interventionId: null, // Нет привязки к авто-детектору
+        interventionId: null,
         date: new Date().toISOString(),
         author: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         owner: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         title: title,
-        templateKey: 'manual',
-        templateTitle: 'Ручной опыт',
-        deltaUrk: 0, // Не высчитываем процент для ручных
+        projectName: document.getElementById('man-prac-project').value.trim(),
+        contractorName: document.getElementById('man-prac-contractor').value.trim(),
+        templateTitle: document.getElementById('man-prac-work').value.trim() || 'Ручной опыт',
+        periodDates: document.getElementById('man-prac-dates').value.trim(),
+        deltaUrk: 0,
         problem: document.getElementById('man-prac-problem').value.trim(),
         solution: document.getElementById('man-prac-solution').value.trim(),
-        photoBefore: document.getElementById('man-prac-btn-before').dataset.base64 || null,
-        photoAfter: document.getElementById('man-prac-btn-after').dataset.base64 || null,
-        isPublished: true, // Ручные сразу идут в библиотеку
+        
+        // Новые массивы
+        photosBefore: window.currentPracticePhotosMulti.before,
+        photosProcess: window.currentPracticePhotosMulti.process,
+        photosAfter: window.currentPracticePhotosMulti.after,
+        docs: window.currentPracticeDocs, 
+        
+        // Для обратной совместимости старого вьювера, отдаем туда первые картинки из массивов
+        photoBefore: window.currentPracticePhotosMulti.before[0] || null,
+        photoProcess: window.currentPracticePhotosMulti.process[0] || null,
+        photoAfter: window.currentPracticePhotosMulti.after[0] || null,
+
+        isPublished: true,
+        source: 'local',
+        sync_status: 'not_synced',
+        syncStatus: 'not_synced',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
 
-    window.rbi_practicesData.push(practice);
+    window.rbi_practicesData.unshift(practice);
     await dbPut(STORES.PRACTICES, practice);
-
     if (typeof gameLogAction === 'function') gameLogAction('practice_published', practice.id);
 
     showToast("📚 Практика сохранена и опубликована!");
     rbi_closeManualPracticeModal();
     rbi_renderPracticesTab();
-
     localStorage.setItem('rbi_cloud_dirty', '1');
     if (typeof triggerSync === 'function') triggerSync('silent');
+};
+
+window.rbi_openPracticeViewer = async function (id) {
+    const p = window.rbi_practicesData.find(x => x.id === id);
+    if (!p) return;
+
+    // Генерируем 3 фото (если они есть)
+    const buildImg = async (src, label, colorCls) => {
+        if (!src) return '';
+        const realSrc = await PhotoManager.getAsyncUrl(src) || window.getPhotoSrc(src);
+        return `
+        <div class="flex flex-col items-center w-full">
+            <div class="text-[9px] font-black uppercase tracking-widest mb-1 ${colorCls}">${label}</div>
+            <img src="${realSrc}" class="w-full h-32 sm:h-40 object-cover bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer active:scale-95 transition-transform shadow-sm" onclick="openPhotoViewer('${src}')">
+        </div>`;
+    };
+
+    const imgBefore = await buildImg(p.photoBefore, 'Проблема (Было)', 'text-red-500');
+    const imgProcess = await buildImg(p.photoProcess, 'Процесс', 'text-orange-500');
+    const imgAfter = await buildImg(p.photoAfter, 'Результат (Стало)', 'text-green-600');
+
+    // Генерируем список PDF-документов
+    let docsHtml = '';
+    if (p.docs && p.docs.length > 0) {
+        docsHtml = `<div class="mt-4"><div class="text-[10px] font-black uppercase text-slate-500 mb-2 pl-1 border-b border-slate-200 pb-1">Приложенные документы</div>` + 
+        p.docs.map(doc => `
+            <div class="mb-2 p-3 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center cursor-pointer active:scale-95" onclick="window.openFakePdfViewer('${doc.url}', '${doc.name}')">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center font-black shadow-sm text-[10px]">PDF</div>
+                    <div class="min-w-0 pr-2"><div class="text-[11px] font-bold text-slate-800 truncate">${doc.name}</div></div>
+                </div>
+                <span class="text-[9px] font-bold text-red-600 bg-white px-2 py-1 rounded shadow-sm border border-red-200">Открыть</span>
+            </div>
+        `).join('') + `</div>`;
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `
+        <div class="flex justify-between items-center w-full">
+            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                Библиотека практик
+            </span>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
+        </div>
+    `;
+
+    document.getElementById('modal-body').innerHTML = `
+        <div class="text-center mb-4 border-b border-[var(--card-border)] pb-3">
+            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase leading-tight mb-2">${p.title}</div>
+            <div class="flex flex-wrap justify-center gap-1.5 text-[9px] font-bold text-slate-600 dark:text-slate-300">
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.projectName || 'Объект не указан'}</span>
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.contractorName || 'Организация'}</span>
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.periodDates || new Date(p.date).toLocaleDateString('ru-RU')}</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 mb-4">
+            <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 border-b border-slate-200 dark:border-slate-700 pb-1">
+                    Суть проблемы
+                </div>
+                <div class="text-[12px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">${p.problem}</div>
+            </div>
+            
+            <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 border-b border-slate-200 dark:border-slate-700 pb-1">
+                    Принятое решение
+                </div>
+                <div class="text-[12px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">${p.solution}</div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-3 gap-2 mb-2">
+            ${imgBefore}${imgProcess}${imgAfter}
+        </div>
+        
+        ${docsHtml}
+
+        <div class="flex gap-2 w-full mt-4">
+            <button onclick="closeModal(); rbi_printPracticePdf('${p.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform">📥 Скачать PDF</button>
+            <button onclick="closeModal(); rbi_printPracticePdf('${p.id}', 'browser')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform">🖨️ Печать (А3)</button>
+        </div>
+    `;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
 };
 
 
@@ -11402,20 +11571,54 @@ window.handleUasAction = function (id, type, action) {
 };
 
 // --- ОКНО ПРОСМОТРА ПРАКТИКИ ПО КЛИКУ НА КАРТОЧКУ ---
+// --- ОКНО ПРОСМОТРА ПРАКТИКИ ПО КЛИКУ НА КАРТОЧКУ ---
 window.rbi_openPracticeViewer = async function (id) {
     const p = window.rbi_practicesData.find(x => x.id === id);
     if (!p) return;
 
-    let imgBeforeHtml = '';
-    if (p.photoBefore) {
-        const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
-        imgBeforeHtml = `<img src="${realBefore}" class="w-full h-40 object-contain bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoBefore}')">`;
-    }
+    // Нормализуем старые и новые данные (чтобы не сломать старые практики)
+    const beforeArr = p.photosBefore || (p.photoBefore ? [p.photoBefore] : []);
+    const processArr = p.photosProcess || (p.photoProcess ? [p.photoProcess] : []);
+    const afterArr = p.photosAfter || (p.photoAfter ? [p.photoAfter] : []);
 
-    let imgAfterHtml = '';
-    if (p.photoAfter) {
-        const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
-        imgAfterHtml = `<img src="${realAfter}" class="w-full h-40 object-contain bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer mt-2" onclick="openPhotoViewer('${p.photoAfter}')">`;
+    const buildImgBlock = async (arr, label, colorCls) => {
+        if (!arr || arr.length === 0) return '';
+        
+        let imgsHtml = '';
+        for (let src of arr) {
+            const realSrc = await PhotoManager.getAsyncUrl(src) || window.getPhotoSrc(src);
+            imgsHtml += `<img src="${realSrc}" class="w-full h-32 sm:h-40 object-cover bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer active:scale-95 transition-transform shadow-sm flex-shrink-0 min-w-[80%]" onclick="openPhotoViewer('${src}')">`;
+        }
+        
+        return `
+        <div class="flex flex-col w-full overflow-hidden">
+            <div class="text-[9px] font-black uppercase tracking-widest mb-1 text-center ${colorCls}">${label}</div>
+            <div class="flex gap-2 overflow-x-auto custom-scrollbar pb-2 snap-x">
+                ${imgsHtml}
+            </div>
+        </div>`;
+    };
+
+    const imgBefore = await buildImgBlock(beforeArr, 'Проблема (Было)', 'text-red-500');
+    const imgProcess = await buildImgBlock(processArr, 'Процесс (Действия)', 'text-orange-500');
+    const imgAfter = await buildImgBlock(afterArr, 'Результат (Стало)', 'text-green-600');
+
+    // Генерируем список PDF-документов с описаниями
+    let docsHtml = '';
+    if (p.docs && p.docs.length > 0) {
+        docsHtml = `<div class="mt-4"><div class="text-[10px] font-black uppercase text-slate-500 mb-2 pl-1 border-b border-slate-200 pb-1">Приложенные документы</div>` + 
+        p.docs.map(doc => `
+            <div class="mb-2 p-3 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center cursor-pointer active:scale-95" onclick="window.openFakePdfViewer('${doc.url}', '${doc.name}')">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center font-black shadow-sm text-[10px] shrink-0">PDF</div>
+                    <div class="min-w-0 pr-2">
+                        <div class="text-[11px] font-bold text-slate-800 truncate">${doc.name}</div>
+                        ${doc.desc ? `<div class="text-[9px] text-slate-500 font-medium truncate mt-0.5">${doc.desc}</div>` : ''}
+                    </div>
+                </div>
+                <span class="text-[9px] font-bold text-red-600 bg-white px-2 py-1 rounded shadow-sm border border-red-200 shrink-0">Открыть</span>
+            </div>
+        `).join('') + `</div>`;
     }
 
     const modal = document.getElementById('modal-overlay');
@@ -11432,8 +11635,12 @@ window.rbi_openPracticeViewer = async function (id) {
 
     document.getElementById('modal-body').innerHTML = `
         <div class="text-center mb-4 border-b border-[var(--card-border)] pb-3">
-            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase leading-tight mb-1">${p.title}</div>
-            <div class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">${p.templateTitle}</div>
+            <div class="text-[14px] font-black text-slate-800 dark:text-white uppercase leading-tight mb-2">${p.title}</div>
+            <div class="flex flex-wrap justify-center gap-1.5 text-[9px] font-bold text-slate-600 dark:text-slate-300">
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.projectName || 'Объект не указан'}</span>
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.contractorName || 'Организация'}</span>
+                <span class="bg-[var(--hover-bg)] px-2 py-1 rounded border border-[var(--card-border)]">${p.periodDates || new Date(p.date).toLocaleDateString('ru-RU')}</span>
+            </div>
         </div>
 
         <div class="grid grid-cols-1 gap-3 mb-4">
@@ -11443,7 +11650,6 @@ window.rbi_openPracticeViewer = async function (id) {
                     ${p.deltaUrk > 0 ? 'Суть проблемы (Было)' : 'Исходная ситуация'}
                 </div>
                 <div class="text-[12px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">${p.problem}</div>
-                ${imgBeforeHtml}
             </div>
             
             <div class="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -11452,10 +11658,15 @@ window.rbi_openPracticeViewer = async function (id) {
                     ${p.deltaUrk > 0 ? 'Принятое решение (Стало)' : 'Решение и результат'}
                 </div>
                 <div class="text-[12px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">${p.solution}</div>
-                ${imgAfterHtml}
             </div>
         </div>
         
+        <div class="mb-4">
+            <div class="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 pl-1 border-b border-[var(--card-border)] pb-2">Материалы презентации</div>
+            ${ (imgBefore || imgProcess || imgAfter) ? (imgBefore + imgProcess + imgAfter) : '<div class="text-xs text-center py-4 text-slate-400">Вложений нет</div>' }
+            ${docsHtml}
+        </div>
+
         <div class="flex gap-2 w-full">
             <button onclick="closeModal(); rbi_printPracticePdf('${p.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform">
                 📥 Скачать PDF
@@ -11931,8 +12142,13 @@ window.rbi_deleteRoadmapItem = async function (id) {
         window.rbi_feedbackData[idx].updated_at = window.rbi_feedbackData[idx].updatedAt;
 
         await dbPut(STORES.FEEDBACK_LIST, window.rbi_feedbackData[idx]);
+        
+        // ОЧИЩАЕМ ОПЕРАТИВНУЮ ПАМЯТЬ ПЕРЕД ОТРИСОВКОЙ, чтобы план сразу исчез
+        window.rbi_feedbackData = window.rbi_feedbackData.filter(f => !f._deleted);
+        
         localStorage.setItem('rbi_cloud_dirty', '1');
         if (typeof triggerSync === 'function') triggerSync('silent');
+        
         rbi_renderDevFeedbackTab();
     }
 };

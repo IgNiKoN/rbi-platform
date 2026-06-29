@@ -425,6 +425,7 @@
             </div>
             <!-- КНОПКИ ГЕНЕРАТОРА СЦЕНАРИЕВ -->
             <div class="flex gap-2 mb-3 overflow-x-auto no-scrollbar pb-2 border-b border-[var(--card-border)]">
+                <button onclick="generateSmartComment('improve')" class="shrink-0 flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-2 rounded-lg text-[10px] font-bold border border-green-200 dark:bg-green-900/30 dark:border-green-800 dark:text-green-400 active:scale-95">✨ Улучшить мой текст</button>
                 <button onclick="generateSmartComment('standard')"
                     class="shrink-0 flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-3 py-2 rounded-lg text-[10px] font-bold border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 active:scale-95"><svg
                         class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -3788,9 +3789,9 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '17.10.11',
-            sw: '17.10.11',
-            buildDate: '2026-06-17'
+            app: '17.10.12',
+            sw: '17.10.12',
+            buildDate: '2026-06-29'
         };
     </script>
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
@@ -4188,14 +4189,14 @@
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Объект
                             *</label>
-                        <div class="relative"><input type="text" id="etalon-project"
+                        <div class="relative"><input type="text" id="etalon-project" autocomplete="off"
                                 class="input-base text-[12px] font-bold text-slate-800 dark:text-white"
                                 placeholder="Название объекта..."></div>
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Подрядчик
                             *</label>
-                        <div class="relative"><input type="text" id="etalon-contractor"
+                        <div class="relative"><input type="text" id="etalon-contractor" autocomplete="off"
                                 class="input-base text-[12px] font-bold text-slate-800 dark:text-white"
                                 placeholder="ООО Ромашка..."></div>
                     </div>
@@ -4755,102 +4756,94 @@
         </div>
     </div>
     <!-- RBI NEW: МОДАЛКА РУЧНОЙ ПРАКТИКИ (БЕЗ ЭМОДЗИ) -->
+    <!-- RBI NEW: МОДАЛКА РУЧНОЙ ПРАКТИКИ (РАСШИРЕННАЯ) -->
     <div id="manual-practice-modal"
-        class="fixed inset-0 bg-slate-900/80 z-[9000] hidden items-center justify-center p-4 backdrop-blur-sm"
+        class="fixed inset-0 bg-slate-900/80 z-[9000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm"
         onclick="rbi_closeManualPracticeModal()">
-        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]"
+        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl transition-transform border border-[var(--card-border)] overflow-hidden flex flex-col max-h-[90vh]"
             onclick="event.stopPropagation()">
 
-            <div
-                class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
-                <div
-                    class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
-                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-                        </path>
+            <div class="p-4 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
+                <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
                     </svg>
-                    Новая практика
+                    Мини-презентация опыта
                 </div>
-                <button onclick="rbi_closeManualPracticeModal()"
-                    class="w-8 h-8 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
+                <button onclick="rbi_closeManualPracticeModal()" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">✕</button>
             </div>
 
             <div class="p-4 overflow-y-auto custom-scrollbar space-y-4">
-                <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Название
-                        (Суть)</label>
-                    <button onclick="rbi_beautifyPracticeAi()"
-                        class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 flex items-center gap-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                        </svg> Улучшить текст (ИИ)
-                    </button>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block">Название (Суть улучшения)</label>
+                            <button onclick="rbi_beautifyPracticeAi()" class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 active:scale-95 flex items-center gap-1">
+                                🤖 Улучшить текст (ИИ)
+                            </button>
+                        </div>
+                        <input type="text" id="man-prac-title" class="input-base font-bold" placeholder="Напр: Искоренение дефекта фасада...">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block mb-1">Объект</label>
+                        <input type="text" id="man-prac-project" class="input-base text-[11px]" placeholder="Название объекта">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block mb-1">Подрядчик</label>
+                        <input type="text" id="man-prac-contractor" class="input-base text-[11px]" placeholder="Организация">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block mb-1">Вид работ</label>
+                        <input type="text" id="man-prac-work" class="input-base text-[11px]" placeholder="Например: Кладка">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase block mb-1">Период внедрения</label>
+                        <input type="text" id="man-prac-dates" class="input-base text-[11px]" placeholder="Напр: Май 2024">
+                    </div>
                 </div>
-                <input type="text" id="man-prac-title" class="input-base"
-                    placeholder="Напр: Замена типа анкеров на фасаде...">
 
                 <div class="grid grid-cols-1 gap-3">
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Что делали / В чем
-                            проблема</label>
-                        <textarea id="man-prac-problem" class="input-base h-20 resize-none text-[11px]"
-                            placeholder="Опишите исходную ситуацию..."></textarea>
+                        <label class="text-[10px] font-bold text-red-500 uppercase mb-1 block">Проблема (ДО)</label>
+                        <textarea id="man-prac-problem" class="input-base h-20 resize-none text-[11px] leading-relaxed" placeholder="Опишите исходную ситуацию, как часто появлялся брак..."></textarea>
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Результат /
-                            Решение</label>
-                        <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px]"
-                            placeholder="Опишите, к какому выводу пришли..."></textarea>
+                        <label class="text-[10px] font-bold text-green-600 uppercase mb-1 block">Решение (ПОСЛЕ)</label>
+                        <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px] leading-relaxed" placeholder="Опишите, к какому выводу пришли, что изменили в процессе..."></textarea>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
-                    <div>
-                        <label
-                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото
-                            1</label>
-                        <button onclick="document.getElementById('man-prac-photo-before').click()"
-                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold"
-                            id="man-prac-btn-before">
-                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
-                            </svg> Добавить
-                        </button>
-                        <input type="file" id="man-prac-photo-before" accept="image/*" class="hidden"
-                            onchange="rbi_handleManualPracticePhoto(event, 'before')">
+                <div class="border-t border-slate-100 dark:border-slate-800 pt-3">
+                    <label class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2 block text-center">Мульти-фотофиксация этапов</label>
+                    <div class="grid grid-cols-3 gap-2 mb-3">
+                        <div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase text-center mb-1">Было</div>
+                            <div id="prac-photos-before-list" class="space-y-1 mb-1"></div>
+                            <button onclick="window.currentPracPhotoType='before'; document.getElementById('man-prac-img-input').click()" class="w-full py-2 border border-dashed border-red-300 dark:border-red-800 rounded-lg bg-red-50 dark:bg-red-900/10 text-red-400 active:scale-95 text-[9px] font-bold uppercase transition-colors">➕ Добавить</button>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase text-center mb-1">Процесс</div>
+                            <div id="prac-photos-process-list" class="space-y-1 mb-1"></div>
+                            <button onclick="window.currentPracPhotoType='process'; document.getElementById('man-prac-img-input').click()" class="w-full py-2 border border-dashed border-orange-300 dark:border-orange-800 rounded-lg bg-orange-50 dark:bg-orange-900/10 text-orange-400 active:scale-95 text-[9px] font-bold uppercase transition-colors">➕ Добавить</button>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-bold text-slate-500 uppercase text-center mb-1">Стало</div>
+                            <div id="prac-photos-after-list" class="space-y-1 mb-1"></div>
+                            <button onclick="window.currentPracPhotoType='after'; document.getElementById('man-prac-img-input').click()" class="w-full py-2 border border-dashed border-green-300 dark:border-green-800 rounded-lg bg-green-50 dark:bg-green-900/10 text-green-500 active:scale-95 text-[9px] font-bold uppercase transition-colors">➕ Добавить</button>
+                        </div>
+                        <input type="file" id="man-prac-img-input" accept="image/*" class="hidden" onchange="rbi_handlePracPhotoMulti(event)">
                     </div>
-                    <div>
-                        <label
-                            class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Фото
-                            2</label>
-                        <button onclick="document.getElementById('man-prac-photo-after').click()"
-                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex flex-col items-center justify-center text-slate-400 active:scale-95 overflow-hidden text-[10px] font-bold"
-                            id="man-prac-btn-after">
-                            <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path>
-                            </svg> Добавить
-                        </button>
-                        <input type="file" id="man-prac-photo-after" accept="image/*" class="hidden"
-                            onchange="rbi_handleManualPracticePhoto(event, 'after')">
-                    </div>
+
+                    <label class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2 block mt-4">Привязанные документы (PDF с описанием)</label>
+                    <div id="prac-docs-list" class="space-y-2 mb-2"></div>
+                    <button onclick="document.getElementById('prac-pdf-input').click()" class="w-full h-10 bg-slate-50 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl text-[9px] font-bold uppercase tracking-widest text-slate-500 active:scale-95 transition-colors flex items-center justify-center gap-2">
+                        📄 Добавить PDF-документ
+                    </button>
+                    <input type="file" id="prac-pdf-input" accept="application/pdf" style="display:none;" onchange="rbi_handlePracDocMulti(event)">
                 </div>
 
-                <button onclick="rbi_saveManualPractice()"
-                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mt-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round"
-                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5">
-                        </path>
-                    </svg>
-                    Сохранить в базу
+                <button onclick="rbi_saveManualPractice()" class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 mt-2">
+                    💾 Сохранить Практику
                 </button>
             </div>
         </div>
@@ -5041,7 +5034,7 @@
     </div>
     <script>
     const MIN_SPLASH_TIME = 1400;
-    const MAX_SPLASH_TIME = 3500; // ЖЕСТКИЙ ТАЙМАУТ: Прячем сплэш максимум через 3.5 секунды
+    const MAX_SPLASH_TIME = 2000; // ЖЕСТКИЙ ТАЙМАУТ: Прячем сплэш максимум через 3.5 секунды
 
     const splashDelay = new Promise(resolve => {
         setTimeout(resolve, MIN_SPLASH_TIME);

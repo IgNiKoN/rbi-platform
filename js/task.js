@@ -113,7 +113,7 @@ window.rbi_saveManualTask = async function () {
     if (typeof triggerSync === 'function') triggerSync('silent');
     showToast("✅ Поручение создано!");
     rbi_closeTaskModal();
-    executeRenderTasks(); // Вызываем напрямую, чтобы мгновенно обновить
+    rbi_renderTasksList(true); // Вызываем напрямую, чтобы мгновенно обновить
 };
 
 window.gameForceUpdatePlan = async function (silent = false) {
@@ -192,18 +192,19 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
         // АВТО-ОЧИСТКА
         if (weeklyPlanData.weekId && weeklyPlanData.weekId !== currentWeekId) force = true;
 
-        if (force) {
-            const nowTime = new Date().setHours(0, 0, 0, 0);
-            window.rbi_tasksData.forEach(t => {
-                if (t.status === 'pending') {
-                    const tDate = new Date(t.date).setHours(0, 0, 0, 0);
-                    if (tDate < nowTime && t.type === 'auto') {
-                        t.carryOverCount = (t.carryOverCount || 0) + 1;
-                    }
+        // Умный расчет долга по задачам (в неделях), чтобы он не накручивался при частых синхронизациях
+        const nowMs = new Date().getTime();
+        window.rbi_tasksData.forEach(t => {
+            if (t.status === 'pending' && t.date) {
+                const tDateMs = new Date(t.date).getTime();
+                if (nowMs > tDateMs) {
+                    const diffDays = Math.floor((nowMs - tDateMs) / (1000 * 60 * 60 * 24));
+                    t.carryOverCount = Math.floor(diffDays / 7);
+                } else {
+                    t.carryOverCount = 0;
                 }
-            });
-           
-        }
+            }
+        });
 
         let newTasksCount = 0;
 
@@ -310,7 +311,7 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
                 const hasEtalon = (typeof etalonActsArray !== 'undefined') && etalonActsArray.some(c =>
                     (c.inspectorName === targetEngineer || c.owner === targetEngineer) &&
                     c.contractorName === pair.contractor &&
-                    c.templateKey === 'sys_etalon_act' &&
+                    c.instanceId === 'etalon' &&
                     c.templateTitle === pair.templateTitle
                 );
                 
@@ -368,8 +369,8 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
 
                 if (m) {
                     if (m.n_изделий_с_B3 > 2) addTask('def_meet', 'meeting', 'Совещание', `Разбор критического брака`, pair.templateTitle, pair.contractor, `Зафиксировано ${m.n_изделий_с_B3} дефектов B3. Срочно соберите штаб.`, 4, now, pair.templateKey, 'Совещание');
-                    if (m.maxFailRate >= 20 && pair.allTimeCount >= 5) {
-                        addTask('workshop', 'dev', 'Развитие', `Воркшоп с бригадой`, pair.templateTitle, pair.contractor, `Системный брак B2 повторяется часто. Проведите обучение на объекте.`, 3, now, pair.templateKey, 'Воркшоп');
+                    if (m.maxFailRate >= 40 && pair.allTimeCount >= 10) {
+                        addTask('workshop', 'dev', 'Развитие', `Воркшоп с бригадой`, pair.templateTitle, pair.contractor, `Системный брак B2 повторяется слишком часто. Требуется обучение на объекте.`, 3, now, pair.templateKey, 'Воркшоп');
                     }
                 }
             }
@@ -478,13 +479,21 @@ window.gameGenerateWeeklyPlan = async function (force = false) {
 // ==========================================
 // 3. UI РЕНДЕР: Вкладка "Задачи" (iOS Style)
 // ==========================================
-window.rbi_renderTasksList = async function () {
+window.rbi_renderTasksList = async function (forceRender = false) {
     const container = document.getElementById('rbi-tasks-container');
     if (!container) return;
 
-    // ЗАЩИТА: Не перерисовываем задачи, если вкладка скрыта
+    // ЗАЩИТА 1: Не перерисовываем задачи, если вкладка скрыта
     const tasksTab = document.getElementById('eng-sub-tasks');
     if (tasksTab && tasksTab.classList.contains('hidden')) return;
+
+    // ЗАЩИТА 2 (ЖЕЛЕЗОБЕТОННАЯ): Блокируем фоновые перерисовки!
+    // Если функция вызвана без флага forceRender=true, а мы сейчас смотрим на задачи или открыта модалка задачи - блокируем!
+    const isTaskModalOpen = document.getElementById('task-details-modal')?.style.display === 'flex';
+    if (!forceRender && (window.isSyncing || window.isPlanGenerating || isTaskModalOpen)) {
+        if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = true;
+        return; // Игнорируем вызов, чтобы экран не прыгал
+    }
 
     let activeTasks = window.rbi_tasksData;
     const currentRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
@@ -1031,10 +1040,13 @@ window.rbi_openTaskAction = async function (taskId) {
                 <button onclick="rbi_pauseTask('${task.id}')" class="flex flex-col justify-center items-center p-2 rounded-xl bg-[var(--card-bg)] text-slate-600 dark:text-slate-300 font-bold text-[9px] uppercase active:scale-95 border border-[var(--card-border)] hover:bg-[var(--hover-bg)] transition-colors">
                     <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Пауза
                 </button>
-                <button onclick="rbi_cancelTask('${task.id}')" class="flex flex-col justify-center items-center p-2 rounded-xl bg-[var(--card-bg)] text-red-500 dark:text-red-400 font-bold text-[9px] uppercase active:scale-95 border border-[var(--card-border)] hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                <button onclick="rbi_cancelTask('${task.id}')" class="flex flex-col justify-center items-center p-2 rounded-xl bg-[var(--card-bg)] text-orange-500 dark:text-orange-400 font-bold text-[9px] uppercase active:scale-95 border border-[var(--card-border)] hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
                     <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Отменить
                 </button>
             </div>
+            <button onclick="rbi_deleteTaskForever('${task.id}')" class="w-full mt-2 flex justify-center items-center gap-2 p-2.5 rounded-xl bg-red-50 text-red-600 font-bold text-[10px] uppercase active:scale-95 border border-red-200 transition-colors hover:bg-red-100">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить задачу навсегда
+            </button>
         `;
     }
 
@@ -1075,7 +1087,7 @@ window.rbi_markTaskDone = async function (taskId, silent = false) {
 
         if (!silent) {
             showToast("✅ Задача выполнена и перенесена в Архив!");
-            rbi_renderTasksList();
+            rbi_renderTasksList(true);
         }
     }
 };
@@ -1100,7 +1112,7 @@ window.rbi_resumeTask = async function (taskId) {
     // ИСПРАВЛЕНИЕ: Жестко закрываем окно
     document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
-    rbi_renderTasksList();
+    rbi_renderTasksList(true);
 };
 
 window.rbi_pauseTask = async function (taskId) {
@@ -1122,7 +1134,7 @@ window.rbi_pauseTask = async function (taskId) {
     showToast("⏸ Задача скрыта в архив (Пауза)");
     document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
-    rbi_renderTasksList();
+    rbi_renderTasksList(true);
 };
 
 window.rbi_cancelTask = async function (taskId) {
@@ -1149,7 +1161,7 @@ window.rbi_cancelTask = async function (taskId) {
     showToast("🚫 Задача отменена");
     document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
-    rbi_renderTasksList();
+    rbi_renderTasksList(true);
 };
 
 window.rbi_postponeTask = async function (taskId) {
@@ -1185,7 +1197,7 @@ window.rbi_postponeTask = async function (taskId) {
 
     document.getElementById('task-details-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
-    rbi_renderTasksList();
+    rbi_renderTasksList(true);
 };
 
 // ==========================================
@@ -1201,11 +1213,11 @@ window.rbi_generateTaskScenario = async function () {
     const relatedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.find(c => c.checklistKey === t.templateKey) : null;
     let twiContext = relatedTwi ? `Упомяни, что мы разберем TWI-инструкцию "${relatedTwi.title}".` : ``;
 
-    const promptSystem = `Ты — старший инженер стройконтроля. Напиши сценарий для жесткой 5-минутной планерки с бригадой (toolbox talk). 
-    ЗАПРЕЩЕНО писать про каски, СИЗ и ТБ! Говорим ТОЛЬКО про технологию работ и качество!
-    1. 🎯 Цель: [Обозначить проблему качества].
-    2. ⚠️ Суть ошибки: [Как они косячат технологически].
-    3. 🛠 Как правильно: [Допуски из ГОСТ/СНиП].
+    const promptSystem = `Ты — старший инженер стройконтроля. Напиши сценарий для 5-минутной планерки с бригадой (toolbox talk). 
+    ВНИМАНИЕ: Говорим СТРОГО про указанный вид работ! Если это кладка, не упоминай бетон или монолит! ЗАПРЕЩЕНО писать про каски, СИЗ и ТБ! 
+    1. 🎯 Цель: [Обозначить проблему качества для данного вида работ].
+    2. ⚠️ Суть ошибки: [Что имеено не так технологически в этих работах].
+    3. 🛠 Как правильно: [Допуски из ГОСТ/СНиП для этого вида работ].
     4. 💡 Итог: Мотивация.`;
 
     try {
@@ -1547,14 +1559,20 @@ window.rbi_generateAutoTasks = async function (silent = false) {
     setTimeout(() => {
         if (!silent && (generatedCount > 0 || updatedCount > 0 || deletedCount > 0)) {
             showToast(`✅ Задачи обновлены! Новых: ${generatedCount}, Сдвинуто: ${updatedCount}, Удалено: ${deletedCount}`);
-            // <-- НОВОЕ: Перерисовываем таймлайн Графика, чтобы сразу увидеть кружочки!
             if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true);
         } else if (!silent) {
             showToast(`✅ Задачи синхронизированы с графиком`);
             if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(true);
         }
-        // Перерисовываем список задач во вкладке Инженера
-        if (typeof rbi_renderTasksList === 'function') rbi_renderTasksList();
+        
+        // УМНАЯ ПЕРЕРИСОВКА: Не трогаем экран, если юзер прямо сейчас смотрит задачи!
+        const isTasksActive = document.getElementById('tab-engineer')?.classList.contains('active') && window.currentActiveEngineerTab === 'eng-sub-tasks';
+        if (!isTasksActive && typeof rbi_renderTasksList === 'function') {
+            rbi_renderTasksList();
+        } else if (isTasksActive) {
+            // Если он там, просто ставим флаг, чтобы обновилось потом
+            if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = true;
+        }
     }, 500);
 };
 
@@ -1689,4 +1707,40 @@ window.rbi_renderNoDateTasks = function() {
     } else {
         list.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">` + tasks.map(renderCalendarTaskCard).join('') + `</div>`;
     }
+};
+
+window.rbi_deleteTaskForever = async function(taskId) {
+    const task = window.rbi_tasksData.find(t => t.id === taskId);
+    if (!task) return;
+    
+    // Проверка прав: может удалять автор задачи, либо Админ
+    if (!window.RbiRoles.canDelete(task.engineerName || task.inspectorName || '')) {
+        return showToast("⚠️ Нет прав на полное удаление этой задачи!");
+    }
+    
+    if (!confirm("Удалить задачу навсегда? Она пропадет у всех пользователей, включая исполнителя.")) return;
+
+    // Ставим жесткие флаги удаления для облака
+    task._deleted = true;
+    task.is_deleted = true;
+    task._deletedAt = new Date().toISOString();
+    task.updatedAt = task._deletedAt;
+    task.source = 'local';
+    task.syncStatus = 'not_synced';
+    task.sync_status = 'not_synced';
+
+    if (typeof dbPut === 'function') await dbPut(STORES.TASKS, task);
+    
+    // Вычищаем из оперативной памяти телефона
+    window.rbi_tasksData = window.rbi_tasksData.filter(t => !t._deleted);
+    
+    // Сигнал облаку на синхронизацию
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+
+    document.getElementById('task-details-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
+    showToast("🗑️ Задача удалена навсегда");
+    
+    rbi_renderTasksList();
 };

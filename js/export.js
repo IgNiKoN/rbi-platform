@@ -109,7 +109,10 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
 async function exportPdfOnePager(data, mode = 'script') {
     if (data.length === 0) return showToast('Нет данных для выгрузки');
 
-    const projName = document.getElementById('inp-project')?.value || 'Не указан';
+    let projName = 'Все объекты';
+    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.project.length > 0) {
+        projName = activeMultiFilters.analytics.project.join(', ');
+    }
 
     let sumUrk = 0; let sumB3 = 0;
     data.forEach(i => { if (i.metrics) { sumUrk += i.metrics.final; sumB3 += i.metrics.n_B3_fail; } });
@@ -1698,7 +1701,13 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         } catch (e) { console.warn("QR не сгенерирован", e); }
     }
 
-    const headerHtml = await getBrandedHeader(title, mode, qrDataUrl);
+    let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
+    if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        if (dFrom || dTo) periodText = `с ${dFrom ? new Date(dFrom).toLocaleDateString('ru-RU') : '...'} по ${dTo ? new Date(dTo).toLocaleDateString('ru-RU') : '...'}`;
+    }
+    const headerHtml = await getBrandedHeader(title, mode, qrDataUrl, inspName, periodText);
     const fullHtml = headerHtml + content;
 
     // ============================================================================
@@ -3471,25 +3480,35 @@ window.rbi_printPracticePdf = async function (id, mode = 'browser') {
     const p = window.rbi_practicesData.find(x => x.id === id);
     if (!p) return;
 
-    let imgBeforeHtml = '';
-    let imgAfterHtml = '';
+    const beforeArr = p.photosBefore || (p.photoBefore ? [p.photoBefore] : []);
+    const processArr = p.photosProcess || (p.photoProcess ? [p.photoProcess] : []);
+    const afterArr = p.photosAfter || (p.photoAfter ? [p.photoAfter] : []);
 
-    // Определяем заголовки блоков в зависимости от типа (авто или ручная)
-    const block1Title = p.deltaUrk > 0 ? "СУТЬ ПРОБЛЕМЫ (БЫЛО)" : "ОПИСАНИЕ ИСХОДНОЙ СИТУАЦИИ";
-    const block2Title = p.deltaUrk > 0 ? "ПРИНЯТОЕ РЕШЕНИЕ (СТАЛО)" : "ПРИНЯТОЕ РЕШЕНИЕ И РЕЗУЛЬТАТ";
+    const buildImgBlock = async (arr, title, colorCode) => {
+        if (!arr || arr.length === 0) return `<div style="height: 250px; border: 2px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 250px; color: #94a3b8; font-size: 14px; font-weight: bold; background: #f8fafc;">Нет фото</div>`;
+        
+        let imgsHtml = '';
+        for (let src of arr.slice(0, 3)) { // Выводим максимум 3 фото в колонку (друг под другом)
+            const realSrc = await PhotoManager.getAsyncUrl(src) || window.getPhotoSrc(src);
+            imgsHtml += `<div style="height: 250px; background: white; border-radius: 8px; overflow: hidden; border: 2px solid ${colorCode}; margin-bottom: 10px;"><img src="${realSrc}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
+        }
+        return imgsHtml;
+    };
 
-    if (p.photoBefore) {
-        const realBefore = await PhotoManager.getAsyncUrl(p.photoBefore) || window.getPhotoSrc(p.photoBefore);
-        imgBeforeHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realBefore}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
-    } else {
-        imgBeforeHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
-    }
+    const imgBefore = await buildImgBlock(beforeArr, 'Проблема (Было)', '#fca5a5');
+    const imgProcess = await buildImgBlock(processArr, 'Процесс (Действие)', '#fdba74');
+    const imgAfter = await buildImgBlock(afterArr, 'Результат (Стало)', '#86efac');
 
-    if (p.photoAfter) {
-        const realAfter = await PhotoManager.getAsyncUrl(p.photoAfter) || window.getPhotoSrc(p.photoAfter);
-        imgAfterHtml = `<div style="height: 400px; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1;"><img src="${realAfter}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
-    } else {
-        imgAfterHtml = `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
+    // Формируем блок документов (только текст с добавлением описаний PDF)
+    let docsHtml = '';
+    if (p.docs && p.docs.length > 0) {
+        docsHtml = `
+            <div style="margin-top: 20px; border-top: 2px solid #e2e8f0; padding-top: 15px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #64748b; text-transform: uppercase;">Прикрепленные документы к кейсу:</h3>
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #334155; font-weight: bold;">
+                    ${p.docs.map(d => `<li style="margin-bottom: 6px;">📄 <b>${d.name}</b> ${d.desc ? `<br><span style="font-size: 11px; color: #64748b; font-weight: normal;">${d.desc}</span>` : ''}</li>`).join('')}
+                </ul>
+            </div>`;
     }
 
     const efficiencyHtml = p.deltaUrk > 0
@@ -3497,34 +3516,54 @@ window.rbi_printPracticePdf = async function (id, mode = 'browser') {
         : `<div style="font-size: 16px; color: #4f46e5; font-weight: bold; margin-top: 10px;">Практический опыт, подтвержденный на строительной площадке</div>`;
 
     const content = `
-        <div style="text-align: center; margin-bottom: 30px;">
+        <div style="text-align: center; margin-bottom: 25px;">
             <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">БИБЛИОТЕКА ЛУЧШИХ ПРАКТИК</h1>
-            <div style="font-size: 16px; color: #64748b; font-weight: bold; margin-top: 10px; text-transform: uppercase;">ВИД РАБОТ: ${p.templateTitle} | АВТОР: ${p.author} | ДАТА: ${new Date(p.date).toLocaleDateString('ru-RU')}</div>
+            <div style="font-size: 14px; color: #64748b; font-weight: bold; margin-top: 10px; text-transform: uppercase;">
+                АВТОР: ${p.author} | ОБЪЕКТ: ${p.projectName || 'Не указан'} | ПОДРЯДЧИК: ${p.contractorName || 'Не указан'} | ДАТЫ: ${p.periodDates || new Date(p.date).toLocaleDateString('ru-RU')}
+            </div>
         </div>
 
-        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 30px;">
-            <h2 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">${p.title}</h2>
+        <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+            <h2 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase; font-weight: 900;">${p.title}</h2>
             ${efficiencyHtml}
         </div>
 
-        <table class="no-break" style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
+        <table class="no-break" style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 25px;">
             <tr>
-                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #ffffff; border: 2px solid #e2e8f0; vertical-align: top;">
-                    <h2 style="color: #334155; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #cbd5e1; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block1Title}</h2>
-                    <p style="font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.problem}</p>
-                    ${imgBeforeHtml}
+                <td style="width: 50%; padding: 25px; border-radius: 12px; background: #fef2f2; border: 2px solid #fecaca; vertical-align: top;">
+                    <h2 style="color: #991b1b; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #fca5a5; padding-bottom: 12px; margin-bottom: 15px; font-weight: 900;">СУТЬ ПРОБЛЕМЫ</h2>
+                    <p style="font-size: 15px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; margin-bottom: 0;">${p.problem}</p>
                 </td>
                 <td style="width: 50%; padding: 25px; border-radius: 12px; background: #f0fdf4; border: 2px solid #bbf7d0; vertical-align: top;">
-                    <h2 style="color: #166534; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block2Title}</h2>
-                    <p style="font-size: 16px; color: #14532d; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.solution}</p>
-                    ${imgAfterHtml}
+                    <h2 style="color: #166534; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 12px; margin-bottom: 15px; font-weight: 900;">ПРИНЯТОЕ РЕШЕНИЕ И РЕЗУЛЬТАТ</h2>
+                    <p style="font-size: 15px; color: #14532d; white-space: pre-wrap; line-height: 1.6; margin-bottom: 0;">${p.solution}</p>
                 </td>
             </tr>
         </table>
+
+        <!-- СЕТКА ФОТОГРАФИЙ И ФАЙЛОВ -->
+        <div class="no-break" style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 20px;">
+            <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px;">
+                <tr>
+                    <td style="width: 33.3%; vertical-align: top;">
+                        <div style="font-size: 12px; font-weight: 900; color: #dc2626; text-transform: uppercase; text-align: center; margin-bottom: 10px;">Проблема (Было)</div>
+                        ${imgBefore}
+                    </td>
+                    <td style="width: 33.3%; vertical-align: top;">
+                        <div style="font-size: 12px; font-weight: 900; color: #d97706; text-transform: uppercase; text-align: center; margin-bottom: 10px;">Процесс (Что делали)</div>
+                        ${imgProcess}
+                    </td>
+                    <td style="width: 33.3%; vertical-align: top;">
+                        <div class="no-break" style="font-size: 12px; font-weight: 900; color: #16a34a; text-transform: uppercase; text-align: center; margin-bottom: 10px;">Результат (Стало)</div>
+                        ${imgAfter}
+                    </td>
+                </tr>
+            </table>
+            ${docsHtml}
+        </div>
     `;
 
     if (typeof printPdfShell === 'function') {
-        // Формат А3, Альбомная (landscape)
         printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode);
     }
 };
@@ -3958,7 +3997,7 @@ window.exportPdfSK = function (mode = 'script') {
 let userReportTemplates = []; // Кэш шаблонов отчетов
 
 // Генератор брендированной шапки (По брендбуку RBI)
-async function getBrandedHeader(title, mode, qrCodeDataUrl = null) {
+async function getBrandedHeader(title, mode, qrCodeDataUrl = null, author = '', period = '') {
     let logoHtml = '';
     const brandColor = appSettings.brandColor || '#1c2b39';
     const goldColor = '#c49a5f';
@@ -3986,6 +4025,7 @@ async function getBrandedHeader(title, mode, qrCodeDataUrl = null) {
                     <td style="width: 50%; vertical-align: middle; text-align: center;">
                         <h1 style="font-family: 'Playfair Display', 'Georgia', serif; font-size:${fontSizeTitle}; font-weight:normal; text-transform:uppercase; margin:0; color:${brandColor};">${title}</h1>
                         <div style="font-family: 'Bricolage Grotesque', 'Verdana', sans-serif; font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
+                        ${author ? `<div style="font-family: 'Bricolage Grotesque', sans-serif; font-size:9px; color:#64748b; margin-top:4px; font-weight:bold;">АВТОР: ${author} | ПЕРИОД: ${period}</div>` : ''}
                     </td>
                     <td style="width: 25%; vertical-align: middle; text-align: right;">${qrHtml}</td>
                 </tr>

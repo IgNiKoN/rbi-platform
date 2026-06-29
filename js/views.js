@@ -67,15 +67,11 @@ window.AppViews = {
         switchViewNode('tab-analytics', false); // Шапка скрыта
         if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
         
-        // ВОССТАНАВЛИВАЕМ АКТИВНУЮ ПОДВКЛАДКУ
-        if (typeof currentActiveAnalyticsTab !== 'undefined') {
-            // Ищем кнопку по ID вкладки и имитируем клик по ней
+        // ВОССТАНАВЛИВАЕМ АКТИВНУЮ ПОДВКЛАДКУ НАПРЯМУЮ
+        if (typeof currentActiveAnalyticsTab !== 'undefined' && typeof switchAnalyticsSubTab === 'function') {
             const btn = document.querySelector(`button[onclick*="switchAnalyticsSubTab('${currentActiveAnalyticsTab}')"]`);
-            if (btn && typeof switchAnalyticsSubTab === 'function') {
-                switchAnalyticsSubTab(currentActiveAnalyticsTab, btn);
-            } else if (typeof renderCurrentAnalyticsTab === 'function') {
-                renderCurrentAnalyticsTab();
-            }
+            // Вызываем переключение жестко, чтобы DOM точно отрисовался
+            switchAnalyticsSubTab(currentActiveAnalyticsTab, btn);
         } else if (typeof renderCurrentAnalyticsTab === 'function') {
             renderCurrentAnalyticsTab();
         }

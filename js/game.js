@@ -429,7 +429,8 @@ window.gameUpdatePlanProgress = function () {
         if (task.needsEtalon) {
             const hasEtalonCheck = etalonActsArray.some(c =>
                 c.contractorName === task.contractor &&
-                c.templateKey === 'sys_etalon_act'
+                c.instanceId === 'etalon' &&
+                (c.templateKey === task.templateKey || c.templateTitle === task.templateTitle || c.templateTitle === task.workTitle)
             );
             if (hasEtalonCheck) {
                 task.needsEtalon = false;

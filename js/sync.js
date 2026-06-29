@@ -4461,10 +4461,14 @@ if (window.RbiStorageManager) {
         if (typeof ObjectDirectory !== 'undefined') await ObjectDirectory.init();
 
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
-        // Запускаем пересчет только если не открыто модальное окно (чтобы не сломать UX)
+        // Запускаем пересчет только если не открыто модальное окно
         const isModalOpen = document.body.classList.contains('modal-open');
+        
+        // ПРОВЕРКА: Смотрит ли юзер прямо сейчас на вкладку "Задачи"?
+        const isTasksTabActive = document.getElementById('tab-engineer')?.classList.contains('active') && window.currentActiveEngineerTab === 'eng-sub-tasks';
 
-        if (!isModalOpen) {
+        // Если открыта модалка ИЛИ открыта вкладка Задач — запрещаем перерисовку!
+        if (!isModalOpen && !isTasksTabActive) {
             if (typeof dbGetAll === 'function') {
                 const freshTasks = await dbGetAll('rbi_tasks');
                 if (freshTasks) window.rbi_tasksData = freshTasks.filter(t => !t._deleted);
@@ -4474,7 +4478,7 @@ if (window.RbiStorageManager) {
             if (typeof window.sk_generateAnomalyTasks === 'function') await window.sk_generateAnomalyTasks();
             if (typeof gameForceUpdatePlan === 'function') await gameForceUpdatePlan(true);
         } else {
-            // Флагированно откладываем обновление на потом
+            // Откладываем обновление на потом, чтобы не сбрасывать экран пользователю
             window.syncDirtyFlags.tasks = true;
             window.syncDirtyFlags.history = true;
         }

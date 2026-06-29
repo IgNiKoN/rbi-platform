@@ -404,15 +404,6 @@ window.sk_renderMainTab = async function () {
                     `}
                     </div>
                 </div>
-                
-                <div class="flex items-center gap-2 border-t border-[var(--card-border)] pt-3">
-                    <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Фильтр:</span>
-                    <select id="sk-period-filter" class="input-base !py-1 !text-[10px] font-bold flex-1" onchange="window.skCurrentPeriodFilter = this.value; sk_renderDashboard();">
-                        <option value="ALL" ${window.skCurrentPeriodFilter === 'ALL' ? 'selected' : ''}>Анализировать всё время</option>
-                        <option value="14" ${window.skCurrentPeriodFilter === '14' ? 'selected' : ''}>За последние 14 дней</option>
-                        <option value="30" ${window.skCurrentPeriodFilter === '30' ? 'selected' : ''}>За последние 30 дней</option>
-                    </select>
-                </div>
             </div>
 
             <div class="flex gap-1.5 mb-4 overflow-x-auto no-scrollbar pb-1">
@@ -1588,20 +1579,6 @@ window.sk_renderDashboard = function () {
         }
     }
 
-    // 2. Локальный фильтр (из выпадающего списка внутри вкладки СК)
-    if (window.skCurrentPeriodFilter !== 'ALL') {
-        const days = parseInt(window.skCurrentPeriodFilter);
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - days);
-        cutoffDate.setHours(0, 0, 0, 0);
-
-        activeRecords = activeRecords.filter(r => {
-            const isIssuedRecently = r.date_issued && new Date(r.date_issued) >= cutoffDate;
-            const isResolvedRecently = r.date_resolved && new Date(r.date_resolved) >= cutoffDate;
-            const isOpen = !(r.is_verified_closed === true || r.status_normalized === 'verified' || String(r.status || '').toLowerCase().trim() === 'проверено');
-            return isIssuedRecently || isResolvedRecently || isOpen;
-        });
-    }
 
     // 3. Глобальный фильтр Объектов (Учитываем эталонные имена)
     if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.project.length > 0) {
@@ -2340,15 +2317,46 @@ window.sk_renderHrTab = function () {
         });
     };
 
-    // 1. Применяем глобальный фильтр по Объекту
+    // 1. Применяем ВСЕ глобальные фильтры
     let baseRecords = window.skRecords;
-    if (typeof activeMultiFilters !== 'undefined' && activeMultiFilters.analytics.project.length > 0) {
-        const fProj = activeMultiFilters.analytics.project;
-        baseRecords = baseRecords.filter(r =>
-            fProj.includes(r.project_display_name) ||
-            fProj.includes(r.project_canonical_key) ||
-            fProj.includes(r.display_name)
-        );
+    
+    // ПРИМЕНЯЕМ ФИЛЬТР ТЕЛЕФОН/ОБЛАКО (Как в дашборде)
+    if (window.analyticsDataMode === 'cloud') {
+        baseRecords = baseRecords.filter(r => r.source === 'cloud' || r.syncStatus === 'synced' || r.sync_status === 'synced');
+    }
+
+    if (typeof activeMultiFilters !== 'undefined') {
+        // Фильтр по Объекту
+        if (activeMultiFilters.analytics.project.length > 0) {
+            const fProj = activeMultiFilters.analytics.project;
+            baseRecords = baseRecords.filter(r =>
+                fProj.includes(r.project_display_name) ||
+                fProj.includes(r.project_canonical_key) ||
+                fProj.includes(r.display_name)
+            );
+        }
+        // Фильтр по Подрядчику
+        if (activeMultiFilters.analytics.contractor.length > 0) {
+            const fContr = activeMultiFilters.analytics.contractor;
+            baseRecords = baseRecords.filter(r =>
+                fContr.includes(r.contractor_name) ||
+                fContr.includes(r.contractor_canonical_key) ||
+                fContr.includes(r.contractor)
+            );
+        }
+        // Фильтр по Инспектору СК
+        if (activeMultiFilters.analytics.inspector.length > 0) {
+            const fInsp = activeMultiFilters.analytics.inspector;
+            baseRecords = baseRecords.filter(r =>
+                fInsp.includes(r.issued_by) ||
+                fInsp.includes(r.inspector)
+            );
+        }
+        // Фильтр по Виду работ (Категории)
+        if (activeMultiFilters.analytics.template.length > 0) {
+            const fTmpl = activeMultiFilters.analytics.template.map(t => t.toLowerCase());
+            baseRecords = baseRecords.filter(r => fTmpl.includes((r.category || '').toLowerCase()));
+        }
     }
 
     // 2. Разбиваем данные на ТЕКУЩИЙ период и ПРОШЛЫЙ период (для трендов)
@@ -2357,19 +2365,28 @@ window.sk_renderHrTab = function () {
     let prevRecords = [];
     const now = new Date();
 
-    if (selPeriod === 'WEEK') {
+    if (selPeriod === 'DAY') {
+        currentRecords = baseRecords.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
+    } else if (selPeriod === 'WEEK') {
         const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
         const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        currentRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
-        prevRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
+        currentRecords = baseRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
+        prevRecords = baseRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
     } else if (selPeriod === 'MONTH') {
         const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
         const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        currentRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
-        prevRecords = window.skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
+        currentRecords = baseRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startCurr);
+        prevRecords = baseRecords.filter(r => r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr);
+    } else if (selPeriod === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        if (dFrom) currentRecords = currentRecords.filter(r => r.date_issued && new Date(r.date_issued) >= new Date(dFrom));
+        if (dTo) {
+            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
+            currentRecords = currentRecords.filter(r => r.date_issued && new Date(r.date_issued) <= tDate);
+        }
     } else {
-        // Если период не задан, просто считаем все данные как текущие, без трендов
-        currentRecords = window.skRecords;
+        currentRecords = baseRecords;
     }
 
     const currentStats = calculateEngStats(currentRecords);
@@ -2432,10 +2449,14 @@ window.sk_renderHrTab = function () {
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden mb-4">
             <div class="p-3.5 bg-[var(--hover-bg)] border-b border-[var(--card-border)] flex justify-between items-center">
                 <div>
-                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white mb-0.5">Рейтинг инженеров СК (KPI)</div>
-                    <div class="text-[9px] text-[var(--text-muted)] leading-snug font-medium">
-                        KPI = 100 - %Просрочки + Бонусы.<br>
-                        Тренд (▲▼) показывает динамику по сравнению с предыдущим периодом.
+                    <div class="font-black text-[12px] uppercase text-slate-800 dark:text-white mb-1">Рейтинг инженеров СК (KPI)</div>
+                    <div class="text-[9px] text-[var(--text-muted)] leading-snug font-medium space-y-1">
+                        <p><b>Выдал:</b> общее количество замечаний СК.</p> 
+                        <p><b>Просрочка:</b> доля не закрытых в срок предписаний.</p>
+                        <p><b>Точность:</b> процент замечаний с указанием конкретных допусков (в мм, см) или ссылок на ГОСТ/СП/РД.</p>
+                        <p><b>Ср. Время:</b> общее время жизни замечания (от даты выдачи до фактического устранения, независимо от дедлайна).</p>
+                        <p><b>KPI</b> = 100 - %Просрочки + Бонус (+10 баллов, если у 100% замечаний указан вид работ).</p>
+                        <p>Тренд (▲▼) показывает динамику показателей по сравнению с предыдущим (прошлым) периодом.</p>
                     </div>
                 </div>
             </div>
@@ -2471,7 +2492,7 @@ window.sk_renderHrTab = function () {
                     Разобрать
                 </button>
             </div>
-            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium max-h-[300px] overflow-y-auto custom-scrollbar"></div>
+            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium overflow-y-auto custom-scrollbar"></div>
         </div>
     `;
 };

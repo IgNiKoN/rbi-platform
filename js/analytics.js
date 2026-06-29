@@ -872,11 +872,19 @@ function renderOnePagerSubTab(data) {
     const pdcaKey = 'global_onepager_pdca';
     let rawPdcaText = customExpertConclusions[pdcaKey] || "";
     if (!customExpertConclusions[pdcaKey]) {
-        rawPdcaText = `[АНАЛИТИКА ДАШБОРДА]\nИндекс критичности объекта (ИКО): ${mData.IKO}.\nРаботы в красной зоне: ${mData.redZonePerc}%.\nОхват: ${data.length} проверок.\n\n`;
+        // Собираем ТОП дефектов и ТОП плохих подрядчиков для текста
+        const topDefectsList = [...Object.keys(b3Map), ...Object.keys(b2Map)].slice(0, 3).join('; ');
+        const badContrsList = ratingData.filter(r => r.val < 85).slice(0, 3).map(r => r.name).join(', ');
+
+        rawPdcaText = `[СТАТУС И РИСКИ]\nОхват контроля: ${data.length} инспекций. Индекс критичности (ИКО) составляет ${mData.IKO}. В красной зоне находится ${mData.redZonePerc}% от общего объема проверяемых подрядчиков.\n\n`;
+        
+        rawPdcaText += `[КЛЮЧЕВЫЕ ПРОБЛЕМЫ]\nНаиболее частые нарушения: ${topDefectsList ? topDefectsList : 'Отсутствуют'}.\nПроблемные подрядчики (УрК < 85%): ${badContrsList ? badContrsList : 'Отсутствуют'}.\n\n`;
+
+        rawPdcaText += `[ПЛАН ДЕЙСТВИЙ (РЕЗОЛЮЦИЯ)]\n`;
         if (isGlobalDanger) {
-            rawPdcaText += `1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.\n`;
+            rawPdcaText += `1. Приостановить приемку работ у подрядчиков в красной зоне.\n2. Организовать TWI-инструктажи по выявленным системным дефектам.\n3. Усилить операционный контроль на участках с критическим браком.`;
         } else {
-            rawPdcaText += `Процесс находится в управляемой зоне. Ресурсы направить на профилактику системных дефектов.\n`;
+            rawPdcaText += `Объект находится в зеленой зоне управления.\n1. Поддерживать текущий уровень контроля.\n2. Сфокусироваться на профилактике мелких отклонений.`;
         }
     }
     let uiPdcaText = rawPdcaText.replace(/\n/g, '<br>').replace(/^\[(.*?)\]/gm, '<b class="text-slate-800 dark:text-white text-[11px] block mt-2 mb-1">$1</b>');
@@ -2515,12 +2523,15 @@ window.renderReportsList = function() {
                 <div class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1 truncate">${r.metadata?.project || 'Сводный Отчет'}</div>
                 <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight mb-2 line-clamp-2">${r.title}</div>
                 
-                <div class="mt-auto pt-2 flex justify-between items-center">
-                    <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400">
-                        ${((r.file_size || 0)/1024/1024).toFixed(2)} MB
-                        ${syncBadge}
+                <div class="mt-auto pt-2 flex justify-between items-end">
+                    <div class="flex flex-col gap-1 text-[9px] font-bold text-slate-400">
+                        <span>Автор: ${r.created_by || 'Инженер'}</span>
+                        <span>Период: ${r.metadata?.period || 'Всё время'}</span>
                     </div>
-                    <div class="text-[9px] font-black text-slate-400">${new Date(r.generated_at).toLocaleDateString('ru-RU')}</div>
+                    <div class="text-[9px] font-black text-slate-400 text-right">
+                        ${new Date(r.generated_at).toLocaleDateString('ru-RU')}<br>
+                        <span class="font-normal mt-0.5 inline-block">${((r.file_size || 0)/1024/1024).toFixed(2)} MB ${syncBadge}</span>
+                    </div>
                 </div>
             </div>
             

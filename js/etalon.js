@@ -230,8 +230,14 @@ window.saveEtalonAct = async function(printAfter = false) {
             pdfName: document.getElementById('etalon-pdf-name')?.innerText || ''
         },
         metrics: { final: 100, baseUrkPerc: 100, checkedCount: 1, totalCount: 1, n_B1_fail: 0, n_B2_fail: 0, n_B3_fail: 0, kc: 1, kcrit: 1, statusTxt: "ЭТАЛОН", statusCls: "tag-blue" },
+        source: 'local',
+        syncStatus: 'not_synced',
+        sync_status: 'not_synced',
+        syncBlockReason: '',
+        sync_block_reason: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        is_deleted: false,
         _deleted: false
     };
 

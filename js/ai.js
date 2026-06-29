@@ -55,6 +55,10 @@ window.callAI = async function (messages, options = {}) {
     }
 };
 // === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
+// === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
+// === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
+// === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
+// === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
 window.generateSmartComment = async function (scenario) {
     if (!currentEditingExpertKey) return;
     if (!appSettings.aiEnabled) return showToast("⚠️ Сначала включите AI в Настройках!");
@@ -65,32 +69,98 @@ window.generateSmartComment = async function (scenario) {
 
     try {
         let promptSystem = ""; let promptUser = "";
+        
+        // Безопасное получение шаблонов
+        const uTmpls = typeof userTemplates !== 'undefined' ? userTemplates : {};
+        const sTmpls = typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
 
-        if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
-            const data = getFilteredAnalyticsData();
+        // Сценарий 1: Улучшение уже написанного текста инженером
+        if (scenario === 'improve') {
+            promptSystem = `Ты — инженер по качеству в строительстве. Инженер набросал черновик отчета. 
+            Твоя задача — переписать этот текст сухим, объективным, техническим языком для официального аналитического отчета. 
+            ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ 1: Текст должен быть очень коротким (до 4-5 предложений), чтобы влезть в PDF отчет. 
+            ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ 2: НИ В КОЕМ СЛУЧАЕ НЕ ОБРАЩАЙСЯ К ПОДРЯДЧИКУ! Никаких "уважаемые", "вы", "вам необходимо". Пиши строго от 3-го лица как констатацию фактов (например: "Выявлено...", "Подрядчику необходимо...", "Зафиксировано...").
+            ОБЯЗАТЕЛЬНОЕ УСЛОВИЕ 3: ЗАПРЕЩЕНО использовать слово "авария" или "аварийный". Используй термин "критический дефект вес 3".
+            Не придумывай новые факты.`;
+            promptUser = `Текст инженера:\n"${originalText}"`;
+        } 
+        // Сценарий 2: Глобальная аналитика / Сводка
+        else if (currentEditingExpertKey === 'global_main_analysis' || currentEditingExpertKey.startsWith('onepager_') || currentEditingExpertKey === 'global_onepager_pdca') {
+            const data = typeof getFilteredAnalyticsData === 'function' ? getFilteredAnalyticsData() : [];
             if (data.length === 0) throw new Error("Нет данных для анализа");
 
-            let sumB3 = 0; data.forEach(i => { if (i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
-            const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, userTemplates) : null;
+            let sumB3 = 0; 
+            let defectsCount = {};
+            data.forEach(i => { 
+                if (i.metrics && i.metrics.n_B3_fail > 0) sumB3++; 
+                if (i.state && i.templateKey) {
+                    Object.keys(i.state).forEach(id => {
+                        if (i.state[id] === 'fail' || i.state[id] === 'fail_escalated') {
+                            const type = i.templateKey.split('_')[0];
+                            const key = i.templateKey.replace(type + '_', '');
+                            let groups = [];
+                            if (type === 'sys' && sTmpls[key]) groups = sTmpls[key].groups;
+                            else if (type === 'user' && uTmpls[key]) groups = uTmpls[key].groups;
+                            
+                            const flat = getFlatList(groups);
+                            const item = flat.find(x => String(x.id) === String(id));
+                            if (item) defectsCount[item.n] = (defectsCount[item.n] || 0) + 1;
+                        }
+                    });
+                }
+            });
+            const topDefectsArr = Object.keys(defectsCount).sort((a, b) => defectsCount[b] - defectsCount[a]).slice(0, 3);
+            const topDefectsStr = topDefectsArr.map(d => `${d} (${defectsCount[d]} раз)`).join('; ');
+
+            const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, uTmpls) : null;
             const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
             const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
 
-            promptSystem = `Ты — эксперт-аналитик качества. Сформируй КРАТКИЙ обзор (до 80 слов). 1. Статус. 2. Риск. 3. Прогноз. 4. Действие.`;
-            promptUser = `ИКО: ${IKO}. В красной зоне: ${redZone}%. Проверок: ${data.length}. Аварий: ${sumB3}. Сценарий: ${scenario}`;
-        } else {
+            let toneDesc = "Объективный, аналитический, сухой (как сводка фактов).";
+            if (scenario === 'strict') toneDesc = "Жёсткий аудит, фиксация критических рисков и нарушений от 3-го лица.";
+            if (scenario === 'boss') toneDesc = "Для директора: только цифры, главные риски и факты.";
+            if (scenario === 'action_plan') toneDesc = "План действий (Action Plan) в виде коротких буллитов.";
+            if (scenario === 'tech') toneDesc = "Строгий технический разбор коренных причин брака.";
+
+            promptSystem = `Ты — ведущий инженер аналитик на строительном объекте.
+            СТРОГИЕ ПРАВИЛА:
+            1. НИКАКИХ ЛИЧНЫХ ОБРАЩЕНИЙ! Не пиши подрядчику. Пиши отчет ДЛЯ руководства О подрядчиках (от 3-го лица).
+            2. ЗАПРЕЩЕНО выдумывать нарушения! Используй ТОЛЬКО переданный список.
+            3. ЗАПРЕЩЕНО использовать слово "авария" или "аварийный". Используй "критический дефект вес 3".
+            4. Текст должен быть ОЧЕНЬ коротким (до 350 символов), чтобы гарантированно поместиться в PDF-блок отчета.
+            5. Тон: ${toneDesc}.
+            
+            Выдай текст в 2-3 коротких абзаца.`;
+            
+            promptUser = `СТАТИСТИКА ОБЪЕКТА: ИКО: ${IKO}. В красной зоне: ${redZone}% подрядчиков. Проверок: ${data.length}. Критических дефектов вес 3 (B3): ${sumB3}. Топ-нарушения: ${topDefectsStr || 'Нет'}. Напиши краткое аналитическое резюме.`;
+        } 
+        // Сценарий 3: Детализация конкретного подрядчика
+        else {
             const parts = currentEditingExpertKey.split('_||_');
             const cKey = parts[0]; const tTitle = parts[1];
+            
             const cDataAll = contractorArray.filter(i => (i.contractorName + ' [' + (i.projectName || 'Без объекта') + ']') === cKey && i.templateTitle === tTitle);
-            const m = getContractorMetrics(cDataAll, userTemplates);
+            const m = typeof getContractorMetrics === 'function' ? getContractorMetrics(cDataAll, uTmpls) : { finalC: 0, n_изделий_с_B3: 0, stabilityIndex: 0 };
 
-            promptSystem = `Ты — независимый эксперт. КРАТКИЙ отчет (до 70 слов). СТАТУС, ФАКТЫ, ПРОГНОЗ, РЕКОМЕНДАЦИИ.`;
-            promptUser = `Подрядчик: ${cKey.split(' [')[0]}. УрК: ${m.finalC}%. Аварий: ${m.rateB3}%. Сценарий: ${scenario}`;
+            let toneDesc = "Аналитический, сухой, технический.";
+            if (scenario === 'strict') toneDesc = "Жесткий аудит, констатация фактов системного брака.";
+            if (scenario === 'boss') toneDesc = "Для руководства: краткая выжимка цифр.";
+            if (scenario === 'action_plan') toneDesc = "Список необходимых корректирующих действий.";
+            if (scenario === 'tech') toneDesc = "Технический разбор качества.";
+
+            promptSystem = `Ты — ведущий инженер строительного контроля. Напиши аналитическое заключение по качеству работы подрядчика. 
+            ПРАВИЛО 1: НИКАКИХ ОБРАЩЕНИЙ ("вы", "уважаемые"). Это внутренний отчет. Пиши от 3-го лица: "У подрядчика зафиксировано...", "Необходимо выполнить...".
+            ПРАВИЛО 2: Текст должен быть КРОШЕЧНЫМ (максимум 3-4 коротких предложения, до 300 символов), иначе он сломает PDF-отчет!
+            ПРАВИЛО 3: ЗАПРЕЩЕНО использовать слово "авария" или "аварийный". Используй "критический дефект вес 3".
+            ПРАВИЛО 4: Тон: ${toneDesc}.
+            ПРАВИЛО 5: Без выдумок, строго по фактам.`;
+            
+            promptUser = `Подрядчик: ${cKey.split(' [')[0]}. Вид работ: ${tTitle}. Рейтинг качества: ${m.finalC}%. Индекс стабильности: ${m.stabilityIndex}. Критических дефектов вес 3 (B3): ${m.n_изделий_с_B3}. Дай краткий объективный анализ.`;
         }
 
-        const aiResponse = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.4, max_tokens: 300 });
+        const aiResponse = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.2, max_tokens: 300 });
         inputField.value = aiResponse;
-        showToast("✨ Текст сгенерирован ИИ!");
-        if (typeof gameLogAction === 'function') gameLogAction('ai_generate', scenario);
+        showToast("✨ Анализ сгенерирован ИИ!");
     } catch (error) {
         inputField.value = originalText;
         showToast("❌ Ошибка: " + error.message);
@@ -98,19 +168,75 @@ window.generateSmartComment = async function (scenario) {
 };
 
 // === 2. ONE-PAGER УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ ===
+// === 2. ONE-PAGER УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ ===
 window.generateOnePagerForecastAi = async function (pdcaKey) {
     if (!appSettings.aiEnabled) return showToast("⚠️ Включите AI-ассистента!");
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast("Нет данных");
-    // (Код функции идентичен оригиналу, перенесен сюда)
+    
     showToast("⏳ AI формирует стратегию...");
     try {
-        const response = await window.callAI([{ role: 'system', content: 'Ты директор по качеству. Кратко: ОЦЕНКА, РИСКИ, ПЛАН.' }, { role: 'user', content: `Анализ ${data.length} проверок.` }], { temperature: 0.3, max_tokens: 250 });
+        let sumB3 = 0; 
+        let defectsCount = {};
+        
+        // Безопасное получение шаблонов
+        const uTmpls = typeof userTemplates !== 'undefined' ? userTemplates : {};
+        const sTmpls = typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+
+        data.forEach(i => { 
+            if (i.metrics && i.metrics.n_B3_fail > 0) sumB3++; 
+            if (i.state && i.templateKey) {
+                Object.keys(i.state).forEach(id => {
+                    if (i.state[id] === 'fail' || i.state[id] === 'fail_escalated') {
+                        const type = i.templateKey.split('_')[0];
+                        const key = i.templateKey.replace(type + '_', '');
+                        
+                        let groups = [];
+                        if (type === 'sys' && sTmpls[key]) groups = sTmpls[key].groups;
+                        else if (type === 'user' && uTmpls[key]) groups = uTmpls[key].groups;
+                        
+                        const flat = getFlatList(groups);
+                        const item = flat.find(x => String(x.id) === String(id));
+                        if (item) defectsCount[item.n] = (defectsCount[item.n] || 0) + 1;
+                    }
+                });
+            }
+        });
+        
+        const topDefectsArr = Object.keys(defectsCount).sort((a, b) => defectsCount[b] - defectsCount[a]).slice(0, 3);
+        const topDefects = topDefectsArr.map(d => `${d} (${defectsCount[d]} раз)`).join('; ');
+
+        const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, uTmpls) : null;
+        const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
+        const redZone = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+
+        const promptSystem = `Ты — Quality Business Partner (QBP) на стройке. Твоя задача: написать ОЧЕНЬ КРАТКОЕ резюме для руководства, которое уместится в маленький блок отчета PDF.
+        СТРОГИЕ ПРАВИЛА:
+        1. Никакой воды, приветствий и лишних слов. Тон партнерский, конструктивный (мы помогаем исправить, а не просто штрафуем).
+        2. ЗАПРЕЩЕНО выдумывать дефекты. Опирайся ТОЛЬКО на переданный список.
+        3. ЗАПРЕЩЕНО использовать слова "авария" или "аварийный". Используй строгий термин "критический дефект вес 3".
+        4. Объем: строго 3-4 очень коротких тезиса с буллитами. Максимум 300 символов всего.
+        
+        Структура:
+        • [Статус ИКО и красной зоны 1 предложением]
+        • [Главная проблема из переданного списка]
+        • [Какое партнерское решение принято (например, TWI-сессия, воркшоп)]`;
+        
+        const promptUser = `ИКО объекта: ${IKO}. В красной зоне: ${redZone}% подрядчиков. Проверок: ${data.length}. Критических дефектов вес 3 (B3): ${sumB3}. ТОП-проблемы: ${topDefects || 'Отсутствуют'}. Напиши кратко.`;
+
+        const response = await window.callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.2, max_tokens: 200 });
+        
         customExpertConclusions[pdcaKey] = response;
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
-        renderCurrentAnalyticsTab();
-        showToast("✨ Управленческое решение обновлено!");
-    } catch (e) { showToast("❌ Ошибка: " + e.message); }
+        
+        if (typeof renderCurrentAnalyticsTab === 'function') {
+            renderCurrentAnalyticsTab();
+        }
+        showToast("✨ Резюме QBP обновлено!");
+    } catch (e) { 
+        console.error("AI Error:", e);
+        showToast("❌ Ошибка: " + e.message); 
+    }
 };
 
 window.generatePulseAi = async function () {
@@ -1082,11 +1208,11 @@ window.rbi_generateWorkshop = async function (taskId) {
     const relatedTwi = typeof customTwiCards !== 'undefined' ? customTwiCards.find(c => c.checklistKey === task.templateKey) : null;
     let twiContext = relatedTwi ? `Упомяни, что мы разберем TWI-инструкцию "${relatedTwi.title}".` : ``;
 
-    const promptSystem = `Ты — старший инженер стройконтроля. Напиши сценарий для жесткой 5-минутной планерки с бригадой (toolbox talk). 
-    ЗАПРЕЩЕНО писать про каски, СИЗ и ТБ! Говорим ТОЛЬКО про технологию работ и качество!
-    1. 🎯 Цель: [Обозначить проблему качества].
-    2. ⚠️ Суть ошибки: [Как они косячат технологически].
-    3. 🛠 Как правильно: [Допуски из ГОСТ/СНиП].
+    const promptSystem = `Ты — старший инженер стройконтроля. Напиши сценарий 5-минутной планерки с бригадой (toolbox talk). 
+    ВНИМАНИЕ: Говорим СТРОГО про указанный вид работ! Если это кладка, не упоминай бетон или монолит! ЗАПРЕЩЕНО писать про каски, СИЗ и ТБ! 
+    1. 🎯 Цель: [Обозначить проблему качества для данного вида работ].
+    2. ⚠️ Суть ошибки: [Что именно нарушено технологически в этих работах].
+    3. 🛠 Как правильно: [Допуски из ГОСТ/СНиП для этого вида работ].
     4. 💡 Итог: Мотивация.`;
 
     try {
