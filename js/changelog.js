@@ -2,6 +2,31 @@
 
 window.RBI_CHANGELOG = [
     {
+        version: "17.10.13",
+        date: "03.07.2026",
+        features: [
+            "[ГРУППА] Синхронизация и стабильность",
+            "• Исправлена критическая ошибка синхронизации проверок: загрузка пунктов проверок и фото больше не выполняется одним огромным запросом. Данные загружаются безопасными батчами, что устраняет ошибки 502 Bad Gateway и связанные CORS-сообщения.",
+            "• Улучшена синхронизация rbi_inspection_items и rbi_inspection_photos: добавлена пакетная загрузка по inspection_id, снижена нагрузка на API и исключено зависание при большом количестве проверок.",
+            "• Исправлена отправка пунктов проверок и фото в облако: теперь ошибки upsert обязательно проверяются, а проверка не помечается как синхронизированная, если связанные данные не были отправлены.",
+            "",
+            "[ГРУППА] Фото и Offline-First",
+            "• Улучшена работа с фото проверок: после загрузки из облака фотографии подготавливаются к офлайн-просмотру и кэшируются в фоне без блокировки интерфейса.",
+            "• Исправлена проверка существования файлов в Supabase Storage: теперь наличие файла проверяется в фактической папке загрузки, а не только в hashed_assets.",
+            "• Повышена надежность хранения фото, PDF и вложений в модулях практик, эталонов, TWI, узлов и документов.",
+            "",
+            "[ГРУППА] База знаний и справочники",
+            "• Улучшена синхронизация лучших практик, эталонов, TWI-инструкций, узлов, документов и пользовательских чек-листов.",
+            "• Добавлено фоновое кэширование файлов справочников после pull из облака для более надежной работы без интернета.",
+            "• Исправлен полный pull пользовательских чек-листов: при пустой локальной базе справочники подтягиваются заново даже при наличии старого времени последней синхронизации.",
+            "",
+            "[ГРУППА] Надежность приложения",
+            "• Снижена вероятность повторного полного сброса синхронизации из-за частично загруженных справочников.",
+            "• Улучшена диагностика синхронизации: ошибки по батчам теперь логируются с указанием таблицы и диапазона загружаемых данных.",
+            "• Повышена устойчивость приложения при большом объеме исторических проверок, фото и связанных записей."
+        ]
+    },
+    {
         version: "17.10.12",
         date: "29.06.2026",
         features: [
@@ -50,7 +75,7 @@ window.RBI_CHANGELOG = [
             "Задачи: В планировщике фильтры «Аудиты» и «Эталоны» разделены на две независимые кнопки для удобства маршрутизации."
         ]
     },
-     {
+    {
         version: "17.10.9",
         date: "16.06.2026",
         features: [
@@ -85,7 +110,7 @@ window.RBI_CHANGELOG = [
             "Защита от конкурентного доступа: предотвращено затирание черновика осмотра и опыта (XP), если вы одновременно открыли приложение на ПК и телефоне.",
         ]
     },
-     {
+    {
         version: "17.10.0",
         date: "04.06.2026",
         features: [
@@ -125,7 +150,7 @@ window.RBI_CHANGELOG = [
 ];
 
 // ======= ОБНОВЛЁННАЯ ФУНКЦИЯ РЕНДЕРИНГА С ЦВЕТНЫМИ БЛОКАМИ =======
-window.rbi_openChangelogModal = function() {
+window.rbi_openChangelogModal = function () {
     const container = document.getElementById('changelog-list-container');
     if (!container) return;
 
@@ -133,7 +158,7 @@ window.rbi_openChangelogModal = function() {
     window.RBI_CHANGELOG.forEach((log, index) => {
         const isLatest = index === 0;
         const badge = isLatest ? `<span class="bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ml-2 shadow-sm">Последняя</span>` : '';
-        
+
         html += `
         <div class="mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
             <div class="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
@@ -142,18 +167,18 @@ window.rbi_openChangelogModal = function() {
             </div>
             <div class="space-y-1">
                 ${log.features.map(f => {
-                    if (typeof f === 'string' && f.startsWith('[ГРУППА]')) {
-                        const groupTitle = f.replace('[ГРУППА]', '').trim();
-                        return `<div class="mt-3 mb-2 px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 font-bold text-[11px] uppercase tracking-wider rounded-lg border border-indigo-200 dark:border-indigo-700">${groupTitle}</div>`;
-                    } else if (f.trim() === '') {
-                        return '';
-                    } else {
-                        return `<div class="flex items-start gap-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 font-medium py-1">
+            if (typeof f === 'string' && f.startsWith('[ГРУППА]')) {
+                const groupTitle = f.replace('[ГРУППА]', '').trim();
+                return `<div class="mt-3 mb-2 px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 font-bold text-[11px] uppercase tracking-wider rounded-lg border border-indigo-200 dark:border-indigo-700">${groupTitle}</div>`;
+            } else if (f.trim() === '') {
+                return '';
+            } else {
+                return `<div class="flex items-start gap-2 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 font-medium py-1">
                             <svg class="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                             <span>${f}</span>
                         </div>`;
-                    }
-                }).join('')}
+            }
+        }).join('')}
             </div>
         </div>
         `;
@@ -170,7 +195,7 @@ window.rbi_openChangelogModal = function() {
     }, 10);
 };
 
-window.rbi_closeChangelogModal = function() {
+window.rbi_closeChangelogModal = function () {
     const modal = document.getElementById('changelog-modal-overlay');
     modal.classList.add('opacity-0');
     modal.querySelector('.transform').classList.add('translate-y-full');

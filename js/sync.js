@@ -46,6 +46,109 @@ function safeToast(msg) {
     else console.log(msg);
 }
 
+// === RBI FIX: безопасные батчи для pull/push и кэширования файлов ===
+async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40) {
+    const result = [];
+    const cleanIds = Array.from(new Set((ids || []).map(x => String(x)).filter(Boolean)));
+
+    for (let i = 0; i < cleanIds.length; i += batchSize) {
+        const batchIds = cleanIds.slice(i, i + batchSize);
+
+        const { data, error } = await window.supabaseClient
+            .from(tableName)
+            .select('*')
+            .in('inspection_id', batchIds);
+
+        if (error) {
+            console.error(`[Sync] Ошибка pull ${tableName}, batch ${i}-${i + batchIds.length}:`, error);
+            throw error;
+        }
+
+        if (Array.isArray(data)) result.push(...data);
+
+        await new Promise(r => setTimeout(r, 20));
+    }
+
+    return result;
+}
+
+async function rbiUpsertBatches(tableName, rows, batchSize = 500, options = { onConflict: 'id' }) {
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+    let pushed = 0;
+
+    for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+
+        const { error } = await window.supabaseClient
+            .from(tableName)
+            .upsert(batch, options);
+
+        if (error) {
+            console.error(`[Sync] Ошибка push ${tableName}, batch ${i}-${i + batch.length}:`, error);
+            throw error;
+        }
+
+        pushed += batch.length;
+        await new Promise(r => setTimeout(r, 20));
+    }
+
+    return pushed;
+}
+
+function rbiCollectCloudStorageUrls(obj, limit = 30) {
+    const urls = new Set();
+
+    const walk = (value) => {
+        if (!value || urls.size >= limit) return;
+
+        if (
+            typeof value === 'string' &&
+            value.startsWith('http') &&
+            value.includes('/storage/v1/object/')
+        ) {
+            urls.add(value);
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            for (const item of value) walk(item);
+            return;
+        }
+
+        if (typeof value === 'object') {
+            for (const key of Object.keys(value)) walk(value[key]);
+        }
+    };
+
+    walk(obj);
+    return Array.from(urls);
+}
+
+async function rbiCacheObjectCloudFilesForOffline(objectType, obj) {
+    const cacheTypes = new Set([
+        'etalon',
+        'practice',
+        'custom_twi_card',
+        'custom_node',
+        'custom_doc',
+        'user_template'
+    ]);
+
+    if (!cacheTypes.has(objectType)) return;
+    if (typeof PhotoManager === 'undefined' || typeof PhotoManager.downloadForOffline !== 'function') return;
+
+    const urls = rbiCollectCloudStorageUrls(obj, 30);
+
+    for (const url of urls) {
+        try {
+            await PhotoManager.downloadForOffline(url);
+        } catch (e) {
+            console.warn('[Sync] Не удалось закэшировать файл для офлайна:', url, e);
+        }
+    }
+}
+// === /RBI FIX ===
 // === ПК СК: подготовка записи для таблицы public.sk_records ===
 // ВАЖНО: в Supabase нельзя отправлять лишние JS-поля, которых нет в таблице.
 // Поэтому собираем чистый объект только из разрешённых колонок.
@@ -470,7 +573,7 @@ window.initSync = async function () {
             // мы запрещаем ей отправлять данные (PUSH), чтобы она не перетирала работу с телефона.
             // Но мы разрешаем ей скачивать новые данные (PULL), если стоит флаг rbi_force_full_pull.
             const isTabActive = document.visibilityState === 'visible';
-            
+
             if (localStorage.getItem('rbi_force_full_pull') === '1') {
                 window.triggerSync('silent'); // Скачиваем обновления
             } else if (isTabActive && localStorage.getItem('rbi_cloud_dirty') === '1') {
@@ -2221,12 +2324,18 @@ window.triggerSync = async function (mode = 'silent') {
         const publicUrl = urlData.publicUrl;
         const fileSizeBytes = blobData.blob.size || arrayBuffer.byteLength || 0;
 
-        // 4. Проверяем наличие файла через .list() (Экономим трафик!)
+        // 4. Проверяем наличие файла именно в той папке, куда собираемся вернуть ссылку.
+        // Раньше всегда проверялась папка hashed_assets, из-за чего можно было вернуть URL на файл,
+        // который фактически не был загружен в нужный путь inspection/practice/etalon.
+        const storageSlashIndex = storagePath.lastIndexOf('/');
+        const storageDir = storageSlashIndex >= 0 ? storagePath.slice(0, storageSlashIndex) : '';
+        const storageFileName = storageSlashIndex >= 0 ? storagePath.slice(storageSlashIndex + 1) : storagePath;
+
         const { data: existingFiles } = await window.supabaseClient.storage
             .from(bucketName)
-            .list('hashed_assets', { search: hashStr });
+            .list(storageDir, { search: storageFileName });
 
-        if (existingFiles && existingFiles.length > 0) {
+        if (existingFiles && existingFiles.some(f => f.name === storageFileName)) {
             console.log('[Sync] Дедупликация сработала (файл уже есть):', publicUrl);
             // ВРЕМЕННО ОТКЛЮЧЕНО, чтобы не было дублей в file_registry.
             // Сначала регистрируем только фото проверок как inspection_photo.
@@ -2458,13 +2567,13 @@ if (window.RbiStorageManager) {
                 const hist = await dbGetAll('app_history');
                 localHistoryCount = hist ? hist.length : 0;
             }
-        } catch (e) {}
+        } catch (e) { }
 
         if (localHistoryCount === 0 || forceFullPullRequested) {
             console.log('[Sync] ⚠️ База пуста или запрошен полный сброс. Игнорируем время, качаем всё!');
             lastPullAt = ''; // Обнуляем время, чтобы Supabase отдал все данные
         }
-        
+
         // =====================================================
         // 2. PULL: проверки из новой нормальной архитектуры
         // =====================================================
@@ -2539,19 +2648,10 @@ if (window.RbiStorageManager) {
         if (cloudInspections && cloudInspections.length > 0) {
             const ids = cloudInspections.map(x => x.id);
 
-            const { data: cloudItems, error: itemsError } = await window.supabaseClient
-                .from('rbi_inspection_items')
-                .select('*')
-                .in('inspection_id', ids);
-
-            if (itemsError) throw itemsError;
-
-            const { data: cloudPhotos, error: photosError } = await window.supabaseClient
-                .from('rbi_inspection_photos')
-                .select('*')
-                .in('inspection_id', ids);
-
-            if (photosError) throw photosError;
+            // RBI FIX: не грузим все inspection_items/photos одним огромным GET-запросом.
+            // Иначе URL становится слишком длинным, API может вернуть 502 Bad Gateway.
+            const cloudItems = await rbiPullRowsByInspectionIds('rbi_inspection_items', ids, 40);
+            const cloudPhotos = await rbiPullRowsByInspectionIds('rbi_inspection_photos', ids, 40);
 
             const itemsMap = {};
             const photosMap = {};
@@ -2561,10 +2661,30 @@ if (window.RbiStorageManager) {
                 itemsMap[row.inspection_id].push(row);
             });
 
+            const pulledInspectionPhotoUrls = new Set();
+
             (cloudPhotos || []).forEach(row => {
                 if (!photosMap[row.inspection_id]) photosMap[row.inspection_id] = {};
-                if (row.item_id && row.public_url) photosMap[row.inspection_id][row.item_id] = row.public_url;
+                if (row.item_id && row.public_url) {
+                    photosMap[row.inspection_id][row.item_id] = row.public_url;
+                    pulledInspectionPhotoUrls.add(row.public_url);
+                }
             });
+
+            // RBI FIX: готовим фото проверок к офлайн-просмотру, но не блокируем синхронизацию.
+            if (
+                pulledInspectionPhotoUrls.size > 0 &&
+                typeof PhotoManager !== 'undefined' &&
+                typeof PhotoManager.downloadForOffline === 'function'
+            ) {
+                setTimeout(() => {
+                    Array.from(pulledInspectionPhotoUrls).slice(0, 150).forEach(url => {
+                        PhotoManager.downloadForOffline(url).catch(e =>
+                            console.warn('[Sync] Фото проверки не закэшировано:', e)
+                        );
+                    });
+                }, 1000);
+            }
 
             for (const h of cloudInspections) {
                 // --- ЗАЩИТА ОТ ПЕРЕЗАПИСИ УДАЛЕННЫХ ИЛИ ОФЛАЙН ИЗМЕНЕНИЙ ---
@@ -2933,6 +3053,11 @@ if (window.RbiStorageManager) {
                             } else {
                                 await dbPut(cType.store, obj);
 
+                                // RBI FIX: после pull кэшируем файлы/фото справочников для офлайн-работы.
+                                rbiCacheObjectCloudFilesForOffline(cType.type, obj).catch(e =>
+                                    console.warn('[Sync] Не удалось кэшировать файлы объекта:', cType.type, e)
+                                );
+
                                 const idx = window[cType.memory].findIndex(x => String(x.id) === String(obj.id));
                                 if (idx >= 0) window[cType.memory][idx] = obj;
                                 else window[cType.memory].push(obj);
@@ -3165,7 +3290,8 @@ if (window.RbiStorageManager) {
                 }
             }
             // Пользовательские Чек-листы (Объекты)
-            const templateObjects = await window.pullCloudObjects('user_template', lastPullAt, mode);
+            const templatePullSince = needFullReferencePull ? '' : lastPullAt;
+const templateObjects = await window.pullCloudObjects('user_template', templatePullSince, mode);
             if (templateObjects && templateObjects.length > 0 && typeof userTemplates !== 'undefined') {
                 for (const obj of templateObjects) {
                     const localExisting = await dbGet('user_templates', obj.id);
@@ -3380,17 +3506,10 @@ if (window.RbiStorageManager) {
                 }
 
                 // Бьем на куски по 1000 строк (лимит Supabase)
-                if (itemsBatch.length > 0) {
-                    for (let i = 0; i < itemsBatch.length; i += 1000) {
-                        await window.supabaseClient.from('rbi_inspection_items').upsert(itemsBatch.slice(i, i + 1000), { onConflict: 'id' });
-                    }
-                }
-
-                if (photosBatch.length > 0) {
-                    for (let i = 0; i < photosBatch.length; i += 1000) {
-                        await window.supabaseClient.from('rbi_inspection_photos').upsert(photosBatch.slice(i, i + 1000), { onConflict: 'id' });
-                    }
-                }
+                // RBI FIX: отправляем пункты и фото пачками с обязательной проверкой error.
+                // Раньше ошибки upsert могли теряться, а локальная проверка помечалась как synced.
+                await rbiUpsertBatches('rbi_inspection_items', itemsBatch, 500, { onConflict: 'id' });
+                await rbiUpsertBatches('rbi_inspection_photos', photosBatch, 500, { onConflict: 'id' });
 
                 // Обновляем локальную базу
                 if (localHistoryToUpdate.length > 0 && typeof dbPutBatch === 'function') {
@@ -3833,18 +3952,18 @@ if (window.RbiStorageManager) {
                             const c = customTwiCards[i];
                             // Проверяем только живые карты Технадзора с привязкой к конкретному пункту
                             if (c._deleted || c.type !== 'INSPECTOR' || !c.itemId || c.itemId === 'ALL') continue;
-                            
+
                             const dupKey = `${c.checklistKey}_${c.itemId}`;
                             if (twiMap.has(dupKey)) {
                                 // Конфликт! Два инженера создали карту в офлайне.
                                 const existing = twiMap.get(dupKey);
                                 const timeExisting = new Date(existing.createdAt || 0).getTime();
                                 const timeCurrent = new Date(c.createdAt || 0).getTime();
-                                
+
                                 // Выживает та, что создана раньше. Проигравшая удаляется.
                                 let loser = timeCurrent > timeExisting ? c : existing;
                                 let winner = timeCurrent > timeExisting ? existing : c;
-                                
+
                                 // Мягко удаляем проигравшую карточку (она отправится в облако как удаленная)
                                 loser._deleted = true;
                                 loser.is_deleted = true;
@@ -3852,7 +3971,7 @@ if (window.RbiStorageManager) {
                                 loser.source = 'local';
                                 loser.syncStatus = 'not_synced';
                                 await dbPut('twi_cards', loser);
-                                
+
                                 twiMap.set(dupKey, winner); // Оставляем победителя
                             } else {
                                 twiMap.set(dupKey, c);
@@ -3907,7 +4026,7 @@ if (window.RbiStorageManager) {
                                     expires_at: null
                                 };
                                 await window.pushCloudObject('snapshot', snap.id, snap);
-                                
+
                                 // После успешной отправки удаляем тяжелый HTML из базы телефона для экономии места
                                 rep.snapshot_html = null;
                             } else if (window._tempSnapshots && window._tempSnapshots[rep.id]) {
@@ -4251,14 +4370,14 @@ if (window.RbiStorageManager) {
                     if (typeof dbGetAll === 'function') {
                         const storedTmpls = await dbGetAll('user_templates') || [];
                         const tmplArray = storedTmpls.map(t => t.data);
-                        
+
                         for (const obj of filterNew(tmplArray)) {
                             const updated = await window.pushCloudObject('user_template', obj.id, obj, 'library-checklists');
                             if (updated) {
                                 updated.syncStatus = 'synced';
                                 updated.sync_status = 'synced';
                                 await dbPut('user_templates', { slug: updated.id, data: updated });
-                                
+
                                 if (typeof userTemplates !== 'undefined') {
                                     if (updated._deleted || updated.is_deleted) {
                                         delete userTemplates[updated.id];
@@ -4325,7 +4444,7 @@ if (window.RbiStorageManager) {
                 'user_templates', 'custom_docs', 'custom_nodes', 'twi_cards',
                 'feedback_list', 'app_reports', 'project_objects', 'object_aliases'
             ];
-            
+
             let hardDeletedCount = 0;
             // 1. Физическое удаление "мертвых" карточек
             for (let store of storesToClean) {
@@ -4334,7 +4453,7 @@ if (window.RbiStorageManager) {
                     for (let item of items) {
                         const isDel = item._deleted === true || item.is_deleted === true || (item.data && item.data._deleted === true);
                         const isSynced = item.syncStatus === 'synced' || item.sync_status === 'synced';
-                        
+
                         if (isDel && isSynced) {
                             const key = item.id || item.slug;
                             if (key) {
@@ -4463,7 +4582,7 @@ if (window.RbiStorageManager) {
         // === АВТОГЕНЕРАЦИЯ И СИНХРОНИЗАЦИЯ ЗАДАЧ ===
         // Запускаем пересчет только если не открыто модальное окно
         const isModalOpen = document.body.classList.contains('modal-open');
-        
+
         // ПРОВЕРКА: Смотрит ли юзер прямо сейчас на вкладку "Задачи"?
         const isTasksTabActive = document.getElementById('tab-engineer')?.classList.contains('active') && window.currentActiveEngineerTab === 'eng-sub-tasks';
 
@@ -4710,7 +4829,7 @@ window.SyncQueueManager = {
             this.pendingTimer = setTimeout(() => {
                 this.process();
             }, 3000);
-            
+
         } catch (e) {
             console.warn('[Queue] Ошибка добавления в очередь:', e);
         }
@@ -4722,7 +4841,7 @@ window.SyncQueueManager = {
 
         try {
             this.isProcessing = true;
-            
+
             // Берем задачи из локальной очереди
             const queueItems = await window.dbGetAll('sync_queue') || [];
             if (queueItems.length === 0) return;
@@ -4748,12 +4867,12 @@ window.SyncQueueManager = {
                 // Если Supabase завис или выдал ошибку — прерываем цикл, попробуем в следующий раз
                 if (error) {
                     console.warn('[Queue] Ошибка отправки в облако (Возможен блок провайдера). Тормозим.', error.message);
-                    break; 
+                    break;
                 }
 
                 // Успешно — удаляем из памяти телефона
                 await window.dbDelete('sync_queue', item.id);
-                
+
                 // ДАЕМ БРАУЗЕРУ ПОДЫШАТЬ: микро-пауза между запросами
                 await new Promise(r => setTimeout(r, 150));
             }
