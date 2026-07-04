@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '17.10.13.1';
-const SW_VERSION = '17.10.13.1';
+const APP_VERSION = '17.10.13.2';
+const SW_VERSION = '17.10.13.2';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -46,7 +46,7 @@ const urlsToCache = [
   './js/game.js',
   './js/sk.js',
   './manifest.webmanifest',
-    // Шрифты Inter (интерфейс)
+  // Шрифты Inter (интерфейс)
   './fonts/Inter-Regular.woff2',
   './fonts/Inter-Medium.woff2',
   './fonts/Inter-SemiBold.woff2',
@@ -177,41 +177,41 @@ self.addEventListener('fetch', event => {
 // ==========================================
 
 // Слушаем приход Push-уведомления с сервера
-self.addEventListener('push', function(event) {
-    // Если сервер прислал данные, берем их. Иначе ставим заглушку.
-    const data = event.data ? event.data.json() : { title: 'RBI Quality', body: 'У вас новое уведомление' };
+self.addEventListener('push', function (event) {
+  // Если сервер прислал данные, берем их. Иначе ставим заглушку.
+  const data = event.data ? event.data.json() : { title: 'RBI Quality', body: 'У вас новое уведомление' };
 
-    const options = {
-        body: data.body,
-        icon: './icons/icon-512-2.png',
-        badge: './icons/icon-512-2.png',
-        vibrate: [200, 100, 200],
-        data: {
-            url: data.url || '/' // Ссылка, куда перейти при клике
-        }
-    };
+  const options = {
+    body: data.body,
+    icon: './icons/icon-512-2.png',
+    badge: './icons/icon-512-2.png',
+    vibrate: [200, 100, 200],
+    data: {
+      url: data.url || '/' // Ссылка, куда перейти при клике
+    }
+  };
 
-    event.waitUntil(
-        self.registration.showNotification(data.title, options)
-    );
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
 });
 
 // Слушаем клик пользователя по уведомлению
-self.addEventListener('notificationclick', function(event) {
-    event.notification.close(); // Закрываем уведомление
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close(); // Закрываем уведомление
 
-    // Открываем приложение по ссылке из уведомления
-    event.waitUntil(
-        clients.openWindow(event.notification.data.url)
-    );
+  // Открываем приложение по ссылке из уведомления
+  event.waitUntil(
+    clients.openWindow(event.notification.data.url)
+  );
 });
 
 // ==========================================
 // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ КЭША
 // ==========================================
 self.addEventListener('message', (event) => {
-    // Если получаем команду SKIP_WAITING от кнопки "Обновить" в интерфейсе
-    if (event.data === 'SKIP_WAITING') {
-        self.skipWaiting(); // Заставляем новый Service Worker немедленно взять управление на себя
-    }
+  // Если получаем команду SKIP_WAITING от кнопки "Обновить" в интерфейсе
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting(); // Заставляем новый Service Worker немедленно взять управление на себя
+  }
 });

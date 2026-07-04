@@ -45,7 +45,116 @@ function safeToast(msg) {
     if (typeof showToast === 'function') showToast(msg);
     else console.log(msg);
 }
+// === RBI FIX: лёгкая очередь фонового кэша файлов ===
+window.rbiBgCacheQueue = window.rbiBgCacheQueue || [];
+window.rbiBgCacheProcessing = false;
 
+function rbiEnqueueCloudFilesForCache(urls, source = 'unknown') {
+    if (!Array.isArray(urls) || urls.length === 0) return;
+
+    const existing = new Set(window.rbiBgCacheQueue.map(x => x.url));
+
+    urls.forEach(url => {
+        if (
+            typeof url === 'string' &&
+            url.startsWith('http') &&
+            url.includes('/storage/v1/object/') &&
+            !existing.has(url)
+        ) {
+            window.rbiBgCacheQueue.push({
+                url,
+                source,
+                addedAt: Date.now()
+            });
+            existing.add(url);
+        }
+    });
+
+    // Ограничиваем очередь, чтобы старые телефоны не зависали.
+    if (window.rbiBgCacheQueue.length > 300) {
+        window.rbiBgCacheQueue = window.rbiBgCacheQueue.slice(-300);
+    }
+}
+
+async function rbiProcessBgCacheQueue(options = {}) {
+    if (window.rbiBgCacheProcessing) return;
+    if (!navigator.onLine) return;
+    if (typeof PhotoManager === 'undefined') return;
+    if (typeof PhotoManager.downloadForOffline !== 'function') return;
+
+    window.rbiBgCacheProcessing = true;
+
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent || '');
+    const maxPerRun = options.maxPerRun || (isSafari ? 8 : 20);
+
+    try {
+        let done = 0;
+
+        while (window.rbiBgCacheQueue.length > 0 && done < maxPerRun) {
+            const item = window.rbiBgCacheQueue.shift();
+            if (!item || !item.url) continue;
+
+            try {
+                await PhotoManager.downloadForOffline(item.url);
+                done++;
+            } catch (e) {
+                console.warn('[Cache] Не удалось закэшировать файл:', item.source, e);
+            }
+
+            // Даём браузеру дышать, особенно Safari/iOS.
+            await new Promise(r => setTimeout(r, isSafari ? 250 : 100));
+        }
+
+        if (window.rbiBgCacheQueue.length > 0) {
+            setTimeout(() => rbiProcessBgCacheQueue(options), isSafari ? 5000 : 3000);
+        }
+    } finally {
+        window.rbiBgCacheProcessing = false;
+    }
+}
+
+function rbiCollectCloudStorageUrls(obj, limit = 30) {
+    const urls = new Set();
+
+    const walk = (value) => {
+        if (!value || urls.size >= limit) return;
+
+        if (
+            typeof value === 'string' &&
+            value.startsWith('http') &&
+            value.includes('/storage/v1/object/')
+        ) {
+            urls.add(value);
+            return;
+        }
+
+        if (Array.isArray(value)) {
+            value.forEach(walk);
+            return;
+        }
+
+        if (typeof value === 'object') {
+            Object.values(value).forEach(walk);
+        }
+    };
+
+    walk(obj);
+    return Array.from(urls);
+}
+// === /RBI FIX ===
+// === RBI FIX: регулярная проверка облака даже без локальных изменений ===
+function rbiIsRemotePollDue(intervalMs = 10 * 60 * 1000) {
+    const last = Number(localStorage.getItem('rbi_sync_last_remote_check_at') || 0);
+    return !last || (Date.now() - last) > intervalMs;
+}
+
+function rbiMarkCloudDirty() {
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    localStorage.setItem('rbi_force_remote_poll', '1');
+}
+
+window.rbiMarkCloudDirty = rbiMarkCloudDirty;
+// === /RBI FIX ===
 // === RBI FIX: безопасные батчи для pull/push и кэширования файлов ===
 async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40) {
     const result = [];
@@ -568,16 +677,26 @@ window.initSync = async function () {
         }, 5000);
 
         setInterval(() => {
-            // 🛡️ ЗАЩИТА 1: "Спящий режим". 
-            // Если вкладка свернута или неактивна (например, ПК оставлен включенным),
-            // мы запрещаем ей отправлять данные (PUSH), чтобы она не перетирала работу с телефона.
-            // Но мы разрешаем ей скачивать новые данные (PULL), если стоит флаг rbi_force_full_pull.
             const isTabActive = document.visibilityState === 'visible';
 
-            if (localStorage.getItem('rbi_force_full_pull') === '1') {
-                window.triggerSync('silent'); // Скачиваем обновления
-            } else if (isTabActive && localStorage.getItem('rbi_cloud_dirty') === '1') {
-                window.triggerSync('silent'); // Отправляем данные ТОЛЬКО если вкладка открыта перед глазами
+            if (!isTabActive) return;
+
+            const needPush = localStorage.getItem('rbi_cloud_dirty') === '1';
+            const needFullPull = localStorage.getItem('rbi_force_full_pull') === '1';
+            const needRemotePoll =
+                localStorage.getItem('rbi_force_remote_poll') === '1' ||
+                (typeof rbiIsRemotePollDue === 'function' && rbiIsRemotePollDue());
+
+            // RBI FIX:
+            // Даже если на устройстве нет локальных изменений, оно должно периодически проверять облако.
+            // Иначе телефон не увидит шаблоны/практики/отчёты, созданные на компьютере.
+            if (window.rbiBgCacheProcessing) {
+                console.log('[Sync] Пропуск автосинхронизации: идёт фоновый кэш файлов');
+                return;
+            }
+
+            if (needPush || needFullPull || needRemotePoll) {
+                window.triggerSync('silent');
             }
         }, 60000);
 
@@ -1975,12 +2094,16 @@ window.triggerSync = async function (mode = 'silent') {
     // Экономия Supabase: тихую синхронизацию не запускаем без изменений
     const hasNeverPulled = !localStorage.getItem('rbi_sync_last_pull_at');
     const forcePullRequested = localStorage.getItem('rbi_force_full_pull') === '1';
+    const forceRemotePollRequested = localStorage.getItem('rbi_force_remote_poll') === '1';
+    const remotePollDue = typeof rbiIsRemotePollDue === 'function' && rbiIsRemotePollDue();
 
     if (
         mode === 'silent' &&
         localStorage.getItem('rbi_cloud_dirty') !== '1' &&
         !hasNeverPulled &&
-        !forcePullRequested
+        !forcePullRequested &&
+        !forceRemotePollRequested &&
+        !remotePollDue
     ) {
         return;
     }
@@ -2677,13 +2800,12 @@ if (window.RbiStorageManager) {
                 typeof PhotoManager !== 'undefined' &&
                 typeof PhotoManager.downloadForOffline === 'function'
             ) {
-                setTimeout(() => {
-                    Array.from(pulledInspectionPhotoUrls).slice(0, 150).forEach(url => {
-                        PhotoManager.downloadForOffline(url).catch(e =>
-                            console.warn('[Sync] Фото проверки не закэшировано:', e)
-                        );
-                    });
-                }, 1000);
+                if (pulledInspectionPhotoUrls.size > 0) {
+                    rbiEnqueueCloudFilesForCache(
+                        Array.from(pulledInspectionPhotoUrls).slice(0, 80),
+                        'inspection_photo'
+                    );
+                }
             }
 
             for (const h of cloudInspections) {
@@ -3053,10 +3175,12 @@ if (window.RbiStorageManager) {
                             } else {
                                 await dbPut(cType.store, obj);
 
-                                // RBI FIX: после pull кэшируем файлы/фото справочников для офлайн-работы.
-                                rbiCacheObjectCloudFilesForOffline(cType.type, obj).catch(e =>
-                                    console.warn('[Sync] Не удалось кэшировать файлы объекта:', cType.type, e)
-                                );
+                                // RBI FIX: не скачиваем файлы прямо во время синхронизации.
+                                // Только ставим ссылки в лёгкую фоновую очередь.
+                                if (['practice', 'etalon', 'custom_twi_card', 'custom_node', 'custom_doc', 'user_template'].includes(cType.type)) {
+                                    const urls = rbiCollectCloudStorageUrls(obj, 20);
+                                    rbiEnqueueCloudFilesForCache(urls, cType.type);
+                                }
 
                                 const idx = window[cType.memory].findIndex(x => String(x.id) === String(obj.id));
                                 if (idx >= 0) window[cType.memory][idx] = obj;
@@ -3291,7 +3415,7 @@ if (window.RbiStorageManager) {
             }
             // Пользовательские Чек-листы (Объекты)
             const templatePullSince = needFullReferencePull ? '' : lastPullAt;
-const templateObjects = await window.pullCloudObjects('user_template', templatePullSince, mode);
+            const templateObjects = await window.pullCloudObjects('user_template', templatePullSince, mode);
             if (templateObjects && templateObjects.length > 0 && typeof userTemplates !== 'undefined') {
                 for (const obj of templateObjects) {
                     const localExisting = await dbGet('user_templates', obj.id);
@@ -3832,16 +3956,45 @@ const templateObjects = await window.pullCloudObjects('user_template', templateP
                 } else {
                     const lastPushTime = lastPushAt ? new Date(lastPushAt).getTime() : 0;
                     const filterNew = (arr) => arr.filter(i => {
-                        // 1. Бронебойное правило: если статус не синхронизирован - берем 100%
-                        if (i.syncStatus === 'not_synced' || i.sync_status === 'not_synced') return true;
+                        if (!i) return false;
 
-                        // 2. Стандартные правила
-                        if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
+                        const status = i.syncStatus || i.sync_status || '';
+                        const source = i.source || '';
+
+                        // Явно грязные записи отправляем всегда.
+                        if (status === 'not_synced') return true;
+                        if (status === 'blocked') return true;
+                        if (source === 'local') return true;
+
+                        // Облачное эхо не отправляем обратно.
+                        if (source === 'cloud' || status === 'synced') return false;
+
+                        // Если это локальный объект без статуса — считаем его кандидатом на отправку.
+                        // Это важно для шаблонов, практик и отчетов, если при создании им не поставили syncStatus.
+                        if (!source && !status) return true;
+
                         if (!lastPushTime) return true;
-                        const t = new Date(i.updatedAt || i.updated_at || i.date || i.createdAt || 0).getTime();
-                        return t >= lastPushTime;
-                    });
 
+                        const rawTime =
+                            i.updatedAt ||
+                            i.updated_at ||
+                            i.modifiedAt ||
+                            i.modified_at ||
+                            i.createdAt ||
+                            i.created_at ||
+                            i.generated_at ||
+                            i.date ||
+                            i.timestamp ||
+                            0;
+
+                        const t = new Date(rawTime).getTime();
+
+                        // Если даты нет, лучше один раз попробовать отправить, чем потерять объект.
+                        if (!t || Number.isNaN(t)) return true;
+
+                        // Небольшой запас 5 секунд на рассинхрон часов/округление времени.
+                        return t >= (lastPushTime - 5000);
+                    });
                     // Единая функция отправки для всех новых таблиц
                     const syncTableData = async (storeName, memoryArrayName, objectType) => {
                         if (typeof dbGetAll !== 'function') return;
@@ -3859,6 +4012,26 @@ const templateObjects = await window.pullCloudObjects('user_template', templateP
                         // ---------------------------------------------------------------------------------
 
                         for (const obj of items) {
+                            // RBI FIX: страхуем объекты, созданные на разных браузерах.
+                            // Если конструктор шаблона/практики/отчета не поставил служебные поля,
+                            // синхронизатор сам доводит объект до отправляемого состояния.
+                            if (!obj.id) {
+                                obj.id = `${objectType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                            }
+
+                            if (!obj.updatedAt && !obj.updated_at) {
+                                obj.updatedAt = new Date().toISOString();
+                            }
+
+                            if (!obj.source) {
+                                obj.source = 'local';
+                            }
+
+                            if (!obj.syncStatus && !obj.sync_status) {
+                                obj.syncStatus = 'not_synced';
+                                obj.sync_status = 'not_synced';
+                            }
+
                             // bucketName внутри функции pushCloudObject переопределится сам на правильный
                             const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
                             const registryBucketMap = {
@@ -3992,6 +4165,20 @@ const templateObjects = await window.pullCloudObjects('user_template', templateP
 
                     for (const rep of reportsToPush) {
                         try {
+                            // RBI FIX: отчеты, созданные в разных браузерах, должны гарантированно попадать в push.
+                            if (!rep.updatedAt && !rep.updated_at) {
+                                rep.updatedAt = new Date().toISOString();
+                                rep.updated_at = rep.updatedAt;
+                            }
+
+                            if (!rep.source) {
+                                rep.source = 'local';
+                            }
+
+                            if (!rep.syncStatus && !rep.sync_status) {
+                                rep.syncStatus = 'not_synced';
+                                rep.sync_status = 'not_synced';
+                            }
                             if (!rep.is_deleted && rep.file_blob && (!rep.file_url || rep.sync_status !== 'synced')) {
                                 // 1. Загружаем PDF в бакет
                                 const fileName = `${rep.id}.pdf`;
@@ -4423,7 +4610,9 @@ const templateObjects = await window.pullCloudObjects('user_template', templateP
         if (pushErrors === 0 && pullErrors === 0 && referencePullErrors === 0 && referenceOk) {
             localStorage.setItem('rbi_cloud_dirty', '0');
             localStorage.setItem('rbi_sync_last_pull_at', doneAt);
+            localStorage.setItem('rbi_sync_last_remote_check_at', String(Date.now()));
             localStorage.removeItem('rbi_force_full_pull');
+            localStorage.removeItem('rbi_force_remote_poll');
         } else {
             localStorage.setItem('rbi_force_full_pull', '1');
             localStorage.setItem('rbi_cloud_dirty', '1');
@@ -4504,64 +4693,24 @@ const templateObjects = await window.pullCloudObjects('user_template', templateP
             console.warn('[Sync] Ошибка авто-очистки удаленных записей:', e);
         }
         // --- Фоновое кэширование облачных файлов (не чаще раза в 5 мин) ---
-        if (typeof window.downloadMissingCloudFiles === 'function' && appSettings.autoCacheCloudFiles) {
+        // --- Лёгкое фоновое кэширование облачных файлов ---
+        if (appSettings.autoCacheCloudFiles !== false) {
             const now = Date.now();
-            if (!window._lastBgDownloadTime || (now - window._lastBgDownloadTime) > 300000) {
-                window._lastBgDownloadTime = now;
-                setTimeout(async () => {
-                    const isFirstFullPull =
-                        localStorage.getItem('rbi_force_full_pull') === '1' ||
-                        !localStorage.getItem('rbi_sync_last_pull_at');
+            const lastCacheAt = Number(localStorage.getItem('rbi_last_bg_cache_at') || 0);
 
-                    const isManual = mode === 'manual';
-                    const showProgress = isManual || isFirstFullPull;
+            // Не чаще одного раза в 10 минут, чтобы не замедлять обычную синхронизацию.
+            if (!lastCacheAt || (now - lastCacheAt) > 10 * 60 * 1000 || mode === 'manual') {
+                localStorage.setItem('rbi_last_bg_cache_at', String(now));
 
-                    if (typeof window.downloadMissingCloudFiles === 'function') {
-                        await window.downloadMissingCloudFiles(!showProgress);
-                    }
-
-                    if (typeof window.rbi_reloadReferenceMemory === 'function') {
-                        await window.rbi_reloadReferenceMemory();
-                    }
-
-                    // ВАЖНО: активную вкладку при автосинхронизации НЕ трогаем
-                    const activeTab = document.querySelector('.view-section.active')?.id || '';
-
-                    if (mode === 'silent') {
-                        if (window.syncDirtyFlags) {
-                            window.syncDirtyFlags.reference = true;
-                            window.syncDirtyFlags.history = true;
-                            window.syncDirtyFlags.analytics = true;
-                            window.syncDirtyFlags.tasks = true;
-                        }
-                        return;
-                    }
-
-                    // Ручная синхронизация может обновить только НЕактивные экраны
-                    // Обновляем UI только если нет открытых окон поверх
-                    if (!document.body.classList.contains('modal-open')) {
-                        if (activeTab !== 'tab-reference') {
-                            if (typeof renderTwiList === 'function') renderTwiList();
-                            if (typeof renderDocsList === 'function') renderDocsList();
-                            if (typeof renderNodesList === 'function') renderNodesList();
-                        }
-
-                        if (activeTab !== 'tab-audit' && !currentTemplateKey && typeof renderSelector === 'function') {
-                            renderSelector();
-                        }
-
-                        if (activeTab !== 'tab-analytics' && typeof updateAllDynamicFilters === 'function') {
-                            updateAllDynamicFilters();
-                        }
-                    }
-
-                    if (activeTab !== 'tab-analytics' && typeof updateAllDynamicFilters === 'function') {
-                        updateAllDynamicFilters();
+                setTimeout(() => {
+                    if (typeof rbiProcessBgCacheQueue === 'function') {
+                        rbiProcessBgCacheQueue({
+                            maxPerRun: mode === 'manual' ? 30 : 12
+                        });
                     }
                 }, 3000);
             }
         }
-
         // ИСПРАВЛЕНИЕ: Честный подсчет реально отправленных и полученных объектов
         const pulledChecks = cloudInspections ? cloudInspections.length : 0;
         const pushedChecks = actuallyPushedChecks;
