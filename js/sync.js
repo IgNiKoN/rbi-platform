@@ -3469,13 +3469,27 @@ if (window.RbiStorageManager) {
                 currentHistory = currentHistory.filter(i => i.inspectorName === iName);
             }
 
-            // Блокируем "эхо" облачных задач
+            // Блокируем "эхо" облачных проверок, но не теряем старые несинхронизированные записи
             currentHistory = currentHistory.filter(i => {
-                if (i.source === 'cloud' || i.syncStatus === 'synced' || i.sync_status === 'synced') return false;
+                if (!i) return false;
+
+                const status = i.syncStatus || i.sync_status || '';
+                const source = i.source || '';
+
+                // Уже синхронизированное облачное эхо не отправляем обратно
+                if (source === 'cloud' || status === 'synced') return false;
+
+                // Любые несинхронизированные / заблокированные / локальные проверки отправляем всегда,
+                // даже если они старше последней синхронизации.
+                if (status !== 'synced') return true;
+                if (source === 'local') return true;
+
                 if (!lastPushAt) return true;
+
                 const lastPushTime = new Date(lastPushAt).getTime();
                 const t = new Date(i.updatedAt || i.updated_at || i.date || 0).getTime();
-                return t >= lastPushTime;
+
+                return !t || Number.isNaN(t) || t >= lastPushTime;
             });
 
             if (currentHistory.length > 0) {
@@ -3817,17 +3831,26 @@ if (window.RbiStorageManager) {
 
                 const lastPushTimeTasks = lastPushAt ? new Date(lastPushAt).getTime() : 0;
 
-                // ИСПРАВЛЕНИЕ: Отправляем только РУЧНЫЕ задачи, которые ИЗМЕНИЛИСЬ локально
+                // ИСПРАВЛЕНИЕ: Отправляем ручные локальные / несинхронизированные задачи,
+                // даже если они старше последней синхронизации
                 tasks = tasks.filter(t => {
+                    if (!t) return false;
                     if (t.type !== 'manual') return false;
 
-                    // Блокируем "эхо" облачных задач
-                    if (t.source === 'cloud' || t.syncStatus === 'synced' || t.sync_status === 'synced') {
+                    const status = t.syncStatus || t.sync_status || '';
+                    const source = t.source || '';
+
+                    // Уже синхронизированное облачное эхо не отправляем обратно
+                    if (source === 'cloud' || status === 'synced') {
                         return false;
                     }
 
+                    // Старые несинхронизированные задачи отправляем всегда
+                    if (status !== 'synced') return true;
+                    if (source === 'local') return true;
+
                     const tTime = new Date(t.updatedAt || t.updated_at || t.date || t.createdAt || 0).getTime();
-                    return tTime === 0 || tTime >= lastPushTimeTasks;
+                    return tTime === 0 || Number.isNaN(tTime) || tTime >= lastPushTimeTasks;
                 });
                 const taskPushRole = window.RbiRoles ? window.RbiRoles.getCurrentRole() : 'guest';
 
