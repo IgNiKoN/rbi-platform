@@ -1,0 +1,569 @@
+/* Файл: js/services/sync/sync-connection.actions.js — перенесено из js/sync.js без изменения логики */
+window.pushObjectRequestToCloud = async function (requestedProject) {
+    if (
+        !requestedProject ||
+        !window.supabaseClient ||
+        !window.syncConfig ||
+        !window.syncConfig.enabled ||
+        !window.syncConfig.projectCode ||
+        !window.syncConfig.engineerName
+    ) {
+        return false;
+    }
+
+    const pCode = window.syncConfig.projectCode;
+    const iName = window.syncConfig.engineerName;
+    const nowIso = new Date().toISOString();
+
+    // 1. ЗАЯВКИ ИЗ ПК СК (На пополнение глобального справочника объектов)
+    if (requestedProject.source === 'sk_import' || requestedProject.request_type === 'directory') {
+        const rawNameStr = String(requestedProject.raw_name || requestedProject.display_name || '').trim();
+        if (!rawNameStr) return false;
+
+        // КРИТИЧЕСКИЙ ФИКС: Делаем ID постоянным на основе имени. 
+        // Теперь при повторной загрузке локальная база просто перезапишет старую заявку, а не создаст дубль!
+        const safeIdPart = rawNameStr.toLowerCase().replace(/[^a-zа-я0-9]/gi, '').substring(0, 20);
+        const deterministicId = 'req_obj_' + pCode + '_' + safeIdPart;
+
+        const payload = {
+            id: deterministicId,
+            project_code: pCode,
+            raw_name: rawNameStr,
+            suggested_canonical_key: requestedProject.canonical_key || '',
+            source_table: 'sk_records',
+            source_record_id: requestedProject.source_record_id || '',
+            created_by: iName,
+            status: 'pending',
+            admin_comment: 'Новый объект найден при загрузке ПК СК',
+            created_at: requestedProject.created_at || nowIso,
+            updated_at: nowIso
+        };
+
+        if (!payload.raw_name) return false;
+
+        // СНАЧАЛА Отправляем в облако (чтобы локальная БД не добавила лишние поля _deleted)
+        const { error } = await window.supabaseClient.from('object_normalization_queue').upsert(payload, { onConflict: 'project_code,raw_name' });
+        if (error) console.warn('Ошибка отправки заявки на объект:', error);
+
+        // ПОСЛЕ отправки сохраняем локально
+        if (typeof dbPut === 'function') {
+            const localPayload = { ...payload }; // Клонируем от греха подальше
+            await dbPut('object_normalization_queue', localPayload);
+        }
+
+        return true;
+    }
+
+    // 2. ЗАЯВКИ ОТ ИНЖЕНЕРА (На привязку инженера к объекту)
+    const stableInspectorId = `${pCode}_${iName}`.replace(/\s+/g, '_');
+
+    const { data: profileRows } = await window.supabaseClient
+        .from('rbi_engineer_profiles')
+        .select('inspector_id, inspector_name, engineer_name, project_code, settings, assigned_projects, role, cloud_status')
+        .eq('inspector_id', stableInspectorId)
+        .limit(1);
+
+    const existingProfile = profileRows && profileRows.length > 0 ? profileRows[0] : null;
+    const currentSettings = existingProfile?.settings || {};
+    const oldRequests = Array.isArray(currentSettings.requestedProjects) ? currentSettings.requestedProjects : [];
+
+    const existsCloud = oldRequests.some(p =>
+        p.raw_name === requestedProject.raw_name ||
+        (requestedProject.canonical_key && p.canonical_key === requestedProject.canonical_key)
+    );
+
+    const newRequests = existsCloud ? oldRequests : [...oldRequests, requestedProject];
+    const newSettings = { ...currentSettings, requestedProjects: newRequests };
+
+    const payload = {
+        inspector_id: stableInspectorId,
+        inspector_name: existingProfile?.inspector_name || iName,
+        engineer_name: existingProfile?.engineer_name || iName,
+        project_code: pCode,
+        role: existingProfile?.role || appSettings?.userRole || 'guest',
+        cloud_status: existingProfile?.cloud_status || appSettings?.cloudStatus || 'pending',
+        assigned_projects: existingProfile?.assigned_projects || appSettings?.assignedProjects || [],
+        settings: newSettings,
+        updated_at: nowIso,
+        last_seen_at: nowIso
+    };
+
+    await window.supabaseClient.from('rbi_engineer_profiles').upsert(payload, { onConflict: 'inspector_id' });
+    return true;
+};
+
+window.addAssignedProject = async function () {
+    const input = document.getElementById('new-assigned-project');
+    const rawValue = input?.value?.trim() || '';
+    if (!rawValue) return;
+
+    if (typeof appSettings === 'undefined') return;
+
+    if (!Array.isArray(appSettings.assignedProjects)) {
+        appSettings.assignedProjects = [];
+    }
+
+    if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+        appSettings.pendingAssignedProjects = [];
+    }
+
+    let canonicalKey = '';
+    let displayName = rawValue;
+    let requestStatus = 'pending';
+
+    // Пытаемся сразу сопоставить объект со справочником
+    if (typeof ObjectDirectory !== 'undefined' && typeof ObjectDirectory.normalizeProjectName === 'function') {
+        try {
+            const normalized = await ObjectDirectory.normalizeProjectName(rawValue);
+
+            if (
+                normalized &&
+                (
+                    normalized.status === 'matched' ||
+                    normalized.status === 'multiple_matched_auto_best'
+                )
+            ) {
+                canonicalKey = normalized.canonical_key || '';
+                displayName = normalized.display_name || rawValue;
+                requestStatus = 'matched_pending_approval';
+            }
+        } catch (e) {
+            console.warn('[Objects] Не удалось нормализовать объект:', e);
+        }
+    }
+
+    const requestedProject = {
+        raw_name: rawValue,
+        canonical_key: canonicalKey,
+        display_name: displayName,
+        status: requestStatus,
+        created_at: new Date().toISOString()
+    };
+
+    const existsLocal = appSettings.pendingAssignedProjects.some(p =>
+        p.raw_name === rawValue ||
+        (canonicalKey && p.canonical_key === canonicalKey)
+    );
+
+    if (!existsLocal) {
+        appSettings.pendingAssignedProjects.push(requestedProject);
+    }
+
+    // ВАЖНО:
+    // Пока пользователь pending/guest, это НЕ подтверждённое право.
+    // Поэтому в assignedProjects не кладём, если статус не approved.
+    const cloudStatus = appSettings.cloudStatus || 'offline';
+
+    // Убрано автоматическое добавление в зеленый список (assignedProjects).
+    // Теперь любой добавленный объект будет оранжевым, пока его не подтвердит Администратор.
+
+    if (typeof dbPut === 'function') {
+        await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+    }
+
+    // Если облако подключено — записываем заявку в профиль пользователя
+    try {
+        if (typeof window.pushObjectRequestToCloud === 'function') {
+            // ВАЖНАЯ ПРАВКА: Если статус matched (выбран из базы), мы передаем флаг, 
+            // чтобы Supabase НЕ создавал новую сущность в object_normalization_queue
+            if (requestStatus.includes('matched')) {
+                requestedProject.request_type = 'profile_only'; // Только привязка
+            } else {
+                requestedProject.request_type = 'directory'; // Создание нового в справочнике
+            }
+            await window.pushObjectRequestToCloud(requestedProject);
+        }
+    } catch (e) {
+        console.warn('[Objects] Не удалось отправить заявку на объект в профиль:', e);
+        localStorage.setItem('rbi_cloud_dirty', '1');
+    }
+
+    input.value = '';
+
+    if (typeof ObjectDirectory !== 'undefined') {
+        ObjectDirectory.initUI();
+    }
+
+    if (typeof window.renderSyncUI === 'function') {
+        window.renderSyncUI();
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('🏢 Объект запрошен: ' + displayName);
+    }
+};
+
+window.removeAssignedProject = async function (val) {
+    if (typeof appSettings !== 'undefined' && appSettings.assignedProjects) {
+        appSettings.assignedProjects = appSettings.assignedProjects.filter(p => p !== val);
+        if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+
+        // Если удалили все проекты - нужно вернуть шапке обычный текстовый input
+        const projInputContainer = document.getElementById('inp-project')?.parentElement;
+        if (appSettings.assignedProjects.length === 0 && projInputContainer) {
+            projInputContainer.innerHTML = `<input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="Объект *" autocomplete="off">
+            <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
+            </span>`;
+        } else {
+            if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
+        }
+
+        window.renderSyncUI();
+    }
+
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    if (typeof triggerSync === 'function') triggerSync('silent');
+};
+
+window.initCloudConnection = async function () {
+    const name = document.getElementById('sync-name').value.trim();
+    const code = document.getElementById('sync-code').value.trim();
+    const pin = document.getElementById('sync-pin').value.trim();
+
+    if (!name || !code) return safeToast("⚠️ Имя и Код проекта обязательны!");
+    if (!pin || pin.length < 4) return safeToast("⚠️ Укажите PIN минимум 4 цифры!");
+    if (!window.supabaseClient) return alert("❌ Ошибка: Ключи базы данных не настроены");
+
+    const { data: projData } = await window.supabaseClient
+        .from('allowed_projects')
+        .select('code')
+        .eq('code', code)
+        .limit(1);
+
+    if (!projData || projData.length === 0) {
+        return safeToast("❌ Ошибка: Такого кода проекта не существует!");
+    }
+
+    const hashedPin = await window.hashPin(pin);
+    const stableInspectorId = `${code}_${name}`.replace(/\s+/g, '_');
+
+    let authInfo = null;
+
+    try {
+        authInfo = await window.rbiEnsureAuthSession(code, name, pin);
+    } catch (authError) {
+        console.error('[Auth] Ошибка входа:', authError);
+        return safeToast("❌ Ошибка входа в облако: " + authError.message);
+    }
+
+    const authUserId = authInfo.user.id;
+    const authEmail = authInfo.email;
+    const nowIso = new Date().toISOString();
+
+    // Ищем профиль уже по project_code + inspector_id.
+    // Это стабильнее, чем inspector_name.
+    const { data, error } = await window.supabaseClient
+        .from('rbi_engineer_profiles')
+        .select('inspector_id, auth_user_id, auth_email, pin_hash, role, cloud_status, assigned_projects, contractor_name, assigned_contractor, settings')
+        .eq('project_code', code)
+        .eq('inspector_id', stableInspectorId)
+        .limit(1);
+
+    if (error) {
+        console.error('[Sync] Ошибка проверки профиля:', error);
+        return safeToast("❌ Ошибка проверки профиля пользователя");
+    }
+
+    // Если профиль есть и PIN не совпал — просим правильный PIN.
+    // Это оставляем как дополнительную защиту внутри приложения.
+    if (data && data.length > 0 && data[0].pin_hash && data[0].pin_hash !== hashedPin) {
+        window.showPinPromptModal(name, code, data[0].pin_hash);
+        return;
+    }
+
+    // Если профиля ещё нет — создаём заявку guest / pending.
+    if (!data || data.length === 0) {
+        const newProfile = {
+            inspector_id: stableInspectorId,
+            auth_user_id: authUserId,
+            auth_email: authEmail,
+            inspector_name: name,
+            engineer_name: name,
+            project_code: code,
+            pin_hash: hashedPin || '',
+            role: 'guest',
+            cloud_status: 'pending',
+            assigned_projects: [],
+            contractor_name: '',
+            assigned_contractor: '',
+            settings: {
+                assignedProjects: [],
+                createdFromApp: true
+            },
+            last_auth_at: nowIso,
+            last_seen_at: nowIso,
+            updated_at: nowIso
+        };
+
+        const { error: insertError } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .upsert(newProfile, { onConflict: 'inspector_id' });
+
+        if (insertError) {
+            console.error('[Sync] Ошибка создания профиля:', insertError);
+            return safeToast("❌ Не удалось создать заявку на доступ");
+        }
+
+        if (typeof appSettings !== 'undefined') {
+            appSettings.userRole = 'guest';
+            appSettings.cloudStatus = 'pending';
+            appSettings.assignedProjects = [];
+            appSettings.assignedContractor = '';
+            appSettings.contractorName = '';
+
+            if (typeof dbPut === 'function') {
+                await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+            }
+        }
+
+        safeToast("✅ Заявка отправлена. Ожидает подтверждения администратора.");
+    }
+
+    // Если профиль уже есть — связываем его с auth.uid(), если ещё не связан.
+    if (data && data.length > 0) {
+        const profile = data[0];
+
+        const updatePayload = {
+            auth_user_id: authUserId,
+            auth_email: authEmail,
+            last_auth_at: nowIso,
+            last_seen_at: nowIso,
+            updated_at: nowIso
+        };
+
+        const { error: updateAuthError } = await window.supabaseClient
+            .from('rbi_engineer_profiles')
+            .update(updatePayload)
+            .eq('project_code', code)
+            .eq('inspector_id', stableInspectorId);
+
+        if (updateAuthError) {
+            console.error('[Sync] Ошибка связи профиля с Auth:', updateAuthError);
+            return safeToast("❌ Не удалось связать профиль с Auth");
+        }
+
+        if (typeof appSettings !== 'undefined') {
+            appSettings.userRole = profile.role || 'guest';
+            appSettings.cloudStatus = profile.cloud_status || 'pending';
+
+            appSettings.assignedContractor =
+                profile.contractor_name ||
+                profile.assigned_contractor ||
+                '';
+
+            appSettings.contractorName = appSettings.assignedContractor;
+
+            const profileCloudStatus = profile.cloud_status || 'pending';
+
+            if (profileCloudStatus === 'approved') {
+                if (Array.isArray(profile.assigned_projects)) {
+                    appSettings.assignedProjects = profile.assigned_projects;
+                } else if (profile.settings && Array.isArray(profile.settings.assignedProjects)) {
+                    appSettings.assignedProjects = profile.settings.assignedProjects;
+                } else {
+                    appSettings.assignedProjects = [];
+                }
+
+                appSettings.pendingAssignedProjects = [];
+            } else {
+                if (!Array.isArray(appSettings.assignedProjects)) {
+                    appSettings.assignedProjects = [];
+                }
+
+                if (profile.settings && Array.isArray(profile.settings.requestedProjects)) {
+                    appSettings.pendingAssignedProjects = profile.settings.requestedProjects;
+                } else if (!Array.isArray(appSettings.pendingAssignedProjects)) {
+                    appSettings.pendingAssignedProjects = [];
+                }
+            }
+
+            if (typeof dbPut === 'function') {
+                await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+            }
+        }
+    }
+
+    window.applySyncConnect(name, code, hashedPin);
+};
+
+window.showPinPromptModal = function (name, code, correctHash) {
+    const html = `
+    <div id="sync-pin-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-xs p-6 rounded-2xl shadow-2xl text-center">
+            <h3 class="font-black text-[13px] uppercase text-slate-800 mb-4">Введите PIN-код</h3>
+            <input type="password" id="sync-pin-verify" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-center text-xl font-black mb-4" placeholder="••••" maxlength="4" inputmode="numeric">
+            <div class="flex gap-2">
+                <button onclick="document.getElementById('sync-pin-modal').remove()" class="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-[10px] uppercase">Отмена</button>
+                <button onclick="window.verifySyncPin('${name}', '${code}', '${correctHash}')" class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black text-[10px] uppercase">Войти</button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+};
+
+window.verifySyncPin = async function (name, code, correctHash) {
+    const input = document.getElementById('sync-pin-verify').value;
+    const inputHash = await window.hashPin(input);
+    if (inputHash === correctHash) {
+        document.getElementById('sync-pin-modal').remove();
+        window.applySyncConnect(name, code, inputHash);
+    } else safeToast("❌ Неверный PIN-код!");
+};
+
+// Функция глубокой очистки проектных данных
+window.clearProjectLocalData = async function () {
+    if (typeof showToast === 'function') showToast("🧹 Очистка данных старого проекта...");
+
+    // Очищаем таблицы проектных данных в IndexedDB
+    await dbClear('app_history');
+    await dbClear('rbi_tasks');
+    await dbClear('rbi_schedule_stages');
+    await dbClear('rbi_meetings');
+    await dbClear('rbi_interventions');
+    await dbClear('rbi_etalon_acts');
+    await dbClear('rbi_fmea');
+    await dbClear('sk_records');
+    await dbClear('sk_imports');
+
+    // Очищаем локальные массивы (ОЗУ)
+    if (typeof contractorArray !== 'undefined') window.contractorArray = [];
+    if (typeof etalonActsArray !== 'undefined') window.etalonActsArray = [];
+    if (typeof window.rbi_tasksData !== 'undefined') window.rbi_tasksData = [];
+    if (typeof window.rbi_scheduleData !== 'undefined') window.rbi_scheduleData = [];
+    if (typeof window.rbi_meetingsData !== 'undefined') window.rbi_meetingsData = [];
+    if (typeof window.rbi_interventionsData !== 'undefined') window.rbi_interventionsData = [];
+    if (typeof window.rbi_fmeaRecords !== 'undefined') window.rbi_fmeaRecords = [];
+    if (typeof window.skRecords !== 'undefined') window.skRecords = [];
+
+    // Сброс плана и статусов
+    if (typeof weeklyPlanData !== 'undefined') weeklyPlanData = { weekId: null, tasks: [], completed: false };
+    if (typeof contractorStatuses !== 'undefined') contractorStatuses = {};
+
+    // Очищаем кэш автозаполнения инпутов
+    localStorage.removeItem('smart_input_cache');
+
+    // Сброс мульти-фильтров
+    if (window.RBI && window.RBI.services && window.RBI.services.analytics) {
+        window.RBI.services.analytics.resetAnalyticsFilters();
+    } else if (typeof activeMultiFilters !== 'undefined') {
+        activeMultiFilters = {
+            history: { project: [], contractor: [], inspector: [] },
+            analytics: { project: [], contractor: [], inspector: [], template: [] }
+        };
+    }
+
+    if (typeof showToast === 'function') showToast("✅ Локальные данные очищены");
+};
+
+window.applySyncConnect = async function (name, code, hashedPin) {
+    const oldCode = window.syncConfig.projectCode;
+
+    // УМНАЯ ПРОВЕРКА: Если код объекта изменился
+    if (oldCode && oldCode !== code) {
+        if (confirm(`Вы меняете код проекта с "${oldCode}" на "${code}".\n\nОчистить локальные проектные данные (историю, задачи, встречи) предыдущего объекта?\n\nБиблиотека (TWI, Узлы, Справочники) останется нетронутой.`)) {
+            await window.clearProjectLocalData();
+        }
+    }
+
+    window.syncConfig.enabled = true;
+    window.syncConfig.engineerName = name;
+    window.syncConfig.projectCode = code;
+    window.syncConfig.pinHash = hashedPin;
+
+    // Не сбрасываем режим, если он уже был выбран
+    if (!window.syncConfig.syncMode) window.syncConfig.syncMode = 'personal';
+
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    localStorage.setItem('rbi_cloud_dirty', '1');
+
+    // RBI FIX: при новом подключении/переподключении всегда делаем полный pull из облака
+    localStorage.removeItem('rbi_sync_last_pull_at');
+    localStorage.setItem('rbi_force_full_pull', '1');
+    localStorage.removeItem('rbi_first_full_offline_cache_done');
+    localStorage.removeItem('rbi_first_full_offline_cache_started_at');
+
+    if (typeof appSettings !== 'undefined') {
+        appSettings.engineerName = name;
+
+        // ВАЖНО: не затираем AI-настройки при подключении облака
+        const oldSettings = JSON.parse(localStorage.getItem('rbi_settings_backup') || '{}');
+
+        appSettings.aiEnabled = appSettings.aiEnabled ?? oldSettings.aiEnabled ?? false;
+        appSettings.aiCorpPwd = appSettings.aiCorpPwd || oldSettings.aiCorpPwd || '';
+        appSettings.apiKey = appSettings.apiKey || oldSettings.apiKey || '';
+        appSettings.usePersonalKey = appSettings.usePersonalKey ?? oldSettings.usePersonalKey ?? false;
+
+        localStorage.setItem('rbi_settings_backup', JSON.stringify(appSettings));
+
+        if (typeof dbPut === 'function') {
+            dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+        }
+    }
+
+    const inpInspector = document.getElementById('inp-inspector');
+    if (inpInspector && !inpInspector.value) {
+        inpInspector.value = name;
+    }
+
+    window.renderSyncUI();
+    window.triggerSync('manual');
+};
+
+window.disconnectSync = function () {
+    if (!confirm("Отключить облако? Данные останутся на устройстве.")) return;
+    window.syncConfig.enabled = false;
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    window.renderSyncUI();
+};
+
+window.changeSyncMode = function (mode) {
+    if (mode === 'full' && !window.syncConfig.fullAccessGranted) {
+        document.getElementById('sync-mode-select').value = 'personal';
+        const html = `
+        <div id="sync-full-access-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-center justify-center p-4">
+            <div class="bg-white w-full max-w-xs p-6 rounded-2xl text-center">
+                <h3 class="font-black text-[13px] uppercase mb-4">Пароль руководителя</h3>
+                <input type="password" id="sync-full-access-pin" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-center text-xl font-black mb-4" placeholder="••••••" maxlength="6" inputmode="numeric">
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('sync-full-access-modal').remove()" class="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-[10px] uppercase">Отмена</button>
+                    <button onclick="window.verifyFullAccessPin()" class="flex-1 bg-red-600 text-white py-3 rounded-xl font-black text-[10px] uppercase">Далее</button>
+                </div>
+            </div>
+        </div>`;
+        document.body.insertAdjacentHTML('beforeend', html);
+        return;
+    }
+    window.syncConfig.syncMode = mode;
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    if (mode === 'full') {
+        localStorage.removeItem('rbi_sync_last_pull_at');
+        localStorage.setItem('rbi_force_full_pull', '1');
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        localStorage.removeItem('rbi_first_full_offline_cache_done');
+        localStorage.removeItem('rbi_first_full_offline_cache_started_at');
+    }
+    window.triggerSync('manual');
+};
+
+window.verifyFullAccessPin = async function () {
+    const input = document.getElementById('sync-full-access-pin').value.trim();
+    const inputHash = simpleHash(input);
+    if (inputHash === window.SYNC_FULL_ACCESS_HASH) {
+        document.getElementById('sync-full-access-modal').remove();
+        window.syncConfig.fullAccessGranted = true;
+        window.changeSyncMode('full');
+
+    } else {
+        if (typeof showToast === 'function') showToast("❌ Неверный пароль!");
+    }
+};
+
+window.resetFullAccess = function () {
+    window.syncConfig.fullAccessGranted = false;
+    window.syncConfig.syncMode = 'personal';
+    localStorage.setItem('rbi_sync_config', JSON.stringify(window.syncConfig));
+    window.renderSyncUI();
+};
+
+
