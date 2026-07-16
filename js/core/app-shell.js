@@ -222,6 +222,7 @@
       this.setSelectedModules(selection);
       this.hidePlatformEntry();
       this.renderSidebar();
+      this.renderMobileModuleMenu();
     },
     // Клик по disabled-разделу sidebar (§29 п.9, PLACEHOLDER_MODULES) — единая
     // заглушка "модуль не разработан" (js/core/views.js#showModePlaceholder),
@@ -230,6 +231,68 @@
       if (typeof window.rbi_showSidebarPlaceholder === 'function') {
         window.rbi_showSidebarPlaceholder(moduleId);
       }
+    },
+    // Мобильный переключатель модулей (гамбургер, <768px) — тот же набор
+    // пунктов, что desktop #app-sidebar (renderSidebar выше), но как выпадающий
+    // список вместо icon-rail (на телефоне вертикальная панель слева не
+    // помещается). Единая точка входа взамен старых #app-mode-selector-container
+    // и кнопки "Выбрать модуль" (Platform Entry) — они скрыты на мобильных
+    // через CSS (см. style.css, @media max-width:767px).
+    renderMobileModuleMenu: function () {
+      var container = document.getElementById('mobile-module-menu');
+      if (!container) return;
+
+      var selected = this.getSelectedModules();
+      var roleAllowedIds = getRoleAllowedBusinessModuleIds();
+      var currentMode = (window.AppModeManager && window.AppModeManager.currentMode) || null;
+
+      var labels = { quality: 'Качество', construction: 'Стройконтроль' };
+      var html = '';
+
+      BUSINESS_MODULES.forEach(function (mod) {
+        if (roleAllowedIds.indexOf(mod.id) === -1) return;
+        if (selected.indexOf(mod.id) === -1) return;
+        var isActive = currentMode === mod.id;
+        html += '<button type="button" data-shell-action="selectMobileModule" data-shell-action-arg="' + mod.id + '"' +
+          ' class="w-full text-left px-3.5 py-2.5 text-[11px] font-bold uppercase flex items-center justify-between gap-2 transition-colors ' +
+          (isActive ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-700 dark:text-slate-300') + '">' +
+          '<span>' + (labels[mod.id] || mod.label) + '</span>' +
+          (isActive ? '<span class="text-[8px] font-black text-indigo-500">●</span>' : '') +
+          '</button>';
+      });
+
+      html += '<div class="border-t border-[var(--card-border)] my-1"></div>';
+
+      PLACEHOLDER_MODULES.forEach(function (mod) {
+        html += '<button type="button" data-shell-action="selectMobilePlaceholderModule" data-shell-action-arg="' + mod.id + '"' +
+          ' class="w-full text-left px-3.5 py-2.5 text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500 opacity-70">' +
+          mod.label + '</button>';
+      });
+
+      container.innerHTML = html;
+    },
+    toggleMobileModuleMenu: function () {
+      var menu = document.getElementById('mobile-module-menu');
+      if (!menu) return;
+      var willOpen = menu.classList.contains('hidden');
+      if (willOpen) {
+        this.renderMobileModuleMenu();
+        menu.classList.remove('hidden');
+      } else {
+        menu.classList.add('hidden');
+      }
+    },
+    closeMobileModuleMenu: function () {
+      var menu = document.getElementById('mobile-module-menu');
+      if (menu) menu.classList.add('hidden');
+    },
+    selectMobileModule: function (moduleId) {
+      this.closeMobileModuleMenu();
+      if (typeof window.changeAppMode === 'function') window.changeAppMode(moduleId);
+    },
+    selectMobilePlaceholderModule: function (moduleId) {
+      this.closeMobileModuleMenu();
+      this.showPlaceholderModule(moduleId);
     },
     _updateModeSelectorOptions: function (selectedIds) {
       var select = document.getElementById('app-mode-selector');
@@ -322,10 +385,16 @@
     document.addEventListener('click', function (e) {
       var el = resolveActionElement(e.target);
       if (el) dispatch(el);
+      // Закрываем мобильное меню модулей при клике вне его самого/кнопки —
+      // тот же паттерн, что для стандартных выпадающих select в проекте.
+      if (!e.target.closest('.mobile-module-menu-wrap')) {
+        ShellService.closeMobileModuleMenu();
+      }
     }, true);
   }
   bindShellActionDelegation();
   ShellService.renderSidebar();
+  ShellService.renderMobileModuleMenu();
 
   console.log('[ShellService] app-shell.js loaded');
 }());

@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '18.35.0';
-const SW_VERSION = '18.37.0';
+const APP_VERSION = '18.38.0';
+const SW_VERSION = '18.40.0';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -177,6 +177,9 @@ const urlsToCache = [
   './js/modules/quality/features/etalon/etalon.render.js',
   './js/modules/quality/features/etalon/etalon-v18.render.js',
   './js/modules/quality/features/etalon/etalon-v18.actions.js',
+  './js/modules/quality/features/etalon/etalon-v18b.render.js',
+  './js/modules/quality/features/etalon/etalon-v18b.actions.js',
+  './js/modules/quality/features/etalon/etalon-v18b.frame.html',
 
   // Фаза 19 — AI Module
   './js/modules/quality/features/ai/ai.module.js',

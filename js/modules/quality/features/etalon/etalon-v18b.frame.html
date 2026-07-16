@@ -922,7 +922,9 @@ textarea::placeholder {
 </head>
 <body>
 <div class="toolbar">
-<button onclick="saveForm()" type="button">Сохранить данные</button>
+<button onclick="rbiSaveActToBridge(false)" type="button" style="background:#4f46e5;color:#fff;font-weight:700;">💾 Сохранить в RBI</button>
+<button onclick="rbiSaveActToBridge(true)" type="button" style="background:#16a34a;color:#fff;font-weight:700;">✓ Сохранить и закрыть</button>
+<button onclick="saveForm()" type="button">Сохранить данные (браузер)</button>
 <button onclick="loadForm()" type="button">Загрузить данные</button>
 <button onclick="downloadHTML()" type="button">Скачать заполненный HTML</button>
 <button onclick="clearForm()" type="button">Очистить форму</button>
@@ -4861,6 +4863,277 @@ prepareZoomableImages();
 
     syncPrintFields();
     restoreScreenFields();
+})();
+</script>
+
+<script>
+/* ============================================================
+   МОСТ ИНТЕГРАЦИИ С ПЛАТФОРМОЙ RBI (Акт-Эталон Бета-2, только ПК)
+   Без изменения оригинальной логики выше — только сохранение
+   структурированных данных формы в родительское окно платформы
+   через postMessage и приём префилла/загрузки существующего акта.
+   ============================================================ */
+(function () {
+    "use strict";
+
+    function readOnePagerState() {
+        var content = document.getElementById("regulationContent");
+        return {
+            html: content ? content.innerHTML : "",
+            hasFile: content ? content.classList.contains("has-file") : false
+        };
+    }
+
+    function writeOnePagerState(state) {
+        var content = document.getElementById("regulationContent");
+        if (!content || !state) return;
+        if (typeof state.html === "string") content.innerHTML = state.html;
+        content.classList.toggle("has-file", !!state.hasFile);
+    }
+
+    function collectPhotosFromGrid() {
+        var cards = document.querySelectorAll("#photoGrid .photo-card");
+        var photos = [];
+        cards.forEach(function (card) {
+            var img = card.querySelector(".photo-preview img");
+            var desc = card.querySelector(".photo-data input[type='text']");
+            var date = card.querySelector(".photo-inspection-date");
+            photos.push({
+                photo: img ? img.getAttribute("src") : "",
+                desc: desc ? desc.value : "",
+                date: date ? date.value : ""
+            });
+        });
+        return photos;
+    }
+
+    // Простые таблицы (документы/решения/материалы/испытания/замечания/приложения) —
+    // ячейки без data-атрибутов, порядок колонок фиксирован в разметке шаблона.
+    var PLAIN_TABLES = {
+        documentsTable: ["doc", "designation"],
+        solutionsTable: ["element", "solution"],
+        materialsTable: ["name", "mark", "manufacturer", "qualityDoc", "color"],
+        testsTable: ["type", "method", "result"],
+        remarksTable: ["remark", "responsible", "deadline", "closure"],
+        attachmentsTable: ["name", "qty", "note"]
+    };
+
+    function collectPlainTable(tableId, fields) {
+        var tbody = document.querySelector("#" + tableId + " tbody");
+        if (!tbody) return [];
+        return Array.prototype.map.call(tbody.rows, function (row) {
+            var obj = {};
+            fields.forEach(function (f, i) {
+                var cell = row.cells[i + 1]; // cells[0] — номер строки
+                obj[f] = cell ? cell.textContent.trim() : "";
+            });
+            return obj;
+        }).filter(function (o) { return Object.keys(o).some(function (k) { return o[k]; }); });
+    }
+
+    function restorePlainTable(tableId, fields, rows) {
+        var tbody = document.querySelector("#" + tableId + " tbody");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+        (rows || []).forEach(function (r, idx) {
+            var tr = document.createElement("tr");
+            var numCell = document.createElement("td");
+            numCell.className = "center";
+            numCell.textContent = idx + 1;
+            tr.appendChild(numCell);
+            fields.forEach(function (f) {
+                var td = document.createElement("td");
+                td.contentEditable = "true";
+                td.textContent = (r && r[f]) || "";
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        if (!rows || !rows.length) {
+            if (typeof addNumberedRow === "function") addNumberedRow(tableId, fields.length + 1);
+        }
+    }
+
+    function collectControlTable() {
+        var tbody = document.querySelector("#controlTable tbody");
+        if (!tbody) return [];
+        return Array.prototype.map.call(tbody.rows, function (row) {
+            var checkedRadio = row.querySelector("input[type='radio']:checked");
+            return {
+                criterion: row.cells[1] ? row.cells[1].textContent.trim() : "",
+                basis: row.cells[2] ? row.cells[2].textContent.trim() : "",
+                requirement: row.cells[3] ? row.cells[3].textContent.trim() : "",
+                actual: row.cells[4] ? row.cells[4].textContent.trim() : "",
+                compliance: checkedRadio ? checkedRadio.value : ""
+            };
+        }).filter(function (c) { return c.criterion || c.basis || c.requirement || c.actual; });
+    }
+
+    function restoreControlTable(rows) {
+        var tbody = document.querySelector("#controlTable tbody");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+        (rows || []).forEach(function (r) {
+            if (typeof appendControlRow === "function") appendControlRow(tbody, tbody.rows.length + 1);
+            var row = tbody.rows[tbody.rows.length - 1];
+            if (!row || !r) return;
+            row.cells[1].textContent = r.criterion || "";
+            row.cells[2].textContent = r.basis || "";
+            row.cells[3].textContent = r.requirement || "";
+            row.cells[4].textContent = r.actual || "";
+            if (r.compliance) {
+                var radio = row.querySelector('input[value="' + r.compliance + '"]');
+                if (radio) radio.checked = true;
+            }
+        });
+        if (!rows || !rows.length) {
+            if (typeof appendControlRow === "function") appendControlRow(tbody, 1);
+        }
+    }
+
+    function collectParticipants() {
+        var tbody = document.querySelector("#participantsTable tbody");
+        if (!tbody) return [];
+        return Array.prototype.map.call(tbody.rows, function (row) {
+            return {
+                organization: (row.querySelector('[data-participant-field="organization"]') || {}).textContent || "",
+                position: (row.querySelector('[data-participant-field="position"]') || {}).textContent || "",
+                name: (row.querySelector('[data-participant-field="name"]') || {}).textContent || ""
+            };
+        }).map(function (p) {
+            return { organization: p.organization.trim(), position: p.position.trim(), name: p.name.trim() };
+        }).filter(function (p) { return p.organization || p.position || p.name; });
+    }
+
+    function restoreParticipants(rows) {
+        var tbody = document.querySelector("#participantsTable tbody");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+        (rows && rows.length ? rows : [{}, {}]).forEach(function (p, idx) {
+            var tr = document.createElement("tr");
+            var numCell = document.createElement("td");
+            numCell.className = "center";
+            numCell.textContent = idx + 1;
+            tr.appendChild(numCell);
+            ["organization", "position", "name"].forEach(function (f) {
+                var td = document.createElement("td");
+                td.contentEditable = "true";
+                td.dataset.participantField = f;
+                td.textContent = (p && p[f]) || "";
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        if (typeof refreshSignaturesFromParticipants === "function") refreshSignaturesFromParticipants();
+    }
+
+    function collectBridgeData() {
+        var base = (typeof collectFormData === "function") ? collectFormData() : { fields: {} };
+        var tables = {};
+        Object.keys(PLAIN_TABLES).forEach(function (tableId) {
+            tables[tableId] = collectPlainTable(tableId, PLAIN_TABLES[tableId]);
+        });
+        return {
+            fields: base.fields || {},
+            onePager: readOnePagerState(),
+            language: (typeof currentLanguage !== "undefined") ? currentLanguage : "ru",
+            photos: collectPhotosFromGrid(),
+            participants: collectParticipants(),
+            controls: collectControlTable(),
+            tables: tables
+        };
+    }
+
+    function postToParent(type, payload) {
+        if (window.parent === window) return;
+        window.parent.postMessage({ source: "rbi-etalon-v18b", type: type, payload: payload }, "*");
+    }
+
+    // Перехватываем оригинальный saveForm() — платформа получает данные акта
+    // при каждом сохранении в браузере, без изменения поведения localStorage.
+    var _originalSaveForm = window.saveForm;
+    window.saveForm = function () {
+        try { if (typeof _originalSaveForm === "function") _originalSaveForm(); } catch (e) { console.warn("[EtalonV18Bridge] saveForm error", e); }
+        postToParent("act-saved", collectBridgeData());
+    };
+
+    // Явное сохранение для платформенной кнопки "Сохранить в RBI" (см. renderMarkup).
+    window.rbiSaveActToBridge = function (closeAfter) {
+        postToParent("act-save-request", { data: collectBridgeData(), closeAfter: !!closeAfter });
+    };
+
+    window.rbiPrintActFromBridge = function () {
+        window.print();
+    };
+
+    function applyPrefill(payload) {
+        if (!payload) return;
+        var fields = payload.fields || {};
+        Object.keys(fields).forEach(function (name) {
+            var elements = document.querySelectorAll('[data-field="' + name + '"]');
+            elements.forEach(function (el) {
+                if (el.type === "checkbox" || el.type === "radio") {
+                    el.checked = Boolean(fields[name]);
+                } else {
+                    el.value = fields[name];
+                }
+            });
+        });
+
+        if (payload.onePager) writeOnePagerState(payload.onePager);
+
+        if (Array.isArray(payload.photos)) {
+            var grid = document.getElementById("photoGrid");
+            if (grid) grid.innerHTML = "";
+            payload.photos.forEach(function (p) {
+                if (typeof addPhotoCard === "function") addPhotoCard();
+                var cards = document.querySelectorAll("#photoGrid .photo-card");
+                var card = cards[cards.length - 1];
+                if (!card) return;
+                if (p.photo) {
+                    var preview = card.querySelector(".photo-preview");
+                    if (preview) {
+                        preview.classList.add("has-image");
+                        preview.innerHTML = '<img src="' + p.photo + '" alt="Фото эталонного образца" title="Нажмите для увеличения / Click to zoom">';
+                    }
+                }
+                var descInput = card.querySelector(".photo-data input[type='text']");
+                if (descInput) descInput.value = p.desc || "";
+                var dateInput = card.querySelector(".photo-inspection-date");
+                if (dateInput) dateInput.value = p.date || "";
+            });
+            if (!payload.photos.length && typeof createPhotoCards === "function") createPhotoCards();
+        }
+
+        if (payload.participants) restoreParticipants(payload.participants);
+        if (payload.controls) restoreControlTable(payload.controls);
+        if (payload.tables) {
+            Object.keys(PLAIN_TABLES).forEach(function (tableId) {
+                if (payload.tables[tableId]) restorePlainTable(tableId, PLAIN_TABLES[tableId], payload.tables[tableId]);
+            });
+        }
+
+        if (payload.language && typeof applyLanguage === "function") {
+            applyLanguage(payload.language, false);
+        }
+
+        if (typeof bindSyncFields === "function") bindSyncFields();
+        if (typeof bindParticipantSignatureSync === "function") bindParticipantSignatureSync();
+        if (typeof refreshSignaturesFromParticipants === "function") refreshSignaturesFromParticipants();
+        if (typeof prepareZoomableImages === "function") prepareZoomableImages();
+    }
+
+    window.addEventListener("message", function (event) {
+        var msg = event.data;
+        if (!msg || msg.target !== "rbi-etalon-v18b") return;
+        if (msg.type === "prefill") {
+            applyPrefill(msg.payload);
+            postToParent("ready", null);
+        }
+    });
+
+    // Сообщаем родителю, что конструктор загрузился и готов принять префилл.
+    postToParent("frame-ready", null);
 })();
 </script>
 

@@ -313,7 +313,7 @@ Wrapper над Knowledge-сторами (TWI_CARDS, CUSTOM_DOCS, CUSTOM_NODES, E
 | `getAllTwiCards()` | `async → []` | TWI-карточки |
 | `getAllCustomDocs()` | `async → []` | Пользовательские документы |
 | `getAllCustomNodes()` | `async → []` | Пользовательские узлы |
-| `getAllEtalonActs()` | `async → []` | Эталонные акты (два вида в одном сторе ETALON_ACTS, различаются полем `record.source_kind`: `'act_v18'` — структурированный акт из конструктора «Акт-Эталон (Бета)», отсутствие поля/любое другое значение — старый упрощённый акт из `openEtalonConstructor`) |
+| `getAllEtalonActs()` | `async → []` | Эталонные акты (три вида в одном сторе ETALON_ACTS, различаются полем `record.source_kind`: `'act_v18'` — структурированный акт из мобильно-адаптированного конструктора «Акт-Эталон (Бета)» (`details.actV18`); `'act_v18b'` — акт из «Акт-Эталон (Бета 2, ПК)», точная копия `Шаблон_акта_эталона_в_18.html` через iframe, доступна только на ПК (`details.actV18b`); отсутствие поля/любое другое значение — старый упрощённый акт из `openEtalonConstructor` (`details.elements`)) |
 | `getAllEtalonDraft()` | `async → []` | Черновики эталонов |
 | `saveCustomDoc(doc)` | `async → record` | Сохранить документ |
 | `deleteCustomDoc(id)` | `async → bool` | Мягкое удаление документа (тонкий мост над `window.deleteCustomDoc`) |

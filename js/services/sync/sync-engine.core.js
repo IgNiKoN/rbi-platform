@@ -382,12 +382,25 @@ window.triggerSync = async function (mode = 'silent') {
         if (window.isHttpUrl(value)) return value;
 
         let blobData = null;
+        const wasLocalUrl = window.isLocalUrl(value);
 
-        if (window.isLocalUrl(value)) blobData = await window.localPhotoToBlob(value);
+        if (wasLocalUrl) blobData = await window.localPhotoToBlob(value);
         else if (window.isDataUrl(value)) blobData = window.dataUrlToBlob(value);
         else return value;
 
-        if (!blobData || !blobData.blob) return value;
+        if (!blobData || !blobData.blob) {
+            if (wasLocalUrl) {
+                // RBI FIX (гонка "PDF/фото не синхронизируется"): файл ещё не успел
+                // записаться в IndexedDB к моменту запуска синхронизации. Раньше здесь
+                // молча возвращалась исходная ссылка local://..., она уходила в облако
+                // как обычная строка, а запись сразу помечалась synced — повторной
+                // попытки отправки уже никогда не происходило. Теперь бросаем ошибку,
+                // чтобы pushCloudObject для этого объекта прервался, запись осталась
+                // not_synced и была отправлена повторно на следующем цикле синхронизации.
+                throw new Error(`[Sync] Локальный файл не найден в IndexedDB (возможна гонка записи): ${value}`);
+            }
+            return value;
+        }
 
         const ext = window.extFromMime(blobData.mime);
         const arrayBuffer = await blobData.blob.arrayBuffer();
@@ -2027,81 +2040,91 @@ if (window.RbiStorageManager) {
                         // ---------------------------------------------------------------------------------
 
                         for (const obj of items) {
-                            // RBI FIX: страхуем объекты, созданные на разных браузерах.
-                            // Если конструктор шаблона/практики/отчета не поставил служебные поля,
-                            // синхронизатор сам доводит объект до отправляемого состояния.
-                            if (!obj.id) {
-                                obj.id = `${objectType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                            }
-
-                            if (!obj.updatedAt && !obj.updated_at) {
-                                obj.updatedAt = new Date().toISOString();
-                            }
-
-                            if (!obj.source) {
-                                obj.source = 'local';
-                            }
-
-                            if (!obj.syncStatus && !obj.sync_status) {
-                                obj.syncStatus = 'not_synced';
-                                obj.sync_status = 'not_synced';
-                            }
-
-                            // bucketName внутри функции pushCloudObject переопределится сам на правильный
-                            const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
-                            const registryBucketMap = {
-                                custom_twi_card: 'library-twi',
-                                custom_doc: 'library-docs',
-                                custom_node: 'library-nodes',
-                                practice: 'library-practices',
-                                etalon: 'library-etalons',
-                                assistant_kb: 'library-docs'
-                            };
-
-                            const registryBucket = registryBucketMap[objectType] || 'custom-assets';
-
-                            if (updated && typeof window.rbiRegisterObjectFilesToRegistry === 'function') {
-                                await window.rbiRegisterObjectFilesToRegistry(objectType, obj.id, updated, registryBucket);
-                            }
-                            if (updated) {
-                                updated.source = 'cloud';
-                                updated.syncStatus = 'synced';
-                                updated.sync_status = 'synced';
-                                updated.syncBlockReason = '';
-                                updated.sync_block_reason = '';
-                                updated.importedFromBackup = false;
-                                updated.updatedAt = new Date().toISOString();
-
-                                // ЗАЩИТА ОТ RACE: пока шел push, запись в IndexedDB могла обновиться
-                                // (например, фоновая индексация OCR норматива дописала extractedText).
-                                // Подтягиваем самую свежую версию и мержим в неё результат push,
-                                // а не затираем её напрямую — иначе такие поля будут потеряны.
-                                try {
-                                    const freshRecord = typeof dbGet === 'function'
-                                        ? await dbGet(storeName, updated.id)
-                                        : (await dbGetAll(storeName) || []).find(x => String(x.id) === String(updated.id));
-                                    if (freshRecord && freshRecord.updatedAt && new Date(freshRecord.updatedAt).getTime() > new Date(obj.updatedAt || obj.updated_at || 0).getTime()) {
-                                        updated = Object.assign({}, freshRecord, updated);
-                                    }
-                                } catch (mergeErr) {
-                                    console.warn('[Sync] Не удалось смержить свежую запись перед сохранением:', mergeErr);
+                            try {
+                                // RBI FIX: страхуем объекты, созданные на разных браузерах.
+                                // Если конструктор шаблона/практики/отчета не поставил служебные поля,
+                                // синхронизатор сам доводит объект до отправляемого состояния.
+                                if (!obj.id) {
+                                    obj.id = `${objectType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                                 }
 
-                                await dbPut(storeName, updated);
+                                if (!obj.updatedAt && !obj.updated_at) {
+                                    obj.updatedAt = new Date().toISOString();
+                                }
 
-                                if (window[memoryArrayName] && Array.isArray(window[memoryArrayName])) {
-                                    // НОВОЕ: Если элемент удален, чистим его из ОЗУ. Иначе - обновляем/добавляем
-                                    if (updated._deleted || updated.is_deleted) {
-                                        window[memoryArrayName] = window[memoryArrayName].filter(x => String(x.id) !== String(updated.id));
-                                    } else {
-                                        const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
-                                        if (idx !== -1) {
-                                            window[memoryArrayName][idx] = updated;
+                                if (!obj.source) {
+                                    obj.source = 'local';
+                                }
+
+                                if (!obj.syncStatus && !obj.sync_status) {
+                                    obj.syncStatus = 'not_synced';
+                                    obj.sync_status = 'not_synced';
+                                }
+
+                                // bucketName внутри функции pushCloudObject переопределится сам на правильный
+                                const updated = await window.pushCloudObject(objectType, obj.id, obj, 'custom-assets');
+                                const registryBucketMap = {
+                                    custom_twi_card: 'library-twi',
+                                    custom_doc: 'library-docs',
+                                    custom_node: 'library-nodes',
+                                    practice: 'library-practices',
+                                    etalon: 'library-etalons',
+                                    assistant_kb: 'library-docs'
+                                };
+
+                                const registryBucket = registryBucketMap[objectType] || 'custom-assets';
+
+                                if (updated && typeof window.rbiRegisterObjectFilesToRegistry === 'function') {
+                                    await window.rbiRegisterObjectFilesToRegistry(objectType, obj.id, updated, registryBucket);
+                                }
+                                if (updated) {
+                                    updated.source = 'cloud';
+                                    updated.syncStatus = 'synced';
+                                    updated.sync_status = 'synced';
+                                    updated.syncBlockReason = '';
+                                    updated.sync_block_reason = '';
+                                    updated.importedFromBackup = false;
+                                    updated.updatedAt = new Date().toISOString();
+
+                                    // ЗАЩИТА ОТ RACE: пока шел push, запись в IndexedDB могла обновиться
+                                    // (например, фоновая индексация OCR норматива дописала extractedText).
+                                    // Подтягиваем самую свежую версию и мержим в неё результат push,
+                                    // а не затираем её напрямую — иначе такие поля будут потеряны.
+                                    try {
+                                        const freshRecord = typeof dbGet === 'function'
+                                            ? await dbGet(storeName, updated.id)
+                                            : (await dbGetAll(storeName) || []).find(x => String(x.id) === String(updated.id));
+                                        if (freshRecord && freshRecord.updatedAt && new Date(freshRecord.updatedAt).getTime() > new Date(obj.updatedAt || obj.updated_at || 0).getTime()) {
+                                            updated = Object.assign({}, freshRecord, updated);
+                                        }
+                                    } catch (mergeErr) {
+                                        console.warn('[Sync] Не удалось смержить свежую запись перед сохранением:', mergeErr);
+                                    }
+
+                                    await dbPut(storeName, updated);
+
+                                    if (window[memoryArrayName] && Array.isArray(window[memoryArrayName])) {
+                                        // НОВОЕ: Если элемент удален, чистим его из ОЗУ. Иначе - обновляем/добавляем
+                                        if (updated._deleted || updated.is_deleted) {
+                                            window[memoryArrayName] = window[memoryArrayName].filter(x => String(x.id) !== String(updated.id));
                                         } else {
-                                            window[memoryArrayName].push(updated);
+                                            const idx = window[memoryArrayName].findIndex(x => String(x.id) === String(updated.id));
+                                            if (idx !== -1) {
+                                                window[memoryArrayName][idx] = updated;
+                                            } else {
+                                                window[memoryArrayName].push(updated);
+                                            }
                                         }
                                     }
                                 }
+                            } catch (objErr) {
+                                // RBI FIX (гонка "PDF/фото не синхронизируется"): ошибка отправки ОДНОГО
+                                // объекта (например, файл ещё не дозаписался в IndexedDB, см. rbiUploadAsset)
+                                // больше не прерывает отправку всех остальных объектов этой и следующих таблиц.
+                                // Проблемный объект остаётся not_synced/local и будет отправлен повторно
+                                // на следующем цикле синхронизации, когда файл уже точно будет на месте.
+                                console.warn(`[Sync] Не удалось отправить объект ${objectType}/${obj.id}, повтор на следующей синхронизации:`, objErr.message || objErr);
+                                pushErrors++;
                             }
                         }
                     };

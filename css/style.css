@@ -596,7 +596,24 @@ body.modal-open {
     background: var(--hover-bg);
 }
 
+/* === МОБИЛЬНЫЙ ПЕРЕКЛЮЧАТЕЛЬ МОДУЛЕЙ (гамбургер, App Shell, задача «скрыть
+   дублирующиеся дропдауны модулей») ===
+   На ПК (>=768px) переключение модулей уже даёт #app-sidebar (icon-rail) —
+   гамбургер там не нужен. На мобильных (<768px) прячем старые дублирующие
+   элементы (#app-mode-selector-container, кнопка «Выбрать модуль»/Platform
+   Entry) — единственная точка переключения модулей на телефоне теперь
+   #mobile-module-menu-btn. Чек-лист (#header-checklist-container) — другая
+   сущность (выбор вида работ), не трогаем ни на ПК, ни на мобильных. */
+#mobile-module-menu {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
 @media (min-width: 768px) {
+    .mobile-module-menu-wrap {
+        display: none;
+    }
+
     #app-sidebar {
         display: flex;
     }
@@ -615,6 +632,25 @@ body.modal-open {
     body.has-app-sidebar {
         box-sizing: border-box;
         padding-left: 88px;
+    }
+}
+
+@media (max-width: 767px) {
+    /* Дублирующие дропдауны переключения модулей на мобильных — скрыты,
+       единственная точка входа теперь #mobile-module-menu-btn (см. выше). */
+    #app-mode-selector-container,
+    #main-header button[data-shell-action="showPlatformEntry"] {
+        display: none !important;
+    }
+}
+
+@media (min-width: 768px) {
+    /* На ПК переключение модулей уже покрыто #app-sidebar (icon-rail слева) —
+       дропдаун-переключатель режима в шапке и кнопка "Выбрать модуль"
+       (Platform Entry) дублируют его же функцию, скрываем как визуальный шум. */
+    #app-mode-selector-container,
+    #main-header button[data-shell-action="showPlatformEntry"] {
+        display: none !important;
     }
 }
 

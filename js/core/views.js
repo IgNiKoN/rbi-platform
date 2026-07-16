@@ -62,6 +62,17 @@ function showModePlaceholder(modeName, customMessage) {
     // поэтому там шапка скрывается целиком (showHeader=false).
     var keepHeader = !window.rbi_sidebarPlaceholderReturnHash;
     switchViewNode('tab-mode-placeholder', keepHeader);
+
+    // Sidebar-поток (rbi_showSidebarPlaceholder) не меняет AppModeManager.currentMode,
+    // поэтому renderBottomNav() не вызывается и таббар (Осмотр/Инженер/... или
+    // Дефекты/Приёмка/...) остаётся видимым поверх заглушки — прячем его явно
+    // здесь. Поток AppModeManager (safety/warranty/uk) уже скрывает нав сам
+    // (см. app-mode-utils.js renderBottomNav — currentMode не quality/construction).
+    if (window.rbi_sidebarPlaceholderReturnHash) {
+        var navEl = document.getElementById('main-bottom-nav');
+        if (navEl) navEl.style.display = 'none';
+        if (typeof updateBodyPadding === 'function') setTimeout(updateBodyPadding, 60);
+    }
 }
 
 // Единая заглушка для разделов сайдбара, не относящихся к переключению
@@ -87,6 +98,13 @@ window.rbi_backFromModePlaceholder = function () {
     if (window.rbi_sidebarPlaceholderReturnHash) {
         var path = window.rbi_sidebarPlaceholderReturnHash;
         window.rbi_sidebarPlaceholderReturnHash = null;
+        // Восстанавливаем таббар, скрытый в showModePlaceholder() при входе из
+        // sidebar — роутер ниже вызовет renderAudit()/renderConstruction*(),
+        // но на всякий случай (если path совпадает с уже активным роутом и
+        // AppRouter.navigate() не перерисует) восстанавливаем нав явно здесь же.
+        if (window.AppModeManager && typeof window.AppModeManager.renderBottomNav === 'function') {
+            window.AppModeManager.renderBottomNav();
+        }
         if (window.AppRouter && typeof window.AppRouter.navigate === 'function') {
             window.AppRouter.navigate(path);
         }

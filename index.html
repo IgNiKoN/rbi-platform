@@ -208,8 +208,23 @@
             <!-- СТРОКА 1: Логотип -->
             <div class="header-top-row flex items-center justify-between mb-1.5 header-collapsible">
 
-                <!-- ЛЕВАЯ ЧАСТЬ: Легкая iOS-иконка + Текст -->
+                <!-- ЛЕВАЯ ЧАСТЬ: Гамбургер (мобильный переключатель модулей) + Легкая iOS-иконка + Текст -->
                 <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                    <!-- Мобильный переключатель модулей (App Shell, 3 полоски, видим только <768px) —
+                         desktop-аналог: #app-sidebar (icon-rail). Открывает #mobile-module-menu. -->
+                    <div class="relative mobile-module-menu-wrap">
+                        <button type="button" id="mobile-module-menu-btn" data-shell-action="toggleMobileModuleMenu"
+                            class="mobile-hamburger-btn w-9 h-9 bg-white dark:bg-slate-800 rounded-[10px] shadow-[0_2px_10px_rgba(0,0,0,0.06)] border border-slate-100 dark:border-slate-700 flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+                            title="Модули" aria-label="Переключить модуль">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"></path>
+                            </svg>
+                        </button>
+                        <div id="mobile-module-menu"
+                            class="hidden absolute left-0 top-full mt-2 w-56 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-2xl z-[5000] overflow-hidden py-1.5">
+                            <!-- Рендерится ShellService.renderMobileModuleMenu() -->
+                        </div>
+                    </div>
                     <!-- Иконка приложения (Светлое стекло + Тонкие линии) -->
                     <div
                         class="w-9 h-9 bg-white dark:bg-slate-800 rounded-[10px] shadow-[0_2px_10px_rgba(0,0,0,0.06)] border border-slate-100 dark:border-slate-700 flex items-center justify-center shrink-0">
@@ -229,12 +244,15 @@
                             </div>
                             <!-- Индикатор синхронизации -->
                             <div id="header-sync-status" class="shrink-0 flex items-center"></div>
-                            <!-- Блок текущего пользователя (App Shell/User Context) -->
-                            <div id="header-user-block" class="shrink-0 flex items-center text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate"></div>
+                            <!-- Блок текущего пользователя (App Shell/User Context) — убран из шапки как
+                                 визуальный шум, элемент оставлен в DOM (hidden) на случай отката,
+                                 ShellService.renderUserBlock() продолжает писать в него безопасно (no-op UI). -->
+                            <div id="header-user-block" class="hidden shrink-0 flex items-center text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate"></div>
                         </div>
-                        <!-- Company block (App Shell Блок 2, §29 п.9) -->
+                        <!-- Company block (App Shell Блок 2, §29 п.9) — убран из шапки как визуальный шум,
+                             элемент оставлен в DOM (hidden) на случай отката. -->
                         <div id="header-company-block"
-                            class="text-[8px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest truncate leading-none">
+                            class="hidden text-[8px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest truncate leading-none">
                         </div>
                         <!-- Подпись разработчика -->
                         <div
@@ -644,8 +662,8 @@
     <!-- === ПОДКЛЮЧЕНИЕ МОДУЛЕЙ JS === -->
     <script>
         window.RBI_APP_VERSION = {
-            app: '18.35.0',
-            sw: '18.37.0',
+            app: '18.38.0',
+            sw: '18.40.0',
             buildDate: '2026-07-16'
         };
     </script>

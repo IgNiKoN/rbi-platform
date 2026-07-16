@@ -838,11 +838,13 @@ window.rbi_renderPracticesTab = async function () {
         for (let e of etals) {
             e._uiType = 'etalon';
             // Достаем первое фото эталона для обложки (elements — старая модель,
-            // actV18.photos — модель конструктора «Акт-Эталон (Бета)», Блок 2.5).
+            // actV18.photos — модель конструктора «Акт-Эталон (Бета)» Блок 2.5,
+            // actV18b.photos — модель «Акт-Эталон (Бета 2, ПК)», 1:1-копия v18-формы).
             e._previewImg = null;
             const firstElementPhoto = e.details && e.details.elements && e.details.elements.length > 0 ? e.details.elements[0].photo : null;
             const firstV18Photo = e.details && e.details.actV18 && e.details.actV18.photos && e.details.actV18.photos.length > 0 ? e.details.actV18.photos[0].photo : null;
-            const coverPhoto = firstElementPhoto || firstV18Photo;
+            const firstV18bPhoto = e.details && e.details.actV18b && e.details.actV18b.photos && e.details.actV18b.photos.length > 0 ? e.details.actV18b.photos[0].photo : null;
+            const coverPhoto = firstElementPhoto || firstV18Photo || firstV18bPhoto;
             if (coverPhoto) e._previewImg = await PhotoManager.getAsyncUrl(coverPhoto) || window.getPhotoSrc(coverPhoto);
             mixedData.push(e);
         }
@@ -897,7 +899,7 @@ window.rbi_renderPracticesTab = async function () {
                     </button>
                 </div>
                 <div class="p-3 flex flex-col flex-1">
-                    <div class="text-[8px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded w-fit mb-1.5 uppercase border border-blue-100 dark:border-blue-800 truncate max-w-full">Эталон${item.source_kind === 'act_v18' ? ' (Бета)' : ''}: ${item.templateTitle}</div>
+                    <div class="text-[8px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0.5 rounded w-fit mb-1.5 uppercase border border-blue-100 dark:border-blue-800 truncate max-w-full">Эталон${item.source_kind === 'act_v18' ? ' (Бета)' : (item.source_kind === 'act_v18b' ? ' (Бета 2, ПК)' : '')}: ${item.templateTitle}</div>
                     
                     <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-1">${item.projectName || 'Без проекта'}</div>
                     <div class="text-[10px] font-medium text-slate-500 truncate mb-2">👤 ${item.contractorName}</div>
@@ -941,6 +943,13 @@ window.rbi_openKbCreateChoice = function () {
                 <div class="flex-1">
                     <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 px-1.5 py-0.5 rounded uppercase">Бета</span></div>
                     <div class="text-[10px] text-slate-500 font-bold mt-0.5">Полный юридический акт (11 разделов, участники, испытания)</div>
+                </div>
+            </button>
+            <button onclick="closeModal(); openEtalonV18BConstructor({})" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></div>
+                <div class="flex-1">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded uppercase">Бета 2 · ПК</span></div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Точная копия исходной формы (справка, языки, печать) — только компьютер</div>
                 </div>
             </button>
         </div>

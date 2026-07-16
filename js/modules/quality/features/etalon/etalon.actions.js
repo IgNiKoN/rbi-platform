@@ -318,6 +318,38 @@
     },
 
     // =====================================================================
+    // ОЖИДАНИЕ ГОТОВНОСТИ ЛОКАЛЬНЫХ ФАЙЛОВ ПЕРЕД СИНХРОНИЗАЦИЕЙ
+    // Устраняет гонку: PhotoManager.saveLocal() кладёт файл в IndexedDB
+    // асинхронно, а saveAct() раньше запускал sync через фиксированный
+    // setTimeout(800ms) "на удачу". Здесь мы опрашиваем dbGet до тех пор,
+    // пока каждый local:// файл акта (PDF + фото элементов) не станет
+    // читаемым, либо не истечёт разумный лимит попыток.
+    // =====================================================================
+    _waitForLocalFilesReady: async function (etalonRecord, maxAttempts = 20, delayMs = 150) {
+      var urls = [];
+      var d = etalonRecord && etalonRecord.details || {};
+      if (d.pdfData) urls.push(d.pdfData);
+      (d.elements || []).forEach(function (el) {
+        if (el && el.photo) urls.push(el.photo);
+      });
+      urls = urls.filter(function (u) { return typeof u === 'string' && u.startsWith('local://'); });
+      if (urls.length === 0) return;
+
+      var storage = _storage();
+      for (var i = 0; i < maxAttempts; i++) {
+        var pending = [];
+        for (var u of urls) {
+          var rec = await storage.get(storage.stores().PHOTOS, u);
+          if (!rec || !rec.data) pending.push(u);
+        }
+        if (pending.length === 0) return;
+        urls = pending;
+        await new Promise(function (r) { setTimeout(r, delayMs); });
+      }
+      console.warn('[EtalonActions] Не все локальные файлы акта дозаписались в IndexedDB перед синхронизацией:', urls);
+    },
+
+    // =====================================================================
     // СОХРАНЕНИЕ АКТА-ЭТАЛОНА
     // Перенесено из etalon.js (было window.saveEtalonAct, строка 198).
     // =====================================================================
@@ -426,7 +458,16 @@
       }
       showToast("✅ Акт-Эталон успешно сохранен!");
       localStorage.setItem('rbi_cloud_dirty', '1');
-      setTimeout(() => _triggerSync('silent'), 800); // даём время фото сохраниться в IndexedDB
+      // RBI FIX (гонка "PDF/фото Акта-Эталона не синхронизируется"): раньше здесь был
+      // фиксированный setTimeout(800ms) "на удачу" — на медленном устройстве или при
+      // большом PDF запись в IndexedDB могла не успеть завершиться к этому моменту,
+      // sync уходил без файла, а сама запись сразу помечалась "синхронизировано" без
+      // повторных попыток. Теперь перед запуском синхронизации явно подтверждаем,
+      // что все local:// файлы этого акта (PDF + фото элементов) реально читаются
+      // из IndexedDB, с повторными попытками — и только затем запускаем sync.
+      EtalonActions._waitForLocalFilesReady(etalonRecord)
+        .then(() => _triggerSync('silent'))
+        .catch(function (e) { console.warn('[EtalonActions] Не удалось подтвердить готовность файлов перед синхронизацией:', e); });
 
       // Если нажали кнопку "Печать" — открываем PDF
       if (printAfter) {
@@ -477,6 +518,12 @@
       // делегируется полноэкранному конструктору v18 вместо этого модального окна.
       if (record.source_kind === 'act_v18' && window.EtalonV18Actions) {
         return window.EtalonV18Actions.editAct(id);
+      }
+
+      // «Акт-Эталон (Бета 2, ПК)» (см. etalon-v18b.actions.js) — точная копия
+      // исходной формы v18 через iframe, доступна только на ПК.
+      if (record.source_kind === 'act_v18b' && window.EtalonV18BActions) {
+        return window.EtalonV18BActions.editAct(id);
       }
 
       // Обновляем массив

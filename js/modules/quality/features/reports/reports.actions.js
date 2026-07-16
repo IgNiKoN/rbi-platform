@@ -4030,6 +4030,10 @@ export const ReportsActions = {
         // имеют другую модель данных (details.actV18) — перенаправляем без
         // изменения вызывающих мест (interventions.js, history.render.js).
         if (record && record.source_kind === 'act_v18') return ReportsActions.printEtalonV18(historyId, mode);
+        // «Акт-Эталон (Бета 2, ПК)» печатается собственной формой печати
+        // оригинального шаблона (см. etalon-v18b.frame.html) — не через
+        // printPdfShell, а нативным window.print() внутри iframe.
+        if (record && record.source_kind === 'act_v18b') return ReportsActions.printEtalonV18B(historyId, mode);
         if (!record || !record.details || !record.details.elements) return showToast("Ошибка чтения Акта");
 
         const d = record.details;
@@ -4284,6 +4288,31 @@ export const ReportsActions = {
         `;
 
         printPdfShell(`Акт-Эталон (Бета): ${record.contractorName}`, content, "A4", "portrait", mode);
+    },
+
+    /**
+     * Печать «Акт-Эталон (Бета 2, ПК)» — не через printPdfShell (нет своего
+     * HTML-рендера содержимого), а нативной формой печати оригинального
+     * Шаблон_акта_эталона_в_18.html, встроенного через iframe: открывает
+     * акт на редактирование (заполняет iframe данными) и вызывает
+     * window.print() внутри iframe, где уже настроены @media print и
+     * зеркалирование полей (см. etalon-v18b.frame.html).
+     */
+    async printEtalonV18B(historyId) {
+        if (window.innerWidth < 768) return showToast('⚠️ Печать «Акт-Эталон (Бета 2)» доступна только на ПК');
+        if (!window.EtalonV18BActions) return showToast('❌ Модуль Акт-Эталон (Бета 2) не загружен');
+
+        await window.EtalonV18BActions.editAct(historyId);
+
+        var tryPrint = function (attemptsLeft) {
+            var frame = document.getElementById('etv18b-frame');
+            if (frame && frame.contentWindow && typeof frame.contentWindow.rbiPrintActFromBridge === 'function') {
+                frame.contentWindow.rbiPrintActFromBridge();
+                return;
+            }
+            if (attemptsLeft > 0) setTimeout(function () { tryPrint(attemptsLeft - 1); }, 300);
+        };
+        setTimeout(function () { tryPrint(10); }, 600);
     },
 
     /**
@@ -5363,6 +5392,7 @@ if (typeof window !== 'undefined') {
     // etalon.actions.js, interventions.js) — обязателен window.printEtalonAct.
     window.printEtalonAct = ReportsActions.printEtalon;
     window.printEtalonActV18 = ReportsActions.printEtalonV18;
+    window.printEtalonActV18B = ReportsActions.printEtalonV18B;
     window.rbi_printFinalAcceptance = ReportsActions.printFinalAcceptance;
     window.exportPdfSchedule = ReportsActions.exportSchedulePdf;
     window.exportPdfSK = ReportsActions.exportSkPdf;

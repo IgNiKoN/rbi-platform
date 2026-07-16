@@ -409,6 +409,9 @@ const AppModeManager = {
         if (shell && typeof shell.renderSidebar === 'function') {
             shell.renderSidebar();
         }
+        if (shell && typeof shell.renderMobileModuleMenu === 'function') {
+            shell.renderMobileModuleMenu();
+        }
 
         this.renderBottomNav();
         this.updateHeaderVisibility();
@@ -438,6 +441,9 @@ const AppModeManager = {
         this.updateHeaderVisibility();
         if (shell && typeof shell.renderSidebar === 'function') {
             shell.renderSidebar();
+        }
+        if (shell && typeof shell.renderMobileModuleMenu === 'function') {
+            shell.renderMobileModuleMenu();
         }
 
         switch (newMode) {
