@@ -489,13 +489,8 @@ async function _gameGenerateWeeklyPlan(force) {
                         c.contractorName === pair.contractor &&
                         (c.templateKey === pair.templateKey || c.templateTitle === pair.templateTitle);
                 });
-                // Уже идут проверки по этой паре на неделе — не плодим «Приемка Эталона»
-                var hasWeekValidChecks = pair.checks.some(function(c){
-                    return c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek;
-                });
-
-                if (hasEtalon || hasWeekValidChecks) {
-                    // Закрываем висящую задачу именно по этой паре (contractor + templateKey).
+                if (hasEtalon) {
+                    // Акт уже оформлен — закрываем висящую задачу по этой паре.
                     window.rbi_tasksData.forEach(function(t) {
                         if (t._deleted || t.is_deleted) return;
                         if (t.engineerName !== targetEngineer) return;
@@ -506,9 +501,7 @@ async function _gameGenerateWeeklyPlan(force) {
                         t.status = 'done';
                         t.done = 1;
                         t.target = 1;
-                        t.resultComment = hasEtalon
-                            ? 'Автозакрытие (Акт-Эталон найден в базе)'
-                            : 'Автозакрытие (есть проверки за неделю по этому виду работ)';
+                        t.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)';
                         t.updatedAt = new Date().toISOString();
                         _storage().put(_storage().stores().TASKS, t);
                     });

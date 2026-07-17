@@ -427,34 +427,19 @@ function emit(eventName, detail) {
           _storage().put(_storage().stores().TASKS, task);
         }
       }
-      // 3. Проверяем Эталоны
+      // 3. Проверяем Эталоны — закрытие только при оформленном Акте-Эталоне
       if (task.taskType === 'Эталон' || (task.title && task.title.includes('Эталон'))) {
         task.target = 1; // Жестко фиксируем цель: Эталон всегда 1!
-        const taskEngineer = (task.engineerName || task.inspectorName || fallbackInspector || '').trim();
 
         const hasEtalonRecord = _getEtalonActs().some(e =>
           rbiEtalonMatchesWork(e, task.contractor, task.templateKey, task.templateTitle, task.workTitle)
         );
 
-        // Если Акта-Эталона нет, но по этой паре уже есть валидные проверки
-        // за неделю — ворота «сначала эталон» уже пройдены по факту (массовый
-        // контроль идёт). Закрываем, чтобы задача не висела при живой истории.
-        const hasWeekChecksForWork = !!(task.templateKey && _allInspections.some(c =>
-          (!taskEngineer || c.inspectorName === taskEngineer) &&
-          c.contractorName === task.contractor &&
-          c.templateKey === task.templateKey &&
-          new Date(c.date) >= startOfThisWeek &&
-          c.metrics && c.metrics.checkedCount >= 3
-        ));
+        task.done = hasEtalonRecord ? 1 : 0;
 
-        const shouldCloseEtalon = hasEtalonRecord || hasWeekChecksForWork;
-        task.done = shouldCloseEtalon ? 1 : 0;
-
-        if (shouldCloseEtalon) {
+        if (hasEtalonRecord) {
           task.status = 'done';
-          task.resultComment = hasEtalonRecord
-            ? 'Автозакрытие (Акт-Эталон найден в базе)'
-            : 'Автозакрытие (есть проверки за неделю по этому виду работ)';
+          task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)';
           task.updatedAt = new Date().toISOString();
           newlyClosedTasks.push('Приемка Эталона');
           _storage().put(_storage().stores().TASKS, task);
