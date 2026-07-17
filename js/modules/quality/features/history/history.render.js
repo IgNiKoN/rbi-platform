@@ -305,7 +305,7 @@ export const HistoryRender = {
                 </div>
             </div>
             
-            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2">`;
+            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden">`;
 
             contractorNames.forEach((cName, cIndex) => {
                 const items = grouped[pName][cName];
@@ -340,7 +340,7 @@ export const HistoryRender = {
                         <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} шт</span>
                     </div>
                 </div>`;
-                groupHtml += `<div id="${safeContractorName}" class="hidden">`;
+                groupHtml += `<div id="${safeContractorName}" class="hidden min-w-0">`;
                 const reversed = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
 
                 const visibleItems = reversed.slice(0, 10);
@@ -351,22 +351,28 @@ export const HistoryRender = {
                     const syncBadge = getSyncBadgeHtml(item);
                     const docScore = _getDocumentaryScore(item);
                     const tTitle = item.templateTitle || 'Неизвестный вид работ';
+                    const when = new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                    const insp = item.inspectorName || 'Не указан';
+                    // На телефоне длинная строка «дата | вид работ | инспектор» + бейдж sync
+                    // выталкивала % вправо за край экрана: у flex-ребёнка нужен min-w-0,
+                    // truncate нельзя совмещать с flex на том же узле, что и бейдж.
+                    const metaLine = when + ' · ' + tTitle + ' · ' + insp;
 
                     return `
-                <div class="flex items-center gap-1.5 mb-1.5">
+                <div class="flex items-center gap-1.5 mb-1.5 min-w-0 w-full max-w-full">
                     <input type="checkbox" class="hist-checkbox w-4 h-4 accent-indigo-600 rounded shrink-0 cursor-pointer" value="${item.id}">
-                    <div class="flex-1 bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${item.id}')">
-                        <div class="flex justify-between items-center">
-                            <div class="min-w-0 pr-2">
-                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location} <span class="text-[9px] ml-1">${photoIcon}</span></div>
-                                <div class="text-[8px] text-slate-400 mt-0.5 truncate font-medium flex items-center">
-                                    ${new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} | ${tTitle} | Инсп: ${item.inspectorName || 'Не указан'}
-                                    ${syncBadge}
+                    <div class="flex-1 min-w-0 overflow-hidden bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${item.id}')">
+                        <div class="flex justify-between items-start gap-2 min-w-0">
+                            <div class="min-w-0 flex-1 overflow-hidden">
+                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location || ''}${photoIcon ? ' ' + photoIcon : ''}</div>
+                                <div class="flex items-center gap-1 mt-0.5 min-w-0">
+                                    <div class="text-[8px] text-slate-400 truncate font-medium min-w-0 flex-1">${metaLine}</div>
+                                    <div class="shrink-0">${syncBadge}</div>
                                 </div>
                             </div>
                             <div class="flex flex-col items-end gap-0.5 shrink-0">
                                 <span class="status-tag ${item.metrics.statusCls} !text-[9px] !px-1.5 !py-0.5 shadow-sm">${item.metrics.final}%</span>
-                                ${(docScore !== null && docScore !== undefined) ? `<span class="text-[9px] font-bold text-indigo-400" title="Документарный УрК">Док: ${docScore}%</span>` : ''}
+                                ${(docScore !== null && docScore !== undefined) ? `<span class="text-[9px] font-bold text-indigo-400 whitespace-nowrap" title="Документарный УрК">Док: ${docScore}%</span>` : ''}
                             </div>
                         </div>
                     </div>

@@ -562,7 +562,7 @@ export const AnalyticsRender = {
                 <div id="history-checks-view">
                     <div id="hist-empty-msg" class="text-center py-8 text-sm text-[var(--text-muted)]">История пуста.
                     </div>
-                    <div id="history-list"></div>
+                    <div id="history-list" class="min-w-0 max-w-full overflow-x-hidden"></div>
                 </div>
 
                 <!-- ВЬЮХА 2: АРХИВ ОТЧЕТОВ -->
