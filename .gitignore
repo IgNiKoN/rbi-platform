@@ -3,3 +3,14 @@ node_modules/
 *.log
 .env
 .env.local
+
+# Не относится к работе приложения — рабочие материалы/документация/IDE
+.cursor/
+_ai/
+_backup/
+docs/
+README.md
+RBI_Feedback_16.07.2026.json
+rbi-q-main.code-workspace
+Шаблон_акта_эталона_в_18.html
+агенты.docx
