@@ -1,8 +1,8 @@
 /* Файл: sw.js */
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
-const APP_VERSION = '18.39.0';
-const SW_VERSION = '18.44.0';
+const APP_VERSION = '18.39.1';
+const SW_VERSION = '18.45.0';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -254,7 +254,12 @@ self.addEventListener('install', event => {
 
         urlsToCache.map(url => {
 
-          return fetch(url)
+          // cache: 'reload' — принудительно обходит HTTP-кэш браузера (критично для
+          // iOS Safari: без этого fetch() мог вернуть старую версию файла из
+          // собственного кэша WebKit, даже если Cache API уже создаёт новую версию
+          // кэша под новым CACHE_NAME — из-за этого получалась смесь старых и новых
+          // файлов внутри "новой" версии и визуальные артефакты после обновления).
+          return fetch(url, { cache: 'reload' })
 
             .then(response => {
 
