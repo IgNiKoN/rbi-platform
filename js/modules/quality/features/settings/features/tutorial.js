@@ -605,3 +605,46 @@ function stopTutorial() {
 }
 window.stopTutorial = stopTutorial;
 // === КОНЕЦ ВСТАВКИ ===
+
+// =========================================================================
+// РАЗМЕТКА tutorial-overlay + tutorial-tooltip (перенос из index.html,
+// под-инициатива 1 «Полная очистка index.html»). HTML 1:1 идентична
+// прежней статичной разметке. Паттерн — как changelog.js.
+// =========================================================================
+(function mountTutorialMarkup() {
+    if (document.getElementById('tutorial-overlay')) return;
+    var root = window.RBI && window.RBI.services && window.RBI.services.shell
+        ? window.RBI.services.shell.getModalsRoot()
+        : document.getElementById('app-modals');
+    if (!root) return;
+    root.insertAdjacentHTML('beforeend', `
+    <div id="tutorial-overlay" class="fixed inset-0 z-[9998] hidden pointer-events-auto overflow-hidden">
+        <!-- Летающая рамка-вырез (затемняет всё вокруг себя) -->
+        <div id="tut-highlight-box"
+            class="absolute shadow-[0_0_0_9999px_rgba(15,23,42,0.85)] border-2 border-indigo-500 rounded-xl transition-all duration-500 ease-in-out pointer-events-none">
+        </div>
+    </div>
+
+    <!-- Тултип (подсказка) -->
+    <div id="tutorial-tooltip"
+        class="fixed z-[9999] bg-white dark:bg-slate-800 text-slate-800 dark:text-white p-5 rounded-2xl shadow-2xl max-w-[280px] w-[90%] transition-all duration-500 ease-in-out transform scale-90 opacity-0 hidden border border-slate-200 dark:border-slate-700">
+        <div
+            class="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-2 flex justify-between items-center">
+            Обучение (<span id="tut-step">1</span>/<span id="tut-total">10</span>)
+            <button data-settings-action="stopTutorial"
+                class="text-slate-400 hover:text-red-500 active:scale-90 text-lg leading-none">✕</button>
+        </div>
+        <div id="tut-text" class="text-[12px] font-bold leading-relaxed mb-5">Текст подсказки</div>
+        <div class="flex justify-between items-center pt-2">
+            <button data-settings-action="stopTutorial"
+                class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Пропустить</button>
+            <button id="tut-next-btn" data-settings-action="nextTutorialStep"
+                class="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-md hover:bg-indigo-500 active:scale-95 transition-all">Далее
+                ➔</button>
+        </div>
+        <div id="tut-arrow"
+            class="absolute w-4 h-4 bg-white dark:bg-slate-800 border-l border-t border-slate-200 dark:border-slate-700 transform rotate-45 transition-all duration-500 hidden">
+        </div>
+    </div>
+`);
+}());

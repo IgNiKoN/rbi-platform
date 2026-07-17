@@ -62,4 +62,16 @@ if (typeof window !== 'undefined') {
     window.ReportsRender = ReportsRender;
 }
 
+// =========================================================================
+// #print-content — перенос из index.html (под-инициатива 1 «Полная очистка
+// index.html»). ОБЯЗАН быть прямым потомком document.body: css/style.css
+// @media print { body>*:not(#print-content) { display:none } }.
+// Не монтировать через getModalsRoot() / #app-modals.
+// =========================================================================
+(function mountPrintContentMarkup() {
+    if (document.getElementById('print-content')) return;
+    if (!document.body) return;
+    document.body.insertAdjacentHTML('beforeend', '<div id="print-content" class="print-only"></div>');
+}());
+
 console.log('[ReportsRender] reports.render.js loaded');
