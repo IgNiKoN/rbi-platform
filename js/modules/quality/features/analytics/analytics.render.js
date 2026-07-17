@@ -1473,8 +1473,8 @@ export const AnalyticsRender = {
                                 <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ур. качества (физика/докум.)</div>
                                 <div class="flex justify-between items-end">
                                     <span class="flex items-baseline gap-1.5">
-                                        <span class="text-2xl font-black text-slate-800 dark:text-white leading-none">${currAvgUrk}%</span>
-                                        <span class="text-[13px] font-black ${currAvgDoc === null ? 'text-slate-400' : 'text-indigo-600'} leading-none">${currAvgDoc === null ? '—' : 'Док ' + currAvgDoc + '%'}</span>
+                                        <span class="text-2xl font-black leading-none" style="color:${_urkGradientColor(currAvgUrk)}">${currAvgUrk}%</span>
+                                        <span class="text-[13px] font-black leading-none ${currAvgDoc === null ? 'text-slate-400' : ''}" style="${currAvgDoc === null ? '' : 'color:' + _urkGradientColor(currAvgDoc)}">${currAvgDoc === null ? '—' : 'Док ' + currAvgDoc + '%'}</span>
                                     </span>
                                     ${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}
                                 </div>
