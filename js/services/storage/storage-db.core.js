@@ -3,7 +3,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 20; // БЫЛО 16, СТАЛО 17
+const DB_VERSION = 21; // БЫЛО 20, СТАЛО 21 — индексы by_date/by_contractor на app_history
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -77,6 +77,7 @@ function openAppDb() {
 
             request.onupgradeneeded = function (event) {
                 const db = event.target.result;
+                const upgradeTx = event.target.transaction;
 
                 // Создаем таблицы, если их нет
                 Object.values(STORES).forEach(storeName => {
@@ -88,6 +89,17 @@ function openAppDb() {
                         db.createObjectStore(storeName, keyOptions);
                     }
                 });
+
+                // Индексы для журнала проверок (DB_VERSION 21): позволяют IndexedDB
+                // отдавать записи по дате/подряднику через курсор, без чтения всего
+                // стора — основа для постраничной загрузки Журнала.
+                const historyStore = upgradeTx.objectStore(STORES.HISTORY);
+                if (!historyStore.indexNames.contains('by_date')) {
+                    historyStore.createIndex('by_date', 'date');
+                }
+                if (!historyStore.indexNames.contains('by_contractor')) {
+                    historyStore.createIndex('by_contractor', 'contractorName');
+                }
             };
 
             // ЕСЛИ БАЗА ЗАБЛОКИРОВАНА СТАРОЙ ВКЛАДКОЙ
@@ -291,6 +303,62 @@ async function dbGetAll(storeName) {
     });
 }
 
+// КУРСОРНОЕ ЧТЕНИЕ СТРАНИЦЫ ПО ИНДЕКСУ (Журнал проверок, DB_VERSION 21).
+// Не заменяет dbGetAll — используется точечно там, где нужна страница,
+// а не весь стор (см. inspection.service.js getPage()).
+// opts: { indexName, limit, direction: 'prev'|'next', range: IDBKeyRange|null,
+//         cursorKey: значение поля индекса, с которого продолжить (exclusive) }
+async function dbGetPageByIndex(storeName, opts) {
+    const { indexName, limit = 50, direction = 'prev', range = null, cursorKey = null } = opts || {};
+    const db = await openAppDb();
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const index = store.index(indexName);
+
+        let effectiveRange = range;
+        if (cursorKey !== undefined && cursorKey !== null) {
+            // Продолжаем строго после последнего полученного значения индекса
+            // (direction 'prev' — двигаемся от больших к меньшим значениям,
+            // значит верхняя граница исключает cursorKey; 'next' — наоборот).
+            if (direction === 'prev') {
+                effectiveRange = IDBKeyRange.upperBound(cursorKey, true);
+            } else {
+                effectiveRange = IDBKeyRange.lowerBound(cursorKey, true);
+            }
+        }
+
+        const results = [];
+        let lastKey = null;
+        const pCode = window.syncConfig?.projectCode || 'LOCAL';
+        const req = index.openCursor(effectiveRange, direction === 'prev' ? 'prev' : 'next');
+
+        req.onsuccess = () => {
+            const cursor = req.result;
+            if (!cursor || results.length >= limit) {
+                resolve({
+                    items: results,
+                    hasMore: !!cursor,
+                    nextCursorKey: lastKey
+                });
+                return;
+            }
+
+            const item = cursor.value;
+            const itemProject = item.project_code || item.data?.project_code;
+            const belongsToProject = !itemProject || itemProject === pCode;
+
+            if (belongsToProject) {
+                results.push(item);
+                lastKey = cursor.key;
+            }
+            cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
 async function dbDelete(storeName, key) {
     const db = await openAppDb();
     return new Promise((resolve, reject) => {
@@ -316,6 +384,7 @@ async function dbClear(storeName) {
 window.dbPut = dbPut;
 window.dbGet = dbGet;
 window.dbGetAll = dbGetAll;
+window.dbGetPageByIndex = dbGetPageByIndex;
 window.dbDelete = dbDelete;
 window.dbClear = dbClear;
 window.dbPutBatch = dbPutBatch;

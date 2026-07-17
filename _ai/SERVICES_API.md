@@ -116,8 +116,15 @@ Wrapper над window.RbiRoles.
 | `canEditKnowledgeBase()` | `→ bool` | Редактирование базы знаний |
 | `canViewKnowledgeBase()` | `→ bool` | Просмотр базы знаний |
 | `getCurrentEngineerName()` | `→ string` | Имя текущего инженера |
-| `getAssignedProjects()` | `→ string[]` | Закреплённые за пользователем проекты (`appSettings.assignedProjects`) |
+| `getAssignedProjects()` | `→ string[]` | Закреплённые за пользователем проекты (`appSettings.assignedProjects`, fallback `appSettings.assigned_projects` — берётся непустой источник, пустой массив в первом поле больше не блокирует fallback, 2026-07-17) |
 | `getAssignedContractor()` | `→ string` | Закреплённый подрядчик пользователя (`appSettings.contractorName`) |
+| `writeUserProjectAssignment(inspectorId, projectsArray, extraFields?, settingsPatch?)` | `async → { error, settings? }` | Единая точка записи привязки объект(ы)↔пользователь в профиль Supabase (`rbi_engineer_profiles`) — обновляет ОБА поля (`assigned_projects` колонка + `settings.assignedProjects`) синхронно за один вызов; `extraFields` — доп. колонки профиля (`role`/`cloud_status`/`assigned_contractor`/`contractor_name`), `settingsPatch` — доп. ключи `settings` (`requestedProjects` и т.п.); используется `gameSaveUserAccess`/`gameBlockUserAccess` (`game.actions.js`) и `resolveRequest` (`object-directory.service.js`) вместо разрозненных прямых `update()` (2026-07-17) |
+
+## ObjectDirectory — `window.ObjectDirectory`
+
+| Метод | Сигнатура | Описание |
+|-------|-----------|---------|
+| `scanOfflineHistoryForNewUser()` | `async → void` | Сверка локальной офлайн-истории (`app_history`/`sk_records`) нового/уже работавшего офлайн инженера со справочником объектов — вызывается ОДНОКРАТНО при первом переходе профиля в `cloud_status:'approved'` (`sync-engine.core.js`, рядом с флагом `rbi_last_approved_pull_done`); собирает уникальные "сырые" имена объектов из истории, пропускает уже известные справочнику (через `normalizeProjectName`), остальные отправляет через `pushObjectRequestToCloud({..., source:'sk_import'})` — админ видит их в уже существующем экране «Заявки из ПК СК» (`loadRequests`/`resolveDirectoryRequest`), можно обрабатывать по частям (2026-07-17) |
 | `hasNoOwnObjects(role?)` | `→ bool` | `true`, если `dataScope` роли — `'none'` или `'all'` (роль без индивидуально закреплённых объектов) |
 | `getDataScope(role?, companyId?)` | `→ string` | Декларативный `dataScope` роли (`'all'\|'ownProject'\|'ownContractor'\|'ownProjectOrOwnRecords'\|'none'`) — единая точка, которую читают `sk.actions.js`/`sync-engine.core.js`/`sync-push-pull.core.js` вместо буквальных `role === 'x'`; `companyId?` выбирает матрицу (fallback `'rbi'`) |
 | `getAllowedModules(role?, companyId?)` | `→ string[]` | Список id реальных бизнес-platform-модулей (`BUSINESS_MODULE_IDS = ['quality','construction']`), разрешённых роли; в `ROLE_MATRIX` сейчас у всех 7 ролей одинаковое значение (осознанное решение пользователя «не ограничивать роли сейчас», 2026-07-13, §29 п.10в закрыт) — реально подключено к welcome-экрану через `js/core/app-shell.js`; пересечение с `company.enabledModules` выполняет `user-context.service.js` |
@@ -136,16 +143,33 @@ Wrapper над STORES.HISTORY. Регистрация: `service.inspections`.
 | Метод | Сигнатура | Описание |
 |-------|-----------|---------|
 | `normalize(record)` | `→ record` | Нормализация полей (module, entityType, _deleted, syncStatus) |
-| `getAll()` | `async → []` | Все записи истории проверок (нормализованные) |
-| `getActive()` | `async → []` | Только не удалённые |
+| `getAll()` | `async → []` | Все записи истории проверок (нормализованные) — читает весь стор, не для частых вызовов в UI-цикле |
+| `getActive()` | `async → []` | Только не удалённые (тоже весь стор) |
+| `getPage({ limit, cursorKey })` | `async → { items, hasMore, nextCursorKey }` | **(2026-07-17)** Постраничная (курсорная) загрузка через индекс `by_date` (DB_VERSION 21) — не весь стор. `cursorKey` — значение `date` последней записи предыдущей страницы (undefined для первой страницы). Используется Журналом (`history.actions.js` `loadRecords()`/`loadNextPage()`) вместо `getActive()` |
 | `getById(id)` | `async → record\|null` | По ID |
-| `save(record)` | `async → record` | Сохранить проверку (updated_at, source='local', syncStatus='not_synced') |
-| `softDelete(id)` | `async → record\|false` | Мягкое удаление |
-| `getAllSync()` | `sync → []` | Живой in-memory массив (`HistoryState.allRecords` либо `window.contractorArray`) |
-| `pushSync(item)` | `sync → bool` | Добавить запись в живой массив |
-| `setAllSync(arr)` | `sync → []` | Заменить весь живой массив целиком — пишет **одновременно** в `window.contractorArray` и `HistoryState` (если он есть), т.к. большинство модулей (`sk`/`construction`/`tasks`/`analytics`/`audit`/`meetings`/`interventions`/`knowledge`/`smart-input`) читают bare `window.contractorArray` без `HistoryState`-фоллбэка. Используется демо-режимом (`app-mode-utils.js`) и `_clearHistory()` (`settings.actions.js`) |
-| `getAllForAnalyticsSync()` | `sync → []` | Живой массив для аналитики |
+| `save(record)` | `async → record` | Сохранить проверку (updated_at, source='local', syncStatus='not_synced'); **(2026-07-17)** дополнительно вызывает `contractorMetrics.recalcTouched(record)` |
+| `softDelete(id)` | `async → record\|false` | Мягкое удаление; **(2026-07-17)** дополнительно вызывает `contractorMetrics.recalcTouched(record)` |
+| `getAllSync()` | `sync → []` | Живой in-memory массив — **(2026-07-17)** теперь всегда `window.contractorArray` (полный массив, не затронут пагинацией Журнала); `HistoryState.allRecords` с этого момента — только текущая страница Журнала, больше не используется как источник для этого метода |
+| `pushSync(item)` | `sync → bool` | Добавить запись в `window.contractorArray` |
+| `setAllSync(arr)` | `sync → []` | Заменить `window.contractorArray` целиком. Используется демо-режимом (`app-mode-utils.js`) и `_clearHistory()` (`settings.actions.js`) |
+| `getAllForAnalyticsSync()` | `sync → []` | `window.contractorArray` — полный массив для аналитики (не пагинированный) |
 | `getDefectCausesSync()` | `sync → []` | `window.DEFECT_CAUSES` |
+
+---
+
+## contractorMetrics — `window.RBI.services.contractorMetrics`
+
+**(Новый сервис, 2026-07-17)** Инкрементальный in-memory кэш метрик подрядчика — избегает пересчёта `getContractorMetrics()`/`getObjectIntegralMetrics()` (`math.utils.js`) по всей истории на каждый рендер вкладок «Подрядчики»/«Сводка». Кэш **не персистентный** (сознательное решение, подтверждено пользователем) — чистая функция от записей `app_history` через `window.contractorArray`, гарантирует одинаковый результат на разных устройствах после синхронизации без риска рассинхрона отдельного канала хранения. Регистрация: `service.contractorMetrics`.
+
+| Метод | Сигнатура | Описание |
+|-------|-----------|---------|
+| `recalcAll()` | `→ cache` | Полный пересчёт всех групп (`"подрядчик [объект]"`) из `window.contractorArray`. Вызывается один раз при старте приложения (`session.service.js` `restoreSession()`), не на каждое открытие вкладки |
+| `recalcTouched(recordOrRecords)` | `→ void` | Точечный пересчёт только затронутой группы (или групп — если передан массив). Вызывается из `inspection.service.js` (`save`/`softDelete`), `history.actions.js` (`deleteSelectedHistory`), `sync-engine.core.js` (после pull — только для записей, реально пришедших в этом pull) |
+| `getMetricsForGroup(groupKey)` | `→ metrics\|null` | Готовое значение метрик для группы; если кэш не инициализирован — считает `recalcAll()` (fallback, не должен происходить в обычном потоке) |
+| `getMetricsForRecord(record)` | `→ metrics\|null` | Шорткат — вычисляет `groupKey` записи сам |
+| `getAllGroupMetrics()` | `→ { groupKey: metrics }` | Копия всего текущего кэша |
+| `groupKeyOf(item)` | `→ string` | `"${contractorName} [${projectLabel}]"` — единый формат ключа группы, используемый и кэшем, и `analytics.render.js` |
+| `isInitialized()` | `→ bool` | Был ли выполнен хотя бы один `recalcAll()` |
 
 ---
 

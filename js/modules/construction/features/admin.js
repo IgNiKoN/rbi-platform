@@ -290,7 +290,16 @@ window.ConstAdmin = {
                     canonical_key: window.ObjectDirectory ? window.ObjectDirectory.cleanString(name) : name.trim().toLowerCase(),
                     display_name: name.trim(),
                     status: 'pending',
-                    request_type: 'directory',
+                    // request_type НЕ 'directory': заявки с этим типом уходят в
+                    // object_normalization_queue и обрабатываются через
+                    // resolveDirectoryRequest(), которая пополняет ОБЩИЙ справочник,
+                    // но НЕ привязывает конкретного инженера к объекту — заявка
+                    // "теряется" для этого пользователя (плашка никогда не появится,
+                    // даже после обработки админом). 'profile_only' идёт в панель
+                    // «Команда» (settings.requestedProjects), где resolveRequest()
+                    // при action='create'/'link_*' создаёт объект И привязывает
+                    // именно этого инженера — см. current_plan.md §2.2.
+                    request_type: 'profile_only',
                     created_at: new Date().toISOString()
                 };
 
@@ -299,7 +308,10 @@ window.ConstAdmin = {
                 _setSetting('pendingAssignedProjects', _pap);
 
                 if (typeof window.pushObjectRequestToCloud === 'function') {
-                    window.pushObjectRequestToCloud(requestedProject);
+                    window.pushObjectRequestToCloud(requestedProject).catch(function (e) {
+                        console.warn('[ConstAdmin] Не удалось отправить заявку на объект:', e);
+                        localStorage.setItem('rbi_cloud_dirty', '1');
+                    });
                 }
                 showToast("📨 Заявка на создание объекта отправлена руководителю!");
             }

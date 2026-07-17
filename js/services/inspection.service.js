@@ -57,18 +57,78 @@
             return Array.isArray(arr) ? arr.map(function (i) { return self.normalize(i); }) : [];
         },
 
-        getAllSync: function () {
-            if (window.HistoryState && Array.isArray(window.HistoryState.allRecords)) {
-                return window.HistoryState.allRecords;
+        // Постраничная (курсорная) загрузка Журнала (см. отчёт по оптимизации
+        // журнала/аналитики). Читает через индекс by_date (DB_VERSION 21,
+        // storage-db.core.js) — не весь стор app_history, а страницу "свежие
+        // сверху". opts: { limit, cursorKey } — cursorKey — значение поля
+        // `date` последней полученной на предыдущей странице записи (undefined
+        // для первой страницы). Мягко удалённые записи (_deleted/is_deleted)
+        // отфильтровываются на уровне сервиса — сам индекс их не знает.
+        //
+        // Примечание: индекс by_contractor существует для точечных точечных
+        // выборок ("все проверки подрядчика X"), но постраничная непрерывная
+        // навигация ("вторая страница подрядчика X") через него не реализована —
+        // IndexedDB не поддерживает offset-пагинацию по повторяющемуся значению
+        // индекса без отдельного составного индекса. Фильтр по подряднику в
+        // Журнале применяется к уже загруженной странице (см. history.render.js),
+        // как и раньше, просто на меньшем объёме данных, а не на всей истории.
+        getPage: async function (opts) {
+            var options = opts || {};
+            var limit = options.limit || 50;
+            var cursorKey = options.cursorKey;
+
+            if (typeof window.dbGetPageByIndex !== 'function') {
+                throw new Error('[RBI.inspections] dbGetPageByIndex недоступен');
             }
+
+            var self = this;
+            var collected = [];
+            var effectiveCursorKey = cursorKey;
+            var hasMore = false;
+
+            // Мягко удалённые записи пропускаем, но не считаем их за "страницу" —
+            // догоняем limit курсором дальше, пока не наберём нужное количество
+            // живых записей или не закончится стор.
+            for (var guard = 0; guard < 20 && collected.length < limit; guard++) {
+                var page = await window.dbGetPageByIndex(getHistoryStore(), {
+                    indexName: 'by_date',
+                    limit: limit - collected.length,
+                    direction: 'prev',
+                    cursorKey: effectiveCursorKey
+                });
+
+                var liveItems = (page.items || []).filter(function (i) {
+                    return i && i._deleted !== true && i.is_deleted !== true;
+                });
+                collected = collected.concat(liveItems.map(function (i) { return self.normalize(i); }));
+
+                hasMore = page.hasMore;
+                effectiveCursorKey = page.nextCursorKey;
+
+                if (!page.hasMore) break;
+            }
+
+            return {
+                items: collected,
+                hasMore: hasMore,
+                nextCursorKey: effectiveCursorKey
+            };
+        },
+
+        // ВАЖНО (Постраничная загрузка Журнала, см. отчёт по оптимизации журнала/
+        // аналитики): HistoryState.allRecords с этого момента содержит только
+        // ТЕКУЩУЮ страницу Журнала (History.loadRecords()/loadNextPage()), не весь
+        // стор app_history. Все прочие потребители (геймификация, СК, задачи,
+        // совещания, аналитика, knowledge, ai, smart-input и т.д.) продолжают
+        // ожидать ПОЛНЫЙ массив проверок — поэтому источник правды для getAllSync/
+        // getAllForAnalyticsSync теперь ВСЕГДА window.contractorArray (заполняется
+        // целиком в session.service.js restoreSession() и в sync-engine.core.js
+        // после pull), а не HistoryState.
+        getAllSync: function () {
             return Array.isArray(window.contractorArray) ? window.contractorArray : [];
         },
 
         pushSync: function (item) {
-            if (window.HistoryState && Array.isArray(window.HistoryState.allRecords)) {
-                window.HistoryState.allRecords.push(item);
-                return true;
-            }
             if (Array.isArray(window.contractorArray)) {
                 window.contractorArray.push(item);
                 return true;
@@ -78,21 +138,11 @@
 
         setAllSync: function (arr) {
             var safeArr = Array.isArray(arr) ? arr : [];
-            // ВАЖНО (найдено смоук-тестом): большинство модулей (sk/construction/
-            // tasks/analytics/audit/meetings/interventions/knowledge/smart-input и др.)
-            // читают bare window.contractorArray напрямую, без HistoryState-фоллбэка —
-            // писать нужно в оба места, не только в HistoryState.
             window.contractorArray = safeArr;
-            if (window.HistoryState) {
-                window.HistoryState.setRecords(safeArr);
-            }
             return window.contractorArray;
         },
 
         getAllForAnalyticsSync: function () {
-            if (window.HistoryState && Array.isArray(window.HistoryState.allRecords) && window.HistoryState.allRecords.length > 0) {
-                return window.HistoryState.allRecords;
-            }
             return Array.isArray(window.contractorArray) ? window.contractorArray : [];
         },
 
@@ -124,6 +174,9 @@
             }));
             await window.RBI.services.storage.put(getHistoryStore(), normalized);
             markSyncDirty();
+            if (window.RBI.services.contractorMetrics) {
+                window.RBI.services.contractorMetrics.recalcTouched(normalized);
+            }
             return normalized;
         },
 
@@ -143,6 +196,9 @@
             }));
             await window.RBI.services.storage.put(getHistoryStore(), deleted);
             markSyncDirty();
+            if (window.RBI.services.contractorMetrics) {
+                window.RBI.services.contractorMetrics.recalcTouched(deleted);
+            }
             return deleted;
         }
     };

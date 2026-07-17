@@ -136,10 +136,25 @@ window.AppViews = {
 
         // Внутренняя функция: выполнить рендер активной подвкладки
         function _doRender() {
-            if (typeof currentActiveAnalyticsTab !== 'undefined') {
-                var btn = document.querySelector(`button[onclick*="switchAnalyticsSubTab('${currentActiveAnalyticsTab}')"]`);
+            // Источник активной подвкладки — AnalyticsState.activeSubTab (устанавливается
+            // при восстановлении из localStorage в analytics.module.js:init), НЕ bare
+            // window.currentActiveAnalyticsTab — та переменная выставляется только внутри
+            // switchAnalyticsSubTab()/renderCurrentAnalyticsTab() и на самом первом входе
+            // (после restore из localStorage, до первого клика по подвкладке) остаётся
+            // undefined, поэтому старая проверка `typeof currentActiveAnalyticsTab !==
+            // 'undefined'` была всегда false и код проваливался в renderCurrentAnalyticsTab()
+            // напрямую — та функция не снимает hidden с DOM-контейнера подвкладки.
+            var targetTab = (window.AnalyticsState && window.AnalyticsState.activeSubTab)
+                || window.currentActiveAnalyticsTab;
+
+            if (targetTab) {
+                // Кнопки подвкладок переведены на data-analytics-action/data-action-arg
+                // (см. analytics.render.js:renderMarkup) — старый селектор по onclick
+                // никогда не находил кнопку, из-за чего switchAnalyticsSubTab (снимает
+                // hidden с нужного #sub-* контейнера) не вызывался при первом входе.
+                var btn = document.querySelector(`#analytics-subtabs-block button[data-action-arg="${targetTab}"]`);
                 if (btn && typeof switchAnalyticsSubTab === 'function') {
-                    switchAnalyticsSubTab(currentActiveAnalyticsTab, btn);
+                    switchAnalyticsSubTab(targetTab, btn);
                 } else if (typeof renderCurrentAnalyticsTab === 'function') {
                     renderCurrentAnalyticsTab();
                 }

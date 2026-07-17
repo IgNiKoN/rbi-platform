@@ -161,16 +161,19 @@ window.addAssignedProject = async function () {
         await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
     }
 
-    // Если облако подключено — записываем заявку в профиль пользователя
+    // Если облако подключено — записываем заявку в профиль пользователя.
+    // ИСПРАВЛЕНИЕ (см. current_plan.md §9): раньше немэтченный объект уходил
+    // с request_type='directory', который pushObjectRequestToCloud() маршрутизирует
+    // в общий object_normalization_queue (обновление справочника), а не в
+    // settings.requestedProjects профиля — из-за этого заявка на привязку
+    // конкретного инженера не попадала в панель «Команда» и админ её не видел.
+    // Теперь ЛЮБОЙ запрос из настроек инженера (matched или не matched) идёт
+    // как 'profile_only' — привязка к конкретному пользователю, видимая в
+    // панели «Команда»; создание нового объекта в справочнике при отсутствии
+    // совпадения делает сам админ через resolveRequest(action='create').
     try {
         if (typeof window.pushObjectRequestToCloud === 'function') {
-            // ВАЖНАЯ ПРАВКА: Если статус matched (выбран из базы), мы передаем флаг, 
-            // чтобы Supabase НЕ создавал новую сущность в object_normalization_queue
-            if (requestStatus.includes('matched')) {
-                requestedProject.request_type = 'profile_only'; // Только привязка
-            } else {
-                requestedProject.request_type = 'directory'; // Создание нового в справочнике
-            }
+            requestedProject.request_type = 'profile_only';
             await window.pushObjectRequestToCloud(requestedProject);
         }
     } catch (e) {
@@ -193,27 +196,56 @@ window.addAssignedProject = async function () {
     }
 };
 
+// Решение пользователя (current_plan.md §8): самостоятельное снятие объекта
+// запрещено — кнопка ✕ у подтверждённого (зелёного) объекта больше не удаляет
+// привязку напрямую (ни локально, ни в облаке), а создаёт заявку на снятие
+// (request_type: 'unassign'), которую обрабатывает администратор в панели
+// «Команда» (см. game.actions.js: requestedProjectsHtml/gameSaveUserAccess).
+// Реальное удаление из assigned_projects/settings.assignedProjects выполняется
+// только через permission.service.js:writeUserProjectAssignment при подтверждении.
 window.removeAssignedProject = async function (val) {
-    if (typeof appSettings !== 'undefined' && appSettings.assignedProjects) {
-        appSettings.assignedProjects = appSettings.assignedProjects.filter(p => p !== val);
-        if (typeof dbPut === 'function') await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
-
-        // Если удалили все проекты - нужно вернуть шапке обычный текстовый input
-        const projInputContainer = document.getElementById('inp-project')?.parentElement;
-        if (appSettings.assignedProjects.length === 0 && projInputContainer) {
-            projInputContainer.innerHTML = `<input type="text" id="inp-project" class="input-base text-center pr-7 transition-colors" placeholder="Объект *" autocomplete="off">
-            <span id="lock-inp-project" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 opacity-50 hidden pointer-events-none">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
-            </span>`;
-        } else {
-            if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
-        }
-
-        window.renderSyncUI();
+    if (typeof appSettings === 'undefined' || !Array.isArray(appSettings.assignedProjects) || !appSettings.assignedProjects.includes(val)) {
+        return;
     }
 
-    localStorage.setItem('rbi_cloud_dirty', '1');
-    if (typeof triggerSync === 'function') triggerSync('silent');
+    if (!Array.isArray(appSettings.pendingUnassignProjects)) {
+        appSettings.pendingUnassignProjects = [];
+    }
+    if (!appSettings.pendingUnassignProjects.includes(val)) {
+        appSettings.pendingUnassignProjects.push(val);
+    }
+
+    if (typeof dbPut === 'function') {
+        await dbPut('app_settings', { key: 'user_prefs', ...appSettings });
+    }
+
+    try {
+        let displayName = val;
+        if (typeof ObjectDirectory !== 'undefined' && Array.isArray(ObjectDirectory.objects)) {
+            const found = ObjectDirectory.objects.find(o => o.canonical_key === val);
+            if (found && found.display_name) displayName = found.display_name;
+        }
+
+        if (typeof window.pushObjectRequestToCloud === 'function') {
+            await window.pushObjectRequestToCloud({
+                raw_name: val,
+                canonical_key: val,
+                display_name: displayName,
+                request_type: 'unassign',
+                status: 'pending_unassign',
+                created_at: new Date().toISOString()
+            });
+        }
+    } catch (e) {
+        console.warn('[Objects] Не удалось отправить заявку на снятие объекта:', e);
+        localStorage.setItem('rbi_cloud_dirty', '1');
+    }
+
+    window.renderSyncUI();
+
+    if (typeof showToast === 'function') {
+        showToast('📤 Заявка на снятие объекта отправлена администратору');
+    }
 };
 
 window.initCloudConnection = async function () {

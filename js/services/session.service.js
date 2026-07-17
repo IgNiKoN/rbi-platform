@@ -127,6 +127,13 @@
           localStorage.setItem('photo_migration_v1_done', '1');
         }
 
+        // Разовый полный пересчёт агрегатов подрядчика (contractor-metrics.service.js)
+        // — один раз при старте приложения, не при каждом открытии вкладок
+        // «Подрядчики»/«Сводка» (см. отчёт по оптимизации журнала/аналитики).
+        if (window.RBI && window.RBI.services && window.RBI.services.contractorMetrics) {
+          window.RBI.services.contractorMetrics.recalcAll();
+        }
+
         if (!data) return;
 
         if (data.templateKey) window.currentTemplateKey = data.templateKey;

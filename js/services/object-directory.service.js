@@ -242,6 +242,75 @@
             return obj ? obj.display_name : canonicalKey;
         },
 
+        // Сверка локальной офлайн-истории нового инженера со справочником объектов
+        // (current_plan.md §9, п.1) — вызывается ОДИН раз при первом переходе профиля
+        // в cloud_status='approved' (симметрично флагу rbi_last_approved_pull_done
+        // в sync-engine.core.js). Собирает уникальные "сырые" имена объектов из
+        // локальных записей (app_history/sk_records), пропускает уже известные
+        // справочнику (через normalizeProjectName), отправляет остальные через тот
+        // же путь, что и импорт ПК СК (pushObjectRequestToCloud, source:'sk_import')
+        // — админ увидит их в уже существующем экране «Заявки из ПК СК»
+        // (object-directory.service.js:loadRequests/resolveDirectoryRequest),
+        // обрабатывать можно по частям (заявки остаются pending до обработки).
+        async scanOfflineHistoryForNewUser() {
+            if (typeof dbGetAll !== 'function' || typeof window.pushObjectRequestToCloud !== 'function') return;
+
+            try {
+                const storeNames = ['app_history', 'sk_records'];
+                const rawNames = new Set();
+
+                for (const storeName of storeNames) {
+                    let records = [];
+                    try {
+                        records = await dbGetAll(storeName) || [];
+                    } catch (e) {
+                        continue; // Стор может не существовать в конкретной сборке — не критично
+                    }
+
+                    records.forEach(r => {
+                        if (r._deleted || r.is_deleted) return;
+                        const raw = String(r.projectName || r.project_display_name || '').trim();
+                        if (raw) rawNames.add(raw);
+                    });
+                }
+
+                if (rawNames.size === 0) return;
+
+                await this.init(); // Убеждаемся, что справочник свежий перед сверкой
+
+                const nowIso = new Date().toISOString();
+                for (const rawName of rawNames) {
+                    let normalized;
+                    try {
+                        normalized = await this.normalizeProjectName(rawName, /* isFromSkImport */ true);
+                    } catch (e) {
+                        continue;
+                    }
+
+                    // matched/multiple_matched_auto_best — объект уже есть в справочнике,
+                    // сверка не нужна. Только 'not_normalized' идёт админу на решение.
+                    if (!normalized || normalized.status === 'matched' || normalized.status === 'multiple_matched_auto_best') {
+                        continue;
+                    }
+
+                    try {
+                        await window.pushObjectRequestToCloud({
+                            raw_name: rawName,
+                            canonical_key: '',
+                            display_name: rawName,
+                            status: 'pending',
+                            source: 'sk_import',
+                            created_at: nowIso
+                        });
+                    } catch (e) {
+                        console.warn('[ObjectDirectory] scanOfflineHistoryForNewUser: не удалось отправить заявку для', rawName, e);
+                    }
+                }
+            } catch (e) {
+                console.error('[ObjectDirectory] scanOfflineHistoryForNewUser', e);
+            }
+        },
+
         // Получить закреплённые объекты как полноценные объекты справочника
         getAssignedProjectObjects() {
             const assigned = this.getAssignedProjects();
@@ -526,6 +595,20 @@
                         ${reqs.map((req, idx) => {
                             const raw = String(req.raw_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ').replace(/\r/g, '');
                             const selectId = 'req_action_' + user.inspector_id + '_' + idx;
+                            // Заявка на снятие объекта (self-service снятие запрещено —
+                            // current_plan.md §8): нет смысла в "создать"/"связать",
+                            // только подтвердить снятие или отклонить (оставить объект).
+                            if (req.request_type === 'unassign') {
+                                return `
+                                <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2">
+                                    <div class="text-[11px] font-black text-slate-800 dark:text-white mb-2 uppercase truncate">⬅️ Снять объект: ${raw}</div>
+                                    <div class="flex gap-2">
+                                        <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'unassign_confirm')" class="flex-1 bg-orange-50 text-orange-700 border border-orange-200 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">Подтвердить снятие</button>
+                                        <button onclick="ObjectDirectory.resolveRequest('${user.inspector_id}', ${idx}, '${raw}', 'reject')" class="flex-1 bg-red-50 text-red-600 border border-red-200 py-2 rounded-lg text-[9px] font-black uppercase shadow-sm active:scale-95 transition-transform">Отклонить</button>
+                                    </div>
+                                </div>
+                            `;
+                            }
                             return `
                                 <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2">
                                     <div class="text-[11px] font-black text-slate-800 dark:text-white mb-2 uppercase truncate">${raw}</div>
@@ -681,7 +764,16 @@
                 let reqs = settings.requestedProjects || [];
 
                 // 2. Логика по действиям
-                if (action === 'create') {
+                if (action === 'unassign_confirm') {
+                    // Подтверждение заявки на снятие (self-service снятие запрещено —
+                    // current_plan.md §8): пользователь нажал ✕ у себя, теперь реально
+                    // убираем объект из assigned.
+                    const req = reqs[reqIdx] || {};
+                    const keyToRemove = req.canonical_key || rawName;
+                    assigned = assigned.filter(p => p !== keyToRemove);
+                    showToast('Объект снят с пользователя');
+                }
+                else if (action === 'create') {
                     const newKey = this.cleanString(rawName);
 
                     // Создаем ЛОКАЛЬНО
@@ -739,14 +831,30 @@
 
                 // 3. Удаляем заявку из массива инженера
                 reqs.splice(reqIdx, 1);
-                settings.requestedProjects = reqs;
 
-                // 4. Сохраняем обновленный профиль инженера в Supabase
-                await window.supabaseClient.from('rbi_engineer_profiles').update({
-                    assigned_projects: assigned,
-                    settings: settings,
-                    updated_at: nowIso
-                }).eq('inspector_id', inspectorId);
+                // 4. Сохраняем обновленный профиль инженера через единую точку
+                // записи (permission.service.js) — обновляет ОБА поля профиля
+                // (assigned_projects + settings.assignedProjects) синхронно;
+                // раньше здесь settings.assignedProjects не трогалось вовсе,
+                // расходясь с колонкой assigned_projects (см. current_plan.md §2).
+                var _permSvcResolve = (window.RBI && window.RBI.services && window.RBI.services.permissions);
+                if (_permSvcResolve && typeof _permSvcResolve.writeUserProjectAssignment === 'function') {
+                    const { error: writeErr } = await _permSvcResolve.writeUserProjectAssignment(
+                        inspectorId,
+                        assigned,
+                        {},
+                        { requestedProjects: reqs }
+                    );
+                    if (writeErr) throw writeErr;
+                } else {
+                    settings.requestedProjects = reqs;
+                    settings.assignedProjects = assigned;
+                    await window.supabaseClient.from('rbi_engineer_profiles').update({
+                        assigned_projects: assigned,
+                        settings: settings,
+                        updated_at: nowIso
+                    }).eq('inspector_id', inspectorId);
+                }
 
                 // Обновляем панель
                 this.renderManagerPanel();

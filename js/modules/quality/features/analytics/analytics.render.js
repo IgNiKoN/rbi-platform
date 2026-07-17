@@ -20,6 +20,22 @@ function _analyticsMode() {
     return window.analyticsDataMode || 'local';
 }
 
+// Инкрементальный кэш метрик подрядчика (contractor-metrics.service.js) —
+// избегает пересчёта getContractorMetrics() по всей группе при каждом рендере
+// вкладок «Подрядчики»/«Сводка». cData — уже сгруппированный по groupKey массив
+// записей ("подрядчик [объект]", тот же ключ, что использует сервис); если
+// переданный массив cData реально совпадает с группой в кэше — читаем готовое
+// значение, иначе (нестандартная группировка — например detail-view с фильтром
+// по периоду) считаем напрямую через getContractorMetrics, не трогая сервис.
+function _contractorMetricsCached(groupKey, cData) {
+    var svc = window.RBI && window.RBI.services && window.RBI.services.contractorMetrics;
+    if (svc) {
+        var cached = svc.getMetricsForGroup(groupKey);
+        if (cached) return cached;
+    }
+    return getContractorMetrics(cData, _templates().getUserTemplates());
+}
+
 function _getSkRecords() {
     if (window.RBI && window.RBI.services && window.RBI.services.sk) {
         return window.RBI.services.sk.getRecordsSync();
@@ -840,7 +856,7 @@ export const AnalyticsRender = {
 
         for (let cName in groupedC) {
             const cData = groupedC[cName];
-            const m = getContractorMetrics(cData, _templates().getUserTemplates());
+            const m = _contractorMetricsCached(cName, cData);
             if (m) {
                 cList.push({ name: cName, metrics: m });
                 if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
@@ -1045,7 +1061,7 @@ export const AnalyticsRender = {
         const cList = [];
         for (let cName in groupedC) {
             const cData = groupedC[cName];
-            const m = getContractorMetrics(cData, _templates().getUserTemplates());
+            const m = _contractorMetricsCached(cName, cData);
 
             // Считаем B1 и B2 для вывода в карточку
             let sumB1 = 0, sumB2 = 0;
@@ -1191,7 +1207,7 @@ export const AnalyticsRender = {
         const ratingData = [];
         for (let cName in groupedC) {
             if (groupedC[cName].length >= 3) {
-                const m = getContractorMetrics(groupedC[cName], _templates().getUserTemplates());
+                const m = _contractorMetricsCached(cName, groupedC[cName]);
                 if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
             }
         }
@@ -1849,7 +1865,7 @@ export const AnalyticsRender = {
         let ratingData = [];
         for (let cKey in allContrMap) {
             if (allContrMap[cKey].length >= 3) {
-                const m = getContractorMetrics(allContrMap[cKey], _templates().getUserTemplates());
+                const m = _contractorMetricsCached(cKey, allContrMap[cKey]);
                 if (m) ratingData.push({ name: cKey, val: m.finalC, isPrelim: m.count < 7 });
             }
         }

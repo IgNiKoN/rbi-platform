@@ -23,11 +23,40 @@ export const HistoryState = {
     visibleGroupCount: 15,
     hasMore: false,
 
+    // Постраничная (курсорная) загрузка Журнала (см. отчёт по оптимизации
+    // журнала/аналитики). pageCursorKey — значение поля `date` последней
+    // полученной записи (используется как IDBKeyRange-граница для следующей
+    // страницы через индекс by_date/by_contractor). pageHasMore — есть ли ещё
+    // записи в базе за текущим курсором. isLoadingPage — защита от повторного
+    // параллельного запроса следующей страницы.
+    pageCursorKey: null,
+    pageHasMore: false,
+    isLoadingPage: false,
+    pageSize: 50,
+
     /* ── Сеттеры ─────────────────────────────────────────────────────── */
 
     setRecords(arr) {
         this.allRecords = arr || [];
         this.records = this.allRecords;
+    },
+
+    appendRecords(arr) {
+        var toAppend = arr || [];
+        this.allRecords = this.allRecords.concat(toAppend);
+        this.records = this.allRecords;
+    },
+
+    setPageState(patch) {
+        if (patch && typeof patch === 'object') {
+            Object.assign(this, patch);
+        }
+    },
+
+    resetPagination() {
+        this.pageCursorKey = null;
+        this.pageHasMore = false;
+        this.isLoadingPage = false;
     },
 
     setFilters(patch) {

@@ -143,15 +143,22 @@ window.triggerSync = async function (mode = 'silent') {
                     serverProfile.assigned_contractor ||
                     '';
 
+                // Читаем оба поля профиля и берём непустой источник (симметрично
+                // permission.service.js:getAssignedProjects()) — пустой массив в
+                // колонке assigned_projects больше не блокирует fallback на
+                // settings.assignedProjects, если тот реально содержит данные.
                 let fetchedProjects = [];
+                const columnProjects = Array.isArray(serverProfile.assigned_projects) ? serverProfile.assigned_projects : null;
+                const settingsProjects = (serverProfile.settings && Array.isArray(serverProfile.settings.assignedProjects))
+                    ? serverProfile.settings.assignedProjects
+                    : null;
 
-                if (Array.isArray(serverProfile.assigned_projects)) {
-                    fetchedProjects = serverProfile.assigned_projects;
-                } else if (
-                    serverProfile.settings &&
-                    Array.isArray(serverProfile.settings.assignedProjects)
-                ) {
-                    fetchedProjects = serverProfile.settings.assignedProjects;
+                if (columnProjects && columnProjects.length > 0) {
+                    fetchedProjects = columnProjects;
+                } else if (settingsProjects && settingsProjects.length > 0) {
+                    fetchedProjects = settingsProjects;
+                } else {
+                    fetchedProjects = columnProjects || settingsProjects || [];
                 }
 
                 let needUiUpdate = false;
@@ -182,6 +189,17 @@ window.triggerSync = async function (mode = 'silent') {
                             localStorage.setItem('rbi_force_full_pull', '1');
                             localStorage.setItem('rbi_cloud_dirty', '1');
                             localStorage.setItem('rbi_last_approved_pull_done', '1');
+
+                            // Разовая сверка офлайн-истории со справочником объектов при
+                            // первом approve (current_plan.md §8/§9, решение пользователя:
+                            // запускать после approve, не сразу при подключении) — отправляет
+                            // админу заявки на объекты из локальной истории, не совпадающие
+                            // со справочником, через уже существующий экран «Заявки из ПК СК».
+                            if (window.ObjectDirectory && typeof window.ObjectDirectory.scanOfflineHistoryForNewUser === 'function') {
+                                window.ObjectDirectory.scanOfflineHistoryForNewUser().catch(function (e) {
+                                    console.warn('[Sync] scanOfflineHistoryForNewUser не выполнена:', e);
+                                });
+                            }
                         }
                         const oldProjects = JSON.stringify(appSettings.assignedProjects || []);
                         const newProjects = JSON.stringify(fetchedProjects);
@@ -189,6 +207,13 @@ window.triggerSync = async function (mode = 'silent') {
                         if (oldProjects !== newProjects) {
                             appSettings.assignedProjects = fetchedProjects;
                             appSettings.pendingAssignedProjects = [];
+                            // Заявки на снятие, которые сервер уже применил (объект
+                            // реально пропал из fetchedProjects) — больше не "в ожидании".
+                            if (Array.isArray(appSettings.pendingUnassignProjects)) {
+                                appSettings.pendingUnassignProjects = appSettings.pendingUnassignProjects.filter(
+                                    key => fetchedProjects.includes(key)
+                                );
+                            }
                             needUiUpdate = true;
 
                             // 1. Команды для синхронизатора (качаем заново)
@@ -209,6 +234,10 @@ window.triggerSync = async function (mode = 'silent') {
 
                         if (!Array.isArray(appSettings.pendingAssignedProjects)) {
                             appSettings.pendingAssignedProjects = [];
+                        }
+
+                        if (!Array.isArray(appSettings.pendingUnassignProjects)) {
+                            appSettings.pendingUnassignProjects = [];
                         }
                     }
                 }
@@ -871,7 +900,9 @@ if (window.RbiStorageManager) {
             }
 
             // МАССОВОЕ СОХРАНЕНИЕ ПРОВЕРОК
+            let pulledHistoryBatch = [];
             if (window._tempHistoryBatch && window._tempHistoryBatch.length > 0 && typeof dbPutBatch === 'function') {
+                pulledHistoryBatch = window._tempHistoryBatch;
                 await dbPutBatch('app_history', window._tempHistoryBatch);
                 window._tempHistoryBatch = []; // очищаем
             }
@@ -879,6 +910,13 @@ if (window.RbiStorageManager) {
             if (typeof dbGetAll === 'function') {
                 window.contractorArray = (await dbGetAll('app_history') || []).filter(x => !x._deleted);
                 window.etalonActsArray = (await dbGetAll('rbi_etalon_acts') || []).filter(x => !x._deleted); // <-- ОЧЕНЬ ВАЖНО: обновляем и эталоны
+            }
+
+            // Точечный пересчёт агрегатов подрядчика (contractor-metrics.service.js) —
+            // только для подрядчиков/объектов, чьи записи реально пришли в этом pull,
+            // а не полный пересчёт всей базы (см. отчёт по оптимизации журнала/аналитики).
+            if (pulledHistoryBatch.length > 0 && window.RBI.services.contractorMetrics) {
+                window.RBI.services.contractorMetrics.recalcTouched(pulledHistoryBatch);
             }
         }
 
@@ -1504,7 +1542,16 @@ if (window.RbiStorageManager) {
                             allowedToPush = true;
                         } else if (currentRole === 'engineer') {
                             const ownerOk = !recEngineer || recEngineer === currentEngineer;
-                            const projectOk = !assignedProjects || assignedProjects.length === 0 || assignedProjects.includes(recProject);
+                            // Согласовано с filterByDataScope('ownProjectOrOwnRecords',
+                            // permission.service.js): пустой assignedProjects больше НЕ
+                            // разрешает push по любому объекту — только записи без
+                            // назначенного проекта (свои же). Раньше пустой список
+                            // трактовался как "доступ ко всему", что противоречило
+                            // чтению того же инженера (см. current_plan.md §2).
+                            const isUnassignedProject = recProject === 'unknown' || recProject === '';
+                            const projectOk = (!assignedProjects || assignedProjects.length === 0)
+                                ? isUnassignedProject
+                                : assignedProjects.includes(recProject);
 
                             if (ownerOk && projectOk) allowedToPush = true;
                             else if (!ownerOk) blockReason = 'Запись создана другим инженером';
@@ -3016,6 +3063,20 @@ if (window.RbiStorageManager) {
                 safeToast("⚠️ В фоне загружены новые аварии (B3). Обновите вкладку для просмотра.");
             }
         }
+
+        // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "История пустая после sync"):
+        // событие 'sync:completed' объявлено в PLATFORM_TARGET_ARCHITECTURE.md и на
+        // него подписаны 9 модулей (history/audit/analytics/tasks/sk/etalon/meetings/
+        // schedule/reports/engineer/game/construction), но нигде в коде оно не
+        // эмитилось — модули узнавали о завершении синка только через полную
+        // перезагрузку страницы (F5), которая заново читает IndexedDB в
+        // session.service.js:restoreSession(). Эмитим только после реально
+        // выполненного цикла (эта строка не достигается при ранних return выше —
+        // offline/isSyncing/silent-без-изменений, — там перерисовывать нечего).
+        if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
+            window.RBI.events.emit('sync:completed', { mode: mode, hasChanges: hasChanges, pulledChecks: pulledChecks, totalPushed: totalPushed });
+        }
+        document.dispatchEvent(new CustomEvent('sync:completed', { detail: { mode: mode, hasChanges: hasChanges } }));
 
     } catch (e) {
         console.error("[Sync] Ошибка:", e);

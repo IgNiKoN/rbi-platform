@@ -109,9 +109,18 @@ export const HistoryRender = {
         const fPhoto = document.getElementById('hist-filter-photo')?.checked;
         const fB3 = document.getElementById('hist-filter-b3')?.checked;
 
-        const fProj = HistoryState.filters.project || [];
-        const fContr = HistoryState.filters.contractor || [];
-        const fInsp = HistoryState.filters.inspector || [];
+        // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "Глобальные фильтры истории не
+        // работают"): applyMultiFilter() (multi-filter.js) пишет выбор объекта/
+        // подрядчика/инспектора в window.activeMultiFilters.history, а не в
+        // HistoryState.filters — тот же split-brain, что уже был обойдён в
+        // analytics.render.js через _historyFilters(). HistoryState.filters
+        // никогда не заполняется этими тремя ключами (только period/searchText
+        // из DOM выше), поэтому чтение из него делало мультифильтр "визуально
+        // выбран, но не применяется". Источник правды — activeMultiFilters.
+        const _histMultiFilters = (window.activeMultiFilters && window.activeMultiFilters.history) || {};
+        const fProj = _histMultiFilters.project || [];
+        const fContr = _histMultiFilters.contractor || [];
+        const fInsp = _histMultiFilters.inspector || [];
 
         let filteredArr = HistoryState.allRecords;
         const now = new Date();
@@ -268,6 +277,13 @@ export const HistoryRender = {
             html += `<div id="hidden-contractor-groups"></div>`;
             html += `<button id="load-more-history-btn" onclick="window.loadMoreHistoryGroups()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-6 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
             Загрузить остальные объекты (${window._hiddenHistoryGroups.length})
+        </button>`;
+        } else if (HistoryState.pageHasMore) {
+            // Уже показаны все загруженные в память группы — но в базе (за курсором
+            // by_date) есть ещё записи. Кнопка тянет следующую страницу через
+            // IndexedDB-курсор (HistoryActions.loadNextPage), а не весь стор целиком.
+            html += `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-6 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
+            Загрузить более старые проверки
         </button>`;
         }
 
@@ -470,6 +486,14 @@ if (typeof window !== 'undefined') {
     window.applyHistoryFilters = HistoryRender.applyFilters;
     window.updateAllDynamicFilters = HistoryRender.updateFilters;
     window.loadMoreHistoryGroups = HistoryRender.loadMoreGroups;
+    // Постраничная (курсорная) дозагрузка Журнала — делегирует в HistoryActions
+    // (window-глобал, не ES import — history.actions.js уже импортирует
+    // HistoryRender, обратный импорт создал бы цикл).
+    window.loadMoreHistoryPage = function () {
+        if (window.HistoryActions && typeof window.HistoryActions.loadNextPage === 'function') {
+            return window.HistoryActions.loadNextPage();
+        }
+    };
 }
 
 console.log('[HistoryRender] history.render.js loaded');

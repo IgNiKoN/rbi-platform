@@ -61,9 +61,6 @@ function _inspections() {
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
         return window.RBI.services.inspections.getAllSync();
     }
-    if (window.HistoryState && Array.isArray(window.HistoryState.allRecords)) {
-        return window.HistoryState.allRecords;
-    }
     if (Array.isArray(window.contractorArray)) return window.contractorArray;
     return [];
 }

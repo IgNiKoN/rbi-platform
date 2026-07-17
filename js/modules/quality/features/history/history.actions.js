@@ -56,7 +56,10 @@ export const HistoryActions = {
     },
 
     /**
-     * Загрузить данные через InspectionService.getActive().
+     * Загрузить ПЕРВУЮ страницу Журнала через InspectionService.getPage()
+     * (курсор по индексу by_date — DB_VERSION 21, storage-db.core.js), а не
+     * весь стор app_history через getActive()/getAll(). Заменяет предыдущий
+     * подход «достать всё сразу» — см. отчёт по оптимизации журнала/аналитики.
      * Обновляет HistoryState и эмитит history:loaded.
      */
     async loadRecords() {
@@ -66,8 +69,13 @@ export const HistoryActions = {
                 console.warn('[HistoryActions] inspection service недоступен');
                 return;
             }
-            const records = await svc.getActive();
-            HistoryState.setRecords(records || []);
+            HistoryState.resetPagination();
+            const page = await svc.getPage({ limit: HistoryState.pageSize });
+            HistoryState.setRecords(page.items || []);
+            HistoryState.setPageState({
+                pageCursorKey: page.nextCursorKey,
+                pageHasMore: page.hasMore
+            });
 
             const events = this._ctx && this._ctx.events;
             if (events && typeof events.emit === 'function') {
@@ -75,6 +83,36 @@ export const HistoryActions = {
             }
         } catch (e) {
             console.error('[HistoryActions] ошибка loadRecords:', e);
+        }
+    },
+
+    /**
+     * Дозагрузить СЛЕДУЮЩУЮ страницу Журнала (курсор продолжается с места,
+     * где остановилась предыдущая страница) и добросить её к уже показанным
+     * записям. Не перечитывает и не пересортировывает весь массив — только
+     * добавляет новые записи и перерисовывает список.
+     */
+    async loadNextPage() {
+        if (HistoryState.isLoadingPage || !HistoryState.pageHasMore) return;
+        const svc = this._ctx && this._ctx.inspections;
+        if (!svc) return;
+
+        try {
+            HistoryState.setPageState({ isLoadingPage: true });
+            const page = await svc.getPage({
+                limit: HistoryState.pageSize,
+                cursorKey: HistoryState.pageCursorKey
+            });
+            HistoryState.appendRecords(page.items || []);
+            HistoryState.setPageState({
+                pageCursorKey: page.nextCursorKey,
+                pageHasMore: page.hasMore,
+                isLoadingPage: false
+            });
+            HistoryRender.render();
+        } catch (e) {
+            console.error('[HistoryActions] ошибка loadNextPage:', e);
+            HistoryState.setPageState({ isLoadingPage: false });
         }
     },
 
@@ -183,6 +221,8 @@ export const HistoryActions = {
         if (!confirm('Удалить выбранные проверки (' + ids.length + ' шт)?')) return;
 
         var storage = _storage(HistoryActions._ctx);
+        var contractorMetricsSvc = (HistoryActions._ctx && HistoryActions._ctx.contractorMetrics)
+            || (window.RBI && window.RBI.services && window.RBI.services.contractorMetrics);
 
         for (var j = 0; j < ids.length; j++) {
             var delId = ids[j];
@@ -199,6 +239,7 @@ export const HistoryActions = {
                 item.sync_status = 'not_synced';
                 item.syncBlockReason = '';
                 await storage.put(storage.stores().HISTORY, item);
+                if (contractorMetricsSvc) contractorMetricsSvc.recalcTouched(item);
             }
         }
 

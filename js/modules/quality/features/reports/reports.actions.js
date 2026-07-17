@@ -105,7 +105,7 @@ function _getAllInspections() {
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
         return window.RBI.services.inspections.getAllSync();
     }
-    return (window.HistoryState && window.HistoryState.allRecords) || (Array.isArray(window.contractorArray) ? window.contractorArray : []);
+    return Array.isArray(window.contractorArray) ? window.contractorArray : [];
 }
 
 function _getSkRecords() {

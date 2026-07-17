@@ -299,17 +299,73 @@
             return 'Инженер';
         },
 
-        // 10. Получить закреплённые объекты
+        // 10. Получить закреплённые объекты.
+        // Читает оба возможных поля (assignedProjects — основное, assigned_projects —
+        // алиас колонки Supabase) и берёт непустой источник; пустой массив в первом
+        // поле больше не блокирует fallback на второй (было: Array.isArray([]) === true
+        // "съедал" реальные данные во втором поле — см. current_plan.md §2).
         getAssignedProjects() {
-            if (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects)) return appSettings.assignedProjects;
-            if (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assigned_projects)) return appSettings.assigned_projects;
-            return [];
+            if (typeof appSettings === 'undefined') return [];
+            const primary = Array.isArray(appSettings.assignedProjects) ? appSettings.assignedProjects : null;
+            const secondary = Array.isArray(appSettings.assigned_projects) ? appSettings.assigned_projects : null;
+            if (primary && primary.length > 0) return primary;
+            if (secondary && secondary.length > 0) return secondary;
+            return primary || secondary || [];
         },
 
         // 11. Получить подрядчика пользователя
         getAssignedContractor() {
             if (typeof appSettings === 'undefined') return '';
             return appSettings.contractorName || appSettings.contractor_name || appSettings.assignedContractor || appSettings.assigned_contractor || '';
+        },
+
+        // 19. Единая точка записи привязки «объект(ы) ↔ пользователь» в профиль
+        // Supabase (`rbi_engineer_profiles`) — заменяет 3 несогласованных прямых
+        // update() в game.actions.js (gameSaveUserAccess/gameBlockUserAccess) и
+        // object-directory.service.js (resolveRequest), которые писали только
+        // одно из двух полей профиля (assigned_projects/settings.assignedProjects),
+        // из-за чего они расходились (см. current_plan.md §2). Всегда обновляет
+        // ОБА поля синхронно. extraFields — дополнительные колонки профиля
+        // (role/cloud_status/assigned_contractor/contractor_name и т.п.),
+        // settingsPatch — дополнительные ключи settings (requestedProjects и т.п.).
+        async writeUserProjectAssignment(inspectorId, projectsArray, extraFields, settingsPatch) {
+            if (!window.supabaseClient || !inspectorId) return { error: 'no_client_or_id' };
+
+            const safeProjects = Array.isArray(projectsArray) ? projectsArray : [];
+            const nowIso = new Date().toISOString();
+
+            try {
+                const { data: rows, error: readError } = await window.supabaseClient
+                    .from('rbi_engineer_profiles')
+                    .select('settings')
+                    .eq('inspector_id', inspectorId)
+                    .limit(1);
+
+                if (readError) throw readError;
+
+                const currentSettings = (rows && rows[0] && rows[0].settings) ? rows[0].settings : {};
+                const newSettings = Object.assign({}, currentSettings, settingsPatch || {}, {
+                    assignedProjects: safeProjects
+                });
+
+                const updatePayload = Object.assign({}, extraFields || {}, {
+                    assigned_projects: safeProjects,
+                    settings: newSettings,
+                    updated_at: nowIso
+                });
+
+                const { error: writeError } = await window.supabaseClient
+                    .from('rbi_engineer_profiles')
+                    .update(updatePayload)
+                    .eq('inspector_id', inspectorId);
+
+                if (writeError) throw writeError;
+
+                return { error: null, settings: newSettings };
+            } catch (e) {
+                console.error('[permission.service] writeUserProjectAssignment', e);
+                return { error: e };
+            }
         },
 
         // 12. Применить визуальные ограничения интерфейса
@@ -428,6 +484,10 @@
 
         getAssignedContractor: function () {
             return permissions.getAssignedContractor();
+        },
+
+        writeUserProjectAssignment: function (inspectorId, projectsArray, extraFields, settingsPatch) {
+            return permissions.writeUserProjectAssignment(inspectorId, projectsArray, extraFields, settingsPatch);
         },
 
         getDataScope: function (role, companyId) {

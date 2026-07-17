@@ -1795,11 +1795,17 @@ function emit(eventName, detail) {
           user.settings?.contractorName ||
           '';
 
-        const projectsArray = Array.isArray(user.assigned_projects)
-          ? user.assigned_projects
-          : Array.isArray(user.settings?.assignedProjects)
-            ? user.settings.assignedProjects
-            : [];
+        // Берём непустой источник (симметрично permission.service.js:getAssignedProjects()) —
+        // пустой массив в колонке assigned_projects больше не блокирует fallback на
+        // settings.assignedProjects, если тот реально содержит данные (было: админ видел
+        // "объект не закреплён", хотя объект реально лежал во втором поле).
+        const columnProjectsArr = Array.isArray(user.assigned_projects) ? user.assigned_projects : null;
+        const settingsProjectsArr = Array.isArray(user.settings?.assignedProjects) ? user.settings.assignedProjects : null;
+        const projectsArray = (columnProjectsArr && columnProjectsArr.length > 0)
+          ? columnProjectsArr
+          : (settingsProjectsArr && settingsProjectsArr.length > 0)
+            ? settingsProjectsArr
+            : (columnProjectsArr || settingsProjectsArr || []);
 
         // Подготавливаем JSON-массив объектов
         const projectsJsonStr = JSON.stringify(projectsArray).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
@@ -1828,7 +1834,26 @@ function emit(eventName, detail) {
                         Заявки на объекты (${requestedProjects.length})
                     </div>
 
-                    ${requestedProjects.map((req, idx) => `
+                    ${requestedProjects.map((req, idx) => {
+                        // Заявка на снятие (пользователь нажал ✕ у себя в настройках,
+                        // самостоятельное снятие запрещено — current_plan.md §8):
+                        // отдельный, более простой select (нет смысла "связывать"/
+                        // "создавать" объект, который и так уже назначен).
+                        if (req.request_type === 'unassign') {
+                            return `
+                        <div class="mb-2 p-2 bg-white rounded-lg border border-orange-100">
+                            <div class="text-[10px] font-black text-slate-700 mb-1">
+                                ⬅️ Снять объект: ${esc(req.raw_name || req.display_name || 'Без названия')}
+                            </div>
+                            <select id="req_action_${domId}_${idx}" class="input-base !py-1.5 !text-[10px]">
+                                <option value="ignore">Оставить в ожидании</option>
+                                <option value="unassign_confirm">Подтвердить снятие объекта</option>
+                                <option value="reject">Отклонить (оставить объект)</option>
+                            </select>
+                        </div>
+                    `;
+                        }
+                        return `
                         <div class="mb-2 p-2 bg-white rounded-lg border border-orange-100">
                             <div class="text-[10px] font-black text-slate-700 mb-1">
                                 ${esc(req.raw_name || req.display_name || 'Без названия')}
@@ -1845,7 +1870,8 @@ function emit(eventName, detail) {
                                 <option value="reject">Отклонить</option>
                             </select>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             ` : '';
 
@@ -2019,37 +2045,26 @@ function emit(eventName, detail) {
     try {
       const nowIso = new Date().toISOString();
 
-      const { data: currentRows, error: readError } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .select('settings')
-        .eq('inspector_id', inspectorId)
-        .limit(1);
-
-      if (readError) throw readError;
-
-      const oldSettings = currentRows && currentRows[0] && currentRows[0].settings
-        ? currentRows[0].settings
-        : {};
-
-      const newSettings = {
-        ...oldSettings,
-        blocked_at: nowIso,
-        blocked_reason: 'blocked_by_admin'
-      };
-
-      const { error } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .update({
+      // Единая точка записи (permission.service.js) — обновляет ОБА поля
+      // профиля (assigned_projects + settings.assignedProjects) синхронно,
+      // здесь всегда в []. Раньше settings.assignedProjects при блокировке
+      // не трогалось и оставалось со старым значением (см. current_plan.md §2).
+      var _permSvcBlock = (GameActions._ctx && GameActions._ctx.permissions) || window.RBI.services.permissions;
+      const { error } = await _permSvcBlock.writeUserProjectAssignment(
+        inspectorId,
+        [],
+        {
           role: 'guest',
           cloud_status: 'blocked',
-          assigned_projects: [],
           assigned_contractor: '',
           contractor_name: '',
-          settings: newSettings,
-          updated_at: nowIso,
           last_seen_at: nowIso
-        })
-        .eq('inspector_id', inspectorId);
+        },
+        {
+          blocked_at: nowIso,
+          blocked_reason: 'blocked_by_admin'
+        }
+      );
 
       if (error) throw error;
 
@@ -2156,6 +2171,15 @@ function emit(eventName, detail) {
           continue; // Просто пропускаем, она не попадет в remainingRequests
         }
 
+        if (req.request_type === 'unassign' && action === 'unassign_confirm') {
+          // Подтверждение заявки на снятие объекта (self-service снятие
+          // запрещено — current_plan.md §8): реально убираем canonical_key
+          // из массива, который ниже пойдёт в writeUserProjectAssignment.
+          const keyToRemove = req.canonical_key || req.raw_name;
+          projectsArray = projectsArray.filter(p => p !== keyToRemove);
+          continue;
+        }
+
         if (action.startsWith('link_')) {
           // Привязка к существующему объекту
           const canonicalKey = action.replace('link_', '');
@@ -2211,28 +2235,31 @@ function emit(eventName, detail) {
         }
       }
 
-      currentSettings = {
-        ...currentSettings,
-        assignedProjects: projectsArray,
-        requestedProjects: remainingRequests,
-        role: role,
-        cloudStatus: cloudStatus,
-        assignedContractor: contr,
-        contractorName: contr
-      };
-
-      const { error } = await window.supabaseClient
-        .from('rbi_engineer_profiles')
-        .update({
+      // Единая точка записи (permission.service.js) — обновляет ОБА поля
+      // профиля (assigned_projects + settings.assignedProjects) синхронно,
+      // вместо прежнего прямого update(), который писал колонку и settings
+      // раздельно, но был единственным путём, где оба поля совпадали (см.
+      // current_plan.md §2 — здесь расхождения не было, но теперь это одна
+      // точка правды на все 3 пути записи: gameSaveUserAccess/gameBlockUserAccess/
+      // resolveRequest).
+      var _permSvcSave = (GameActions._ctx && GameActions._ctx.permissions) || window.RBI.services.permissions;
+      const { error } = await _permSvcSave.writeUserProjectAssignment(
+        inspectorId,
+        projectsArray,
+        {
           role: role,
           cloud_status: cloudStatus,
           assigned_contractor: contr,
-          contractor_name: contrDisplay,
-          assigned_projects: projectsArray,
-          settings: currentSettings,
-          updated_at: new Date().toISOString()
-        })
-        .eq('inspector_id', inspectorId);
+          contractor_name: contrDisplay
+        },
+        {
+          requestedProjects: remainingRequests,
+          role: role,
+          cloudStatus: cloudStatus,
+          assignedContractor: contr,
+          contractorName: contr
+        }
+      );
 
       if (error) throw error;
 

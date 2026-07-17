@@ -155,7 +155,7 @@
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
       return window.RBI.services.inspections.getAllSync();
     }
-    return (window.HistoryState && window.HistoryState.allRecords) || [];
+    return Array.isArray(window.contractorArray) ? window.contractorArray : [];
   }
 
   function _pushInspection(item) {
@@ -165,8 +165,8 @@
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
       return window.RBI.services.inspections.pushSync(item);
     }
-    if (window.HistoryState && window.HistoryState.allRecords) {
-      window.HistoryState.allRecords.push(item);
+    if (Array.isArray(window.contractorArray)) {
+      window.contractorArray.push(item);
       return true;
     }
     return false;
@@ -428,18 +428,22 @@
           });
           _setSetting('pendingAssignedProjects', _pap);
 
-          if (window.supabaseClient) {
-            var stableInspectorId = `${_syncConfig().projectCode}_${_getSetting('engineerName')}`.replace(/\s+/g, '_');
-            window.supabaseClient.from('rbi_engineer_profiles').select('settings').eq('inspector_id', stableInspectorId).single().then(function ({ data }) {
-              if (data) {
-                var s = data.settings || {};
-                var reqs = s.requestedProjects || [];
-                if (!reqs.some(function (r) { return r.raw_name === newObjName; })) {
-                  reqs.push({ raw_name: newObjName, status: 'pending', created_at: new Date().toISOString() });
-                  s.requestedProjects = reqs;
-                  window.supabaseClient.from('rbi_engineer_profiles').update({ settings: s }).eq('inspector_id', stableInspectorId).then();
-                }
-              }
+          // Единый путь отправки заявки на привязку инженера к объекту
+          // (симметрично window.addAssignedProject) — раньше здесь был отдельный
+          // прямой update() без request_type, из-за чего заявка не попадала под
+          // фильтр панели «Команда» согласованно с остальными путями, и ошибки
+          // сети/RLS проглатывались молча (не было .catch()). См. current_plan.md §2.2.
+          if (typeof window.pushObjectRequestToCloud === 'function') {
+            window.pushObjectRequestToCloud({
+              raw_name: newObjName,
+              canonical_key: '',
+              display_name: newObjName,
+              status: 'pending',
+              request_type: 'profile_only',
+              created_at: new Date().toISOString()
+            }).catch(function (e) {
+              console.warn('[AuditActions] Не удалось отправить заявку на объект:', e);
+              localStorage.setItem('rbi_cloud_dirty', '1');
             });
           }
           showToast(`🏢 Объект "${newObjName}" отправлен на согласование руководителю.`);

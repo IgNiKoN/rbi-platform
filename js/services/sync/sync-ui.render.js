@@ -43,6 +43,11 @@ window.renderSyncUI = function () {
         // Отрисовка "Моих объектов"
         const myProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects)) ? appSettings.assignedProjects : [];
         const pendingProjects = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.pendingAssignedProjects)) ? appSettings.pendingAssignedProjects : [];
+        // Объекты, на снятие которых уже отправлена заявка администратору
+        // (см. window.removeAssignedProject — самостоятельное снятие запрещено,
+        // current_plan.md §8) — показываем как «заявка на снятие», не даём
+        // повторно нажать ✕.
+        const pendingUnassign = (typeof appSettings !== 'undefined' && Array.isArray(appSettings.pendingUnassignProjects)) ? appSettings.pendingUnassignProjects : [];
         // Убираем из "Ожидающих" те объекты, которые уже есть в "Подтвержденных"
         const filteredPending = pendingProjects.filter(p =>
             !myProjects.includes(p.canonical_key) &&
@@ -55,15 +60,20 @@ window.renderSyncUI = function () {
             projectsHtml = '<div class="text-[10px] text-slate-400 italic text-center mb-2 border border-dashed border-slate-300 rounded p-2">Объекты не добавлены. Шапка осмотра разблокирована для ручного ввода.</div>';
         } else {
             // Рисуем зеленые (Подтвержденные)
-            projectsHtml += myProjects.map(p => `
+            projectsHtml += myProjects.map(p => {
+                const unassignPending = pendingUnassign.includes(p);
+                return `
                 <div class="flex justify-between items-center bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-2 rounded-lg mb-1.5 shadow-sm">
                     <div>
                         <div class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">${p}</div>
-                        <div class="text-[8px] font-black uppercase text-green-600">Подтверждён</div>
+                        <div class="text-[8px] font-black uppercase ${unassignPending ? 'text-orange-600' : 'text-green-600'}">${unassignPending ? 'Заявка на снятие отправлена' : 'Подтверждён'}</div>
                     </div>
-                    <button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>
+                    ${unassignPending
+                        ? ''
+                        : `<button onclick="window.removeAssignedProject('${p.replace(/'/g, "\\'")}')" class="text-red-500 font-black text-[12px] px-2 active:scale-90">✕</button>`}
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
             // Рисуем оранжевые (В ожидании)
             projectsHtml += filteredPending.map(p => `

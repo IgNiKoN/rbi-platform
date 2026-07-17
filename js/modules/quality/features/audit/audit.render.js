@@ -27,11 +27,14 @@ import { AuditActions } from './audit.actions.js';
     return Array.isArray(window.customTwiCards) ? window.customTwiCards : [];
   }
 
-  // Единая точка доступа к window.HistoryState.allRecords (без фоллбэка на
-  // contractorArray — сервисный getAllSync() фоллбэкает шире, поэтому здесь
-  // сохраняется точная копия текущей узкой логики updateDashboard()).
+  // Единая точка доступа к полному массиву проверок. ВАЖНО (постраничная
+  // загрузка Журнала, см. отчёт по оптимизации журнала/аналитики):
+  // window.HistoryState.allRecords с этого момента содержит только текущую
+  // страницу Журнала, не весь стор — источник правды здесь всегда
+  // window.contractorArray (полный массив, заполняется в session.service.js/
+  // sync-engine.core.js).
   function _getAllInspections() {
-    return (window.HistoryState && window.HistoryState.allRecords) || [];
+    return Array.isArray(window.contractorArray) ? window.contractorArray : [];
   }
 
   function _templates() {

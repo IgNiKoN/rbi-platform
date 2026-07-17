@@ -66,9 +66,6 @@ function _getAllInspections() {
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
         return window.RBI.services.inspections.getAllSync();
     }
-    if (window.HistoryState && Array.isArray(window.HistoryState.allRecords)) {
-        return window.HistoryState.allRecords;
-    }
     return Array.isArray(window.contractorArray) ? window.contractorArray : [];
 }
 
@@ -96,6 +93,13 @@ function openMultiFilterModal(type, title, context) {
     const role = permSvc ? permSvc.getCurrentRole() : 'guest';
     const assignedProjects = permSvc ? permSvc.getAssignedProjects() : [];
     const isManager = permSvc ? permSvc.canManageHierarchy() : ['director', 'deputy_manager', 'manager'].includes(role);
+    // dataScope роли, обязанной иметь индивидуально закреплённые объекты
+    // (не 'all'/'none' — т.е. без hasNoOwnObjects): 'ownProject'/'ownProjectOrOwnRecords'/
+    // 'ownContractor'. Раньше пустой assignedProjects у такой роли трактовался
+    // как "фильтр не применяется" (показать все объекты компании) — согласовано
+    // с filterByDataScope/push-guard, где пустой список НЕ значит "доступ ко
+    // всему" (см. current_plan.md §2/§3).
+    const requiresOwnObjects = permSvc ? !permSvc.hasNoOwnObjects(role) : !['guest', 'director', 'deputy_manager', 'manager'].includes(role);
 
     // 2. БАЗЫ ДАННЫХ (RBI и ПК СК)
     let accessibleRbi = _getAllInspections();
@@ -112,6 +116,11 @@ function openMultiFilterModal(type, title, context) {
                 const p = r.project_canonical_key || r.project_display_name || r.display_name;
                 return assignedProjects.includes(p);
             });
+        } else if (requiresOwnObjects) {
+            // Роль обязана иметь назначенные объекты, но их пока 0 — не
+            // показывать полный список объектов компании (было доступно всё).
+            accessibleRbi = [];
+            accessibleSk = [];
         }
     }
 
@@ -171,15 +180,26 @@ function openMultiFilterModal(type, title, context) {
     if (uniqueValues.length === 0) {
         listEl.innerHTML = `<div class="p-8 text-center flex flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500"><svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg><span class="text-xs font-bold uppercase tracking-wider">Нет данных</span></div>`;
     } else {
+        // ИСПРАВЛЕНИЕ UX (см. current_plan.md, блок "Мультифильтры неудобны"):
+        // раньше был единый <label>, оборачивающий чекбокс+текст — клик В ЛЮБОЕ
+        // место строки лишь переключал чекбокс, реальное применение требовало
+        // отдельного нажатия «Применить». Теперь это НЕ <label> (нет неявной
+        // чекбокс-привязки): клик по тексту — applyMultiFilterSingle(val), сразу
+        // выбирает только это значение и закрывает модалку; клик по чекбоксу —
+        // обычное нативное переключение (без действия из delegation, состояние
+        // читается только при "Выбрать всё"/"Применить"), не закрывает модалку,
+        // позволяя набрать несколько значений.
         listEl.innerHTML = uniqueValues.map(val => {
             const isChecked = currentSelected.length === 0 || currentSelected.includes(val);
             let displayVal = val;
+            const singleArgs = JSON.stringify([val]).replace(/'/g, '&#39;');
 
             return `
-            <label class="filter-item-label flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.98] transition-all hover:border-indigo-300 dark:hover:border-indigo-600">
-                <input type="checkbox" value="${val}" class="filter-modal-cb w-5 h-5 accent-indigo-600 rounded cursor-pointer" ${isChecked ? 'checked' : ''}>
-                <span class="text-[13px] font-bold text-slate-700 dark:text-slate-200 filter-item-text truncate flex-1 leading-none pt-0.5">${displayVal}</span>
-            </label>`;
+            <div class="filter-item-row flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-600">
+                <input type="checkbox" value="${val}" class="filter-modal-cb w-5 h-5 accent-indigo-600 rounded cursor-pointer shrink-0" ${isChecked ? 'checked' : ''}>
+                <span class="text-[13px] font-bold text-slate-700 dark:text-slate-200 filter-item-text truncate flex-1 leading-none pt-0.5 cursor-pointer active:scale-[0.98] transition-transform"
+                    data-multifilter-action="applyMultiFilterSingle" data-multifilter-action-args='${singleArgs}'>${displayVal}</span>
+            </div>`;
         }).join('');
     }
 
@@ -214,10 +234,10 @@ window.closeMultiFilterModal = closeMultiFilterModal;
 
 function filterMultiModalList() {
     const term = document.getElementById('multi-filter-search').value.toLowerCase();
-    const labels = document.querySelectorAll('.filter-item-label');
-    labels.forEach(label => {
-        const text = label.querySelector('.filter-item-text').innerText.toLowerCase();
-        label.style.display = text.includes(term) ? 'flex' : 'none';
+    const rows = document.querySelectorAll('.filter-item-row');
+    rows.forEach(row => {
+        const text = row.querySelector('.filter-item-text').innerText.toLowerCase();
+        row.style.display = text.includes(term) ? 'flex' : 'none';
     });
 }
 window.filterMultiModalList = filterMultiModalList;
@@ -252,6 +272,26 @@ function applyMultiFilter() {
     }
 }
 window.applyMultiFilter = applyMultiFilter;
+
+// Клик по ТЕКСТУ строки фильтра (см. current_plan.md, блок "Мультифильтры
+// неудобны"): выбирает ТОЛЬКО это значение (сбрасывает остальные), сразу
+// применяет фильтр и закрывает модалку — быстрый однозначный выбор без
+// отдельного нажатия «Применить». Отдельная функция от applyMultiFilter(),
+// т.к. читает не DOM-чекбоксы (это же действие может быть вызвано при любом
+// текущем состоянии чекбоксов), а сам переданный value.
+function applyMultiFilterSingle(val) {
+    activeMultiFilters[currentFilterContext][currentFilterType] = [val];
+
+    updateFilterButtonLabels();
+    closeMultiFilterModal();
+
+    if (currentFilterContext === 'history') {
+        window.applyHistoryFilters();
+    } else {
+        window.renderCurrentAnalyticsTab();
+    }
+}
+window.applyMultiFilterSingle = applyMultiFilterSingle;
 
 function updateFilterButtonLabels() {
     const updateBtn = (btnId, arr, defaultText) => {

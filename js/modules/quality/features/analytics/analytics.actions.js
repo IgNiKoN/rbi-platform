@@ -125,15 +125,12 @@ function _historyFilters() {
 }
 
 function _inspections() {
-    // HistoryState.allRecords заполняется только после mount() History-модуля
-    // (переход на вкладку «История»); до этого момента остаётся пустым []
-    // по умолчанию — используем его, только если оно реально непусто, иначе
-    // единственный актуальный источник данных проверок — window.contractorArray.
+    // ВАЖНО (постраничная загрузка Журнала, см. отчёт по оптимизации журнала/
+    // аналитики): HistoryState.allRecords с этого момента содержит только
+    // текущую страницу Журнала, не весь стор — источник правды для аналитики
+    // всегда window.contractorArray (полный массив).
     if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
         return window.RBI.services.inspections.getAllForAnalyticsSync();
-    }
-    if (window.HistoryState && Array.isArray(window.HistoryState.allRecords) && window.HistoryState.allRecords.length > 0) {
-        return window.HistoryState.allRecords;
     }
     if (Array.isArray(window.contractorArray)) return window.contractorArray;
     return [];
