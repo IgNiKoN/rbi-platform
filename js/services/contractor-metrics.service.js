@@ -28,10 +28,19 @@
     window.RBI = window.RBI || {};
     window.RBI.services = window.RBI.services || {};
 
-    // { [groupKey]: metrics } — groupKey = `${contractorName} [${projectLabel}]`
-    // (тот же формат cKey, что в analytics.render.js renderContractorsSubTab/renderContractorsListOnly)
+    // { [groupKey]: { metrics, idsSignature } } — groupKey = `${contractorName} [${projectLabel}]`
+    // (тот же формат cKey, что в analytics.render.js renderContractorsSubTab/renderContractorsListOnly).
+    // idsSignature — отпечаток набора id записей, из которых посчитан metrics
+    // (см. idsSignatureOf ниже) — нужен, чтобы отличить "полная база подрядчика"
+    // (что кэширует этот сервис) от отфильтрованного набора, который реально
+    // пришёл в рендер вкладки (период/объект/подрядчик/шаблон/режим cloud —
+    // см. getMetricsForGroupMatching).
     var _cache = {};
     var _initialized = false;
+
+    function idsSignatureOf(records) {
+        return records.map(function (i) { return i && i.id; }).sort().join('_');
+    }
 
     function projectLabelOf(item) {
         return item.project_display_name || item.projectName || item.project_canonical_key || 'Без объекта';
@@ -79,7 +88,7 @@
             : null;
 
         if (metrics) {
-            _cache[groupKey] = metrics;
+            _cache[groupKey] = { metrics: metrics, idsSignature: idsSignatureOf(groupRecords) };
         } else {
             delete _cache[groupKey];
         }
@@ -104,11 +113,11 @@
                 var metrics = typeof window.getContractorMetrics === 'function'
                     ? window.getContractorMetrics(grouped[key], userTemplates())
                     : null;
-                if (metrics) nextCache[key] = metrics;
+                if (metrics) nextCache[key] = { metrics: metrics, idsSignature: idsSignatureOf(grouped[key]) };
             }
             _cache = nextCache;
             _initialized = true;
-            return _cache;
+            return this.getAllGroupMetrics();
         },
 
         // Точечный пересчёт: принимает одну запись (после save/softDelete)
@@ -130,13 +139,39 @@
             }
         },
 
-        // Готовое значение метрик для группы (contractorName + projectLabel).
+        // Готовое значение метрик для группы (contractorName + projectLabel) —
+        // ВСЕГДА посчитано по ПОЛНОЙ (неотфильтрованной) базе подрядчика.
         // Если кэш ещё не инициализирован — считает разово (fallback, не должен
         // происходить в обычном потоке после старта приложения).
         getMetricsForGroup: function (groupKey) {
             if (!_initialized) this.recalcAll();
-            if (_cache[groupKey] !== undefined) return _cache[groupKey];
+            if (_cache[groupKey] !== undefined) return _cache[groupKey].metrics;
             return recalcGroup(groupKey);
+        },
+
+        // ИСПРАВЛЕНИЕ (см. отчёт "Аналитика не учитывает фильтры"): рендер
+        // вкладок «Подрядчики»/«Сводка» вызывает эту функцию с УЖЕ отфильтрованным
+        // (период/объект/подрядчик/шаблон/режим cloud, см. getFilteredAnalyticsData)
+        // набором записей группы. Раньше _contractorMetricsCached всегда отдавал
+        // кэш (посчитанный по ПОЛНОЙ базе) без проверки — при активном фильтре
+        // показывались метрики, как если бы фильтр не применялся. Теперь кэш
+        // используется только если его отпечаток id совпадает с переданными
+        // records (т.е. фильтр реально не сузил группу); иначе считаем напрямую
+        // по filteredRecords, не трогая общий кэш (он остаётся верным для
+        // непрефильтрованных мест использования).
+        getMetricsForGroupMatching: function (groupKey, filteredRecords) {
+            if (!_initialized) this.recalcAll();
+            var entry = _cache[groupKey];
+            if (entry === undefined) {
+                var recalced = recalcGroup(groupKey);
+                entry = _cache[groupKey];
+                if (entry === undefined) return recalced;
+            }
+            var records = Array.isArray(filteredRecords) ? filteredRecords : [];
+            if (entry.idsSignature === idsSignatureOf(records)) return entry.metrics;
+            return typeof window.getContractorMetrics === 'function'
+                ? window.getContractorMetrics(records, userTemplates())
+                : null;
         },
 
         // Метрики для конкретной записи (удобный шорткат — вычисляет groupKey сам).
@@ -147,7 +182,9 @@
         // Все текущие метрики по группам — { groupKey: metrics }. Копия, не живая ссылка.
         getAllGroupMetrics: function () {
             if (!_initialized) this.recalcAll();
-            return Object.assign({}, _cache);
+            var out = {};
+            for (var key in _cache) out[key] = _cache[key].metrics;
+            return out;
         },
 
         groupKeyOf: groupKeyOf,

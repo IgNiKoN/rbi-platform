@@ -91,6 +91,72 @@ function emit(eventName, detail) {
     return Array.isArray(window.etalonActsArray) ? window.etalonActsArray : [];
   }
 
+  /**
+   * Совпадение Акта-Эталона с задачей/парой (подрядчик + вид работ).
+   * templateKey — основной ключ; иначе точное или префиксное сравнение
+   * названий (кастомный чек-лист «База (правки…)» ↔ системный «База»).
+   * Не склеивает разные подвиды («шпатлёвка» ≠ «плитка»).
+   */
+  function rbiNormWorkTitle(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[«»"'„“]/g, '')
+      .replace(/\bустройство\b/g, '')
+      .replace(/\bприемка\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function rbiWorkTitlesCompatible(a, b) {
+    const na = rbiNormWorkTitle(a);
+    const nb = rbiNormWorkTitle(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.startsWith(nb) || nb.startsWith(na)) return true;
+    // Один подвид в скобках («Стены, колонны») + похожая база («монолит…»)
+    const paren = function (s) {
+      const m = s.match(/\(([^)]+)\)/);
+      return m ? m[1].replace(/\s+/g, ' ').trim() : '';
+    };
+    const base = function (s) { return s.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(); };
+    const pa = paren(na);
+    const pb = paren(nb);
+    if (pa && pb && pa === pb) {
+      const ba = base(na);
+      const bb = base(nb);
+      if (ba && bb && (ba.includes(bb) || bb.includes(ba))) return true;
+      const rootsA = ba.split(/\s+/).filter(function (w) { return w.length >= 5; });
+      const rootsB = bb.split(/\s+/).filter(function (w) { return w.length >= 5; });
+      for (let i = 0; i < rootsA.length; i++) {
+        for (let j = 0; j < rootsB.length; j++) {
+          const x = rootsA[i].slice(0, 6);
+          const y = rootsB[j].slice(0, 6);
+          if (x && y && (rootsA[i].startsWith(y) || rootsB[j].startsWith(x))) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function rbiEtalonMatchesWork(etalon, contractor, templateKey, templateTitle, workTitle) {
+    if (!etalon || !contractor) return false;
+    if (etalon.contractorName !== contractor) return false;
+    // В сторе эталонов записи помечены instanceId='etalon'; отсекаем чужой мусор.
+    if (etalon.instanceId && etalon.instanceId !== 'etalon' && etalon.templateKey !== 'sys_etalon_act') {
+      return false;
+    }
+
+    if (templateKey && etalon.templateKey && etalon.templateKey === templateKey) return true;
+
+    const etTitle = String(etalon.templateTitle || '').trim();
+    const candidates = [templateTitle, workTitle].filter(Boolean).map(function (s) { return String(s).trim(); });
+    for (let i = 0; i < candidates.length; i++) {
+      if (rbiWorkTitlesCompatible(candidates[i], etTitle)) return true;
+    }
+    return false;
+  }
+  window.rbiEtalonMatchesWork = rbiEtalonMatchesWork;
+
   function _templates() {
     if (GameActions._ctx && GameActions._ctx.templates) return GameActions._ctx.templates;
     return window.RBI.services.templates;
@@ -193,27 +259,43 @@ function emit(eventName, detail) {
   // Перенесено из js/game.js (строка 432).
   function gameUpdatePlanProgress() {
     const _allInspections = _getAllInspections();
-    const weeklyPlanData = window.weeklyPlanData;
-    const contractorStatuses = window.contractorStatuses;
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim();
-    if (!currentInspector || !weeklyPlanData.tasks) return;
+    // Источник задач — живой массив; weeklyPlanData.tasks должен ссылаться на него
+    // после generate, но на всякий случай берём rbi_tasksData, если он есть.
+    const tasksList = (Array.isArray(window.rbi_tasksData) && window.rbi_tasksData.length)
+      ? window.rbi_tasksData
+      : (window.weeklyPlanData && window.weeklyPlanData.tasks);
+    const weeklyPlanData = window.weeklyPlanData || { tasks: tasksList, weekId: null, completed: false };
+    if (tasksList) weeklyPlanData.tasks = tasksList;
+    window.weeklyPlanData = weeklyPlanData;
+
+    const contractorStatuses = window.contractorStatuses || {};
+    const fallbackInspector = (
+      document.getElementById('inp-inspector')?.value.trim() ||
+      (window.RBI && window.RBI.services && window.RBI.services.permissions &&
+        typeof window.RBI.services.permissions.getCurrentEngineerName === 'function'
+        ? window.RBI.services.permissions.getCurrentEngineerName()
+        : '') ||
+      ''
+    ).trim();
+    if (!weeklyPlanData.tasks) return;
 
     const startOfThisWeek = getStartOfWeek();
-    const myWeeklyChecks = _allInspections.filter(c => c.inspectorName === currentInspector && new Date(c.date) >= startOfThisWeek);
     let allTasksDone = true;
 
     // ТРЕКЕР: Запоминаем, какие задачи мы закроем на этом прогоне
     let newlyClosedTasks = [];
 
     weeklyPlanData.tasks.forEach(task => {
-      const st = contractorStatuses[task.statusKey];
+      if (task._deleted || task.is_deleted) return;
+      const st = task.statusKey ? contractorStatuses[task.statusKey] : null;
+      // Прогресс и автозакрытие — по инженеру ЗАДАЧИ (админ видит чужие задачи;
+      // фильтр по #inp-inspector="Админ" раньше обнулял done у всех инженеров).
+      const taskEngineer = (task.engineerName || task.inspectorName || fallbackInspector || '').trim();
 
       // АВТОМАТИЧЕСКОЕ СНЯТИЕ ЭТАЛОНА
       if (task.needsEtalon) {
         const hasEtalonCheck = _getEtalonActs().some(c =>
-          c.contractorName === task.contractor &&
-          c.instanceId === 'etalon' &&
-          (c.templateKey === task.templateKey || c.templateTitle === task.templateTitle || c.templateTitle === task.workTitle)
+          rbiEtalonMatchesWork(c, task.contractor, task.templateKey, task.templateTitle, task.workTitle)
         );
         if (hasEtalonCheck) {
           task.needsEtalon = false;
@@ -224,15 +306,20 @@ function emit(eventName, detail) {
         }
       }
 
-      const matchedChecks = myWeeklyChecks.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey);
+      const matchedWeekChecks = _allInspections.filter(c =>
+        (!taskEngineer || c.inspectorName === taskEngineer) &&
+        c.contractorName === task.contractor &&
+        c.templateKey === task.templateKey &&
+        new Date(c.date) >= startOfThisWeek
+      );
 
-      if ((task.category === 'control' || task.type === 'continuous') && task.taskType !== 'Эталон') {
+      if ((task.category === 'control' || task.type === 'continuous' || task.taskType === 'Аудит') && task.taskType !== 'Эталон') {
         let validChecksCount = 0; let sumFillRate = 0; let totalFails = 0; let failsWithPhotoOrComment = 0;
 
-        matchedChecks.forEach(c => {
+        matchedWeekChecks.forEach(c => {
           if (c.metrics && c.metrics.checkedCount >= 3) {
             validChecksCount++;
-            sumFillRate += (c.metrics.checkedCount / c.metrics.totalCount) * 100;
+            sumFillRate += (c.metrics.checkedCount / (c.metrics.totalCount || c.metrics.checkedCount || 1)) * 100;
 
             if (c.state) {
               Object.keys(c.state).forEach(id => {
@@ -247,7 +334,11 @@ function emit(eventName, detail) {
 
         // УМНЫЙ ПОДСЧЕТ: Для новых подрядчиков считаем ВСЕ исторические проверки
         if (task.target >= 7) {
-          const allTimeMatched = _allInspections.filter(c => c.inspectorName === currentInspector && c.contractorName === task.contractor && c.templateKey === task.templateKey);
+          const allTimeMatched = _allInspections.filter(c =>
+            (!taskEngineer || c.inspectorName === taskEngineer) &&
+            c.contractorName === task.contractor &&
+            c.templateKey === task.templateKey
+          );
           task.done = allTimeMatched.filter(c => c.metrics && c.metrics.checkedCount >= 3).length;
         } else {
           task.done = validChecksCount;
@@ -256,27 +347,27 @@ function emit(eventName, detail) {
         task.fillRate = validChecksCount > 0 ? (sumFillRate / validChecksCount) : 0;
         task.photoRate = totalFails > 0 ? (failsWithPhotoOrComment / totalFails) * 100 : 100;
 
-        // АВТОЗАКРЫТИЕ: Если проверка выполнена (даже ручным переходом в Осмотр), закрываем задачу!
-        if (task.done >= task.target && task.status === 'pending') {
+        // АВТОЗАКРЫТИЕ: проверка в истории за неделю (или накопленная база) закрывает задачу
+        if (task.done >= task.target && (task.status === 'pending' || task.status === 'paused')) {
           task.status = 'done';
           task.resultComment = `Выполнено (${task.done}/${task.target})`;
           task.updatedAt = new Date().toISOString();
-          // Запоминаем название подрядчика для уведомления
           newlyClosedTasks.push(task.contractor);
+          _storage().put(_storage().stores().TASKS, task);
         }
 
-        if (task.done < task.target) allTasksDone = false;
+        if (task.status !== 'done' && task.done < task.target) allTasksDone = false;
 
         if (task.priorityLvl === 4 && task.done > task.target) {
-          const overCheck = matchedChecks[validChecksCount - 1];
-          if (!window.gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
-            window.gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'overfulfill_bonus', target: overCheck.id });
+          const overCheck = matchedWeekChecks[validChecksCount - 1];
+          if (overCheck && !window.gameActionLogs.find(l => l.action === 'overfulfill_bonus' && l.target === overCheck.id)) {
+            window.gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: taskEngineer || fallbackInspector, action: 'overfulfill_bonus', target: overCheck.id });
           }
         }
 
       } else if (task.type === 'milestone') {
         if (st && st.milestoneProgress) {
-          matchedChecks.forEach(c => {
+          matchedWeekChecks.forEach(c => {
             if (c.checkedStagesInfo) {
               c.checkedStagesInfo.forEach(stageName => {
                 if (!st.milestoneProgress.completedStages.includes(stageName)) {
@@ -288,11 +379,12 @@ function emit(eventName, detail) {
           task.done = st.milestoneProgress.completedStages.length;
           task.target = st.milestoneProgress.totalStages;
 
-          if (task.done >= task.target && task.status === 'pending') {
+          if (task.done >= task.target && (task.status === 'pending' || task.status === 'paused')) {
             st.status = 'completed';
             task.status = 'done';
             task.updatedAt = new Date().toISOString();
             newlyClosedTasks.push(task.contractor);
+            _storage().put(_storage().stores().TASKS, task);
           } else if (task.done < task.target) {
             allTasksDone = false;
           }
@@ -301,21 +393,23 @@ function emit(eventName, detail) {
     });
 
     // ТИХОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (БЕЗ НАДОЕДЛИВЫХ УВЕДОМЛЕНИЙ)
-    if (newlyClosedTasks.length > 0) {
+    if (newlyClosedTasks.length > 0 && !window._rbiSuppressTasksRefresh) {
       setTimeout(() => {
-        window.RBI.events.emit('tasks:refresh', {}); // Перерисовываем список, чтобы задачи улетели вниз в архив
+        if (window._rbiSuppressTasksRefresh) return;
+        if (window.RBI && window.RBI.events) window.RBI.events.emit('tasks:refresh', {});
       }, 300);
     }
     // --- УМНОЕ АВТОЗАКРЫТИЕ (СВЕРКА С БАЗОЙ ДАННЫХ) ---
     weeklyPlanData.tasks.forEach(task => {
-      if (task.status !== 'pending') return;
+      if (task._deleted || task.is_deleted) return;
+      if (task.status !== 'pending' && task.status !== 'paused') return;
 
       const taskCreateDate = new Date(task.createdAt || task.date);
       // Отступаем 1 день назад, чтобы засчитывать документы, сделанные накануне
       taskCreateDate.setDate(taskCreateDate.getDate() - 1);
 
       // 1. Проверяем Совещания (Мемо)
-      if (task.category === 'meeting' || task.title.includes('Совещание')) {
+      if (task.category === 'meeting' || (task.title && task.title.includes('Совещание'))) {
         const hasMemo = _getMeetings().some(m => new Date(m.date) >= taskCreateDate);
         if (hasMemo) {
           task.status = 'done'; task.resultComment = 'Автозакрытие (найден протокол)'; task.updatedAt = new Date().toISOString();
@@ -325,7 +419,7 @@ function emit(eventName, detail) {
       }
 
       // 2. Проверяем FMEA
-      if (task.title.includes('FMEA')) {
+      if (task.title && task.title.includes('FMEA')) {
         const hasFmea = _getFmea().some(f => new Date(f.date) >= taskCreateDate);
         if (hasFmea) {
           task.status = 'done'; task.resultComment = 'Автозакрытие (сохранен FMEA)'; task.updatedAt = new Date().toISOString();
@@ -334,20 +428,33 @@ function emit(eventName, detail) {
         }
       }
       // 3. Проверяем Эталоны
-      if (task.taskType === 'Эталон' || task.title.includes('Эталон')) {
+      if (task.taskType === 'Эталон' || (task.title && task.title.includes('Эталон'))) {
         task.target = 1; // Жестко фиксируем цель: Эталон всегда 1!
+        const taskEngineer = (task.engineerName || task.inspectorName || fallbackInspector || '').trim();
 
-        // Ищем в массиве Эталонов совпадение по подрядчику и виду работ
-        const hasEtalonRecord = (typeof etalonActsArray !== 'undefined') && _getEtalonActs().some(e =>
-          e.contractorName === task.contractor &&
-          (e.templateTitle === task.templateTitle || e.templateTitle === task.workTitle)
+        const hasEtalonRecord = _getEtalonActs().some(e =>
+          rbiEtalonMatchesWork(e, task.contractor, task.templateKey, task.templateTitle, task.workTitle)
         );
 
-        task.done = hasEtalonRecord ? 1 : 0; // Жестко фиксируем прогресс
+        // Если Акта-Эталона нет, но по этой паре уже есть валидные проверки
+        // за неделю — ворота «сначала эталон» уже пройдены по факту (массовый
+        // контроль идёт). Закрываем, чтобы задача не висела при живой истории.
+        const hasWeekChecksForWork = !!(task.templateKey && _allInspections.some(c =>
+          (!taskEngineer || c.inspectorName === taskEngineer) &&
+          c.contractorName === task.contractor &&
+          c.templateKey === task.templateKey &&
+          new Date(c.date) >= startOfThisWeek &&
+          c.metrics && c.metrics.checkedCount >= 3
+        ));
 
-        if (hasEtalonRecord && task.status === 'pending') {
+        const shouldCloseEtalon = hasEtalonRecord || hasWeekChecksForWork;
+        task.done = shouldCloseEtalon ? 1 : 0;
+
+        if (shouldCloseEtalon) {
           task.status = 'done';
-          task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)';
+          task.resultComment = hasEtalonRecord
+            ? 'Автозакрытие (Акт-Эталон найден в базе)'
+            : 'Автозакрытие (есть проверки за неделю по этому виду работ)';
           task.updatedAt = new Date().toISOString();
           newlyClosedTasks.push('Приемка Эталона');
           _storage().put(_storage().stores().TASKS, task);
@@ -370,7 +477,7 @@ function emit(eventName, detail) {
     });
     if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
       weeklyPlanData.completed = true;
-      window.gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: currentInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
+      window.gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: fallbackInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
     }
 
     saveWeeklyPlan();

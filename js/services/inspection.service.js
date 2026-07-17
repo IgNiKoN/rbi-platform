@@ -60,10 +60,19 @@
         // Постраничная (курсорная) загрузка Журнала (см. отчёт по оптимизации
         // журнала/аналитики). Читает через индекс by_date (DB_VERSION 21,
         // storage-db.core.js) — не весь стор app_history, а страницу "свежие
-        // сверху". opts: { limit, cursorKey } — cursorKey — значение поля
-        // `date` последней полученной на предыдущей странице записи (undefined
-        // для первой страницы). Мягко удалённые записи (_deleted/is_deleted)
-        // отфильтровываются на уровне сервиса — сам индекс их не знает.
+        // сверху". opts: { limit, cursorKey, cursorPrimaryKey } — значение поля
+        // `date` и id последней полученной на предыдущей странице записи
+        // (оба undefined для первой страницы). Мягко удалённые записи
+        // (_deleted/is_deleted) отфильтровываются на уровне сервиса — сам
+        // индекс их не знает.
+        //
+        // ИСПРАВЛЕНИЕ (см. отчёт "История показывает меньше записей, чем есть
+        // в базе"): граница страницы теперь задаётся ПАРОЙ (cursorKey +
+        // cursorPrimaryKey), а не одним cursorKey — иначе при совпадающих
+        // значениях `date` у нескольких записей (обычное дело при массовом
+        // импорте/pull из облака) курсор навсегда пропускал часть из них,
+        // и «Загрузить более старые проверки» останавливалось, не дойдя до
+        // конца стора. См. dbGetPageByIndex (storage-db.core.js).
         //
         // Примечание: индекс by_contractor существует для точечных точечных
         // выборок ("все проверки подрядчика X"), но постраничная непрерывная
@@ -76,6 +85,7 @@
             var options = opts || {};
             var limit = options.limit || 50;
             var cursorKey = options.cursorKey;
+            var cursorPrimaryKey = options.cursorPrimaryKey;
 
             if (typeof window.dbGetPageByIndex !== 'function') {
                 throw new Error('[RBI.inspections] dbGetPageByIndex недоступен');
@@ -84,6 +94,7 @@
             var self = this;
             var collected = [];
             var effectiveCursorKey = cursorKey;
+            var effectiveCursorPrimaryKey = cursorPrimaryKey;
             var hasMore = false;
 
             // Мягко удалённые записи пропускаем, но не считаем их за "страницу" —
@@ -94,7 +105,8 @@
                     indexName: 'by_date',
                     limit: limit - collected.length,
                     direction: 'prev',
-                    cursorKey: effectiveCursorKey
+                    cursorKey: effectiveCursorKey,
+                    cursorPrimaryKey: effectiveCursorPrimaryKey
                 });
 
                 var liveItems = (page.items || []).filter(function (i) {
@@ -104,6 +116,7 @@
 
                 hasMore = page.hasMore;
                 effectiveCursorKey = page.nextCursorKey;
+                effectiveCursorPrimaryKey = page.nextCursorPrimaryKey;
 
                 if (!page.hasMore) break;
             }
@@ -111,7 +124,8 @@
             return {
                 items: collected,
                 hasMore: hasMore,
-                nextCursorKey: effectiveCursorKey
+                nextCursorKey: effectiveCursorKey,
+                nextCursorPrimaryKey: effectiveCursorPrimaryKey
             };
         },
 

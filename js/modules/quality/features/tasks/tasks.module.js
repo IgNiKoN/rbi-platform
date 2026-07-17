@@ -482,12 +482,37 @@ async function _gameGenerateWeeklyPlan(force) {
                 var pair = pairMap[pkey];
 
                 var hasEtalon = _getEtalonActs().some(function(c){
+                    if (typeof window.rbiEtalonMatchesWork === 'function') {
+                        return window.rbiEtalonMatchesWork(c, pair.contractor, pair.templateKey, pair.templateTitle, pair.templateTitle);
+                    }
                     return c.instanceId === 'etalon' &&
                         c.contractorName === pair.contractor &&
                         (c.templateKey === pair.templateKey || c.templateTitle === pair.templateTitle);
                 });
+                // Уже идут проверки по этой паре на неделе — не плодим «Приемка Эталона»
+                var hasWeekValidChecks = pair.checks.some(function(c){
+                    return c.metrics && c.metrics.checkedCount >= 3 && new Date(c.date) >= startOfThisWeek;
+                });
 
-                if (!hasEtalon) {
+                if (hasEtalon || hasWeekValidChecks) {
+                    // Закрываем висящую задачу именно по этой паре (contractor + templateKey).
+                    window.rbi_tasksData.forEach(function(t) {
+                        if (t._deleted || t.is_deleted) return;
+                        if (t.engineerName !== targetEngineer) return;
+                        if (t.taskType !== 'Эталон' && !(t.title && t.title.indexOf('Эталон') !== -1)) return;
+                        if (t.status !== 'pending' && t.status !== 'paused') return;
+                        if (t.contractor !== pair.contractor) return;
+                        if (t.templateKey !== pair.templateKey) return;
+                        t.status = 'done';
+                        t.done = 1;
+                        t.target = 1;
+                        t.resultComment = hasEtalon
+                            ? 'Автозакрытие (Акт-Эталон найден в базе)'
+                            : 'Автозакрытие (есть проверки за неделю по этому виду работ)';
+                        t.updatedAt = new Date().toISOString();
+                        _storage().put(_storage().stores().TASKS, t);
+                    });
+                } else {
                     addTask('etalon', 'control', 'Эталон', 'Приемка Эталона', pair.templateTitle, pair.contractor, 'Отсутствует Акт-Эталон. Перед массовым контролям проведите совместную приемку эталонного узла.', 4, now, pair.templateKey, 'Эталон');
                 }
 
@@ -536,6 +561,16 @@ async function _gameGenerateWeeklyPlan(force) {
                     addTask('aud_multi', 'control', 'Контроль', 'Инспекция: ' + pair.contractor, pair.templateTitle, pair.contractor, promptText, lvl, taskDate, pair.templateKey, 'Аудит', targetCount);
                 } else if (deficit > 0 && activeAuditTask && activeAuditTask.target !== targetCount) {
                     activeAuditTask.target = targetCount;
+                    activeAuditTask.done = validChecksDone;
+                    _storage().put(_storage().stores().TASKS, activeAuditTask);
+                } else if (deficit <= 0 && activeAuditTask) {
+                    // Проверки за неделю/накопленная база уже закрывают дефицит —
+                    // не оставляем висящий pending (как при переходе задача→аудит).
+                    activeAuditTask.done = validChecksDone;
+                    activeAuditTask.target = targetCount;
+                    activeAuditTask.status = 'done';
+                    activeAuditTask.resultComment = 'Выполнено (' + validChecksDone + '/' + targetCount + ')';
+                    activeAuditTask.updatedAt = new Date().toISOString();
                     _storage().put(_storage().stores().TASKS, activeAuditTask);
                 }
 
@@ -791,15 +826,17 @@ async function _renderTasksList(forceRender) {
 
     var activeToday = overdue.map(function(t){ return renderCard(t, true); }).concat(todayTasks.map(function(t){ return renderCard(t, false); }));
 
-    if (activeToday.length > 0) accordionsHtml += '<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Сегодня (' + activeToday.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + activeToday.join('') + '</div></details>';
+    // data-task-section — стабильный ключ для restore open-state после sync
+    // (см. _captureTasksUiState / _restoreTasksUiState).
+    if (activeToday.length > 0) accordionsHtml += '<details data-task-section="today" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Сегодня (' + activeToday.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + activeToday.join('') + '</div></details>';
 
-    if (weekTasks.length > 0) accordionsHtml += '<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Плановые задачи (' + weekTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + weekTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
+    if (weekTasks.length > 0) accordionsHtml += '<details data-task-section="week" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Плановые задачи (' + weekTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + weekTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
 
-    if (monthTasks.length > 0) accordionsHtml += '<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (' + monthTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + monthTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
+    if (monthTasks.length > 0) accordionsHtml += '<details data-task-section="month" class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (' + monthTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + monthTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
 
     if (archiveTasks.length > 0) {
         var recentArchive = archiveTasks.slice().sort(function(a, b){ return new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date); }).slice(0, 15);
-        accordionsHtml += '<details class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Недавно завершенные (' + archiveTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + recentArchive.map(function(t){ return renderCard(t, false, true); }).join('') + '</div></details>';
+        accordionsHtml += '<details data-task-section="archive" class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Недавно завершенные (' + archiveTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + recentArchive.map(function(t){ return renderCard(t, false, true); }).join('') + '</div></details>';
     }
 
     if (activeToday.length === 0 && weekTasks.length === 0 && monthTasks.length === 0 && archiveTasks.length === 0) {
@@ -814,7 +851,75 @@ async function _renderTasksList(forceRender) {
 // 4. ФИЛЬТР ХАБ
 // =========================================================================
 
+function _captureTasksUiState() {
+    var container = document.getElementById('rbi-tasks-container');
+    var openSections = {};
+    if (container) {
+        container.querySelectorAll('details[data-task-section]').forEach(function (el) {
+            openSections[el.getAttribute('data-task-section')] = !!el.open;
+        });
+    }
+    var hubCategory = window._rbiTaskHubCategory || 'all';
+    var hubBtn = document.querySelector('#hub-filters .hub-filter-btn.bg-indigo-600');
+    if (hubBtn && hubBtn.getAttribute('onclick')) {
+        var m = hubBtn.getAttribute('onclick').match(/rbi_filterTaskHub\('([^']+)'/);
+        if (m) hubCategory = m[1];
+    }
+    return {
+        openSections: openSections,
+        hubCategory: hubCategory,
+        scrollY: window.scrollY || window.pageYOffset || 0
+    };
+}
+
+function _restoreTasksUiState(state) {
+    if (!state) return;
+    var container = document.getElementById('rbi-tasks-container');
+    if (container && state.openSections) {
+        container.querySelectorAll('details[data-task-section]').forEach(function (el) {
+            var key = el.getAttribute('data-task-section');
+            if (Object.prototype.hasOwnProperty.call(state.openSections, key)) {
+                el.open = !!state.openSections[key];
+            }
+        });
+    }
+    if (state.hubCategory && state.hubCategory !== 'all') {
+        var btn = document.querySelector('#hub-filters .hub-filter-btn[onclick*="\'' + state.hubCategory + '\'"]');
+        if (btn) _filterTaskHub(state.hubCategory, btn);
+    } else {
+        window._rbiTaskHubCategory = state.hubCategory || 'all';
+    }
+    if (typeof state.scrollY === 'number') {
+        var htmlEl = document.documentElement;
+        var prev = htmlEl.style.scrollBehavior;
+        htmlEl.style.scrollBehavior = 'auto';
+        window.scrollTo(0, state.scrollY);
+        htmlEl.style.scrollBehavior = prev;
+    }
+}
+
+function _isTasksViewActive() {
+    var engTab = document.getElementById('tab-engineer');
+    var tasksSub = document.getElementById('eng-sub-tasks');
+    // view-section uses .active; engineer sub-tabs use .hidden to hide
+    if (engTab && engTab.classList.contains('active')) {
+        return !!(tasksSub && !tasksSub.classList.contains('hidden'));
+    }
+    return false;
+}
+
+/** Компактная сигнатура списка — чтобы не full-render'ить Задачи на каждом sync. */
+function _tasksListSignature() {
+    return (window.rbi_tasksData || [])
+        .filter(function (t) { return t && !t._deleted && !t.is_deleted; })
+        .map(function (t) {
+            return [t.id, t.status, t.done, t.target, t.updatedAt || t.updated_at || ''].join(':');
+        })
+        .join('|');
+}
+
 function _filterTaskHub(category, btnElement) {
+    window._rbiTaskHubCategory = category || 'all';
     var container = document.getElementById('hub-filters');
     if (container) {
         container.querySelectorAll('.hub-filter-btn').forEach(function(btn) {
@@ -1709,14 +1814,45 @@ export const TasksModule = {
         }
 
         if (events && typeof events.on === 'function') {
-            var handler = async function() {
+            // no full-render on active view (PLATFORM_TARGET_ARCHITECTURE §5):
+            // данные + автозакрытие; paint только если сигнатура задач изменилась.
+            var handler = async function () {
+                var beforeSig = _isTasksViewActive() ? _tasksListSignature() : null;
                 await _loadData();
-                _renderTasksList();
+                // Пока смотрим Задачи — пересчитываем прогресс/закрытие здесь
+                // (sync-engine специально НЕ вызывает gameForceUpdatePlan на активной вкладке).
+                window._rbiSuppressTasksRefresh = true;
+                try {
+                    if (typeof window.gameUpdatePlanProgress === 'function') {
+                        window.gameUpdatePlanProgress();
+                    } else if (window.RBI && window.RBI.services && window.RBI.services.game &&
+                        typeof window.RBI.services.game.updatePlanProgress === 'function') {
+                        window.RBI.services.game.updatePlanProgress();
+                    }
+                } finally {
+                    window._rbiSuppressTasksRefresh = false;
+                }
+                if (!_isTasksViewActive()) {
+                    if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = true;
+                    return;
+                }
+                var afterSig = _tasksListSignature();
+                if (beforeSig === afterSig) {
+                    if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = false;
+                    return;
+                }
+                var uiState = _captureTasksUiState();
+                await _renderTasksList(true);
+                _restoreTasksUiState(uiState);
+                if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = false;
             };
             events.on('sync:completed', handler);
             TasksModule._syncUnsubscribe = function() { events.off && events.off('sync:completed', handler); };
 
-            var refreshHandler = function() { _renderTasksList(); };
+            var refreshHandler = function() {
+                if (window._rbiSuppressTasksRefresh) return;
+                _renderTasksList();
+            };
             events.on('tasks:refresh', refreshHandler);
             TasksModule._refreshUnsubscribe = function() { events.off && events.off('tasks:refresh', refreshHandler); };
         }

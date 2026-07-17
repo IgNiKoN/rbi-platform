@@ -23,15 +23,18 @@ function _analyticsMode() {
 // Инкрементальный кэш метрик подрядчика (contractor-metrics.service.js) —
 // избегает пересчёта getContractorMetrics() по всей группе при каждом рендере
 // вкладок «Подрядчики»/«Сводка». cData — уже сгруппированный по groupKey массив
-// записей ("подрядчик [объект]", тот же ключ, что использует сервис); если
-// переданный массив cData реально совпадает с группой в кэше — читаем готовое
-// значение, иначе (нестандартная группировка — например detail-view с фильтром
-// по периоду) считаем напрямую через getContractorMetrics, не трогая сервис.
+// записей ("подрядчик [объект]", тот же ключ, что использует сервис) — как
+// правило это подмножество ПОЛНОЙ базы подрядчика, урезанное активными фильтрами
+// аналитики (период/объект/подрядчик/шаблон/режим cloud, см.
+// getFilteredAnalyticsData). getMetricsForGroupMatching сверяет отпечаток id
+// записей cData с тем, из чего реально посчитан кэш — отдаёт готовое значение
+// ТОЛЬКО если они совпадают (фильтр не сузил группу), иначе считает напрямую
+// по cData, не показывая пользователю метрики "как без фильтра".
 function _contractorMetricsCached(groupKey, cData) {
     var svc = window.RBI && window.RBI.services && window.RBI.services.contractorMetrics;
-    if (svc) {
-        var cached = svc.getMetricsForGroup(groupKey);
-        if (cached) return cached;
+    if (svc && typeof svc.getMetricsForGroupMatching === 'function') {
+        var matched = svc.getMetricsForGroupMatching(groupKey, cData);
+        if (matched) return matched;
     }
     return getContractorMetrics(cData, _templates().getUserTemplates());
 }
@@ -636,6 +639,7 @@ export const AnalyticsRender = {
             AnalyticsState.setActiveSubTab('sub-contractors');
             window.currentActiveAnalyticsTab = 'sub-contractors';
         }
+        if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = false;
         const activeTab = AnalyticsState.activeSubTab;
 
         if (activeTab === 'sub-contractors') {
@@ -649,10 +653,23 @@ export const AnalyticsRender = {
         else if (activeTab === 'sub-schedule') { if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
         else if (activeTab === 'sub-data') { if (typeof renderDataSubTab === 'function') renderDataSubTab(data); }
         else if (activeTab === 'sub-history') {
+            // Если после sync стоял dirty — перезагрузить первую страницу Журнала
+            // перед render (на активной вкладке sync сознательно не трогал DOM).
+            if (window.syncDirtyFlags && window.syncDirtyFlags.history) {
+                window.syncDirtyFlags.history = false;
+                if (window.HistoryActions && typeof window.HistoryActions.loadRecords === 'function') {
+                    Promise.resolve(window.HistoryActions.loadRecords()).then(function () {
+                        renderHistoryTab();
+                        initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
+                    });
+                    return;
+                }
+            }
             renderHistoryTab();
             initCollapsiblePanel('hist-sticky-panel', 'hist-panel-body', 'hist-panel-header', 'hist-panel-toggle-icon');
         }
         else if (activeTab === 'sub-sk') {
+            if (window.syncDirtyFlags) window.syncDirtyFlags.sk = false;
             // Гарантированно запускаем пайплайн ПК СК, он сам внутри разберется с кэшем
             if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('sk:renderRequested', { view: 'mainTab' });
         }

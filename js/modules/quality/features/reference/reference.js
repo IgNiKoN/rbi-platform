@@ -1253,21 +1253,20 @@ function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
         header.addEventListener('click', () => {
             isCollapsed = !isCollapsed;
             applyPanelState(body, isCollapsed);
-            // Убрано принудительное изменение скролла (window.scrollTo), 
+            // Убрано принудительное изменение скролла (window.scrollTo),
             // так как на мобильных устройствах это вызывает "прыжки" экрана.
             // CSS-свойство transition: max-height справится с этим плавно и естественно.
         });
     }
 
-    // Скролл — авто-сворачивание
+    // Скролл — только авто-сворачивание вниз. Разворот только по клику
+    // на заголовок: авто-expand при scroll-up давал «фильтр сам открывается
+    // обратно» и усиливал ощущение прыжка экрана на телефоне.
     window.addEventListener('scroll', () => {
-        const currentY = window.scrollY; // ИСПРАВЛЕНО: убрана опечатка currentYF
+        const currentY = window.scrollY;
         if (currentY > lastScrollY + 10 && currentY > 60 && !isCollapsed) {
             isCollapsed = true;
             applyPanelState(body, true);
-        } else if (currentY < lastScrollY - 10 && isCollapsed) {
-            isCollapsed = false;
-            applyPanelState(body, false);
         }
         lastScrollY = currentY;
     }, { passive: true });
@@ -1328,16 +1327,14 @@ function initCollapsiblePanel(panelId, bodyId, headerId, iconId) {
         // Если панель не на активной вкладке - игнорируем
         if (!panel.closest('.view-section.active') && !panel.closest('.active')) return;
 
-        // ЗАЩИТА ОТ ПРЫЖКОВ: Если страница короткая, не сворачиваем вообще!
-        if (document.body.scrollHeight <= window.innerHeight + 250) {
-            setCollapsed(false);
-            return;
-        }
+        // Короткая страница — нечего сворачивать
+        if (document.body.scrollHeight <= window.innerHeight + 250) return;
 
         const y = window.scrollY;
-        // Используем абсолютные пороги с "мертвой зоной", чтобы исключить цикличность
+        // Только сворачивание при уходе вниз. Разворот — только кликом по
+        // заголовку (порог y < 40 раньше сам раскрывал панель обратно и
+        // на телефоне выглядел как «экран прыгает / фильтр дёргается»).
         if (y > 100 && !collapsed) setCollapsed(true);
-        else if (y < 40 && collapsed) setCollapsed(false);
     }, { passive: true });
 }
 window.initCollapsiblePanel = initCollapsiblePanel;

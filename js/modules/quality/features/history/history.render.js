@@ -44,6 +44,53 @@ function _templates() {
 // item.metrics.documentary — досчитываем "на лету" по item.state и актуальному
 // чек-листу, без изменения хранимых данных (та же lazy recalculation, что
 // используется в getContractorMetrics()).
+/**
+ * Сохраняет раскрытые аккордеоны Объект/Подрядчик до перерисовки списка.
+ * Ключи — отображаемые имена (стабильнее index-based id hist-group-N).
+ */
+function _captureExpandedHistory(listDiv) {
+    const projects = new Set();
+    const contractors = new Set();
+    if (!listDiv) return { projects, contractors };
+
+    [...listDiv.children].forEach((card) => {
+        const pBody = [...card.querySelectorAll('[id^="hist-group-"]')].find((el) => !el.id.includes('-contr-'));
+        if (!pBody || pBody.classList.contains('hidden')) return;
+        const pName = (card.querySelector('.leading-tight') || card.querySelector('.font-black.truncate'))?.textContent?.trim();
+        if (!pName) return;
+        projects.add(pName);
+        pBody.querySelectorAll('[id*="-contr-"]').forEach((cBody) => {
+            if (cBody.classList.contains('hidden')) return;
+            const cName = cBody.previousElementSibling?.querySelector('.truncate')?.textContent?.trim();
+            if (cName) contractors.add(pName + '\0' + cName);
+        });
+    });
+    return { projects, contractors };
+}
+
+function _restoreExpandedHistory(listDiv, expanded) {
+    if (!listDiv || !expanded || !expanded.projects || expanded.projects.size === 0) return;
+
+    [...listDiv.children].forEach((card) => {
+        const pName = (card.querySelector('.leading-tight') || card.querySelector('.font-black.truncate'))?.textContent?.trim();
+        if (!pName || !expanded.projects.has(pName)) return;
+
+        const pBody = [...card.querySelectorAll('[id^="hist-group-"]')].find((el) => !el.id.includes('-contr-'));
+        if (!pBody) return;
+        pBody.classList.remove('hidden');
+        const pIcon = card.querySelector('.chevron-icon');
+        if (pIcon) pIcon.style.transform = 'rotate(180deg)';
+
+        pBody.querySelectorAll('[id*="-contr-"]').forEach((cBody) => {
+            const cName = cBody.previousElementSibling?.querySelector('.truncate')?.textContent?.trim();
+            if (!cName || !expanded.contractors.has(pName + '\0' + cName)) return;
+            cBody.classList.remove('hidden');
+            const cIcon = cBody.previousElementSibling?.querySelector('.chevron-icon-sm');
+            if (cIcon) cIcon.style.transform = 'rotate(180deg)';
+        });
+    });
+}
+
 function _getDocumentaryScore(item) {
     if (!item.metrics) return null;
     if (item.metrics.documentary !== undefined) return item.metrics.documentary;
@@ -53,6 +100,31 @@ function _getDocumentaryScore(item) {
     const checklist = type === 'sys' && _templates().getSystemTemplates()[key] ? _templates().getSystemTemplates()[key].groups : (_templates().getUserTemplates()[key] ? _templates().getUserTemplates()[key].groups : []);
     const flatList = typeof window.getFlatList === 'function' ? window.getFlatList(checklist) : [];
     return window.getDocumentaryScore(item.state, flatList);
+}
+
+// Средний итоговый УрК по списку проверок (для свёрнутых заголовков
+// объекта/подрядчика). null — если ни у одной записи нет metrics.final.
+function _avgFinalUrk(items) {
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < items.length; i++) {
+        const m = items[i] && items[i].metrics;
+        if (m && m.final !== undefined && m.final !== null) {
+            sum += Number(m.final) || 0;
+            n++;
+        }
+    }
+    if (!n) return null;
+    return Math.round(sum / n);
+}
+
+// Класс цветного status-tag по порогам той же шкалы, что и у отдельной
+// проверки (math.utils.js: ≥85 зелёный, 70–84 жёлтый, <70 красный).
+function _avgUrkStatusCls(avg) {
+    if (avg === null || avg === undefined) return 'tag-blue';
+    if (avg < 70) return 'tag-red';
+    if (avg >= 85) return 'tag-green';
+    return 'tag-yellow';
 }
 
 // Приватная функция — перенесена из history.legacy.js (изначально app.js, строка 3971).
@@ -95,6 +167,10 @@ export const HistoryRender = {
         const emptyMsg = document.getElementById('hist-empty-msg');
         const countEl = document.getElementById('hist-count-total');
         if (!listDiv) return;
+
+        // Preserve open Object/Contractor accordions across full re-render
+        // (sync dirty path, loadNextPage, filters) — same idea as Tasks UI restore.
+        const expanded = _captureExpandedHistory(listDiv);
 
         if (HistoryState.allRecords.length === 0) {
             listDiv.innerHTML = '';
@@ -160,35 +236,45 @@ export const HistoryRender = {
             return;
         }
 
+        // Иерархия навигации (по запросу пользователя, "чтобы было удобно
+        // ориентироваться"): Объект → Подрядчик (по алфавиту) → проверки по
+        // датам (новые сверху). Раньше верхний уровень группировки был парой
+        // (подрядчик, объект) вместе, а внутри — по виду работ (шаблону);
+        // теперь вид работ показывается инлайн-тегом в самой строке проверки,
+        // а не отдельным уровнем — так остаётся только 2 уровня вложенности
+        // вместо 3, что проще визуально сканировать при большом числе проверок.
         const grouped = {};
         filteredArr.forEach(item => {
-            const cName = item.contractorName || 'Не указан';
             const pName = item.projectName || 'Без объекта';
-            const groupKey = `${cName}_||_${pName}`;
-            const tTitle = item.templateTitle || 'Неизвестный вид работ';
-            if (!grouped[groupKey]) grouped[groupKey] = {};
-            if (!grouped[groupKey][tTitle]) grouped[groupKey][tTitle] = [];
-            grouped[groupKey][tTitle].push(item);
+            const cName = item.contractorName || 'Не указан';
+            if (!grouped[pName]) grouped[pName] = {};
+            if (!grouped[pName][cName]) grouped[pName][cName] = [];
+            grouped[pName][cName].push(item);
         });
 
-        const groupKeys = Object.keys(grouped);
-        groupKeys.sort((a, b) => {
-            const newestA = Math.max(...Object.values(grouped[a]).flat().map(c => new Date(c.date).getTime()));
-            const newestB = Math.max(...Object.values(grouped[b]).flat().map(c => new Date(c.date).getTime()));
-            return newestB - newestA;
-        });
+        const collator = new Intl.Collator('ru');
+        const groupKeys = Object.keys(grouped).sort(collator.compare);
 
         let html = '';
         let groupIndex = 0;
 
-        const renderGroup = (gKey) => {
-            const parts = gKey.split('_||_');
-            const cName = parts[0];
-            const pName = parts[1];
+        const renderGroup = (pName) => {
             const safeGroupName = `hist-group-${groupIndex++}`;
+            const contractorNames = Object.keys(grouped[pName]).sort(collator.compare);
 
-            let totalChecksInGroup = 0;
-            Object.values(grouped[gKey]).forEach(arr => totalChecksInGroup += arr.length);
+            // Все проверки объекта — для счётчика и среднего УрК в свёрнутом
+            // заголовке аккордеона (по запросу пользователя: напротив объекта
+            // и подрядчика показывать средний уровень качества и кол-во проверок).
+            const allObjectItems = [];
+            contractorNames.forEach(cName => {
+                const arr = grouped[pName][cName];
+                for (let i = 0; i < arr.length; i++) allObjectItems.push(arr[i]);
+            });
+            const totalChecksInGroup = allObjectItems.length;
+            const objAvgUrk = _avgFinalUrk(allObjectItems);
+            const objUrkHtml = (objAvgUrk !== null)
+                ? `<span class="status-tag ${_avgUrkStatusCls(objAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" title="Средний УрК по объекту">${objAvgUrk}%</span>`
+                : '';
 
             let groupHtml = `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
@@ -208,11 +294,12 @@ export const HistoryRender = {
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
                     </div>
                     <div class="min-w-0">
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${cName}</div>
-                        <div class="text-[9px] font-bold text-slate-400 truncate mt-[1px]">${pName}</div>
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${pName}</div>
+                        <div class="text-[9px] font-bold text-slate-400 truncate mt-[1px]">${contractorNames.length} подрядч.</div>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0 pl-1">
+                    ${objUrkHtml}
                     <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${totalChecksInGroup} шт</span>
                     <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </div>
@@ -220,9 +307,41 @@ export const HistoryRender = {
             
             <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2">`;
 
-            for (let tTitle in grouped[gKey]) {
-                groupHtml += `<div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1.5 ml-1 mt-1.5 flex items-center gap-1"><svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg> ${tTitle} <span class="opacity-70 font-bold">(${grouped[gKey][tTitle].length})</span></div>`;
-                const reversed = [...grouped[gKey][tTitle]].sort((a, b) => new Date(b.date) - new Date(a.date));
+            contractorNames.forEach((cName, cIndex) => {
+                const items = grouped[pName][cName];
+                const safeContractorName = `${safeGroupName}-contr-${cIndex}`;
+                const contrAvgUrk = _avgFinalUrk(items);
+                const contrUrkHtml = (contrAvgUrk !== null)
+                    ? `<span class="status-tag ${_avgUrkStatusCls(contrAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" title="Средний УрК по подрядчику">${contrAvgUrk}%</span>`
+                    : '';
+
+                // Второй уровень аккордеона: список подрядчика внутри объекта
+                // тоже сворачивается — при большом числе подрядчиков на объекте
+                // (или проверок у подрядчика) сразу открытый объект не превращался
+                // бы в длинную простыню всех проверок сразу. Справа — средний
+                // УрК и кол-во проверок (видны и в свёрнутом состоянии).
+                groupHtml += `<div class="mb-1.5 ml-1 mt-1.5 flex justify-between items-center gap-2 cursor-pointer select-none" onclick="
+                    const body = document.getElementById('${safeContractorName}');
+                    const icon = this.querySelector('.chevron-icon-sm');
+                    if (body.classList.contains('hidden')) {
+                        body.classList.remove('hidden');
+                        icon.style.transform = 'rotate(180deg)';
+                    } else {
+                        body.classList.add('hidden');
+                        icon.style.transform = 'rotate(0deg)';
+                    }
+                ">
+                    <div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1 min-w-0">
+                        <svg class="w-3 h-3 text-indigo-400 transition-transform duration-300 chevron-icon-sm shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                        <span class="truncate">${cName}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        ${contrUrkHtml}
+                        <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} шт</span>
+                    </div>
+                </div>`;
+                groupHtml += `<div id="${safeContractorName}" class="hidden">`;
+                const reversed = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
 
                 const visibleItems = reversed.slice(0, 10);
                 const hiddenItems = reversed.slice(10);
@@ -231,6 +350,7 @@ export const HistoryRender = {
                     const photoIcon = (item.photos && Object.keys(item.photos).length > 0) ? `📸` : '';
                     const syncBadge = getSyncBadgeHtml(item);
                     const docScore = _getDocumentaryScore(item);
+                    const tTitle = item.templateTitle || 'Неизвестный вид работ';
 
                     return `
                 <div class="flex items-center gap-1.5 mb-1.5">
@@ -240,7 +360,7 @@ export const HistoryRender = {
                             <div class="min-w-0 pr-2">
                                 <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location} <span class="text-[9px] ml-1">${photoIcon}</span></div>
                                 <div class="text-[8px] text-slate-400 mt-0.5 truncate font-medium flex items-center">
-                                    ${new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} | Инсп: ${item.inspectorName || 'Не указан'}
+                                    ${new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} | ${tTitle} | Инсп: ${item.inspectorName || 'Не указан'}
                                     ${syncBadge}
                                 </div>
                             </div>
@@ -256,38 +376,68 @@ export const HistoryRender = {
                 groupHtml += visibleItems.map(renderRow).join('');
 
                 if (hiddenItems.length > 0) {
-                    const hiddenGroupId = `${safeGroupName}-hidden-${tTitle.replace(/\W/g, '')}`;
+                    const hiddenGroupId = `${safeGroupName}-hidden-${cName.replace(/\W/g, '')}`;
                     groupHtml += `<div id="${hiddenGroupId}" class="hidden">${hiddenItems.map(renderRow).join('')}</div>`;
                     groupHtml += `<button onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать еще проверки (${hiddenItems.length})</button>`;
                 }
-            }
+                groupHtml += `</div>`;
+            });
             groupHtml += `</div></div>`;
             return groupHtml;
         };
 
-        const VISIBLE_GROUPS = 15;
-        const visibleGroupKeys = groupKeys.slice(0, VISIBLE_GROUPS);
+        // ИСПРАВЛЕНИЕ (по запросу пользователя, "нормальная пагинация при
+        // скролле + одинаковые по размеру куски"): раньше здесь было ДВА
+        // независимых, разного размера механизма — окно из 15 верхнеуровневых
+        // групп (сколько именно проверок это давало — зависело от того,
+        // сколько проверок у каждой группы, то есть непредсказуемо) и
+        // отдельная курсорная докачка по 50 СЫРЫХ записей из IndexedDB, между
+        // которыми кнопка непредсказуемо переключалась. Теперь верхний
+        // уровень (Объекты) — их обычно немного (десятки, не сотни), рендерим
+        // ВСЕ сразу (все свёрнуты по умолчанию, лёгкие в DOM); единственная
+        // реальная порция — HistoryState.pageSize (50) записей за раз через
+        // курсорную докачку, всегда одного размера. Триггерится либо кликом
+        // по кнопке, либо автоматически при скролле вниз через
+        // IntersectionObserver на невидимом сентинеле в конце списка.
+        html += groupKeys.map(renderGroup).join('');
 
-        window._hiddenHistoryGroups = groupKeys.slice(VISIBLE_GROUPS);
-        window._historyRenderGroupFunc = renderGroup;
-
-        html += visibleGroupKeys.map(renderGroup).join('');
-
-        if (window._hiddenHistoryGroups.length > 0) {
-            html += `<div id="hidden-contractor-groups"></div>`;
-            html += `<button id="load-more-history-btn" onclick="window.loadMoreHistoryGroups()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-6 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
-            Загрузить остальные объекты (${window._hiddenHistoryGroups.length})
-        </button>`;
-        } else if (HistoryState.pageHasMore) {
-            // Уже показаны все загруженные в память группы — но в базе (за курсором
-            // by_date) есть ещё записи. Кнопка тянет следующую страницу через
-            // IndexedDB-курсор (HistoryActions.loadNextPage), а не весь стор целиком.
-            html += `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-6 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
+        if (HistoryState.pageHasMore) {
+            html += `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
             Загрузить более старые проверки
-        </button>`;
+        </button>
+        <div id="history-load-sentinel" class="h-2 -mt-2"></div>`;
         }
 
         listDiv.innerHTML = html;
+        _restoreExpandedHistory(listDiv, expanded);
+        HistoryRender._observeLoadSentinel();
+    },
+
+    /**
+     * Автопагинация по скроллу: следит за сентинелом в конце списка через
+     * IntersectionObserver и, когда он попадает в область видимости (пользователь
+     * доскроллил почти до конца), запускает ту же докачку страницы, что и кнопка
+     * "Загрузить более старые проверки" — без дублирования логики загрузки.
+     * Наблюдатель пересоздаётся при каждом render() (сентинел — новый DOM-узел).
+     */
+    _observeLoadSentinel() {
+        if (HistoryRender._sentinelObserver) {
+            HistoryRender._sentinelObserver.disconnect();
+            HistoryRender._sentinelObserver = null;
+        }
+
+        const sentinel = document.getElementById('history-load-sentinel');
+        if (!sentinel || typeof IntersectionObserver !== 'function') return;
+
+        const observer = new IntersectionObserver((entries) => {
+            const isVisible = entries.some(e => e.isIntersecting);
+            if (isVisible && HistoryState.pageHasMore && !HistoryState.isLoadingPage) {
+                window.loadMoreHistoryPage();
+            }
+        }, { root: null, rootMargin: '600px 0px 0px 0px', threshold: 0 });
+
+        observer.observe(sentinel);
+        HistoryRender._sentinelObserver = observer;
     },
 
     /**
@@ -317,30 +467,6 @@ export const HistoryRender = {
     updateFilters() {
         if (typeof updateFilterButtonLabels === 'function') {
             updateFilterButtonLabels();
-        }
-    },
-
-    /**
-     * Дозагружает следующую порцию групп подрядчиков в список истории.
-     * Перенесено из history.legacy.js (изначально app.js, строка 4177).
-     * Вызывается из кнопки «Загрузить остальные объекты».
-     * Инкрементальный DOM-паттерн (insertAdjacentHTML), без полного re-render —
-     * отдельный от HistoryActions.loadMore() механизм пагинации (см. отчёт).
-     */
-    loadMoreGroups() {
-        var container = document.getElementById('hidden-contractor-groups');
-        var btn = document.getElementById('load-more-history-btn');
-        if (!container || !window._hiddenHistoryGroups || !window._historyRenderGroupFunc) return;
-
-        var nextBatch = window._hiddenHistoryGroups.slice(0, 15);
-        window._hiddenHistoryGroups = window._hiddenHistoryGroups.slice(15);
-
-        container.insertAdjacentHTML('beforeend', nextBatch.map(window._historyRenderGroupFunc).join(''));
-
-        if (window._hiddenHistoryGroups.length > 0) {
-            btn.innerText = 'Загрузить остальные объекты (' + window._hiddenHistoryGroups.length + ')';
-        } else {
-            btn.style.display = 'none';
         }
     },
 
@@ -485,7 +611,6 @@ if (typeof window !== 'undefined') {
     window.showHistoryDetail = HistoryRender.renderDetail;
     window.applyHistoryFilters = HistoryRender.applyFilters;
     window.updateAllDynamicFilters = HistoryRender.updateFilters;
-    window.loadMoreHistoryGroups = HistoryRender.loadMoreGroups;
     // Постраничная (курсорная) дозагрузка Журнала — делегирует в HistoryActions
     // (window-глобал, не ES import — history.actions.js уже импортирует
     // HistoryRender, обратный импорт создал бы цикл).

@@ -107,12 +107,18 @@ export const AnalyticsModule = {
             if (savedTab) AnalyticsState.setActiveSubTab(savedTab);
         } catch (_) {}
 
-        // 3. Подписаться на sync:completed → перезагрузить данные
+        // 3. sync:completed — обновить данные в памяти, НЕ делать full-render
+        // активного экрана (PLATFORM_TARGET_ARCHITECTURE §5). Paint — при
+        // следующем переключении подвкладки / заходе на вкладку (dirty).
         const events = ctx && ctx.events;
         if (events && typeof events.on === 'function') {
             const handler = async () => {
                 await AnalyticsActions.loadData();
-                AnalyticsRender.render();
+                if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = true;
+                const analyticsTab = document.getElementById('tab-analytics');
+                if (analyticsTab && analyticsTab.classList.contains('active')) {
+                    return;
+                }
             };
             events.on('sync:completed', handler);
             AnalyticsModule._syncUnsubscribe = () => events.off && events.off('sync:completed', handler);

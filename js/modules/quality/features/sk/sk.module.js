@@ -138,12 +138,22 @@ export const SKModule = {
 
         await SKActions.loadData();
 
-        // Подписка на завершение синхронизации — перезагрузить данные
+        // sync:completed — данные в память; full-render только если ПК СК
+        // сейчас не на экране (PLATFORM_TARGET_ARCHITECTURE §5).
         var events = (ctx && ctx.events) || (window.RBI && window.RBI.events);
         if (events && typeof events.on === 'function') {
             var handler = async function () {
                 await SKActions.loadData();
+                if (window.syncDirtyFlags) window.syncDirtyFlags.sk = true;
+                var analyticsTab = document.getElementById('tab-analytics');
+                var skSub = document.getElementById('sub-sk');
+                var skActive = !!(
+                    analyticsTab && analyticsTab.classList.contains('active') &&
+                    skSub && !skSub.classList.contains('hidden')
+                );
+                if (skActive) return;
                 SKRender.render(SKState.currentSubTab);
+                if (window.syncDirtyFlags) window.syncDirtyFlags.sk = false;
             };
             events.on('sync:completed', handler);
             SKModule._syncUnsubscribe = function () {

@@ -201,8 +201,12 @@ window.triggerSync = async function (mode = 'silent') {
                                 });
                             }
                         }
-                        const oldProjects = JSON.stringify(appSettings.assignedProjects || []);
-                        const newProjects = JSON.stringify(fetchedProjects);
+                        // Сортируем перед сравнением: сервер может отдавать тот же
+                        // набор объектов в другом порядке — иначе needUiUpdate
+                        // срабатывает на каждом sync и full-render схлопывает UI.
+                        const normProjects = (arr) => JSON.stringify([...(arr || [])].map(String).sort());
+                        const oldProjects = normProjects(appSettings.assignedProjects);
+                        const newProjects = normProjects(fetchedProjects);
 
                         if (oldProjects !== newProjects) {
                             appSettings.assignedProjects = fetchedProjects;
@@ -284,7 +288,18 @@ window.triggerSync = async function (mode = 'silent') {
                     // --- НОВОЕ: Очистка кэша и перерисовка интерфейса при смене роли ---
                     if (typeof window.clearMetricsCache === 'function') window.clearMetricsCache();
                     if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true);
-                    if (typeof renderCurrentAnalyticsTab === 'function') renderCurrentAnalyticsTab();
+                    // no full-render on active analytics/history (PLATFORM_TARGET_ARCHITECTURE §5):
+                    // иначе схлопываются раскрытые аккордеоны Истории/Аналитики.
+                    const anaTabActive = !!(document.getElementById('tab-analytics')?.classList.contains('active'));
+                    if (anaTabActive) {
+                        if (window.syncDirtyFlags) {
+                            window.syncDirtyFlags.analytics = true;
+                            window.syncDirtyFlags.history = true;
+                            window.syncDirtyFlags.sk = true;
+                        }
+                    } else if (typeof renderCurrentAnalyticsTab === 'function') {
+                        renderCurrentAnalyticsTab();
+                    }
                     // ------------------------------------------------------------------
                 }
             }
@@ -708,70 +723,81 @@ if (window.RbiStorageManager) {
         // 2. PULL: проверки из новой нормальной архитектуры
         // =====================================================
 
-        let inspectionsQuery = window.supabaseClient
-            .from('rbi_inspections')
-            .select('*')
-            .eq('project_code', pCode)
-            .order('inspection_date', { ascending: false })
-            .limit(500); // Ограничиваем загрузку, чтобы не повесить телефон
-
-        // ИСПРАВЛЕНИЕ "Воскрешения" файлов: 
-        // Если это первая полная синхронизация (нет lastPullAt), скачиваем ТОЛЬКО живые проверки.
-        if (!lastPullAt) {
-            inspectionsQuery = inspectionsQuery.eq('is_deleted', false);
-        }
-
         // --- НОВОЕ: Фильтрация PULL по ролям (по dataScope, не по буквальной роли) ---
         const role = window.RBI.services.permissions ? window.RBI.services.permissions.getCurrentRole() : 'guest';
         const cloudStatus = window.RBI.services.permissions ? window.RBI.services.permissions.getCloudStatus() : 'pending';
         const dataScope = window.RBI.services.permissions ? window.RBI.services.permissions.getDataScope(role) : 'none';
 
-        if (dataScope === 'none' || cloudStatus !== 'approved') {
-            // БЕЗОПАСНОСТЬ: Гостям и неподтвержденным пользователям запрещено качать чужие проверки
-            inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
-        }
-        else if (dataScope === 'ownContractor') {
-            const myContrName =
-                typeof appSettings !== 'undefined'
-                    ? (appSettings.contractorName || appSettings.assignedContractor || '')
-                    : '';
+        // ИСПРАВЛЕНИЕ "Пропажи старых проверок": раньше здесь был единичный запрос
+        // с .limit(500) — при 500+ живых проверках в проекте старые (за пределами
+        // топ-500 по дате) физически никогда не скачивались на устройство ни при
+        // первой, ни при последующих синхронизациях (см. отчёт "566 в базе / 500
+        // у клиента"). buildInspectionsQuery — фабрика, пересобирающая ту же цепочку
+        // фильтров заново на каждой странице (сам объект запроса одноразовый после
+        // await), rbiPullAllRows докачивает страницы по .range() пока не заберёт всё.
+        const buildInspectionsQuery = (from, to) => {
+            let q = window.supabaseClient
+                .from('rbi_inspections')
+                .select('*')
+                .eq('project_code', pCode)
+                .order('inspection_date', { ascending: false })
+                .order('id', { ascending: false })
+                .range(from, to);
 
-            if (myContrName) {
-                inspectionsQuery = inspectionsQuery.eq('contractor_name', myContrName);
-            } else {
-                inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
+            // ИСПРАВЛЕНИЕ "Воскрешения" файлов:
+            // Если это первая полная синхронизация (нет lastPullAt), скачиваем ТОЛЬКО живые проверки.
+            if (!lastPullAt) {
+                q = q.eq('is_deleted', false);
             }
-        }
-        else if (dataScope === 'ownProject') {
-            const assignedProjects = window.RBI.services.permissions ? window.RBI.services.permissions.getAssignedProjects() : [];
 
-            if (assignedProjects && assignedProjects.length > 0) {
-                inspectionsQuery = inspectionsQuery.in('project_canonical_key', assignedProjects);
-            } else {
-                inspectionsQuery = inspectionsQuery.eq('id', 'impossible_id');
+            if (dataScope === 'none' || cloudStatus !== 'approved') {
+                // БЕЗОПАСНОСТЬ: Гостям и неподтвержденным пользователям запрещено качать чужие проверки
+                q = q.eq('id', 'impossible_id');
             }
-        }
-        else if (dataScope === 'ownProjectOrOwnRecords') {
-            const assignedProjects = window.RBI.services.permissions ? window.RBI.services.permissions.getAssignedProjects() : [];
+            else if (dataScope === 'ownContractor') {
+                const myContrName =
+                    typeof appSettings !== 'undefined'
+                        ? (appSettings.contractorName || appSettings.assignedContractor || '')
+                        : '';
 
-            inspectionsQuery = inspectionsQuery.eq('engineer_name', iName);
-
-            if (assignedProjects && assignedProjects.length > 0) {
-                inspectionsQuery = inspectionsQuery.in('project_canonical_key', assignedProjects);
+                if (myContrName) {
+                    q = q.eq('contractor_name', myContrName);
+                } else {
+                    q = q.eq('id', 'impossible_id');
+                }
             }
-        }
-        else if (window.syncConfig.syncMode === 'personal') {
-            inspectionsQuery = inspectionsQuery.eq('engineer_name', iName);
-        }
-        // dataScope === 'all' (директор/менеджер/зам) качают всё (условий не добавляем)
-        // ---------------------------------------
+            else if (dataScope === 'ownProject') {
+                const assignedProjects = window.RBI.services.permissions ? window.RBI.services.permissions.getAssignedProjects() : [];
 
-        if (lastPullAt) {
-            inspectionsQuery = inspectionsQuery.gt('updated_at', lastPullAt);
-        }
+                if (assignedProjects && assignedProjects.length > 0) {
+                    q = q.in('project_canonical_key', assignedProjects);
+                } else {
+                    q = q.eq('id', 'impossible_id');
+                }
+            }
+            else if (dataScope === 'ownProjectOrOwnRecords') {
+                const assignedProjects = window.RBI.services.permissions ? window.RBI.services.permissions.getAssignedProjects() : [];
 
-        const { data: cloudInspections, error: inspectionsError } = await inspectionsQuery;
-        if (inspectionsError) throw inspectionsError;
+                q = q.eq('engineer_name', iName);
+
+                if (assignedProjects && assignedProjects.length > 0) {
+                    q = q.in('project_canonical_key', assignedProjects);
+                }
+            }
+            else if (window.syncConfig.syncMode === 'personal') {
+                q = q.eq('engineer_name', iName);
+            }
+            // dataScope === 'all' (директор/менеджер/зам) качают всё (условий не добавляем)
+            // ---------------------------------------
+
+            if (lastPullAt) {
+                q = q.gt('updated_at', lastPullAt);
+            }
+
+            return q;
+        };
+
+        const cloudInspections = await rbiPullAllRows(buildInspectionsQuery, 500);
 
         if (cloudInspections && cloudInspections.length > 0) {
             const ids = cloudInspections.map(x => x.id);
@@ -3018,38 +3044,35 @@ if (window.RbiStorageManager) {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();
 
-            // При ручной синхронизации принудительно обновляем память и интерфейс
+            // Память справочника обновляем всегда; full-render списков — только
+            // если вкладка Справочник сейчас НЕ активна (иначе сброс UI).
+            const refTab = document.getElementById('tab-reference');
+            const refActive = !!(refTab && refTab.classList.contains('active'));
             if (typeof window.rbi_reloadReferenceMemory === 'function') {
                 await window.rbi_reloadReferenceMemory();
-                window.syncDirtyFlags.reference = false;
             }
-            if (typeof renderTwiList === 'function') renderTwiList();
-            if (typeof renderDocsList === 'function') renderDocsList();
-            if (typeof renderNodesList === 'function') renderNodesList();
+            if (refActive) {
+                if (window.syncDirtyFlags) window.syncDirtyFlags.reference = true;
+            } else {
+                if (typeof renderTwiList === 'function') renderTwiList();
+                if (typeof renderDocsList === 'function') renderDocsList();
+                if (typeof renderNodesList === 'function') renderNodesList();
+                if (window.syncDirtyFlags) window.syncDirtyFlags.reference = false;
+            }
 
-            if (!pulledPracticesChanged && typeof rbi_loadPractices === 'function' && typeof rbi_renderPracticesTab === 'function') {
+            if (!pulledPracticesChanged && typeof rbi_loadPractices === 'function') {
                 await rbi_loadPractices();
-                await rbi_renderPracticesTab();
+                if (!refActive && typeof rbi_renderPracticesTab === 'function') {
+                    await rbi_renderPracticesTab();
+                } else if (window.syncDirtyFlags) {
+                    window.syncDirtyFlags.reference = true;
+                }
             }
 
-            // Обновляем текущую активную аналитику, если мы на этой вкладке
-            const analyticsTab = document.getElementById('tab-analytics');
-            if (
-                analyticsTab &&
-                analyticsTab.classList.contains('active') &&
-                typeof renderCurrentAnalyticsTab === 'function'
-            ) {
-                renderCurrentAnalyticsTab();
-            } else if (
-                (pulledPracticesChanged || pulledEtalonsChanged) &&
-                typeof renderCurrentAnalyticsTab === 'function'
-            ) {
+            // no full-render on active analytics/history (см. §5 архитектуры)
+            if (window.syncDirtyFlags) {
                 window.syncDirtyFlags.analytics = true;
-            }
-
-            // ОБНОВЛЕНИЕ ИНТЕРФЕЙСА ОТЧЕТОВ: Если открыта вкладка отчетов, перерисовываем её
-            if (analyticsTab && analyticsTab.classList.contains('active') && window.currentHistoryViewMode === 'reports') {
-                if (typeof renderReportsList === 'function') renderReportsList();
+                window.syncDirtyFlags.history = true;
             }
 
             if (hasChanges) {
@@ -3064,19 +3087,21 @@ if (window.RbiStorageManager) {
             }
         }
 
-        // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "История пустая после sync"):
-        // событие 'sync:completed' объявлено в PLATFORM_TARGET_ARCHITECTURE.md и на
-        // него подписаны 9 модулей (history/audit/analytics/tasks/sk/etalon/meetings/
-        // schedule/reports/engineer/game/construction), но нигде в коде оно не
-        // эмитилось — модули узнавали о завершении синка только через полную
-        // перезагрузку страницы (F5), которая заново читает IndexedDB в
-        // session.service.js:restoreSession(). Эмитим только после реально
-        // выполненного цикла (эта строка не достигается при ранних return выше —
-        // offline/isSyncing/silent-без-изменений, — там перерисовывать нечего).
+        // sync:completed — оба канала (EventBus + document). Payload включает
+        // activeTabId и счётчики; модули обязаны НЕ делать full-render активного
+        // view (см. PLATFORM_TARGET_ARCHITECTURE.md §5).
+        const activeSection = document.querySelector('.view-section.active');
+        const syncCompletedPayload = {
+            mode: mode,
+            hasChanges: hasChanges,
+            pulledChecks: pulledChecks,
+            totalPushed: totalPushed,
+            activeTabId: activeSection ? activeSection.id : null
+        };
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
-            window.RBI.events.emit('sync:completed', { mode: mode, hasChanges: hasChanges, pulledChecks: pulledChecks, totalPushed: totalPushed });
+            window.RBI.events.emit('sync:completed', syncCompletedPayload);
         }
-        document.dispatchEvent(new CustomEvent('sync:completed', { detail: { mode: mode, hasChanges: hasChanges } }));
+        document.dispatchEvent(new CustomEvent('sync:completed', { detail: syncCompletedPayload }));
 
     } catch (e) {
         console.error("[Sync] Ошибка:", e);

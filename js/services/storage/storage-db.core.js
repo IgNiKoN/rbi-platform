@@ -307,9 +307,34 @@ async function dbGetAll(storeName) {
 // Не заменяет dbGetAll — используется точечно там, где нужна страница,
 // а не весь стор (см. inspection.service.js getPage()).
 // opts: { indexName, limit, direction: 'prev'|'next', range: IDBKeyRange|null,
-//         cursorKey: значение поля индекса, с которого продолжить (exclusive) }
+//         cursorKey: значение поля индекса, с которого продолжить,
+//         cursorPrimaryKey: primary key (id) записи, на которой остановилась
+//         предыдущая страница — обязателен вместе с cursorKey }
+//
+// ИСПРАВЛЕНИЕ (см. отчёт "История показывает меньше записей, чем есть в базе"):
+// граница по одному только значению cursorKey была ИСКЛЮЧАЮЩЕЙ (upperBound/
+// lowerBound с exclusive=true) — если у нескольких записей совпадает значение
+// поля `date` (секундная точность ISO-строки, массовый импорт/pull одним
+// batch'ем — совсем не редкость), ВСЕ записи с этим значением, кроме уже
+// прочитанных на предыдущей странице, навсегда пропускались курсором. Теперь
+// граница по cursorKey ВКЛЮЧАЮЩАЯ, а точную позицию (с точностью до записи)
+// определяем сами: пропускаем курсором все записи вплоть до и включая
+// (cursorKey, cursorPrimaryKey) записи с предыдущей страницы, затем начинаем
+// собирать со следующей.
+//
+// ПОЧЕМУ НЕ cursor.continuePrimaryKey() (первая версия фикса, откачена):
+// спецификация IndexedDB требует, чтобы целевая позиция была строго ПОСЛЕ
+// текущей позиции курсора — но открытый с включающей границей курсор нередко
+// сам сразу встаёт РОВНО на запись (cursorKey, cursorPrimaryKey) (когда её
+// значение `date` уникально в пределах диапазона). Вызов continuePrimaryKey
+// с координатами собственной текущей позиции запрещён спецификацией и кидает
+// `DataError: The parameter is greater than or equal to this cursor's
+// position` — воспроизведено при живом клике «Загрузить более старые
+// проверки». Ручное сравнение ключей через cursor.continue() (ниже) работает
+// в обоих случаях (уникальное и повторяющееся значение `date`) без риска
+// этой ошибки.
 async function dbGetPageByIndex(storeName, opts) {
-    const { indexName, limit = 50, direction = 'prev', range = null, cursorKey = null } = opts || {};
+    const { indexName, limit = 50, direction = 'prev', range = null, cursorKey = null, cursorPrimaryKey = null } = opts || {};
     const db = await openAppDb();
 
     return new Promise((resolve, reject) => {
@@ -318,40 +343,78 @@ async function dbGetPageByIndex(storeName, opts) {
         const index = store.index(indexName);
 
         let effectiveRange = range;
-        if (cursorKey !== undefined && cursorKey !== null) {
-            // Продолжаем строго после последнего полученного значения индекса
-            // (direction 'prev' — двигаемся от больших к меньшим значениям,
-            // значит верхняя граница исключает cursorKey; 'next' — наоборот).
+        const hasCursor = cursorKey !== undefined && cursorKey !== null
+            && cursorPrimaryKey !== undefined && cursorPrimaryKey !== null;
+        if (hasCursor) {
+            // Включающая граница — сама запись (cursorKey, cursorPrimaryKey) и всё,
+            // что совпадает с ней по значению `date`, попадут в диапазон курсора;
+            // пропускаем их вручную ниже (skipUntilPastCursor), пока не пройдём
+            // именно ту запись, primaryKey которой совпадает с cursorPrimaryKey.
             if (direction === 'prev') {
-                effectiveRange = IDBKeyRange.upperBound(cursorKey, true);
+                effectiveRange = IDBKeyRange.upperBound(cursorKey, false);
             } else {
-                effectiveRange = IDBKeyRange.lowerBound(cursorKey, true);
+                effectiveRange = IDBKeyRange.lowerBound(cursorKey, false);
             }
         }
 
         const results = [];
         let lastKey = null;
+        let lastPrimaryKey = null;
+        // Пока true — курсор идёт по записям с ключом cursorKey и ищет ровно
+        // запись с primaryKey === cursorPrimaryKey, чтобы понять, где кончилась
+        // предыдущая страница; сама эта запись и всё до неё — не результат.
+        let skipUntilPastCursor = hasCursor;
         const pCode = window.syncConfig?.projectCode || 'LOCAL';
         const req = index.openCursor(effectiveRange, direction === 'prev' ? 'prev' : 'next');
 
         req.onsuccess = () => {
             const cursor = req.result;
-            if (!cursor || results.length >= limit) {
+            if (!cursor) {
                 resolve({
                     items: results,
-                    hasMore: !!cursor,
-                    nextCursorKey: lastKey
+                    hasMore: false,
+                    nextCursorKey: lastKey,
+                    nextCursorPrimaryKey: lastPrimaryKey
                 });
                 return;
             }
 
+            if (skipUntilPastCursor) {
+                // cursor.key !== cursorKey означает, что записей с cursorKey больше
+                // нет (все они шли первыми в диапазоне) — искомая запись либо уже
+                // прошла, либо её нет вовсе; в любом случае со следующей записи
+                // начинаем собирать страницу.
+                const isSameKey = indexedDB.cmp(cursor.key, cursorKey) === 0;
+                const isCursorRecord = isSameKey && String(cursor.primaryKey) === String(cursorPrimaryKey);
+                if (!isSameKey) {
+                    skipUntilPastCursor = false;
+                    // Не return — обрабатываем эту запись как первую страницы ниже.
+                } else {
+                    cursor.continue();
+                    if (isCursorRecord) skipUntilPastCursor = false;
+                    return;
+                }
+            }
+
             const item = cursor.value;
+
+            if (results.length >= limit) {
+                resolve({
+                    items: results,
+                    hasMore: true,
+                    nextCursorKey: lastKey,
+                    nextCursorPrimaryKey: lastPrimaryKey
+                });
+                return;
+            }
+
             const itemProject = item.project_code || item.data?.project_code;
             const belongsToProject = !itemProject || itemProject === pCode;
 
             if (belongsToProject) {
                 results.push(item);
                 lastKey = cursor.key;
+                lastPrimaryKey = cursor.primaryKey;
             }
             cursor.continue();
         };

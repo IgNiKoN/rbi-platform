@@ -440,10 +440,12 @@
       // АВТОЗАКРЫТИЕ ЗАДАЧИ ЭТАЛОНА
       if (Array.isArray(_getTasks())) {
         const etalTasks = _getTasks().filter(t =>
-          (t.taskType === 'Эталон' || t.title.includes('Эталон')) &&
-          t.contractor === etalonRecord.contractorName &&
-          (t.templateKey === etalonRecord.templateKey || t.templateTitle === etalonRecord.templateTitle || t.workTitle === etalonRecord.templateTitle) &&
-          t.status === 'pending'
+          (t.taskType === 'Эталон' || (t.title && t.title.includes('Эталон'))) &&
+          (t.status === 'pending' || t.status === 'paused') &&
+          (typeof window.rbiEtalonMatchesWork === 'function'
+            ? window.rbiEtalonMatchesWork(etalonRecord, t.contractor, t.templateKey, t.templateTitle, t.workTitle)
+            : (t.contractor === etalonRecord.contractorName &&
+              (t.templateKey === etalonRecord.templateKey || t.templateTitle === etalonRecord.templateTitle || t.workTitle === etalonRecord.templateTitle)))
         );
         for (let t of etalTasks) {
           t.status = 'done';

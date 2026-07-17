@@ -25,11 +25,14 @@ export const HistoryState = {
 
     // Постраничная (курсорная) загрузка Журнала (см. отчёт по оптимизации
     // журнала/аналитики). pageCursorKey — значение поля `date` последней
-    // полученной записи (используется как IDBKeyRange-граница для следующей
-    // страницы через индекс by_date/by_contractor). pageHasMore — есть ли ещё
-    // записи в базе за текущим курсором. isLoadingPage — защита от повторного
-    // параллельного запроса следующей страницы.
+    // полученной записи, pageCursorPrimaryKey — её id (используются ВМЕСТЕ как
+    // точная граница для следующей страницы через индекс by_date — см.
+    // dbGetPageByIndex, storage-db.core.js: одного только значения даты
+    // недостаточно при совпадающих датах у нескольких записей).
+    // pageHasMore — есть ли ещё записи в базе за текущим курсором.
+    // isLoadingPage — защита от повторного параллельного запроса следующей страницы.
     pageCursorKey: null,
+    pageCursorPrimaryKey: null,
     pageHasMore: false,
     isLoadingPage: false,
     pageSize: 50,
@@ -55,6 +58,7 @@ export const HistoryState = {
 
     resetPagination() {
         this.pageCursorKey = null;
+        this.pageCursorPrimaryKey = null;
         this.pageHasMore = false;
         this.isLoadingPage = false;
     },

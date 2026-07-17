@@ -74,6 +74,7 @@ export const HistoryActions = {
             HistoryState.setRecords(page.items || []);
             HistoryState.setPageState({
                 pageCursorKey: page.nextCursorKey,
+                pageCursorPrimaryKey: page.nextCursorPrimaryKey,
                 pageHasMore: page.hasMore
             });
 
@@ -101,11 +102,13 @@ export const HistoryActions = {
             HistoryState.setPageState({ isLoadingPage: true });
             const page = await svc.getPage({
                 limit: HistoryState.pageSize,
-                cursorKey: HistoryState.pageCursorKey
+                cursorKey: HistoryState.pageCursorKey,
+                cursorPrimaryKey: HistoryState.pageCursorPrimaryKey
             });
             HistoryState.appendRecords(page.items || []);
             HistoryState.setPageState({
                 pageCursorKey: page.nextCursorKey,
+                pageCursorPrimaryKey: page.nextCursorPrimaryKey,
                 pageHasMore: page.hasMore,
                 isLoadingPage: false
             });

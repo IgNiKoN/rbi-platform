@@ -19,7 +19,8 @@ window.syncDirtyFlags = {
     analytics: false,
     tasks: false,
     session: false,
-    reference: false
+    reference: false,
+    sk: false
 };
 // Хэш SHA-256 для пароля ""
 const SYNC_FULL_ACCESS_HASH = "1570722437"
@@ -184,6 +185,37 @@ function rbiIsAutoCacheEnabled() {
 }
 // === /RBI FIX ===
 // === /RBI FIX ===
+// === RBI FIX: постраничный pull без жёсткого потолка ===
+// Раньше запросы вида .select('*').limit(500) обрезали результат навсегда —
+// строки за пределами первых 500 (по заданной сортировке) не докачивались ни
+// при первой, ни при последующих синхронизациях. queryBuilderFn(from, to)
+// должен каждый раз собирать НОВЫЙ объект запроса Supabase (с тем же order()
+// и фильтрами) и применять .range(from, to) — сам объект запроса одноразовый
+// после await, поэтому переиспользовать его между страницами нельзя.
+async function rbiPullAllRows(queryBuilderFn, pageSize = 500) {
+    const result = [];
+    let from = 0;
+
+    while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await queryBuilderFn(from, to);
+
+        if (error) {
+            console.error(`[Sync] Ошибка постраничного pull, диапазон ${from}-${to}:`, error);
+            throw error;
+        }
+
+        if (Array.isArray(data) && data.length > 0) {
+            result.push(...data);
+        }
+
+        if (!Array.isArray(data) || data.length < pageSize) break;
+        from += pageSize;
+    }
+
+    return result;
+}
+
 // === RBI FIX: безопасные батчи для pull/push и кэширования файлов ===
 async function rbiPullRowsByInspectionIds(tableName, ids, batchSize = 40) {
     const result = [];
@@ -241,6 +273,7 @@ window.rbiProcessBgCacheQueue = rbiProcessBgCacheQueue;
 window.rbiCollectCloudStorageUrls = rbiCollectCloudStorageUrls;
 window.rbiIsRemotePollDue = rbiIsRemotePollDue;
 window.rbiIsAutoCacheEnabled = rbiIsAutoCacheEnabled;
+window.rbiPullAllRows = rbiPullAllRows;
 window.rbiPullRowsByInspectionIds = rbiPullRowsByInspectionIds;
 window.rbiUpsertBatches = rbiUpsertBatches;
 window.syncTimeout = syncTimeout;
