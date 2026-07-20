@@ -2785,6 +2785,13 @@ export const AnalyticsRender = {
         const listDiv = document.getElementById('reports-list');
         if (!listDiv) return;
 
+        // Тумблер режима — всегда (и при пустом списке), scope = reports.
+        const reportsToggleHostEarly = document.getElementById('reports-view-mode-toggle');
+        const kbToggleHtmlEarly = window.kbViewModeToggleHtml;
+        if (reportsToggleHostEarly && typeof kbToggleHtmlEarly === 'function') {
+            reportsToggleHostEarly.innerHTML = kbToggleHtmlEarly('reports');
+        }
+
         if (_reports().getAllSync().length === 0) {
             listDiv.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">Сохраненных отчетов пока нет.</div>`;
             return;

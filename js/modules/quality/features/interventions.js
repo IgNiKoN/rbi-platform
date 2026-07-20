@@ -1115,6 +1115,7 @@ window.rbi_savePractice = async function () {
         author: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         owner: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         title: title,
+        projectName: document.getElementById('inp-project')?.value.trim() || '',
         templateKey: intItem.templateKey,
         templateTitle: intItem.templateTitle,
         deltaUrk: intItem.deltaUrk,
@@ -1306,6 +1307,7 @@ window.rbi_saveManualPractice = async function () {
         author: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         owner: document.getElementById('inp-inspector')?.value.trim() || 'Инженер',
         title: title,
+        projectName: document.getElementById('inp-project')?.value.trim() || '',
         templateKey: 'manual',
         templateTitle: 'Ручной опыт',
         deltaUrk: 0, // Не высчитываем процент для ручных
