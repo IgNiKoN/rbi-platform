@@ -71,6 +71,8 @@
         aiAuto: false,
         apiKey: '',
         dashboardMode: 'compact',
+        // Режим отображения списков базы знаний / отчётов: 'cards' | 'list'
+        knowledgeViewMode: 'cards',
         anaEngPareto: true,
         anaOpTrend: true,
         anaOpLeader: true,

@@ -98,7 +98,7 @@ export const KnowledgeState = {
         var typeFilter  = window.currentDocFilter || this.filters.docType;
         var currentEngineer = _getSetting('engineerName') || 'Инженер';
 
-        var systemDocs = typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : [];
+        var systemDocs = typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : [];
         var allDocs = systemDocs.concat(this.customDocs);
 
         return allDocs.filter(function (doc) {
@@ -120,7 +120,7 @@ export const KnowledgeState = {
         var ownerFilter = window.nodeOwnerFilter || this.filters.nodeOwner;
         var currentEngineer = _getSetting('engineerName') || 'Инженер';
 
-        var systemNodes = typeof SYSTEM_NODES !== 'undefined' ? SYSTEM_NODES : [];
+        var systemNodes = typeof window.SYSTEM_NODES !== 'undefined' ? window.SYSTEM_NODES : [];
         var allNodes = systemNodes.concat(this.customNodes);
         var customIds = this.customNodes.map(function (n) { return n.id; });
 

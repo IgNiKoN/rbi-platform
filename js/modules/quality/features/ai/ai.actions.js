@@ -842,7 +842,7 @@ async function askAiDocQuestion() {
     chatHistory.scrollTop = chatHistory.scrollHeight;
 
     // 3. ПРОДВИНУТЫЙ ЛОКАЛЬНЫЙ ПОИСК КОНТЕКСТА (ЧАНКИРОВАНИЕ RAG)
-    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ..._getCustomDocs()];
+    const allDocs = [...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []), ..._getCustomDocs()];
 
     // Очищаем вопрос от знаков препинания
     const cleanQuestion = question.toLowerCase().replace(/[.,?!]/g, '');

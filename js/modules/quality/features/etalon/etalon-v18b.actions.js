@@ -143,7 +143,7 @@
 
       var tmplSelect = document.getElementById('etv18b-template');
       var tmplOpts = '<option value="" disabled selected>-- Выберите вид работ --</option>';
-      var st = (window.RBI && window.RBI.services && window.RBI.services.templates) ? window.RBI.services.templates.getSystemTemplates() : (typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {});
+      var st = (window.RBI && window.RBI.services && window.RBI.services.templates) ? window.RBI.services.templates.getSystemTemplates() : (typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {});
       var sysKeys = Object.keys(st).sort(function (a, b) { return st[a].title.localeCompare(st[b].title); });
       sysKeys.forEach(function (k) { tmplOpts += '<option value="sys_' + k + '">[СИС] ' + st[k].title + '</option>'; });
       tmplSelect.innerHTML = tmplOpts;

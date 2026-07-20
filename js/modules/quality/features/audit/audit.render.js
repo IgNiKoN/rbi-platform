@@ -49,7 +49,7 @@ import { AuditActions } from './audit.actions.js';
         return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
       },
       getSystemTemplates: function () {
-        return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+        return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
       }
     };
   }
@@ -78,6 +78,23 @@ import { AuditActions } from './audit.actions.js';
   // reports.actions.js, game.actions.js, analytics.*.js — бареные/typeof-guarded
   // обращения к DEFECT_CAUSES продолжают резолвиться через этот же массив.
   window.DEFECT_CAUSES = _AUDIT_DEFECT_CAUSES;
+
+  // =====================================================================
+  // РЯД МИНИАТЮР ФОТО ПУНКТА ЧЕК-ЛИСТА (Множественные фото, B1)
+  // AuditState.photos[id] — массив src (обратная совместимость: строка для
+  // старых сессий нормализуется через window.normalizeItemPhotos). addBtnClass
+  // отличает стиль кнопки «добавить ещё» для fail/ok карточек.
+  // =====================================================================
+  function renderPhotoRow(id, addBtnClass) {
+    var photosArr = window.normalizeItemPhotos(AuditState.photos[id]);
+    var thumbsHtml = photosArr.map(function (src, idx) {
+      return `<div class="relative shrink-0"><img src="${window.getPhotoSrc(src)}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border ${addBtnClass.thumbBorder} shadow-sm object-cover" onclick="openPhotoViewer('${src}')"><div onclick="removePhoto(${id}, event, ${idx})" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>`;
+    }).join('');
+
+    var addBtnHtml = `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm ${addBtnClass.addBtn}" title="${photosArr.length ? 'Добавить ещё фото' : addBtnClass.title}"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
+
+    return `<div class="flex items-center gap-1.5 shrink-0">${thumbsHtml}${addBtnHtml}</div>`;
+  }
 
   // Звуковые эффекты (base64 для офлайна) — перенесено из js/app.js, module-приватные
   // (единственный потребитель — audioOk.play()/audioFail.play() ниже в этом файле).
@@ -640,7 +657,7 @@ import { AuditActions } from './audit.actions.js';
 
       if (window.auditOriginalData) {
         var origState = window.auditOriginalData.state[id];
-        var origPhoto = window.auditOriginalData.photos ? window.auditOriginalData.photos[id] : null;
+        var origPhoto = window.auditOriginalData.photos ? window.normalizeItemPhotos(window.auditOriginalData.photos[id])[0] || null : null;
 
         if (origState) {
           if (window.auditOriginalData.isCrossAudit) {
@@ -682,9 +699,7 @@ import { AuditActions } from './audit.actions.js';
           `<div class="relative shrink-0"><button onclick="toggleCommentField(${id})" class="btn-status text-indigo-600 bg-indigo-50 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800 !w-11 !h-11 !rounded-[12px] shadow-sm"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></button><div onclick="deleteComment(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` :
           `<button onclick="toggleCommentField(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg></button>`;
 
-        var photoBtn = AuditState.photos[id] ?
-          `<div class="relative shrink-0"><img src="${window.getPhotoSrc(AuditState.photos[id])}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-indigo-200 dark:border-indigo-800 shadow-sm object-cover" onclick="openPhotoViewer('${AuditState.photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` :
-          `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
+        var photoBtn = renderPhotoRow(id, { thumbBorder: 'border-indigo-200 dark:border-indigo-800', addBtn: '', title: 'Добавить фото' });
         var escBtn = (i.w === 2) ? `<button onclick="toggleEscalation(${id})" class="btn-status ${isEscalated ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400' : 'text-orange-500 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'} !w-11 !h-11 !rounded-[12px] transition-all shrink-0 shadow-sm"><span class="text-[13px] font-bold">>1.5</span></button>` : '';
 
         var visualIndicatorHtml = isEscalated ? `<div class="text-[10px] font-black text-white bg-red-600 px-2 py-0.5 rounded w-fit mt-1 shadow-sm">Дефект учтен как B3</div>` : '';
@@ -710,9 +725,7 @@ import { AuditActions } from './audit.actions.js';
             </div>
         `;
       } else if (okActive) {
-        var photoBtnOk = AuditState.photos[id] ?
-          `<div class="relative shrink-0"><img src="${window.getPhotoSrc(AuditState.photos[id])}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border border-green-300 shadow-sm object-cover" onclick="openPhotoViewer('${AuditState.photos[id]}')"><div onclick="removePhoto(${id}, event)" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>` :
-          `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm text-green-600 bg-green-50 border-green-200" title="Добавить фото эталона"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
+        var photoBtnOk = renderPhotoRow(id, { thumbBorder: 'border-green-300', addBtn: 'text-green-600 bg-green-50 border-green-200', title: 'Добавить фото эталона' });
         contentHtml = `
             <div class="flex justify-between items-center w-full min-h-[44px]">
                 <div class="flex-1 mr-3 min-w-0 pointer-events-none">

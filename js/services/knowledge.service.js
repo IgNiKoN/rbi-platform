@@ -179,7 +179,7 @@
         /* ── SYSTEM_DOCS (статика из data/system_docs.js) ────────────── */
 
         getSystemDocs: function () {
-            return typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : [];
+            return typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : [];
         },
 
         /* ── Синхронные геттеры/сеттеры живых in-memory структур ──────── */

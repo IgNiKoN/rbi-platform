@@ -80,6 +80,14 @@ function _reports() {
     };
 }
 
+// RBI NEW (Множественные фото к пункту чек-листа, B1): единая точка нормализации
+// check.photos[id] (массив/строка/undefined → всегда массив) для всех отборов
+// фото под PDF/отчёты в этом файле. Использует общий window.normalizeItemPhotos
+// (js/shared/photo-editor.utils.js).
+function getItemPhotos(check, id) {
+    return (check && check.photos) ? window.normalizeItemPhotos(check.photos[id]) : [];
+}
+
 function _defectCauses() {
     if (ReportsActions._ctx && ReportsActions._ctx.inspections) {
         return ReportsActions._ctx.inspections.getDefectCausesSync();
@@ -248,7 +256,7 @@ function _templates() {
             return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
         },
         getSystemTemplates: function () {
-            return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+            return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
         }
     };
 }
@@ -842,9 +850,10 @@ function generatePosterData() {
                     }
                     if (check.photos && check.state) {
                         Object.keys(check.state).forEach(id => {
-                            if (check.state[id] === 'ok' && check.photos[id]) bestPhoto = check.photos[id];
-                            if ((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) {
-                                worstPhoto = check.photos[id];
+                            const idPhotos = getItemPhotos(check, id);
+                            if (check.state[id] === 'ok' && idPhotos.length > 0) bestPhoto = idPhotos[0];
+                            if ((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && idPhotos.length > 0) {
+                                worstPhoto = idPhotos[0];
                                 const tType = check.templateKey.split('_')[0];
                                 const tKey = check.templateKey.replace(tType + '_', '');
                                 const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey] ? _templates().getSystemTemplates()[tKey].groups : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
@@ -942,6 +951,29 @@ function exportPdfData(data, mode = 'script') {
 // перенесённых методов ReportsActions (printEtalon, printMeeting и др.) —
 // резолвится как обычная module-level function declaration этого файла
 // (hoisting), без необходимости в window.X внутри самого модуля.
+// Определяет человекочитаемый вид документа по заголовку — для чипсов-фильтров
+// на вкладке «Отчёты» (см. _ai/current_plan.md, блок "UI вкладки «Отчёты»").
+// Аддитивное поле doc_kind, не заменяет report_type ('print'/'pdf', используется
+// синком/бейджем) — только для UI-группировки. По тому же принципу, что уже
+// используется чуть ниже для скрытия QR по подстроке в title (showQr).
+function classifyDocKind(title) {
+    if (title.includes('Протокол')) return 'Протокол совещания';
+    if (title.includes('FMEA')) return 'FMEA';
+    if (title.includes('TWI')) return 'TWI';
+    if (title.includes('Практика')) return 'Практика';
+    if (title.includes('Воркшоп')) return 'Воркшоп';
+    if (title.includes('Инструктаж')) return 'Инструктаж';
+    if (title.includes('КС-2')) return 'КС-2';
+    if (title.includes('Акт-Эталон')) return 'Акт-эталон';
+    if (title.includes('Дашборд СК')) return 'Дашборд СК';
+    if (title.includes('График СМР')) return 'График СМР';
+    if (title.includes('День Качества')) return 'День качества';
+    if (title.includes('Плакат Качества')) return 'Плакат качества';
+    if (title.includes('Паспорта Подрядчиков') || title.includes('Список подрядчиков') || title.includes('Срез:') || title.includes('Отчет для')) return 'Отчёт по подрядчику';
+    if (title.includes('Сводка для Руководства') || title.includes('Полный отчет по объекту') || title.includes('База проверок')) return 'Сводный отчёт';
+    return 'Прочее';
+}
+
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
     window._pdfGenerating = true;
     const isBackground = (mode === 'background');
@@ -1038,12 +1070,35 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
 
         await resolveLocalPhotosForPdf(printContainer);
 
-        // Для браузерной печати мы не можем получить Blob (сам файл), поэтому сохраняем "пустышку" в историю, просто чтобы остался след.
-        const emptyBlob = new Blob(["Отчет распечатан на принтере, цифровой PDF-копии нет."], { type: 'text/plain' });
+        // Для истории сохраняем настоящий PDF-Blob (тот же html2pdf-пайплайн,
+        // что и в ПАЙПЛАЙНЕ 2 ниже), не текстовую заглушку — window.print()
+        // (реальная печать на принтер) при этом продолжает вызываться как раньше.
+        const printWrapperEl = document.getElementById('print-wrapper') || printContainer;
+        const printFilename = `${title.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toLocaleDateString('ru-RU')}.pdf`;
+        const printOpt = {
+            margin: [MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM],
+            filename: printFilename,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+                scale: HIGH_QUALITY_SCALE,
+                useCORS: true, letterRendering: true, width: widthPx, windowWidth: widthPx,
+                x: 0, y: 0, scrollX: 0, scrollY: 0, logging: false, allowTaint: true, backgroundColor: '#ffffff'
+            },
+            jsPDF: { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation, compress: true },
+            pagebreak: { mode: ['css', 'legacy'] }
+        };
+        let printPdfBlob;
+        try {
+            printPdfBlob = await html2pdf().set(printOpt).from(printWrapperEl).output('blob');
+        } catch (e) {
+            console.error('[PDF Error] printPdfShell (browser mode) blob generation failed', e);
+            printPdfBlob = new Blob(["Отчет распечатан на принтере, цифровой PDF-копии нет."], { type: 'text/plain' });
+        }
         await saveReportToLocal({
             type: 'print',
+            docKind: classifyDocKind(title),
             title: title,
-            blob: emptyBlob,
+            blob: printPdfBlob,
             project: projName,
             period: 'Всё время',
             forcedId: reportId,
@@ -1317,6 +1372,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         // === НОВОЕ: Сохраняем полученный Blob (сам файл PDF) в нашу базу истории отчетов ===
         await saveReportToLocal({
             type: 'pdf',
+            docKind: classifyDocKind(title),
             title: title,
             blob: pdfBlob,
             project: projName,
@@ -1701,6 +1757,7 @@ async function saveReportToLocal(reportData, htmlContent) {
         engineer_name: _getSetting('engineerName') || 'Инженер',
 
         report_type: reportData.type,
+        doc_kind: reportData.docKind || 'Прочее',
         title: reportData.title,
         generated_at: new Date().toISOString(),
         file_blob: reportData.blob,
@@ -1881,7 +1938,7 @@ async function exportPdfOnePager(data, mode = 'script') {
                 const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey] ? _templates().getSystemTemplates()[tKey].groups : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
                 const foundItem = getFlatList(cl).find(x => x.id == id);
                 if (foundItem) defName = foundItem.n;
-                const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
+                const photo = getItemPhotos(i, id)[0] || null;
 
                 if (s === 'fail' || s === 'fail_escalated') {
                     let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
@@ -2392,7 +2449,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                     const flatList = getFlatList(_templates().getUserTemplates()[i.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[i.templateKey.replace('sys_', '')]?.groups);
                     const foundItem = flatList.find(x => x.id == id);
                     if (foundItem) defName = foundItem.n;
-                    const photo = i.photos[id];
+                    const photo = getItemPhotos(i, id)[0] || null;
 
                     if (s === 'fail' || s === 'fail_escalated') {
                         let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
@@ -2580,14 +2637,17 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
             if (check.state && check.photos) {
                 Object.keys(check.state).forEach(id => {
                     const s = check.state[id];
-                    if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
+                    const idPhotos = getItemPhotos(check, id);
+                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
                         const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
                         const itemInfo = flatList.find(x => x.id == id);
                         const isB3 = s === 'fail_escalated' || (itemInfo && itemInfo.w === 3);
                         const defName = itemInfo ? itemInfo.n : 'Дефект';
 
-                        if (isB3) photosB3.push({ src: check.photos[id], name: defName, contr: check.contractorName });
-                        else photosB2.push({ src: check.photos[id], name: defName, contr: check.contractorName });
+                        idPhotos.forEach(src => {
+                            if (isB3) photosB3.push({ src, name: defName, contr: check.contractorName });
+                            else photosB2.push({ src, name: defName, contr: check.contractorName });
+                        });
                     }
                 });
             }
@@ -2932,11 +2992,14 @@ async function exportPdfFullObjectReport(data, mode = 'script') {
                     const item = flatList.find(x => x.id == id);
                     if (item) defName = item.n;
 
-                    if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
-                        if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src: check.photos[id], name: defName });
-                        else photosB2.push({ src: check.photos[id], name: defName });
-                    } else if (s === 'ok' && check.photos[id]) {
-                        photosOK.push({ src: check.photos[id], name: defName });
+                    const idPhotos = getItemPhotos(check, id);
+                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
+                        idPhotos.forEach(src => {
+                            if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src, name: defName });
+                            else photosB2.push({ src, name: defName });
+                        });
+                    } else if (s === 'ok' && idPhotos.length > 0) {
+                        idPhotos.forEach(src => photosOK.push({ src, name: defName }));
                     }
                 });
             }
@@ -3070,9 +3133,10 @@ async function exportPdfPoster(data, mode = 'script') {
                             const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
                             const itemInfo = flatList.find(x => x.id == id);
                             const defName = itemInfo ? itemInfo.n : 'Дефект';
+                            const idPhotos = getItemPhotos(check, id);
 
-                            if (check.state[id] === 'ok' && check.photos[id]) allOkPhotos.push({ src: check.photos[id], contr: cName, name: defName });
-                            if ((check.state[id] === 'fail' || check.state[id] === 'fail_escalated') && check.photos[id]) allDefectPhotos.push({ src: check.photos[id], contr: cName, name: defName });
+                            if (check.state[id] === 'ok') idPhotos.forEach(src => allOkPhotos.push({ src, contr: cName, name: defName }));
+                            if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') idPhotos.forEach(src => allDefectPhotos.push({ src, contr: cName, name: defName }));
                         });
                     }
                 });
@@ -3903,11 +3967,14 @@ export const ReportsActions = {
                     const item = flatList.find(x => x.id == id);
                     if (item) defName = item.n;
 
-                    if ((s === 'fail' || s === 'fail_escalated') && check.photos[id]) {
-                        if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src: check.photos[id], name: defName });
-                        else photosB2.push({ src: check.photos[id], name: defName });
-                    } else if (s === 'ok' && check.photos[id]) {
-                        photosOK.push({ src: check.photos[id], name: defName });
+                    const idPhotos = getItemPhotos(check, id);
+                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
+                        idPhotos.forEach(src => {
+                            if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src, name: defName });
+                            else photosB2.push({ src, name: defName });
+                        });
+                    } else if (s === 'ok' && idPhotos.length > 0) {
+                        idPhotos.forEach(src => photosOK.push({ src, name: defName }));
                     }
                 });
             }
@@ -4714,7 +4781,17 @@ export const ReportsActions = {
 
             const safeSteps = card.steps || [];
             for (let step of safeSteps) {
-                let stepPhoto = step.photo ? await PhotoManager.getAsyncUrl(step.photo) || window.getPhotoSrc(step.photo) : null;
+                const stepPhotos = window.normalizeItemPhotos(step.photo);
+                const stepPhotoUrls = [];
+                for (const p of stepPhotos) {
+                    const resolved = p ? (await PhotoManager.getAsyncUrl(p) || window.getPhotoSrc(p)) : null;
+                    if (resolved) stepPhotoUrls.push(resolved);
+                }
+                const photoCellHtml = stepPhotoUrls.map(function (url) {
+                    return `<div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center; margin-bottom: 6px;">
+                                    <img src="${url}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
+                                </div>`;
+                }).join('');
 
                 content += `
                     <table class="no-break" style="width: 100%; border: 2px solid #e2e8f0; border-left: 6px solid #10b981; border-radius: 10px; background: white; margin-bottom: 15px; border-collapse: collapse; table-layout: fixed;">
@@ -4723,10 +4800,8 @@ export const ReportsActions = {
                                 <h3 style="color: #047857; margin: 0 0 5px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; text-transform: uppercase;">ШАГ ${step.order} ${step.time ? `<span style="color: #64748b; font-size: ${mode === 'browser' ? '9pt' : '11px'};">(⏱ ${step.time} мин)</span>` : ''}</h3>
                                 <p style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: bold; color: #1e293b; white-space: pre-wrap; margin: 0;">${step.text}</p>
                             </td>
-                            ${stepPhoto ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: middle; text-align: center;">
-                                <div style="width: 100%; height: ${mode === 'browser' ? '40mm' : '150px'}; background: #f1f5f9; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; align-items: center; justify-content: center;">
-                                    <img src="${stepPhoto}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
-                                </div>
+                            ${photoCellHtml ? `<td style="width: ${mode === 'browser' ? '50mm' : '200px'}; padding: 15px; vertical-align: middle; text-align: center;">
+                                ${photoCellHtml}
                             </td>` : ''}
                         </tr>
                     </table>

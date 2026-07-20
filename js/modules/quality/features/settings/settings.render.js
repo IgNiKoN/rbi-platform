@@ -396,6 +396,34 @@ var SettingsRender = {
                     </div>
                 </details>
 
+                <!-- БАЗА ЗНАНИЙ -->
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary
+                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                            </svg>
+                            База знаний
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
+                    </summary>
+                    <div>
+                        <div class="p-4 flex justify-between items-center rounded-b-2xl">
+                            <div>
+                                <div class="font-bold text-sm">Отображение списков</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">TWI, нормативы, узлы и отчёты — карточки или список</div>
+                            </div>
+                            <select id="set-knowledge-view-mode" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewMode" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+
                 <!-- АНАЛИТИКА И ОТЧЕТЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
@@ -1146,6 +1174,7 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (document.getElementById('set-fontsize')) document.getElementById('set-fontsize').value = _getSetting('fontSize') || 'medium';
         if (document.getElementById('set-navpos')) document.getElementById('set-navpos').value = _getSetting('navPosition') || 'auto';
         if (document.getElementById('set-dashmode')) document.getElementById('set-dashmode').value = _getSetting('dashboardMode') || 'compact';
+        if (document.getElementById('set-knowledge-view-mode')) document.getElementById('set-knowledge-view-mode').value = _getSetting('knowledgeViewMode') || 'cards';
 
         // 2. Переключатели логики
         if (document.getElementById('set-swipe')) document.getElementById('set-swipe').checked = _getSetting('swipeEnabled');

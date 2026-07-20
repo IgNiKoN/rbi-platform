@@ -17,3 +17,4 @@ const SYSTEM_NODES = [
     }
     
 ];
+window.SYSTEM_NODES = SYSTEM_NODES;

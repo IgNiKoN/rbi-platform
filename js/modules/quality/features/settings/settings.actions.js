@@ -110,6 +110,14 @@
 
     function _toggleSetting(settingKey, element) {
         var val = element.type === 'checkbox' ? element.checked : element.value;
+
+        // Режим карточки/список — единая точка входа (сохранение + перерисовка списков)
+        var setKbViewMode = window.setKnowledgeViewMode;
+        if (settingKey === 'knowledgeViewMode' && typeof setKbViewMode === 'function') {
+            setKbViewMode(val);
+            return;
+        }
+
         _setSetting(settingKey, val);
 
         if (settingKey === 'brandColor') {
@@ -152,6 +160,7 @@
             storageLastCleanupAt: null,
             storagePersistentRequestedAt: null,
             storagePersistentGranted: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
+            knowledgeViewMode: 'cards',
             anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
             autoBackupEnabled: false, autoBackupDay: '5', autoBackupShare: false, autoManagerEnabled: false, autoManagerDay: '5',
             brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'

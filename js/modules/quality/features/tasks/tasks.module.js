@@ -152,7 +152,7 @@ function _templates() {
             return ut[key] || null;
         },
         getSystemTemplates: function () {
-            return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+            return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
         }
     };
 }
@@ -809,35 +809,87 @@ async function _renderTasksList(forceRender) {
         if (t.carryOverCount && t.carryOverCount > 0 && !isArchive) {
             debtBadge = '<div class="absolute -top-2 -right-2 bg-red-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-md uppercase tracking-widest animate-pulse border border-white dark:border-slate-800">Долг: ' + t.carryOverCount + ' нед.</div>';
         }
-        return '\n        <div data-category="' + itemCategory + '" onclick="rbi_openTaskAction(\'' + t.id + '\')" class="task-card-item cursor-pointer w-full ' + bgClass + ' border ' + borderClass + ' rounded-2xl p-3 flex flex-col justify-between relative shadow-sm transition-transform active:scale-[0.98] hover:border-indigo-300 dark:hover:border-indigo-600 ' + opacityClass + '">\n            ' + debtBadge + '\n            <div>\n                <div class="flex items-start justify-between gap-3 mb-2">\n                    <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] text-slate-500 flex items-center justify-center border border-[var(--card-border)] shrink-0">' + icon + '</div>\n                    <div class="flex-1 min-w-0">\n                        <div class="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-0.5">' + (t.taskType || t.title) + '</div>\n                        <div class="text-[13px] font-black text-slate-800 dark:text-white leading-tight truncate">' + t.contractor + '</div>\n                        <div class="text-[10px] font-bold text-[var(--text-muted)] truncate">' + (t.workTitle || t.templateTitle || '') + '</div>\n                    </div>\n                </div>\n                <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-3 font-medium mb-1">' + t.prompt + '</div>\n                ' + assigneeBadge + '\n            </div>\n            <div class="mt-3 pt-2 border-t border-[var(--card-border)] flex justify-between items-center">\n                <div class="flex items-center gap-1.5">\n                    <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ' + priorityColor + '">' + priorityText + '</span>\n                    ' + progressHtml + '\n                </div>\n                <div class="text-[9px] font-bold ' + (isOverdue && !isArchive ? 'text-red-500' : 'text-slate-400') + '">' + (isOverdue && !isArchive ? 'Просрочено: ' : 'До: ') + dateStr + '</div>\n            </div>\n        </div>';
+        var isCriticalCard = (isOverdue && !isArchive) || t.priorityLvl === 4;
+        return '\n        <div data-category="' + itemCategory + '"' + (isCriticalCard ? ' data-critical="1"' : '') + ' onclick="rbi_openTaskAction(\'' + t.id + '\')" class="task-card-item cursor-pointer w-full ' + bgClass + ' border ' + borderClass + ' rounded-2xl p-3 flex flex-col justify-between relative shadow-sm transition-transform active:scale-[0.98] hover:border-indigo-300 dark:hover:border-indigo-600 ' + opacityClass + '">\n            ' + debtBadge + '\n            <div>\n                <div class="flex items-start justify-between gap-3 mb-2">\n                    <div class="w-8 h-8 rounded-lg bg-[var(--hover-bg)] text-slate-500 flex items-center justify-center border border-[var(--card-border)] shrink-0">' + icon + '</div>\n                    <div class="flex-1 min-w-0">\n                        <div class="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-0.5">' + (t.taskType || t.title) + '</div>\n                        <div class="text-[13px] font-black text-slate-800 dark:text-white leading-tight truncate">' + t.contractor + '</div>\n                        <div class="text-[10px] font-bold text-[var(--text-muted)] truncate">' + (t.workTitle || t.templateTitle || '') + '</div>\n                    </div>\n                </div>\n                <div class="text-[10px] text-slate-600 dark:text-slate-400 leading-snug line-clamp-3 font-medium mb-1">' + t.prompt + '</div>\n                ' + assigneeBadge + '\n            </div>\n            <div class="mt-3 pt-2 border-t border-[var(--card-border)] flex justify-between items-center">\n                <div class="flex items-center gap-1.5">\n                    <span class="text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ' + priorityColor + '">' + priorityText + '</span>\n                    ' + progressHtml + '\n                </div>\n                <div class="text-[9px] font-bold ' + (isOverdue && !isArchive ? 'text-red-500' : 'text-slate-400') + '">' + (isOverdue && !isArchive ? 'Просрочено: ' : 'До: ') + dateStr + '</div>\n            </div>\n        </div>';
     };
 
-    var filterHtml = '\n        <div class="flex gap-1.5 mb-4 pb-1 overflow-x-auto no-scrollbar" id="hub-filters">\n            <button onclick="rbi_filterTaskHub(\'all\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все</button>\n            <button onclick="rbi_filterTaskHub(\'control\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Аудиты</button>\n            <button onclick="rbi_filterTaskHub(\'etalon\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Эталоны</button>\n            <button onclick="rbi_filterTaskHub(\'meeting\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Планерки</button>\n            <button onclick="rbi_filterTaskHub(\'report\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Отчеты / FMEA</button>\n            <button onclick="rbi_filterTaskHub(\'method\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">ППР / TWI</button>\n            <button onclick="rbi_filterTaskHub(\'dev\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Обучение</button>\n            <button onclick="rbi_filterTaskHub(\'other\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Ручные</button>\n        </div>\n    ';
+    /**
+     * Группирует переданные задачи по подрядчику и рендерит их как свёрнутые
+     * по умолчанию под-аккордеоны `<details data-task-group="...">`.
+     * isOverdueFn(t) — функция, определяющая признак просрочки для конкретной задачи
+     * (используется тем же способом, что и в плоском рендере секции).
+     */
+    var _renderContractorGroups = function(tasks, isOverdueFn, sectionKey) {
+        if (!tasks || tasks.length === 0) return '';
+        var groups = {};
+        var order = [];
+        tasks.forEach(function(t) {
+            var name = t.contractor || 'Без подрядчика';
+            if (!groups[name]) {
+                groups[name] = { name: name, entries: [], hasCritical: false, maxPriority: 0 };
+                order.push(name);
+            }
+            var isOverdueTask = !!(isOverdueFn && isOverdueFn(t));
+            var g = groups[name];
+            if (t.priorityLvl === 4 || isOverdueTask) g.hasCritical = true;
+            if ((t.priorityLvl || 0) > g.maxPriority) g.maxPriority = t.priorityLvl || 0;
+            g.entries.push({ task: t, isOverdue: isOverdueTask });
+        });
+        var groupList = order.map(function(name){ return groups[name]; });
+        groupList.sort(function(a, b) {
+            if (a.hasCritical !== b.hasCritical) return a.hasCritical ? -1 : 1;
+            if (a.hasCritical && b.hasCritical && b.maxPriority !== a.maxPriority) return b.maxPriority - a.maxPriority;
+            if (b.entries.length !== a.entries.length) return b.entries.length - a.entries.length;
+            return a.name.localeCompare(b.name, 'ru');
+        });
+        return groupList.map(function(g) {
+            var slug = g.name.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_').replace(/^_+|_+$/g, '') || 'contractor';
+            var groupKey = sectionKey + '__' + slug;
+            var criticalMarker = g.hasCritical ? '<span class="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse shrink-0"></span>' : '';
+            var cardsHtml = g.entries.map(function(e){ return renderCard(e.task, e.isOverdue); }).join('');
+            return '<details data-task-group="' + groupKey + '" class="mb-2 group [&_summary::-webkit-details-marker]:hidden bg-[var(--hover-bg)] rounded-xl border border-[var(--card-border)] px-2.5 pt-1.5 pb-1">' +
+                '<summary class="cursor-pointer flex justify-between items-center py-1 select-none">' +
+                    '<span class="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5">' + criticalMarker + g.name + ' (' + g.entries.length + ')</span>' +
+                    '<span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span>' +
+                '</summary>' +
+                '<div class="' + gridClass + ' pt-1.5">' + cardsHtml + '</div>' +
+            '</details>';
+        }).join('');
+    };
+
+    var filterHtml = '\n        <div class="flex gap-1.5 mb-4 pb-1 overflow-x-auto no-scrollbar" id="hub-filters">\n            <button onclick="rbi_filterTaskHub(\'all\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm transition-colors shrink-0">Все</button>\n            <button onclick="rbi_filterTaskHub(\'control\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Аудиты</button>\n            <button onclick="rbi_filterTaskHub(\'etalon\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Эталоны</button>\n            <button onclick="rbi_filterTaskHub(\'meeting\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Планерки</button>\n            <button onclick="rbi_filterTaskHub(\'report\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Отчеты / FMEA</button>\n            <button onclick="rbi_filterTaskHub(\'method\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">ППР / TWI</button>\n            <button onclick="rbi_filterTaskHub(\'dev\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Обучение</button>\n            <button onclick="rbi_filterTaskHub(\'other\', this)" class="hub-filter-btn px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors shrink-0">Ручные</button>\n            <button id="rbi-critical-only-btn" onclick="rbi_toggleCriticalOnlyFilter(this)" class="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white dark:bg-slate-900 text-red-600 border-2 border-red-300 dark:border-red-700 transition-colors shrink-0 flex items-center gap-1">⚠️ Только критичные</button>\n        </div>\n    ';
 
     var accordionsHtml = '';
     var gridClass = "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3 pb-2";
 
-    var activeToday = overdue.map(function(t){ return renderCard(t, true); }).concat(todayTasks.map(function(t){ return renderCard(t, false); }));
+    var activeTodayCount = overdue.length + todayTasks.length;
 
     // data-task-section — стабильный ключ для restore open-state после sync
-    // (см. _captureTasksUiState / _restoreTasksUiState).
-    if (activeToday.length > 0) accordionsHtml += '<details data-task-section="today" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Сегодня (' + activeToday.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + activeToday.join('') + '</div></details>';
+    // (см. _captureTasksUiState / _restoreTasksUiState). Внутри секции карточки
+    // группируются по подрядчику через _renderContractorGroups (data-task-group).
+    if (activeTodayCount > 0) accordionsHtml += '<details data-task-section="today" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Сегодня (' + activeTodayCount + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary>' + _renderContractorGroups(overdue.concat(todayTasks), function(t){ return overdue.indexOf(t) !== -1; }, 'today') + '</details>';
 
-    if (weekTasks.length > 0) accordionsHtml += '<details data-task-section="week" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Плановые задачи (' + weekTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + weekTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
+    if (weekTasks.length > 0) accordionsHtml += '<details data-task-section="week" class="mb-4 group [&_summary::-webkit-details-marker]:hidden" open><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Плановые задачи (' + weekTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary>' + _renderContractorGroups(weekTasks, function(){ return false; }, 'week') + '</details>';
 
-    if (monthTasks.length > 0) accordionsHtml += '<details data-task-section="month" class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (' + monthTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + monthTasks.map(function(t){ return renderCard(t, false); }).join('') + '</div></details>';
+    if (monthTasks.length > 0) accordionsHtml += '<details data-task-section="month" class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"></path></svg> Будущие задачи (' + monthTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary>' + _renderContractorGroups(monthTasks, function(){ return false; }, 'month') + '</details>';
 
     if (archiveTasks.length > 0) {
         var recentArchive = archiveTasks.slice().sort(function(a, b){ return new Date(b.updatedAt || b.date) - new Date(a.updatedAt || a.date); }).slice(0, 15);
         accordionsHtml += '<details data-task-section="archive" class="mb-4 group [&_summary::-webkit-details-marker]:hidden"><summary class="cursor-pointer flex justify-between items-center mb-3 select-none border-b border-[var(--card-border)] pb-2"><span class="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Архив: Недавно завершенные (' + archiveTasks.length + ')</span><span class="text-slate-400 transition-transform duration-300 group-open:rotate-180"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg></span></summary><div class="' + gridClass + '">' + recentArchive.map(function(t){ return renderCard(t, false, true); }).join('') + '</div></details>';
     }
 
-    if (activeToday.length === 0 && weekTasks.length === 0 && monthTasks.length === 0 && archiveTasks.length === 0) {
+    if (activeTodayCount === 0 && weekTasks.length === 0 && monthTasks.length === 0 && archiveTasks.length === 0) {
         container.innerHTML = globalActionsHtml + managerFilterHtml + filterHtml + '<div class="bg-[var(--card-bg)] border border-dashed border-[var(--card-border)] rounded-2xl p-8 text-center shadow-sm mt-4"><div class="text-[14px] font-black text-slate-400 uppercase tracking-wider mb-2">План чист</div><div class="text-[11px] text-slate-500 font-medium">Нет задач по выбранным фильтрам.</div></div>';
         return;
     }
 
     container.innerHTML = globalActionsHtml + managerFilterHtml + filterHtml + accordionsHtml;
+
+    if (window._rbiTaskCriticalOnly) {
+        var critBtn = document.getElementById('rbi-critical-only-btn');
+        if (critBtn) critBtn.className = "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white border-2 border-red-600 transition-colors shrink-0 flex items-center gap-1";
+        _applyCriticalOnlyFilter();
+    }
 }
 
 // =========================================================================
@@ -847,9 +899,13 @@ async function _renderTasksList(forceRender) {
 function _captureTasksUiState() {
     var container = document.getElementById('rbi-tasks-container');
     var openSections = {};
+    var openGroups = {};
     if (container) {
         container.querySelectorAll('details[data-task-section]').forEach(function (el) {
             openSections[el.getAttribute('data-task-section')] = !!el.open;
+        });
+        container.querySelectorAll('details[data-task-group]').forEach(function (el) {
+            openGroups[el.getAttribute('data-task-group')] = !!el.open;
         });
     }
     var hubCategory = window._rbiTaskHubCategory || 'all';
@@ -860,6 +916,7 @@ function _captureTasksUiState() {
     }
     return {
         openSections: openSections,
+        openGroups: openGroups,
         hubCategory: hubCategory,
         scrollY: window.scrollY || window.pageYOffset || 0
     };
@@ -873,6 +930,14 @@ function _restoreTasksUiState(state) {
             var key = el.getAttribute('data-task-section');
             if (Object.prototype.hasOwnProperty.call(state.openSections, key)) {
                 el.open = !!state.openSections[key];
+            }
+        });
+    }
+    if (container && state.openGroups) {
+        container.querySelectorAll('details[data-task-group]').forEach(function (el) {
+            var key = el.getAttribute('data-task-group');
+            if (Object.prototype.hasOwnProperty.call(state.openGroups, key)) {
+                el.open = !!state.openGroups[key];
             }
         });
     }
@@ -927,6 +992,44 @@ function _filterTaskHub(category, btnElement) {
         if (category === 'all' || card.dataset.category === category) card.style.display = 'flex';
         else card.style.display = 'none';
     });
+    if (window._rbiTaskCriticalOnly) _applyCriticalOnlyFilter();
+    _syncGroupVisibility();
+}
+
+/**
+ * Скрывает `<details data-task-group>`, внутри которых нет ни одной видимой
+ * карточки (после применения хаб-фильтра категории и/или фильтра "Только критичные").
+ */
+function _syncGroupVisibility() {
+    document.querySelectorAll('details[data-task-group]').forEach(function(groupEl) {
+        var hasVisible = false;
+        groupEl.querySelectorAll('.task-card-item').forEach(function(card) {
+            if (card.style.display !== 'none') hasVisible = true;
+        });
+        groupEl.style.display = hasVisible ? '' : 'none';
+    });
+}
+
+/** Применяет визуальное скрытие карточек без `data-critical="1"` (используется фильтром "Только критичные"). */
+function _applyCriticalOnlyFilter() {
+    var hubCategory = window._rbiTaskHubCategory || 'all';
+    document.querySelectorAll('.task-card-item').forEach(function(card) {
+        var matchesHub = hubCategory === 'all' || card.dataset.category === hubCategory;
+        if (!matchesHub) { card.style.display = 'none'; return; }
+        card.style.display = card.dataset.critical === '1' ? 'flex' : 'none';
+    });
+    _syncGroupVisibility();
+}
+
+function _toggleCriticalOnlyFilter(btnElement) {
+    window._rbiTaskCriticalOnly = !window._rbiTaskCriticalOnly;
+    if (window._rbiTaskCriticalOnly) {
+        if (btnElement) btnElement.className = "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white border-2 border-red-600 transition-colors shrink-0 flex items-center gap-1";
+        _applyCriticalOnlyFilter();
+    } else {
+        if (btnElement) btnElement.className = "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white dark:bg-slate-900 text-red-600 border-2 border-red-300 dark:border-red-700 transition-colors shrink-0 flex items-center gap-1";
+        _filterTaskHub(window._rbiTaskHubCategory || 'all', document.querySelector('#hub-filters .hub-filter-btn[onclick*="\'' + (window._rbiTaskHubCategory || 'all') + '\'"]'));
+    }
 }
 
 // =========================================================================
@@ -1893,6 +1996,7 @@ window.gameGenerateWeeklyPlan   = function() { return _gameGenerateWeeklyPlan.ap
 
 window.rbi_renderTasksList      = function() { return _renderTasksList.apply(this, arguments); };
 window.rbi_filterTaskHub        = function() { return _filterTaskHub.apply(this, arguments); };
+window.rbi_toggleCriticalOnlyFilter = function() { return _toggleCriticalOnlyFilter.apply(this, arguments); };
 window.rbi_openTaskAction       = function() { return _openTaskAction.apply(this, arguments); };
 
 window.rbi_markTaskDone         = function() { return _markTaskDone.apply(this, arguments); };

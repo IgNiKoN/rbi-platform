@@ -621,8 +621,8 @@ if (window.RbiStorageManager) {
 
             let groups = [];
 
-            if (type === 'sys' && typeof SYSTEM_TEMPLATES !== 'undefined' && SYSTEM_TEMPLATES[key]) {
-                groups = SYSTEM_TEMPLATES[key].groups || [];
+            if (type === 'sys' && typeof window.SYSTEM_TEMPLATES !== 'undefined' && window.SYSTEM_TEMPLATES[key]) {
+                groups = window.SYSTEM_TEMPLATES[key].groups || [];
             }
 
             if (type === 'user' && typeof userTemplates !== 'undefined' && userTemplates[key]) {
@@ -817,12 +817,23 @@ if (window.RbiStorageManager) {
 
             const pulledInspectionPhotoUrls = new Set();
 
+            // Множественные фото к пункту чек-листа (B1): группируем по item_id в
+            // массив, отсортированный по photo_index (старые строки без
+            // photo_index — по умолчанию 0, оказываются первыми).
             (cloudPhotos || []).forEach(row => {
                 if (!photosMap[row.inspection_id]) photosMap[row.inspection_id] = {};
                 if (row.item_id && row.public_url) {
-                    photosMap[row.inspection_id][row.item_id] = row.public_url;
+                    if (!photosMap[row.inspection_id][row.item_id]) photosMap[row.inspection_id][row.item_id] = [];
+                    photosMap[row.inspection_id][row.item_id].push({ idx: row.photo_index || 0, url: row.public_url });
                     pulledInspectionPhotoUrls.add(row.public_url);
                 }
+            });
+            Object.keys(photosMap).forEach(insId => {
+                Object.keys(photosMap[insId]).forEach(itemId => {
+                    photosMap[insId][itemId] = photosMap[insId][itemId]
+                        .sort((a, b) => a.idx - b.idx)
+                        .map(entry => entry.url);
+                });
             });
 
             // RBI FIX: готовим фото проверок к офлайн-просмотру, но не блокируем синхронизацию.
@@ -1598,56 +1609,71 @@ if (window.RbiStorageManager) {
                     const uploadedPhotos = {};
                     const storagePathsToRemove = [];
 
-                    // ПАРАЛЛЕЛЬНАЯ отправка фото для одной инспекции
-                    const photoPromises = Object.keys(c.photos || {}).map(async (itemId) => {
-                        const oldPhoto = c.photos[itemId];
+                    // ПАРАЛЛЕЛЬНАЯ отправка фото для одной инспекции.
+                    // Множественные фото к пункту чек-листа (B1): c.photos[itemId] —
+                    // массив (window.normalizeItemPhotos покрывает и старые записи
+                    // со строкой). Каждый элемент массива грузится и пишется отдельной
+                    // строкой rbi_inspection_photos с собственным photo_index — id
+                    // строки теперь `${inspectionId}_${itemId}_${photoIndex}` (было
+                    // `..._main`, всегда photoIndex=0 для единственного фото).
+                    const photoItemIds = Object.keys(c.photos || {});
+                    const photoPromises = photoItemIds.map(async (itemId) => {
+                        const oldPhotosArr = window.normalizeItemPhotos(c.photos[itemId]);
+                        const uploadedArr = [];
 
                         if (isDeleted) {
-                            const path = getStoragePathFromPublicUrl(oldPhoto, 'inspection-photos');
-                            if (path) storagePathsToRemove.push(path);
-                            if (oldPhoto && isHttpUrl(oldPhoto)) {
-                                photosBatch.push({
-                                    id: `${inspectionId}_${itemId}_main`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
-                                    source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_type: 'inspection',
-                                    bucket_name: 'inspection-photos', storage_path: path, public_url: oldPhoto, updated_at: new Date().toISOString()
-                                });
-                            }
+                            oldPhotosArr.forEach((oldPhoto, photoIndex) => {
+                                const path = getStoragePathFromPublicUrl(oldPhoto, 'inspection-photos');
+                                if (path) storagePathsToRemove.push(path);
+                                if (oldPhoto && isHttpUrl(oldPhoto)) {
+                                    photosBatch.push({
+                                        id: `${inspectionId}_${itemId}_${photoIndex}`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                        source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_index: photoIndex, photo_type: 'inspection',
+                                        bucket_name: 'inspection-photos', storage_path: path, public_url: oldPhoto, updated_at: new Date().toISOString()
+                                    });
+                                }
+                            });
                             return;
                         }
 
-                        let localPhotoSizeBytes = 0; let localPhotoMimeType = '';
-                        try {
-                            if (oldPhoto && oldPhoto.startsWith('local://') && typeof dbGet === 'function') {
-                                const localPhotoRecord = await dbGet('app_photos', oldPhoto);
-                                if (localPhotoRecord && localPhotoRecord.data) {
-                                    localPhotoSizeBytes = localPhotoRecord.data.byteLength || localPhotoRecord.sizeBytes || 0;
-                                    localPhotoMimeType = localPhotoRecord.mimeType || localPhotoRecord.mime_type || '';
+                        for (let photoIndex = 0; photoIndex < oldPhotosArr.length; photoIndex++) {
+                            const oldPhoto = oldPhotosArr[photoIndex];
+                            let localPhotoSizeBytes = 0; let localPhotoMimeType = '';
+                            try {
+                                if (oldPhoto && oldPhoto.startsWith('local://') && typeof dbGet === 'function') {
+                                    const localPhotoRecord = await dbGet('app_photos', oldPhoto);
+                                    if (localPhotoRecord && localPhotoRecord.data) {
+                                        localPhotoSizeBytes = localPhotoRecord.data.byteLength || localPhotoRecord.sizeBytes || 0;
+                                        localPhotoMimeType = localPhotoRecord.mimeType || localPhotoRecord.mime_type || '';
+                                    }
+                                }
+                            } catch (e) { }
+
+                            const publicUrl = await window.rbiUploadAsset(oldPhoto, 'inspection-photos', `${pCode}/inspections/${inspectionId}/${itemId}_${photoIndex}`, 'photo');
+                            uploadedArr[photoIndex] = publicUrl;
+
+                            if (publicUrl && isHttpUrl(publicUrl)) {
+                                const photoStoragePath = getStoragePathFromPublicUrl(publicUrl, 'inspection-photos');
+                                photosBatch.push({
+                                    id: `${inspectionId}_${itemId}_${photoIndex}`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
+                                    source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_index: photoIndex, photo_type: 'inspection',
+                                    bucket_name: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, updated_at: new Date().toISOString()
+                                });
+
+                                if (oldPhoto && oldPhoto.startsWith('local://') && typeof PhotoManager !== 'undefined') {
+                                    await PhotoManager.linkCloudToLocal(oldPhoto, publicUrl);
+                                }
+                                if (window.RbiStorageManager && typeof window.RbiStorageManager.registerUploadedFile === 'function') {
+                                    await window.RbiStorageManager.registerUploadedFile({
+                                        project_code: pCode, entity_type: 'inspection_photo', entity_id: inspectionId, field_path: `photos.${itemId}.${photoIndex}`,
+                                        bucket: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, original_name: `inspection_${inspectionId}_${itemId}_${photoIndex}`,
+                                        mime_type: localPhotoMimeType, size_bytes: localPhotoSizeBytes, uploaded_by: iName, cache_policy: 'auto', cache_status: 'cached_cloud'
+                                    });
                                 }
                             }
-                        } catch (e) { }
-
-                        const publicUrl = await window.rbiUploadAsset(oldPhoto, 'inspection-photos', `${pCode}/inspections/${inspectionId}/${itemId}`, 'photo');
-                        uploadedPhotos[itemId] = publicUrl;
-
-                        if (publicUrl && isHttpUrl(publicUrl)) {
-                            const photoStoragePath = getStoragePathFromPublicUrl(publicUrl, 'inspection-photos');
-                            photosBatch.push({
-                                id: `${inspectionId}_${itemId}_main`, inspection_id: inspectionId, project_code: pCode, project_canonical_key: c.project_canonical_key || c.projectName || '',
-                                source: 'cloud', sync_status: 'synced', sync_block_reason: '', item_id: String(itemId), photo_type: 'inspection',
-                                bucket_name: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, updated_at: new Date().toISOString()
-                            });
-
-                            if (oldPhoto && oldPhoto.startsWith('local://') && typeof PhotoManager !== 'undefined') {
-                                await PhotoManager.linkCloudToLocal(oldPhoto, publicUrl);
-                            }
-                            if (window.RbiStorageManager && typeof window.RbiStorageManager.registerUploadedFile === 'function') {
-                                await window.RbiStorageManager.registerUploadedFile({
-                                    project_code: pCode, entity_type: 'inspection_photo', entity_id: inspectionId, field_path: `photos.${itemId}`,
-                                    bucket: 'inspection-photos', storage_path: photoStoragePath, public_url: publicUrl, original_name: `inspection_${inspectionId}_${itemId}`,
-                                    mime_type: localPhotoMimeType, size_bytes: localPhotoSizeBytes, uploaded_by: iName, cache_policy: 'auto', cache_status: 'cached_cloud'
-                                });
-                            }
                         }
+
+                        uploadedPhotos[itemId] = uploadedArr;
                     });
 
                     await Promise.all(photoPromises); // Дожидаемся фоток
@@ -1742,18 +1768,27 @@ if (window.RbiStorageManager) {
                         if (String(itemId).startsWith('def_')) {
                             continue;
                         }
-                        // Защита: загружаем только если это реально локальное фото
-                        if (currentSession.photos[itemId] && !currentSession.photos[itemId].startsWith('http')) {
-                            const inspectorPath = window.sanitizeStorageKeySegment(stableInspectorId);
-                            draftPhotos[itemId] = await window.rbiUploadAsset(
-                                currentSession.photos[itemId],
-                                'inspection-photos',
-                                `${pCode}/drafts/${inspectorPath}/${itemId}`,
-                                'photo'
-                            );
-                        } else {
-                            draftPhotos[itemId] = currentSession.photos[itemId];
+                        // Множественные фото к пункту чек-листа (B1): каждый элемент
+                        // массива грузится отдельно (защита: только реально локальные —
+                        // не http — фото), обратная совместимость со старым форматом
+                        // (строка) через normalizeItemPhotos.
+                        const itemPhotosArr = window.normalizeItemPhotos(currentSession.photos[itemId]);
+                        const draftArr = [];
+                        for (let pIdx = 0; pIdx < itemPhotosArr.length; pIdx++) {
+                            const srcPhoto = itemPhotosArr[pIdx];
+                            if (srcPhoto && !srcPhoto.startsWith('http')) {
+                                const inspectorPath = window.sanitizeStorageKeySegment(stableInspectorId);
+                                draftArr.push(await window.rbiUploadAsset(
+                                    srcPhoto,
+                                    'inspection-photos',
+                                    `${pCode}/drafts/${inspectorPath}/${itemId}_${pIdx}`,
+                                    'photo'
+                                ));
+                            } else {
+                                draftArr.push(srcPhoto);
+                            }
                         }
+                        draftPhotos[itemId] = draftArr;
                     }
 
                     await window.supabaseClient
@@ -2952,7 +2987,9 @@ if (window.RbiStorageManager) {
         const isModalOpen = document.body.classList.contains('modal-open');
 
         // ПРОВЕРКА: Смотрит ли юзер прямо сейчас на вкладку "Задачи"?
-        const isTasksTabActive = document.getElementById('tab-engineer')?.classList.contains('active') && window.currentActiveEngineerTab === 'eng-sub-tasks';
+        const engineerTabEl = document.getElementById('tab-engineer');
+        const tasksSubTabEl = document.getElementById('eng-sub-tasks');
+        const isTasksTabActive = !!(engineerTabEl?.classList.contains('active') && tasksSubTabEl && !tasksSubTabEl.classList.contains('hidden'));
 
         // Если открыта модалка ИЛИ открыта вкладка Задач — запрещаем перерисовку!
         if (!isModalOpen && !isTasksTabActive) {

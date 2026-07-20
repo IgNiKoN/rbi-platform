@@ -67,7 +67,7 @@ function _templates() {
             return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
         },
         getSystemTemplates: function () {
-            return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+            return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
         }
     };
 }
@@ -178,6 +178,236 @@ function _syncConfig() {
 // window.rbiPhotoGalleries для обратной совместимости.
 var rbiPhotoGalleries = {};
 if (typeof window !== 'undefined') window.rbiPhotoGalleries = rbiPhotoGalleries;
+
+// =========================================================================
+// Оптимизация фотогалереи (пагинация + canvas-превью), Блок 1 прямой
+// инициативы пользователя от 2026-07-19. Все переменные/функции ниже —
+// module-scope, НЕ на window.* (см. _ai/current_plan.md §7 «Нельзя
+// трогать» / проверка №3 — новые top-level window.* не добавляются).
+// =========================================================================
+const ANALYTICS_GALLERY_PAGE_SIZE = 16;
+
+// Полный (неотфильтрованный по странице) photosArray на galleryId — нужен
+// для «Показать ещё» без повторного прохода родительского рендера.
+// Перезаписывается (не накапливается) при каждом новом initPhotoGallery
+// с тем же galleryId.
+const _galleryFullData = new Map();
+
+// In-memory кэш готовых canvas-превью (dataURL) по исходной ссылке на фото
+// (data:/local://.../cloud://.../http...). Переживает только текущую сессию —
+// по тому же принципу, что уже применён в contractor-metrics.service.js.
+const _photoThumbCache = new Map();
+
+// =========================================================================
+// UI вкладки «Отчёты» (группировка по объекту + чипсы doc_kind + клиентская
+// пагинация), см. _ai/current_plan.md. Module-scope, НЕ на window.* — тот же
+// принцип, что и у _galleryFullData выше.
+// =========================================================================
+const REPORTS_GROUP_PAGE_SIZE = 12;
+
+// Fallback-классификация вида документа по title — для отчётов, сохранённых
+// ДО появления поля doc_kind (не мигрируются по решению плана, см.
+// current_plan.md), чтобы чипсы работали и на старых записях, а не только на
+// новых. Текстуально идентична classifyDocKind() из reports.actions.js —
+// модули не импортируют друг друга (по тому же принципу, что и дублированная
+// getSyncBadgeHtml в history.render.js/analytics.render.js), сохранённое поле
+// r.doc_kind всегда в приоритете, эта функция — только резерв для его отсутствия.
+function _classifyDocKindFallback(title) {
+    const t = title || '';
+    if (t.includes('Протокол')) return 'Протокол совещания';
+    if (t.includes('FMEA')) return 'FMEA';
+    if (t.includes('TWI')) return 'TWI';
+    if (t.includes('Практика')) return 'Практика';
+    if (t.includes('Воркшоп')) return 'Воркшоп';
+    if (t.includes('Инструктаж')) return 'Инструктаж';
+    if (t.includes('КС-2')) return 'КС-2';
+    if (t.includes('Акт-Эталон')) return 'Акт-эталон';
+    if (t.includes('Дашборд СК')) return 'Дашборд СК';
+    if (t.includes('График СМР')) return 'График СМР';
+    if (t.includes('День Качества')) return 'День качества';
+    if (t.includes('Плакат Качества')) return 'Плакат качества';
+    if (t.includes('Паспорта Подрядчиков') || t.includes('Список подрядчиков') || t.includes('Срез:') || t.includes('Отчет для')) return 'Отчёт по подрядчику';
+    if (t.includes('Сводка для Руководства') || t.includes('Полный отчет по объекту') || t.includes('База проверок')) return 'Сводный отчёт';
+    return 'Прочее';
+}
+
+function _reportDocKind(r) {
+    return r.doc_kind || _classifyDocKindFallback(r.title);
+}
+
+// Выбранный чип вида документа ('ALL' или конкретное значение doc_kind).
+// Естественно теряется при перезагрузке страницы — не персистится, как и
+// currentHistoryViewMode/остальной ephemeral UI-стейт этой вкладки.
+let _reportsActiveDocKindFilter = 'ALL';
+
+// Сохраняет раскрытые аккордеоны объектов до перерисовки списка (по образцу
+// _captureExpandedHistory/_restoreExpandedHistory в history.render.js, но
+// без второго уровня — у отчётов группировка только по объекту).
+function _captureExpandedReports(listDiv) {
+    const projects = new Set();
+    if (!listDiv) return projects;
+    [...listDiv.children].forEach((card) => {
+        const body = card.querySelector('[id^="reports-group-"]');
+        if (!body || body.classList.contains('hidden')) return;
+        const pName = card.querySelector('.reports-group-title')?.textContent?.trim();
+        if (pName) projects.add(pName);
+    });
+    return projects;
+}
+
+function _restoreExpandedReports(listDiv, expandedProjects) {
+    if (!listDiv || !expandedProjects || expandedProjects.size === 0) return;
+    [...listDiv.children].forEach((card) => {
+        const pName = card.querySelector('.reports-group-title')?.textContent?.trim();
+        if (!pName || !expandedProjects.has(pName)) return;
+        const body = card.querySelector('[id^="reports-group-"]');
+        if (!body) return;
+        body.classList.remove('hidden');
+        const icon = card.querySelector('.chevron-icon');
+        if (icon) icon.style.transform = 'rotate(180deg)';
+    });
+}
+
+// Разрешает photoRef в реальный src, пригодный для ЗАГРУЗКИ В CANVAS
+// (не просто в <img>): data: — уже готов; local://cloud:// — PhotoManager.getSrc()
+// вернул бы placeholder (см. storage-photo-manager.js:61-64), нужен асинхронный
+// PhotoManager.getAsyncUrl(). http(s) — тоже обязательно через getAsyncUrl(), а
+// не как готовый URL напрямую: getAsyncUrl() качает файл через fetch()+blob и
+// возвращает свой same-origin blob:-URL, тогда как прямая кросс-доменная
+// загрузка в <img> для canvas.drawImage()/toDataURL() требует CORS-заголовков
+// от Storage-сервера — при их отсутствии canvas считается "tainted" и
+// toDataURL() бросает SecurityError (баг найден на реальных данных: превью
+// оставались белыми плейсхолдерами, хотя открытие оригинала в просмотрщике
+// через обычный <img src> работало, т.к. там CORS не требуется).
+async function _resolvePhotoRealSrc(photoRef) {
+    const ref = String(photoRef || '');
+    if (!ref) return null;
+    if (ref.startsWith('data:')) return ref;
+    if (window.PhotoManager && typeof window.PhotoManager.getAsyncUrl === 'function') {
+        return await window.PhotoManager.getAsyncUrl(ref);
+    }
+    if (ref.startsWith('local://') || ref.startsWith('cloud://')) return null;
+    return ref;
+}
+
+function _downscalePhotoToDataUrl(imgEl, maxSide = 300, quality = 0.6) {
+    const srcWidth = imgEl.naturalWidth || imgEl.width;
+    const srcHeight = imgEl.naturalHeight || imgEl.height;
+    if (!srcWidth || !srcHeight) return null;
+    const scale = Math.min(1, maxSide / Math.max(srcWidth, srcHeight));
+    const w = Math.max(1, Math.round(srcWidth * scale));
+    const h = Math.max(1, Math.round(srcHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgEl, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', quality);
+}
+
+// Возвращает Promise<string|null> — готовое canvas-превью (~300px по
+// длинной стороне, jpeg q=0.6). Не блокирует вызывающий синхронный insert:
+// вызывающий код (initPhotoGallery/loadMorePhotos) подставляет результат
+// в img.src по завершении, изначально показывая placeholder/уже готовый кэш.
+async function _getPhotoThumbnail(photoRef) {
+    if (!photoRef) return null;
+    if (_photoThumbCache.has(photoRef)) return _photoThumbCache.get(photoRef);
+
+    let realSrc;
+    try {
+        realSrc = await _resolvePhotoRealSrc(photoRef);
+    } catch (e) {
+        realSrc = null;
+    }
+    if (!realSrc) return null;
+
+    try {
+        const imgEl = await new Promise((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = reject;
+            el.src = realSrc;
+        });
+        const thumb = _downscalePhotoToDataUrl(imgEl, 300, 0.6);
+        if (thumb) _photoThumbCache.set(photoRef, thumb);
+        return thumb;
+    } catch (e) {
+        return null;
+    }
+}
+
+// Генерирует HTML одной карточки галереи. i — индекс в исходном
+// (полном, неотфильтрованном по странице) photosArray — нужен для
+// устойчивого сопоставления превью↔оригинал и для «Показать ещё».
+function _renderPhotoCardHtml(d, i, galleryId, badgeColor, badgeText) {
+    const cachedThumb = _photoThumbCache.get(d.photo);
+    const initialSrc = cachedThumb || (window.rbiPhotoPlaceholder || '');
+    return `
+            <div class="snap-start shrink-0 w-36 sm:w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
+                <img src="${initialSrc}" data-photo-idx="${i}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${d.photo}')" loading="lazy">
+                <div class="p-2 flex-1 flex flex-col justify-between">
+                    <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5" title="${d.name}">${d.name}</div>
+                    <div>
+                        <div class="text-[8px] text-[var(--text-muted)] mb-1 truncate w-full" title="${d.contr}">👤 ${d.contr}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="${badgeColor} text-[8px] font-black px-1.5 rounded border">${badgeText}</span>
+                            <span class="text-[8px] font-bold text-slate-400">${d.date}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+}
+
+// Запускает генерацию превью для набора карточек уже вставленной (в DOM)
+// порции галереи, без блокировки самого insert — по завершении каждого
+// превью точечно обновляет img.src через data-photo-idx.
+function _hydratePhotoThumbnails(galleryId, entries) {
+    entries.forEach(({ photoRef, idx }) => {
+        if (_photoThumbCache.has(photoRef)) return; // уже подставлено синхронно при рендере карточки
+        _getPhotoThumbnail(photoRef).then((thumb) => {
+            if (!thumb) return;
+            const img = document.querySelector(`#gallery-wrap-${galleryId} img[data-photo-idx="${idx}"]`);
+            if (img) img.src = thumb;
+        });
+    });
+}
+
+// «Показать ещё» — читает _galleryFullData.get(galleryId) (полный,
+// неотфильтрованный по странице массив), рендерит следующую порцию
+// ANALYTICS_GALLERY_PAGE_SIZE (или остаток), insertAdjacentHTML в ленту,
+// обновляет/убирает саму кнопку.
+function _loadMorePhotosImpl(galleryId) {
+    const entry = _galleryFullData.get(galleryId);
+    if (!entry) return;
+
+    const { photosArray, badgeColor, badgeText, shown } = entry;
+    const nextShown = Math.min(shown + ANALYTICS_GALLERY_PAGE_SIZE, photosArray.length);
+    const nextPage = photosArray.slice(shown, nextShown);
+    if (nextPage.length === 0) return;
+
+    const wrap = document.getElementById(`gallery-wrap-${galleryId}`);
+    const track = wrap ? wrap.querySelector('.flex') : null;
+    const btn = wrap ? wrap.querySelector(`[data-analytics-action="loadMorePhotos"][data-action-arg="${galleryId}"]`) : null;
+    if (!track) return;
+
+    const cardsHtml = nextPage.map((d, i) => _renderPhotoCardHtml(d, shown + i, galleryId, badgeColor, badgeText)).join('');
+    if (btn) {
+        btn.insertAdjacentHTML('beforebegin', cardsHtml);
+    } else {
+        track.insertAdjacentHTML('beforeend', cardsHtml);
+    }
+
+    entry.shown = nextShown;
+    const remaining = photosArray.length - nextShown;
+    if (remaining > 0) {
+        if (btn) btn.querySelector('span:last-child').textContent = `Ещё (${remaining})`;
+    } else if (btn) {
+        btn.remove();
+    }
+
+    _hydratePhotoThumbnails(galleryId, nextPage.map((d, i) => ({ photoRef: d.photo, idx: shown + i })));
+}
 
 // Перенесено из app.js 1:1 (текстуально идентична приватной копии в
 // history.render.js:15) — приватная, module-scope, НЕ на window.*, по
@@ -568,13 +798,16 @@ export const AnalyticsRender = {
                 <!-- ВЬЮХА 2: АРХИВ ОТЧЕТОВ -->
                 <div id="history-reports-view" class="hidden">
                     <!-- ВСТАВКА: Панель массового удаления отчетов -->
-                    <div id="hist-reports-actions-row" class="flex justify-between items-center px-1 pb-3 mb-3 border-b border-[var(--card-border)]">
-                        <label class="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 cursor-pointer">
+                    <div id="hist-reports-actions-row" class="flex justify-between items-center px-1 pb-3 mb-3 border-b border-[var(--card-border)] gap-2">
+                        <label class="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 cursor-pointer shrink-0">
                             <input type="checkbox" id="reports-select-all" class="w-4 h-4 accent-indigo-600 rounded" data-analytics-action="toggleAllReports" data-analytics-action-val-type="element" data-action-event="change"> Выбрать всё
                         </label>
-                        <button data-analytics-action="deleteSelectedReports" class="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg active:scale-90 flex items-center gap-1 text-[10px] font-black uppercase border border-red-200 shadow-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить выбранные
-                        </button>
+                        <div class="flex items-center gap-2 ml-auto">
+                            <div id="reports-view-mode-toggle" class="shrink-0"></div>
+                            <button data-analytics-action="deleteSelectedReports" class="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg active:scale-90 flex items-center gap-1 text-[10px] font-black uppercase border border-red-200 shadow-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Удалить выбранные
+                            </button>
+                        </div>
                     </div>
                     <div id="reports-list" class="pb-8"></div>
                 </div>
@@ -2510,33 +2743,39 @@ export const AnalyticsRender = {
         const badgeColor = customBadgeClass ? customBadgeClass : (isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200');
         const badgeText = customBadgeText ? customBadgeText : (isCrit ? 'B3' : 'B2');
 
-        const cardsHtml = photosArray.map(d => `
-            <div class="snap-start shrink-0 w-36 sm:w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
-                <img src="${d.photo}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${d.photo}')" loading="lazy">
-                <div class="p-2 flex-1 flex flex-col justify-between">
-                    <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5" title="${d.name}">${d.name}</div>
-                    <div>
-                        <div class="text-[8px] text-[var(--text-muted)] mb-1 truncate w-full" title="${d.contr}">👤 ${d.contr}</div>
-                        <div class="flex justify-between items-center">
-                            <span class="${badgeColor} text-[8px] font-black px-1.5 rounded border">${badgeText}</span>
-                            <span class="text-[8px] font-bold text-slate-400">${d.date}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        // Перезапись (не накопление) — новый вызов initPhotoGallery с тем же
+        // galleryId (следующий рендер вкладки/фильтра) полностью заменяет
+        // предыдущий полный набор.
+        _galleryFullData.set(galleryId, { photosArray, badgeColor, badgeText, shown: Math.min(ANALYTICS_GALLERY_PAGE_SIZE, photosArray.length) });
+
+        const page = photosArray.slice(0, ANALYTICS_GALLERY_PAGE_SIZE);
+        const cardsHtml = page.map((d, i) => _renderPhotoCardHtml(d, i, galleryId, badgeColor, badgeText)).join('');
+        const remaining = photosArray.length - page.length;
+
+        const loadMoreBtnHtml = remaining > 0
+            ? `<button type="button" data-analytics-action="loadMorePhotos" data-action-arg="${galleryId}" class="shrink-0 snap-start self-center w-24 h-24 sm:h-32 flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[var(--card-border)] bg-[var(--hover-bg)] text-[10px] font-bold text-[var(--text-muted)] active:scale-95">
+                <span class="text-lg">＋</span>
+                <span>Ещё (${remaining})</span>
+            </button>`
+            : '';
+
+        setTimeout(() => _hydratePhotoThumbnails(galleryId, page.map((d, i) => ({ photoRef: d.photo, idx: i }))), 0);
 
         return `
             <div id="gallery-wrap-${galleryId}" class="w-full relative">
                 <div class="flex gap-3 overflow-x-auto snap-x custom-scrollbar pb-4 pt-1">
-                    ${cardsHtml}
+                    ${cardsHtml}${loadMoreBtnHtml}
                 </div>
             </div>
         `;
     },
 
-    // Пустая заглушка, чтобы не сломать старые HTML-кнопки (если они где-то остались в истории)
-    loadMorePhotos() { },
+    // Обратная совместимость сигнатуры window-биндинга loadMorePhotos
+    // (см. конец файла) — реальная реализация делегирует в module-scope
+    // _loadMorePhotosImpl, работающую напрямую с _galleryFullData/DOM.
+    loadMorePhotos(galleryId) {
+        _loadMorePhotosImpl(galleryId);
+    },
 
     // =========================================================================
     // Перенесено из analytics.legacy.js: список отчётов (архив, вкладка
@@ -2551,13 +2790,22 @@ export const AnalyticsRender = {
             return;
         }
 
+        const expandedProjects = _captureExpandedReports(listDiv);
+
         // Считываем текущие глобальные фильтры
         const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
         const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
 
-        const fProj = _historyFilters().project || [];
-        const fContr = _historyFilters().contractor || [];
-        const fInsp = _historyFilters().inspector || [];
+        // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "UI вкладки «Отчёты»", баг
+        // "глобальные фильтры не действуют на вкладке Отчёты"): _historyFilters()
+        // приоритетно читает window.HistoryState.filters, в который мультифильтр
+        // Объект/Подрядчик/Инспектор никогда не пишет (тот же split-brain, что уже
+        // был обойдён для вкладки «Проверки» — см. history.render.js:186-198).
+        // Источник правды — window.activeMultiFilters.history напрямую.
+        const _histMultiFilters = (window.activeMultiFilters && window.activeMultiFilters.history) || {};
+        const fProj = _histMultiFilters.project || [];
+        const fContr = _histMultiFilters.contractor || [];
+        const fInsp = _histMultiFilters.inspector || [];
 
         // Применяем фильтры
         let filteredArr = [..._reports().getAllSync()].filter(r => !r.is_deleted);
@@ -2595,24 +2843,163 @@ export const AnalyticsRender = {
         else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= w); }
         else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= m); }
 
+        // Чипсы doc_kind — считаем набор значений, реально встречающихся среди
+        // отчётов, ПОСЛЕ применения остальных фильтров, но ДО фильтра по самому
+        // doc_kind (иначе выбранный чип исчез бы из своей же панели).
+        const docKindCounts = new Map();
+        filteredArr.forEach(r => {
+            const k = _reportDocKind(r);
+            docKindCounts.set(k, (docKindCounts.get(k) || 0) + 1);
+        });
+        if (_reportsActiveDocKindFilter !== 'ALL' && !docKindCounts.has(_reportsActiveDocKindFilter)) {
+            _reportsActiveDocKindFilter = 'ALL';
+        }
+        const chipsHtml = AnalyticsRender._renderReportsDocKindChips(docKindCounts, filteredArr.length);
+
+        if (_reportsActiveDocKindFilter !== 'ALL') {
+            filteredArr = filteredArr.filter(r => _reportDocKind(r) === _reportsActiveDocKindFilter);
+        }
+
         if (filteredArr.length === 0) {
-            listDiv.innerHTML = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">По выбранным фильтрам отчетов не найдено.</div>`;
+            listDiv.innerHTML = chipsHtml + `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm">По выбранным фильтрам отчетов не найдено.</div>`;
             return;
         }
 
         // Сортировка по дате (самые свежие сверху)
         const sorted = filteredArr.sort((a, b) => new Date(b.generated_at) - new Date(a.generated_at));
 
-        // Сетка: 2 колонки на телефоне, 3-4 на ПК
-        listDiv.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(r => {
-            const syncBadge = getSyncBadgeHtml(r);
-            const isOwner = !r.created_by || r.created_by === (_getSetting('engineerName') || 'Инженер');
+        // Группировка по объекту (единообразно с аккордеоном вкладки «Проверки»,
+        // см. history.render.js) — один уровень, без вложенного подрядчика.
+        const grouped = {};
+        sorted.forEach(r => {
+            const pName = r.metadata?.project || 'Сводный Отчет';
+            if (!grouped[pName]) grouped[pName] = [];
+            grouped[pName].push(r);
+        });
+        const collator = new Intl.Collator('ru');
+        const groupKeys = Object.keys(grouped).sort(collator.compare);
+
+        const getViewMode = window.getKnowledgeViewMode;
+        const isListView = (typeof getViewMode === 'function' ? getViewMode() : 'cards') === 'list';
+        const itemsWrapClass = isListView ? 'flex flex-col gap-1.5' : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3';
+        const hiddenRevealClass = isListView ? 'flex' : 'grid';
+
+        let groupIndex = 0;
+        const groupsHtml = groupKeys.map(pName => {
+            const items = grouped[pName];
+            const safeGroupId = `reports-group-${groupIndex++}`;
+            const visibleItems = items.slice(0, REPORTS_GROUP_PAGE_SIZE);
+            const hiddenItems = items.slice(REPORTS_GROUP_PAGE_SIZE);
+
+            const cardsHtml = visibleItems.map(r => AnalyticsRender._renderReportCard(r, isListView)).join('');
+            let hiddenBlockHtml = '';
+            if (hiddenItems.length > 0) {
+                const hiddenId = `${safeGroupId}-hidden`;
+                hiddenBlockHtml = `<div id="${hiddenId}" class="hidden ${itemsWrapClass} mt-3">${hiddenItems.map(r => AnalyticsRender._renderReportCard(r, isListView)).join('')}</div>
+                <button onclick="document.getElementById('${hiddenId}').classList.remove('hidden'); document.getElementById('${hiddenId}').classList.add('${hiddenRevealClass}'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-3 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать ещё отчёты (${hiddenItems.length})</button>`;
+            }
 
             return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
+                <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
+                    const body = document.getElementById('${safeGroupId}');
+                    const icon = this.querySelector('.chevron-icon');
+                    if (body.classList.contains('hidden')) {
+                        body.classList.remove('hidden');
+                        icon.style.transform = 'rotate(180deg)';
+                    } else {
+                        body.classList.add('hidden');
+                        icon.style.transform = 'rotate(0deg)';
+                    }
+                ">
+                    <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                        <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-[10px] flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="reports-group-title text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${pName}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0 pl-1">
+                        <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} шт</span>
+                        <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
+                <div id="${safeGroupId}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2.5">
+                    <div class="${itemsWrapClass}">${cardsHtml}</div>
+                    ${hiddenBlockHtml}
+                </div>
+            </div>`;
+        }).join('');
+
+        listDiv.innerHTML = chipsHtml + groupsHtml;
+        const reportsToggleHost = document.getElementById('reports-view-mode-toggle');
+        const kbToggleHtml = window.kbViewModeToggleHtml;
+        if (reportsToggleHost && typeof kbToggleHtml === 'function') {
+            reportsToggleHost.innerHTML = kbToggleHtml();
+        }
+        _restoreExpandedReports(listDiv, expandedProjects);
+    },
+
+    // Горизонтальный ряд чипсов-фильтров по doc_kind над списком отчётов.
+    // Показывает только реально встречающиеся значения (+ «Все») — не полный
+    // хардкод возможных видов документа, чтобы не занимать место пустыми чипами.
+    _renderReportsDocKindChips(docKindCounts, totalCount) {
+        const collator = new Intl.Collator('ru');
+        const kinds = Array.from(docKindCounts.keys()).sort(collator.compare);
+        if (kinds.length <= 1) return ''; // Один тип отчётов — чипсы не несут смысла.
+
+        const chip = (label, value, count, active) => `
+            <button onclick="AnalyticsRender._setReportsDocKindFilter('${value.replace(/'/g, "\\'")}')"
+                class="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wide border transition-colors whitespace-nowrap ${active
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                : 'bg-[var(--card-bg)] text-slate-500 dark:text-slate-400 border-[var(--card-border)]'}">
+                ${label} <span class="opacity-70">${count}</span>
+            </button>`;
+
+        const allActive = _reportsActiveDocKindFilter === 'ALL';
+        let html = `<div class="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1" style="scrollbar-width: none;">`;
+        html += chip('Все', 'ALL', totalCount, allActive);
+        kinds.forEach(k => {
+            html += chip(k, k, docKindCounts.get(k), _reportsActiveDocKindFilter === k);
+        });
+        html += `</div>`;
+        return html;
+    },
+
+    _setReportsDocKindFilter(value) {
+        _reportsActiveDocKindFilter = value;
+        AnalyticsRender.renderReportsList();
+    },
+
+    _renderReportCard(r, isListView) {
+        const syncBadge = getSyncBadgeHtml(r);
+        const isOwner = !r.created_by || r.created_by === (_getSetting('engineerName') || 'Инженер');
+        const docKind = _reportDocKind(r);
+        const safeTitle = String(r.title || '').replace(/'/g, "\\'");
+        const dateStr = new Date(r.generated_at).toLocaleDateString('ru-RU');
+        const sizeStr = ((r.file_size || 0) / 1024 / 1024).toFixed(2) + ' MB';
+
+        if (isListView) {
+            return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm flex items-center gap-2.5 p-2 active:scale-[0.99] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
+                <input type="checkbox" class="report-checkbox w-4 h-4 accent-indigo-600 rounded cursor-pointer shrink-0" value="${r.id}" onclick="event.stopPropagation()">
+                <div class="w-9 h-9 rounded-lg shrink-0 bg-slate-50 dark:bg-slate-900 border border-[var(--card-border)] flex items-center justify-center"><span class="text-[7px] font-black text-indigo-500">PDF</span></div>
+                <div class="min-w-0 flex-1">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${r.title}</div>
+                    <div class="text-[9px] font-bold text-slate-400 truncate mt-0.5">${docKind !== 'Прочее' ? docKind + ' · ' : ''}${r.created_by || 'Инженер'} · ${dateStr} · ${sizeStr}</div>
+                </div>
+                <div class="shrink-0">${syncBadge}</div>
+                <button onclick="event.stopPropagation(); openUniversalActionSheet('${r.id}', 'report', '${safeTitle}', ${isOwner})" class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-slate-400 hover:bg-[var(--hover-bg)] active:scale-90">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                </button>
+            </div>`;
+        }
+
+        const docKindTag = docKind !== 'Прочее' ? `<div class="text-[8px] font-bold text-slate-400 truncate mb-0.5">${docKind}</div>` : '';
+        return `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
-            <!-- Чекбокс для массового удаления -->
                 <input type="checkbox" class="report-checkbox absolute top-2 left-2 w-5 h-5 accent-indigo-600 rounded cursor-pointer z-10" value="${r.id}" onclick="event.stopPropagation()">
-                
                 <div class="h-24 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-900 flex items-center justify-center relative">
                     <div class="w-12 h-14 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between p-1.5 relative overflow-hidden">
                         <div class="absolute top-0 left-0 right-0 h-4 bg-indigo-500 flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">PDF</span></div>
@@ -2622,31 +3009,21 @@ export const AnalyticsRender = {
                             <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-4/6"></div>
                         </div>
                     </div>
-                    
-                    <!-- Меню 3 точки -->
-                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${r.id}', 'report', '${r.title.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded-full flex items-center justify-center text-slate-600 dark:text-slate-300 active:scale-90 transition-transform">
+                    <button onclick="event.stopPropagation(); openUniversalActionSheet('${r.id}', 'report', '${safeTitle}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded-full flex items-center justify-center text-slate-600 dark:text-slate-300 active:scale-90 transition-transform">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
                     </button>
                 </div>
-                
                 <div class="p-3 flex flex-col flex-1">
-                    <div class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1 truncate">${r.metadata?.project || 'Сводный Отчет'}</div>
+                    ${docKindTag}
                     <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight mb-2 line-clamp-2">${r.title}</div>
                     <div class="text-[9px] font-bold text-slate-400 truncate mb-0.5">👤 ${r.created_by || 'Инженер'}</div>
                     ${r.metadata?.period ? `<div class="text-[9px] font-bold text-slate-400 truncate mb-1">📅 ${r.metadata.period}</div>` : ''}
-
                     <div class="mt-auto pt-2 flex justify-between items-center">
-                        <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400">
-                            ${((r.file_size || 0) / 1024 / 1024).toFixed(2)} MB
-                            ${syncBadge}
-                        </div>
-                        <div class="text-[9px] font-black text-slate-400">${new Date(r.generated_at).toLocaleDateString('ru-RU')}</div>
+                        <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400">${sizeStr} ${syncBadge}</div>
+                        <div class="text-[9px] font-black text-slate-400">${dateStr}</div>
                     </div>
                 </div>
-                
-            </div>
-            `;
-        }).join('') + `</div>`;
+            </div>`;
     }
 };
 

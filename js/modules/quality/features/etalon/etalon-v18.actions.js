@@ -43,7 +43,7 @@
     }
     return {
       getUserTemplates: function () { return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {}; },
-      getSystemTemplates: function () { return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {}; }
+      getSystemTemplates: function () { return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {}; }
     };
   }
 

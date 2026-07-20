@@ -142,8 +142,13 @@ window.downloadMissingCloudFiles = async function (silent = false) {
         if (typeof contractorArray !== 'undefined') {
             contractorArray.forEach(check => {
                 if (check.photos) {
-                    Object.values(check.photos).forEach(url => {
-                        if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                    // RBI NEW (Множественные фото к пункту чек-листа, B1): значение
+                    // photos[itemId] может быть массивом — нормализуем перед .startsWith.
+                    Object.values(check.photos).forEach(rawValue => {
+                        const urls = window.normalizeItemPhotos ? window.normalizeItemPhotos(rawValue) : [rawValue];
+                        urls.forEach(url => {
+                            if (url && (url.startsWith('http') || url.startsWith('cloud://'))) urlsToDownload.add(url);
+                        });
                     });
                 }
             });

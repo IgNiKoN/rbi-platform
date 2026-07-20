@@ -150,7 +150,7 @@
         const tKey = customArray[0].templateKey;
         const type = tKey.split('_')[0];
         const key = tKey.replace(type + '_', '');
-        const specificChecklist = type === 'sys' && SYSTEM_TEMPLATES[key] ? SYSTEM_TEMPLATES[key].groups : (userTemplatesData[key] ? userTemplatesData[key].groups : []);
+        const specificChecklist = type === 'sys' && window.SYSTEM_TEMPLATES[key] ? window.SYSTEM_TEMPLATES[key].groups : (userTemplatesData[key] ? userTemplatesData[key].groups : []);
         const flatList = getFlatList(specificChecklist);
 
         let urkValues = [];
@@ -507,8 +507,8 @@
                 const key = tKey.replace(type + '_', '');
 
                 let Wr = 1.0; // Базовый вес для пользовательских шаблонов
-                if (type === 'sys' && SYSTEM_TEMPLATES[key]) {
-                    Wr = SYSTEM_TEMPLATES[key].riskWeight || 1.0;
+                if (type === 'sys' && window.SYSTEM_TEMPLATES[key]) {
+                    Wr = window.SYSTEM_TEMPLATES[key].riskWeight || 1.0;
                 } else if (type === 'user' && userTemplatesData[key]) {
                     Wr = userTemplatesData[key].riskWeight || 1.0;
                 }

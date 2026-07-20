@@ -34,7 +34,7 @@ function _templates() {
             return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
         },
         getSystemTemplates: function () {
-            return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+            return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
         }
     };
 }
@@ -522,16 +522,18 @@ export const HistoryRender = {
             if (item.state[i.id] === 'fail_escalated') { stTxt = '>1.5x (B3)'; stCls = 'tag-red shadow-sm'; cat = 'B3'; }
 
             let photoHtml = '';
-            if (item.photos && item.photos[i.id]) {
-                const rawPhotoSrc = item.photos[i.id];
-                const safePhotoSrc = window.rbiEscapeAttr(rawPhotoSrc);
-                photoHtml = `
+            const itemPhotos = item.photos ? window.normalizeItemPhotos(item.photos[i.id]) : [];
+            if (itemPhotos.length > 0) {
+                photoHtml = itemPhotos.map(rawPhotoSrc => {
+                    const safePhotoSrc = window.rbiEscapeAttr(rawPhotoSrc);
+                    return `
         <img 
             src="${window.rbiPhotoPlaceholder}"
             data-local-src="${safePhotoSrc}"
-            class="mt-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer"
+            class="mt-2 mr-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer"
             onclick="openPhotoViewer('${safePhotoSrc}')"
         >`;
+                }).join('');
             }
 
             let extraData = '';

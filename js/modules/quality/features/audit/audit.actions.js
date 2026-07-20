@@ -101,7 +101,7 @@
         return ut[key] || null;
       },
       getSystemTemplates: function () {
-        return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+        return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
       }
     };
   }
@@ -521,12 +521,17 @@
 
       var dbPhotos = {};
       for (var photoId in mergedPhotos) {
-        var photoData = mergedPhotos[photoId];
-        if (photoData.startsWith('data:image')) {
-          dbPhotos[photoId] = await PhotoManager.saveLocal(photoData, 'hist');
-        } else {
-          dbPhotos[photoId] = photoData;
+        var photoArr = window.normalizeItemPhotos(mergedPhotos[photoId]);
+        var savedArr = [];
+        for (var pi = 0; pi < photoArr.length; pi++) {
+          var photoData = photoArr[pi];
+          if (photoData && photoData.startsWith('data:image')) {
+            savedArr.push(await PhotoManager.saveLocal(photoData, 'hist'));
+          } else {
+            savedArr.push(photoData);
+          }
         }
+        dbPhotos[photoId] = savedArr;
       }
 
       var rawProjectValue = projInput.value.trim();
@@ -654,7 +659,9 @@
 
             var newDefectId = 'def_auto_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
 
-            var defectPhoto = mergedPhotos[itemId] || null;
+            // Дефект СК — своя однофото-семантика (не входит в этот блок): берём
+            // первое фото пункта чек-листа из массива (mergedPhotos[itemId]).
+            var defectPhoto = window.normalizeItemPhotos(mergedPhotos[itemId])[0] || null;
             if (defectPhoto && AuditState.photos) {
               AuditState.photos[newDefectId] = defectPhoto;
             }
@@ -780,8 +787,8 @@
 
       var reader = new FileReader();
       reader.onload = function (e) {
-        editorImgElement = new Image();
-        editorImgElement.onload = function () {
+        window.editorImgElement = new Image();
+        window.editorImgElement.onload = function () {
           document.getElementById('photo-editor-overlay').style.display = 'flex';
           document.body.classList.add('modal-open');
 
@@ -794,7 +801,7 @@
             saveBtn.onclick = saveEditedPhoto;
           }
         };
-        editorImgElement.src = e.target.result;
+        window.editorImgElement.src = e.target.result;
       };
       reader.readAsDataURL(file);
       event.target.value = '';
@@ -804,12 +811,24 @@
     // =====================================================================
     // УДАЛЕНИЕ ФОТО
     // Перенесено из audit.legacy.js (было в app.js, строка 4293).
-    // Вызывается из динамически генерируемого HTML: onclick="removePhoto(id, event)"
+    // Вызывается из динамически генерируемого HTML: onclick="removePhoto(id, event, index)"
+    // index — позиция в массиве photos[id] (Множественные фото, B1). Без
+    // index (undefined) удаляет весь набор фото пункта (обратная совместимость
+    // со старыми вызовами/старым форматом photos[id] как строки).
     // =====================================================================
-    removePhoto: function (id, e) {
+    removePhoto: function (id, e, index) {
       if (e) e.stopPropagation();
       if (!confirm('Удалить фото?')) return;
-      delete AuditState.photos[id];
+
+      if (index === undefined || index === null) {
+        delete AuditState.photos[id];
+      } else {
+        var arr = window.normalizeItemPhotos(AuditState.photos[id]);
+        arr.splice(index, 1);
+        if (arr.length === 0) delete AuditState.photos[id];
+        else AuditState.photos[id] = arr;
+      }
+
       window.updateCardDOM(id);
       AuditActions.saveSession();
     },

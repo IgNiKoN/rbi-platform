@@ -32,7 +32,7 @@
         return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
       },
       getSystemTemplates: function () {
-        return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+        return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
       }
     };
   }

@@ -207,16 +207,19 @@ function renderReferenceMarkup() {
                                     </div>
                                 </div>
                             </label>
-                            <button onclick="downloadMissingCloudFiles()"
-                                class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                                <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round"
-                                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
-                                    </path>
-                                </svg> Скачать всё
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <div id="twi-view-mode-toggle" class="shrink-0"></div>
+                                <button onclick="downloadMissingCloudFiles()"
+                                    class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3">
+                                        </path>
+                                    </svg> Скачать всё
+                                </button>
+                            </div>
                         </div>
 
                         <div class="flex justify-between items-center gap-2 mb-2">
@@ -1008,7 +1011,7 @@ function renderReferenceTab() {
     let checklist = [];
     const type = selectedKey.split('_')[0];
     const key = selectedKey.replace(type + '_', '');
-    if (type === 'sys' && SYSTEM_TEMPLATES[key]) checklist = SYSTEM_TEMPLATES[key].groups;
+    if (type === 'sys' && window.SYSTEM_TEMPLATES[key]) checklist = window.SYSTEM_TEMPLATES[key].groups;
     else if (type === 'user' && userTemplates[key]) checklist = userTemplates[key].groups;
 
     const searchTerm = document.getElementById('ref-search')?.value.toLowerCase() || "";
@@ -1391,7 +1394,7 @@ function addBuilderItem(containerId, itemData = null) {
     const itemId = `builder-item-${builderItemCount}`;
 
     // Собираем список всех нормативных документов
-    const allDocs = [...(typeof SYSTEM_DOCS !== 'undefined' ? SYSTEM_DOCS : []), ..._getCustomDocs()];
+    const allDocs = [...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []), ..._getCustomDocs()];
     let docOptions = '<option value="">-- Без привязки к документу --</option>';
 
     allDocs.sort((a, b) => a.code.localeCompare(b.code)).forEach(doc => {
@@ -1596,9 +1599,9 @@ window.editUserTemplate = function (slug) {
 window.cloneSystemTemplateToCustom = function () {
     const select = document.getElementById('clone-sys-select');
     const key = select.value;
-    if (!key || !SYSTEM_TEMPLATES[key]) return showToast('Выберите чек-лист для копирования!');
+    if (!key || !window.SYSTEM_TEMPLATES[key]) return showToast('Выберите чек-лист для копирования!');
 
-    const tmpl = SYSTEM_TEMPLATES[key];
+    const tmpl = window.SYSTEM_TEMPLATES[key];
 
     // Подменяем данные во временном объекте
     userTemplates['temp_clone'] = {
@@ -1807,7 +1810,7 @@ function exportAllTemplatesJson() {
     showToast("⚙️ Формирование кода для templates.js...");
 
     // Объединяем системные и пользовательские чек-листы
-    const allTemplates = { ...SYSTEM_TEMPLATES, ...userTemplates };
+    const allTemplates = { ...window.SYSTEM_TEMPLATES, ...userTemplates };
 
     // Вспомогательная функция очистки HTML для формирования чистого кода
     function cleanForCode(str) {

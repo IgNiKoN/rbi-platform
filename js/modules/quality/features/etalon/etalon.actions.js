@@ -116,7 +116,7 @@
         return ut[key] || null;
       },
       getSystemTemplates: function () {
-        return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+        return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
       }
     };
   }
@@ -278,10 +278,10 @@
     // Перенесено из etalon.js (было window.saveEtalonMarkupPhoto, строка 161).
     // =====================================================================
     saveMarkupPhoto: async function () {
-      if (!editorCanvas || !_uploadId) return;
+      if (!window.editorCanvas || !_uploadId) return;
 
       // Получаем картинку с рисунками
-      const base64 = editorCanvas.toDataURL('image/jpeg', 0.85);
+      const base64 = window.editorCanvas.toDataURL('image/jpeg', 0.85);
       showToast("⚙️ Сохранение фото в базу...");
 
       // Мгновенно сохраняем в бинарную базу данных телефона
@@ -717,7 +717,7 @@
     handlePdfUpload: function (event) {
       const file = event.target.files[0];
       if (!file) return;
-      if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 5 МБ."); }
+      if (file.size > 15 * 1024 * 1024) { event.target.value = ''; return showToast("Файл слишком большой! Максимум 15 МБ."); }
 
       showToast("⚙️ Сохранение PDF...");
       const reader = new FileReader();

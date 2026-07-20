@@ -145,8 +145,16 @@ window.rbiHydrateLocalImages = async function (root = document) {
 };
 
 // === ФОТОРЕДАКТОР (ЗАГРУЗКА И РИСОВАНИЕ) ===
-let editorCanvas, editorCtx, isDrawing = false;
-let editorImgElement = null; // Оригинальное изображение для сброса
+// editorCanvas/editorCtx/editorImgElement живут на window (не модульные let):
+// их читают другие ES-модули (audit.actions.js, knowledge.module.js,
+// etalon.actions.js) в своих saveXxxMarkupPhoto()/reader.onload — модульная
+// переменная была бы недоступна им как implicit global (строгий режим
+// ES-модулей бросал ReferenceError, см. фикс editorImgElement ранее и
+// аналогичный баг с editorCanvas, найденный позже).
+let isDrawing = false;
+window.editorCanvas = null;
+window.editorCtx = null;
+window.editorImgElement = null; // Оригинальное изображение для сброса
 let currentPhotoId = null;
 
 // Переменные зума фото
@@ -158,6 +166,17 @@ function resolvePhotoTargetId() {
     return currentPhotoId || window.currentPhotoId || null;
 }
 window.resolvePhotoTargetId = resolvePhotoTargetId;
+
+// RBI NEW (Множественные фото к пункту чек-листа, B1): единая нормализация
+// значения photos[itemId] к массиву — покрывает и новый формат (массив), и
+// старые записи IndexedDB/облака (одна строка на itemId, без принудительной
+// миграции истории). Используется во всех точках чтения photos[itemId]
+// (аудит/история/отчёты), не только в этом файле.
+window.normalizeItemPhotos = function (value) {
+    if (value === undefined || value === null || value === '') return [];
+    if (Array.isArray(value)) return value;
+    return [value];
+};
 
 function syncPhotoTargetId(id) {
     currentPhotoId = id || null;
@@ -205,13 +224,13 @@ async function updateConstDefectPhotoPreview(photoId) {
 window.updateConstDefectPhotoPreview = updateConstDefectPhotoPreview;
 
 function initPhotoEditor() {
-    editorCanvas = document.getElementById('drawing-canvas');
-    editorCtx = editorCanvas.getContext('2d');
+    window.editorCanvas = document.getElementById('drawing-canvas');
+    window.editorCtx = window.editorCanvas.getContext('2d');
 
     // Оптимизируем размер (HD качество, но не гигантское)
     const MAX_WIDTH = 1280; const MAX_HEIGHT = 1280;
-    let width = editorImgElement.width;
-    let height = editorImgElement.height;
+    let width = window.editorImgElement.width;
+    let height = window.editorImgElement.height;
 
     if (width > height) {
         if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
@@ -219,41 +238,41 @@ function initPhotoEditor() {
         if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
     }
 
-    editorCanvas.width = width;
-    editorCanvas.height = height;
+    window.editorCanvas.width = width;
+    window.editorCanvas.height = height;
 
     // Рисуем картинку на холсте
     clearPhotoEditor();
 
     // Настраиваем кисть
-    editorCtx.strokeStyle = '#ef4444'; // Красный цвет
-    editorCtx.lineWidth = Math.max(4, width / 150); // Толщина зависит от размера фото
-    editorCtx.lineCap = 'round';
-    editorCtx.lineJoin = 'round';
+    window.editorCtx.strokeStyle = '#ef4444'; // Красный цвет
+    window.editorCtx.lineWidth = Math.max(4, width / 150); // Толщина зависит от размера фото
+    window.editorCtx.lineCap = 'round';
+    window.editorCtx.lineJoin = 'round';
 
     // Привязываем события рисования
-    editorCanvas.onmousedown = startDrawing;
-    editorCanvas.onmousemove = draw;
-    editorCanvas.onmouseup = stopDrawing;
-    editorCanvas.onmouseout = stopDrawing;
+    window.editorCanvas.onmousedown = startDrawing;
+    window.editorCanvas.onmousemove = draw;
+    window.editorCanvas.onmouseup = stopDrawing;
+    window.editorCanvas.onmouseout = stopDrawing;
 
-    editorCanvas.ontouchstart = startDrawing;
-    editorCanvas.ontouchmove = draw;
-    editorCanvas.ontouchend = stopDrawing;
+    window.editorCanvas.ontouchstart = startDrawing;
+    window.editorCanvas.ontouchmove = draw;
+    window.editorCanvas.ontouchend = stopDrawing;
 }
 window.initPhotoEditor = initPhotoEditor;
 
 function clearPhotoEditor() {
-    if (!editorCtx || !editorImgElement) return;
-    editorCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
-    editorCtx.drawImage(editorImgElement, 0, 0, editorCanvas.width, editorCanvas.height);
+    if (!window.editorCtx || !window.editorImgElement) return;
+    window.editorCtx.clearRect(0, 0, window.editorCanvas.width, window.editorCanvas.height);
+    window.editorCtx.drawImage(window.editorImgElement, 0, 0, window.editorCanvas.width, window.editorCanvas.height);
 }
 window.clearPhotoEditor = clearPhotoEditor;
 
 function getCanvasCoordinates(e) {
-    const rect = editorCanvas.getBoundingClientRect();
-    const scaleX = editorCanvas.width / rect.width;
-    const scaleY = editorCanvas.height / rect.height;
+    const rect = window.editorCanvas.getBoundingClientRect();
+    const scaleX = window.editorCanvas.width / rect.width;
+    const scaleY = window.editorCanvas.height / rect.height;
 
     let clientX, clientY;
     if (e.touches && e.touches.length > 0) {
@@ -274,29 +293,29 @@ function startDrawing(e) {
     e.preventDefault();
     isDrawing = true;
     const pos = getCanvasCoordinates(e);
-    editorCtx.beginPath();
-    editorCtx.moveTo(pos.x, pos.y);
+    window.editorCtx.beginPath();
+    window.editorCtx.moveTo(pos.x, pos.y);
 }
 
 function draw(e) {
     if (!isDrawing) return;
     e.preventDefault();
     const pos = getCanvasCoordinates(e);
-    editorCtx.lineTo(pos.x, pos.y);
-    editorCtx.stroke();
+    window.editorCtx.lineTo(pos.x, pos.y);
+    window.editorCtx.stroke();
 }
 
 function stopDrawing(e) {
     if (e) e.preventDefault();
     isDrawing = false;
-    editorCtx.closePath();
+    window.editorCtx.closePath();
 }
 
 function cancelPhotoEditor() {
     document.getElementById('photo-editor-overlay').style.display = 'none';
     document.body.classList.remove('modal-open');
     syncPhotoTargetId(null);
-    editorImgElement = null;
+    window.editorImgElement = null;
     window.activePhotoContext = null; // Очищаем контекст, чтобы не ломать другие загрузки
 }
 window.cancelPhotoEditor = cancelPhotoEditor;
@@ -304,23 +323,23 @@ window.cancelPhotoEditor = cancelPhotoEditor;
 async function saveEditedPhoto() {
     const photoId = resolvePhotoTargetId();
     const photoContext = window.activePhotoContext;
-    if (!photoId || !editorCanvas) return;
+    if (!photoId || !window.editorCanvas) return;
 
     // Добавляем штамп времени на финальное фото
     const now = new Date();
     const timestamp = now.toLocaleDateString('ru-RU') + ' ' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
-    const w = editorCanvas.width;
-    const h = editorCanvas.height;
+    const w = window.editorCanvas.width;
+    const h = window.editorCanvas.height;
     const fontSize = Math.max(16, Math.floor(w / 35)); // Адаптивный шрифт
 
-    editorCtx.fillStyle = 'rgba(0,0,0,0.6)';
-    editorCtx.fillRect(15, h - (fontSize + 20), fontSize * 10, fontSize + 15);
-    editorCtx.font = `bold ${fontSize}px Arial`;
-    editorCtx.fillStyle = 'white';
-    editorCtx.fillText(timestamp, 25, h - 20);
+    window.editorCtx.fillStyle = 'rgba(0,0,0,0.6)';
+    window.editorCtx.fillRect(15, h - (fontSize + 20), fontSize * 10, fontSize + 15);
+    window.editorCtx.font = `bold ${fontSize}px Arial`;
+    window.editorCtx.fillStyle = 'white';
+    window.editorCtx.fillText(timestamp, 25, h - 20);
 
-    let photoRef = editorCanvas.toDataURL('image/jpeg', 0.85);
+    let photoRef = window.editorCanvas.toDataURL('image/jpeg', 0.85);
 
     // НОВОЕ: Если фото сделано Подрядчиком при устранении дефекта
     if (photoContext === 'defect_fix') {
@@ -341,9 +360,13 @@ async function saveEditedPhoto() {
             entityType: 'construction_defect',
             entityId: photoId
         });
+        // Фото дефекта СК — своя однофото-семантика (не входит в этот блок), перезапись.
+        photos[photoId] = photoRef;
+    } else {
+        // Обычный контекст (пункт чек-листа аудита): добавление в массив, не перезапись.
+        if (!Array.isArray(photos[photoId])) photos[photoId] = photos[photoId] ? [photos[photoId]] : [];
+        photos[photoId].push(photoRef);
     }
-
-    photos[photoId] = photoRef;
     showToast("📸 Фото с пометками сохранено!");
 
     if (photoContext === 'defect') {

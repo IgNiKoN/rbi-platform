@@ -141,7 +141,7 @@
         if (window.currentTemplateKey) {
           const type = window.currentTemplateKey.split('_')[0];
           const key = window.currentTemplateKey.slice(type.length + 1);
-          if (type === 'sys' && SYSTEM_TEMPLATES[key]) window.currentChecklist = SYSTEM_TEMPLATES[key].groups;
+          if (type === 'sys' && window.SYSTEM_TEMPLATES[key]) window.currentChecklist = window.SYSTEM_TEMPLATES[key].groups;
           else if (type === 'user' && userTemplates[key]) window.currentChecklist = userTemplates[key].groups;
         }
 
@@ -151,8 +151,17 @@
         window.customExpertConclusions = data.customExpertConclusions || {};
 
         // НОВОЕ: Распаковываем фото в незаконченном черновике, если они там есть
+        // RBI NEW (Множественные фото к пункту чек-листа, B1): window.photos[k]
+        // может быть массивом — обрабатываем каждый элемент отдельно.
         for (let k in window.photos) {
-          if (window.photos[k] && window.photos[k].startsWith('local://')) {
+          if (Array.isArray(window.photos[k])) {
+            for (let pi = 0; pi < window.photos[k].length; pi++) {
+              const p = window.photos[k][pi];
+              if (p && p.startsWith('local://')) {
+                window.photos[k][pi] = await PhotoManager.getBlobUrl(p) || p;
+              }
+            }
+          } else if (window.photos[k] && window.photos[k].startsWith('local://')) {
             window.photos[k] = await PhotoManager.getBlobUrl(window.photos[k]) || window.photos[k];
           }
         }

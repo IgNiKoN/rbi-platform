@@ -79,7 +79,7 @@ function _templates() {
             return typeof window.userTemplates !== 'undefined' ? window.userTemplates : {};
         },
         getSystemTemplates: function () {
-            return typeof SYSTEM_TEMPLATES !== 'undefined' ? SYSTEM_TEMPLATES : {};
+            return typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {};
         }
     };
 }
@@ -669,7 +669,12 @@ async function purgeDataOutsideAssignedProjects(assignedKeysArray) {
                 const pKey = item.project_canonical_key || item.projectName || item.project || item.project_display_name || '';
 
                 if (pKey && pKey !== 'Все' && pKey !== 'Системная' && !keysToKeep.includes(pKey)) {
-                    if (item.photos) Object.values(item.photos).forEach(p => { if (String(p).startsWith('local://')) photosToDelete.add(p); });
+                    // RBI NEW (Множественные фото к пункту чек-листа, B1): значение
+                    // photos[itemId] может быть массивом — нормализуем перед .startsWith.
+                    if (item.photos) Object.values(item.photos).forEach(rawValue => {
+                        const arr = window.normalizeItemPhotos ? window.normalizeItemPhotos(rawValue) : [rawValue];
+                        arr.forEach(p => { if (String(p).startsWith('local://')) photosToDelete.add(p); });
+                    });
                     if (item.photo && String(item.photo).startsWith('local://')) photosToDelete.add(item.photo);
 
                     await _storage().delete(store, item.id || item.slug);
