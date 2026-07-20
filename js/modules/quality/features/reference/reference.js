@@ -936,6 +936,17 @@ function _getSetting(key) {
     return ((_ctx && _ctx.settings) || window.RBI.services.settings).get(key);
 }
 
+/* CRUD пользовательских чек-листов — только RBI.services.templates.
+   ctx.templates часто указывает на RBI.utils.templates (read-only helpers
+   без saveUserTemplate) из-за перезаписи shared ctx под-модулями. */
+function _templatesService() {
+    var svc = window.RBI && window.RBI.services && window.RBI.services.templates;
+    if (svc && typeof svc.saveUserTemplate === 'function') return svc;
+    var ctxT = _ctx && _ctx.templates;
+    if (ctxT && typeof ctxT.saveUserTemplate === 'function') return ctxT;
+    return null;
+}
+
 function _triggerSync(mode) {
     var m = mode || 'silent';
     if (_ctx && _ctx.sync) return _ctx.sync.trigger(m);
@@ -1502,7 +1513,8 @@ async function saveCustomTemplate() {
 
     // Сохраняем через сервис (мутация window.userTemplates + dbPut единой точкой)
     try {
-        var templatesSvc1 = (_ctx && _ctx.templates) || window.RBI.services.templates;
+        var templatesSvc1 = _templatesService();
+        if (!templatesSvc1) throw new Error('Template service unavailable');
         await templatesSvc1.saveUserTemplate(newTemplate);
         showToast("✅ Шаблон успешно сохранен!");
         closeTemplateBuilder();
@@ -1621,7 +1633,11 @@ async function deleteUserTemplate(slug) {
     if (!confirm("Удалить этот чек-лист? Вы не сможете проводить по нему новые проверки.")) return;
 
     // Удаление через сервис (мутация window.userTemplates + dbPut единой точкой)
-    var templatesSvc2 = (_ctx && _ctx.templates) || window.RBI.services.templates;
+    var templatesSvc2 = _templatesService();
+    if (!templatesSvc2) {
+        showToast("Ошибка удаления шаблона!");
+        return;
+    }
     await templatesSvc2.deleteUserTemplate(slug);
 
     try {
@@ -1774,7 +1790,8 @@ async function handleExcelImport(event) {
             const slug = "cstm_" + Date.now().toString(36);
 
             // Сохраняем через сервис (мутация window.userTemplates + dbPut единой точкой)
-            var templatesSvc3 = (_ctx && _ctx.templates) || window.RBI.services.templates;
+            var templatesSvc3 = _templatesService();
+            if (!templatesSvc3) throw new Error('Template service unavailable');
             await templatesSvc3.saveUserTemplate(newTemplate);
 
             showToast(`✅ Чек-лист "${templateTitle}" успешно загружен!`);
@@ -1885,7 +1902,8 @@ async function handleFileUpload(event) {
             parsedData.id = parsedData.id || slug;
 
             // Вызываем owner-сервис (эмитит templates:changed для подписчиков).
-            var templatesSvc4 = (_ctx && _ctx.templates) || window.RBI.services.templates;
+            var templatesSvc4 = _templatesService();
+            if (!templatesSvc4) throw new Error('Template service unavailable');
             await templatesSvc4.saveUserTemplate(parsedData);
 
             showToast(`✅ Чек-лист "${parsedData.title || parsedData.name || ''}" успешно загружен!`);

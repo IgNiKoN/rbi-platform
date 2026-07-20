@@ -143,9 +143,18 @@
 
       var tmplSelect = document.getElementById('etv18b-template');
       var tmplOpts = '<option value="" disabled selected>-- Выберите вид работ --</option>';
-      var st = (window.RBI && window.RBI.services && window.RBI.services.templates) ? window.RBI.services.templates.getSystemTemplates() : (typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {});
+      var tmplSvc = (window.RBI && window.RBI.services && window.RBI.services.templates) ? window.RBI.services.templates : null;
+      var st = tmplSvc ? tmplSvc.getSystemTemplates() : (typeof window.SYSTEM_TEMPLATES !== 'undefined' ? window.SYSTEM_TEMPLATES : {});
       var sysKeys = Object.keys(st).sort(function (a, b) { return st[a].title.localeCompare(st[b].title); });
       sysKeys.forEach(function (k) { tmplOpts += '<option value="sys_' + k + '">[СИС] ' + st[k].title + '</option>'; });
+      // Как в etalon-v18 / классическом конструкторе — пользовательские чек-листы [МОЙ]
+      var ut = tmplSvc ? tmplSvc.getUserTemplates() : (typeof window.userTemplates !== 'undefined' ? window.userTemplates : {});
+      if (ut && typeof ut === 'object') {
+        var userKeys = Object.keys(ut).filter(function (k) {
+          return ut[k] && !ut[k]._deleted && !ut[k].is_deleted;
+        }).sort(function (a, b) { return (ut[a].title || '').localeCompare(ut[b].title || '', 'ru'); });
+        userKeys.forEach(function (k) { tmplOpts += '<option value="user_' + k + '">[МОЙ] ' + ut[k].title + '</option>'; });
+      }
       tmplSelect.innerHTML = tmplOpts;
       if (p.templateKey) tmplSelect.value = p.templateKey;
 

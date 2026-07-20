@@ -48,6 +48,11 @@ export const QualityModule = {
                 console.error('[quality.module] Ошибка init() для ' + key + ':', e);
             }
         }
+        // Под-модули часто перезаписывают ctx.templates на RBI.utils.templates
+        // (read-only). Для CRUD чек-листов / reference нужен services.templates.
+        if (window.RBI && window.RBI.services && window.RBI.services.templates) {
+            ctx.templates = window.RBI.services.templates;
+        }
         if (window.ReferenceShared) window.ReferenceShared.bindCtx(ctx);
         if (window.InterventionsShared) window.InterventionsShared.bindCtx(ctx);
     }
