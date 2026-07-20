@@ -71,8 +71,13 @@
         aiAuto: false,
         apiKey: '',
         dashboardMode: 'compact',
-        // Режим отображения списков базы знаний / отчётов: 'cards' | 'list'
+        // Legacy (fallback) + раздельные режимы по вкладкам: 'cards' | 'list'
         knowledgeViewMode: 'cards',
+        knowledgeViewModeTwi: 'cards',
+        knowledgeViewModeDocs: 'cards',
+        knowledgeViewModeNodes: 'cards',
+        knowledgeViewModePractices: 'cards',
+        knowledgeViewModeReports: 'cards',
         anaEngPareto: true,
         anaOpTrend: true,
         anaOpLeader: true,

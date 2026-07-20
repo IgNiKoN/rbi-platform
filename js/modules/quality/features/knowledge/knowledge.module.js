@@ -2089,44 +2089,79 @@ window.knowledge_formatNorms = function (text) {
 // используются здесь — решение зафиксировано архитектором (см. current_plan.md).
 // =========================================================================
 
-// Режим отображения списков базы знаний / отчётов: 'cards' | 'list'
-// (appSettings.knowledgeViewMode, дефолт 'cards'). См. current_plan.md.
-window.getKnowledgeViewMode = function () {
+// Режим отображения по вкладкам: 'cards' | 'list'
+// scope: twi | docs | nodes | practices | reports
+// Ключи: knowledgeViewModeTwi и т.д.; legacy knowledgeViewMode — fallback.
+window._KB_VIEW_SCOPE_KEYS = {
+    twi: 'knowledgeViewModeTwi',
+    docs: 'knowledgeViewModeDocs',
+    nodes: 'knowledgeViewModeNodes',
+    practices: 'knowledgeViewModePractices',
+    reports: 'knowledgeViewModeReports'
+};
+
+window.getKnowledgeViewMode = function (scope) {
+    var key = window._KB_VIEW_SCOPE_KEYS[scope] || null;
     var m = null;
-    if (window.RBI && window.RBI.services && window.RBI.services.settings && typeof window.RBI.services.settings.get === 'function') {
-        m = window.RBI.services.settings.get('knowledgeViewMode');
+    var settingsSvc = window.RBI && window.RBI.services && window.RBI.services.settings;
+    if (key && settingsSvc && typeof settingsSvc.get === 'function') {
+        m = settingsSvc.get(key);
+    }
+    if (!m && key && window.appSettings) m = window.appSettings[key];
+    // Миграция: старый единый ключ, если scoped ещё не задан
+    if (!m && settingsSvc && typeof settingsSvc.get === 'function') {
+        m = settingsSvc.get('knowledgeViewMode');
     }
     if (!m && window.appSettings) m = window.appSettings.knowledgeViewMode;
     return m === 'list' ? 'list' : 'cards';
 };
 
-window.setKnowledgeViewMode = function (mode) {
+window.setKnowledgeViewMode = function (scope, mode) {
+    // Совместимость: setKnowledgeViewMode('list') без scope → legacy (все вкладки)
+    if (arguments.length === 1 && (scope === 'list' || scope === 'cards')) {
+        mode = scope;
+        ['twi', 'docs', 'nodes', 'practices', 'reports'].forEach(function (s) {
+            window.setKnowledgeViewMode(s, mode);
+        });
+        return;
+    }
+    var key = window._KB_VIEW_SCOPE_KEYS[scope];
+    if (!key) return;
     mode = mode === 'list' ? 'list' : 'cards';
     if (typeof window.saveSettings === 'function') {
-        window.saveSettings('knowledgeViewMode', mode);
+        window.saveSettings(key, mode);
     } else if (window.appSettings) {
-        window.appSettings.knowledgeViewMode = mode;
+        window.appSettings[key] = mode;
     }
-    var sel = document.getElementById('set-knowledge-view-mode');
+    var selId = {
+        twi: 'set-kb-view-twi',
+        docs: 'set-kb-view-docs',
+        nodes: 'set-kb-view-nodes',
+        practices: 'set-kb-view-practices',
+        reports: 'set-kb-view-reports'
+    }[scope];
+    var sel = selId ? document.getElementById(selId) : null;
     if (sel && sel.value !== mode) sel.value = mode;
     var act = 'px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm';
     var inact = 'px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all text-slate-500 dark:text-slate-400';
-    document.querySelectorAll('[data-kb-view-toggle]').forEach(function (btn) {
+    document.querySelectorAll('[data-kb-view-scope="' + scope + '"][data-kb-view-toggle]').forEach(function (btn) {
         btn.className = btn.getAttribute('data-kb-view-toggle') === mode ? act : inact;
     });
-    if (typeof window.renderTwiList === 'function') window.renderTwiList();
-    if (typeof window.renderDocsList === 'function') window.renderDocsList();
-    if (typeof window.renderNodesList === 'function') window.renderNodesList();
-    if (typeof window.renderReportsList === 'function') window.renderReportsList();
+    if (scope === 'twi' && typeof window.renderTwiList === 'function') window.renderTwiList();
+    else if (scope === 'docs' && typeof window.renderDocsList === 'function') window.renderDocsList();
+    else if (scope === 'nodes' && typeof window.renderNodesList === 'function') window.renderNodesList();
+    else if (scope === 'practices' && typeof window.rbi_renderPracticesTab === 'function') window.rbi_renderPracticesTab();
+    else if (scope === 'reports' && typeof window.renderReportsList === 'function') window.renderReportsList();
 };
 
-window.kbViewModeToggleHtml = function () {
-    var mode = window.getKnowledgeViewMode();
+window.kbViewModeToggleHtml = function (scope) {
+    scope = scope || 'twi';
+    var mode = window.getKnowledgeViewMode(scope);
     var act = 'px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all bg-white dark:bg-slate-800 text-indigo-600 shadow-sm';
     var inact = 'px-2.5 py-1 rounded-full text-[9px] font-black uppercase transition-all text-slate-500 dark:text-slate-400';
     return '<div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-full shadow-inner border border-slate-300 dark:border-slate-600 shrink-0" onclick="event.stopPropagation();">'
-        + '<button type="button" data-kb-view-toggle="cards" onclick="window.setKnowledgeViewMode(\'cards\')" class="' + (mode === 'cards' ? act : inact) + '">Карточки</button>'
-        + '<button type="button" data-kb-view-toggle="list" onclick="window.setKnowledgeViewMode(\'list\')" class="' + (mode === 'list' ? act : inact) + '">Список</button>'
+        + '<button type="button" data-kb-view-scope="' + scope + '" data-kb-view-toggle="cards" onclick="window.setKnowledgeViewMode(\'' + scope + '\',\'cards\')" class="' + (mode === 'cards' ? act : inact) + '">Карточки</button>'
+        + '<button type="button" data-kb-view-scope="' + scope + '" data-kb-view-toggle="list" onclick="window.setKnowledgeViewMode(\'' + scope + '\',\'list\')" class="' + (mode === 'list' ? act : inact) + '">Список</button>'
         + '</div>';
 };
 
@@ -2141,7 +2176,7 @@ window.renderTwiList = function () {
 
     var twiToggleHost = document.getElementById('twi-view-mode-toggle');
     if (twiToggleHost && typeof window.kbViewModeToggleHtml === 'function') {
-        twiToggleHost.innerHTML = window.kbViewModeToggleHtml();
+        twiToggleHost.innerHTML = window.kbViewModeToggleHtml('twi');
     }
 
     // --- 1. МАГИЯ TWI (ПЛАШКА) ---
@@ -2220,7 +2255,7 @@ window.renderTwiList = function () {
             grouped[groupName].push(c);
         });
 
-        var isListView = window.getKnowledgeViewMode() === 'list';
+        var isListView = window.getKnowledgeViewMode('twi') === 'list';
         var itemsWrapClass = isListView ? 'flex flex-col gap-1.5 py-2' : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 py-2';
 
         for (var checklistName in grouped) {
@@ -2614,7 +2649,7 @@ window.renderDocsList = function () {
     }
     var docsToggleHost = document.getElementById('docs-view-mode-toggle');
     if (docsToggleHost && typeof window.kbViewModeToggleHtml === 'function') {
-        docsToggleHost.innerHTML = window.kbViewModeToggleHtml();
+        docsToggleHost.innerHTML = window.kbViewModeToggleHtml('docs');
     }
 
     var allDocs = [
@@ -2650,7 +2685,7 @@ window.renderDocsList = function () {
         grouped[doc.type].push(doc);
     });
 
-    var isListView = window.getKnowledgeViewMode() === 'list';
+    var isListView = window.getKnowledgeViewMode('docs') === 'list';
     var itemsWrapClass = isListView ? 'flex flex-col gap-1.5 py-2' : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 py-2';
     var html = '';
     Object.keys(grouped).sort().forEach(function (type) {
@@ -3056,7 +3091,7 @@ window.renderNodesList = function () {
     }
     var nodesToggleHost = document.getElementById('nodes-view-mode-toggle');
     if (nodesToggleHost && typeof window.kbViewModeToggleHtml === 'function') {
-        nodesToggleHost.innerHTML = window.kbViewModeToggleHtml();
+        nodesToggleHost.innerHTML = window.kbViewModeToggleHtml('nodes');
     }
 
     var allNodes = [...window.SYSTEM_NODES, ...window.customNodes];
@@ -3095,7 +3130,7 @@ window.renderNodesList = function () {
         grouped[groupName].push(node);
     });
 
-    var isListView = window.getKnowledgeViewMode() === 'list';
+    var isListView = window.getKnowledgeViewMode('nodes') === 'list';
     var itemsWrapClass = isListView ? 'flex flex-col gap-1.5 py-2' : 'grid grid-cols-2 md:grid-cols-3 gap-3 py-2';
     var html = '';
     for (var cat in grouped) {

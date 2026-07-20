@@ -111,10 +111,26 @@
     function _toggleSetting(settingKey, element) {
         var val = element.type === 'checkbox' ? element.checked : element.value;
 
-        // Режим карточки/список — единая точка входа (сохранение + перерисовка списков)
+        // Режим карточки/список по вкладкам — единая точка входа (сохранение + перерисовка)
         var setKbViewMode = window.setKnowledgeViewMode;
-        if (settingKey === 'knowledgeViewMode' && typeof setKbViewMode === 'function') {
-            setKbViewMode(val);
+        var kbScopeMap = {
+            knowledgeViewModeTwi: 'twi',
+            knowledgeViewModeDocs: 'docs',
+            knowledgeViewModeNodes: 'nodes',
+            knowledgeViewModePractices: 'practices',
+            knowledgeViewModeReports: 'reports',
+            // legacy: пишем во все scope (миграция со старого единого ключа)
+            knowledgeViewMode: null
+        };
+        if (Object.prototype.hasOwnProperty.call(kbScopeMap, settingKey) && typeof setKbViewMode === 'function') {
+            var scope = kbScopeMap[settingKey];
+            if (scope) {
+                setKbViewMode(scope, val);
+            } else {
+                ['twi', 'docs', 'nodes', 'practices', 'reports'].forEach(function (s) {
+                    setKbViewMode(s, val);
+                });
+            }
             return;
         }
 
@@ -161,6 +177,11 @@
             storagePersistentRequestedAt: null,
             storagePersistentGranted: false, aiAuto: false, apiKey: '', dashboardMode: 'compact',
             knowledgeViewMode: 'cards',
+            knowledgeViewModeTwi: 'cards',
+            knowledgeViewModeDocs: 'cards',
+            knowledgeViewModeNodes: 'cards',
+            knowledgeViewModePractices: 'cards',
+            knowledgeViewModeReports: 'cards',
             anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
             autoBackupEnabled: false, autoBackupDay: '5', autoBackupShare: false, autoManagerEnabled: false, autoManagerDay: '5',
             brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'

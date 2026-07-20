@@ -2880,7 +2880,7 @@ export const AnalyticsRender = {
         const groupKeys = Object.keys(grouped).sort(collator.compare);
 
         const getViewMode = window.getKnowledgeViewMode;
-        const isListView = (typeof getViewMode === 'function' ? getViewMode() : 'cards') === 'list';
+        const isListView = (typeof getViewMode === 'function' ? getViewMode('reports') : 'cards') === 'list';
         const itemsWrapClass = isListView ? 'flex flex-col gap-1.5' : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3';
         const hiddenRevealClass = isListView ? 'flex' : 'grid';
 
@@ -2936,7 +2936,7 @@ export const AnalyticsRender = {
         const reportsToggleHost = document.getElementById('reports-view-mode-toggle');
         const kbToggleHtml = window.kbViewModeToggleHtml;
         if (reportsToggleHost && typeof kbToggleHtml === 'function') {
-            reportsToggleHost.innerHTML = kbToggleHtml();
+            reportsToggleHost.innerHTML = kbToggleHtml('reports');
         }
         _restoreExpandedReports(listDiv, expandedProjects);
     },

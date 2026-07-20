@@ -410,13 +410,57 @@ var SettingsRender = {
                         <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
                     </summary>
                     <div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">TWI</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список</div>
+                            </div>
+                            <select id="set-kb-view-twi" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeTwi" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Нормативы (НД)</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список</div>
+                            </div>
+                            <select id="set-kb-view-docs" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeDocs" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Узлы</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список</div>
+                            </div>
+                            <select id="set-kb-view-nodes" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeNodes" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Практики</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список</div>
+                            </div>
+                            <select id="set-kb-view-practices" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModePractices" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
                         <div class="p-4 flex justify-between items-center rounded-b-2xl">
                             <div>
-                                <div class="font-bold text-sm">Отображение списков</div>
-                                <div class="text-[10px] text-[var(--text-muted)] mt-1">TWI, нормативы, узлы и отчёты — карточки или список</div>
+                                <div class="font-bold text-sm">Отчёты</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список</div>
                             </div>
-                            <select id="set-knowledge-view-mode" class="input-base w-36"
-                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewMode" data-settings-action-val-type="element" data-action-event="change">
+                            <select id="set-kb-view-reports" class="input-base w-36"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeReports" data-settings-action-val-type="element" data-action-event="change">
                                 <option value="cards">Карточки</option>
                                 <option value="list">Список</option>
                             </select>
@@ -1174,7 +1218,17 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (document.getElementById('set-fontsize')) document.getElementById('set-fontsize').value = _getSetting('fontSize') || 'medium';
         if (document.getElementById('set-navpos')) document.getElementById('set-navpos').value = _getSetting('navPosition') || 'auto';
         if (document.getElementById('set-dashmode')) document.getElementById('set-dashmode').value = _getSetting('dashboardMode') || 'compact';
-        if (document.getElementById('set-knowledge-view-mode')) document.getElementById('set-knowledge-view-mode').value = _getSetting('knowledgeViewMode') || 'cards';
+        var _kbViewGet = window.getKnowledgeViewMode;
+        var _kbViewFallback = _getSetting('knowledgeViewMode') || 'cards';
+        var _kbViewVal = function (scope, key) {
+            if (typeof _kbViewGet === 'function') return _kbViewGet(scope);
+            return _getSetting(key) || _kbViewFallback;
+        };
+        if (document.getElementById('set-kb-view-twi')) document.getElementById('set-kb-view-twi').value = _kbViewVal('twi', 'knowledgeViewModeTwi');
+        if (document.getElementById('set-kb-view-docs')) document.getElementById('set-kb-view-docs').value = _kbViewVal('docs', 'knowledgeViewModeDocs');
+        if (document.getElementById('set-kb-view-nodes')) document.getElementById('set-kb-view-nodes').value = _kbViewVal('nodes', 'knowledgeViewModeNodes');
+        if (document.getElementById('set-kb-view-practices')) document.getElementById('set-kb-view-practices').value = _kbViewVal('practices', 'knowledgeViewModePractices');
+        if (document.getElementById('set-kb-view-reports')) document.getElementById('set-kb-view-reports').value = _kbViewVal('reports', 'knowledgeViewModeReports');
 
         // 2. Переключатели логики
         if (document.getElementById('set-swipe')) document.getElementById('set-swipe').checked = _getSetting('swipeEnabled');
