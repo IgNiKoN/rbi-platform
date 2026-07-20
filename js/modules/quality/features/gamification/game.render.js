@@ -1250,23 +1250,28 @@ let gameChartInstance = null;
     const container = document.getElementById('rbi-fmea-container');
     if (!container) return;
 
+    const toggleHtml = (typeof window.kbViewModeToggleHtml === 'function')
+      ? window.kbViewModeToggleHtml('fmea')
+      : '';
+
     let headerHtml = `
         <div class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 w-full">
-            <div class="flex justify-between items-center mb-3 border-b border-[var(--card-border)] pb-2">
-                <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
-                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Архив FMEA
+            <div class="flex flex-wrap justify-between items-center gap-2 mb-3 border-b border-[var(--card-border)] pb-2">
+                <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5 min-w-0">
+                    <svg class="w-4 h-4 text-purple-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="truncate">Архив FMEA</span>
                 </h2>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <div id="fmea-view-mode-toggle">${toggleHtml}</div>
                     <button onclick="rbi_createEmptyFmea()" class="bg-white text-purple-600 border border-purple-200 px-3 py-1.5 rounded-lg shadow-sm active:scale-95 text-[10px] font-black uppercase whitespace-nowrap flex items-center gap-1">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Пустой бланк
                     </button>
                 </div>
             </div>
             
-            <div class="flex gap-2 items-center">
-                <div class="flex-1">
-                    <select id="fmea-period-select" class="input-base !py-2 text-[10px] font-bold">
+            <div class="flex flex-wrap gap-2 items-center">
+                <div class="flex-1 min-w-[160px]">
+                    <select id="fmea-period-select" class="input-base !py-2 text-[10px] font-bold w-full">
                         <option value="WEEK">Дефекты за 7 дней (Неделя)</option>
                         <option value="MONTH">Дефекты за 30 дней (Месяц)</option>
                         <option value="QUARTER">Дефекты за 90 дней (Квартал)</option>
@@ -1291,6 +1296,11 @@ let gameChartInstance = null;
     const listContainer = document.getElementById('fmea-registry-list');
     if (!listContainer) return;
 
+    const toggleHost = document.getElementById('fmea-view-mode-toggle');
+    if (toggleHost && typeof window.kbViewModeToggleHtml === 'function') {
+      toggleHost.innerHTML = window.kbViewModeToggleHtml('fmea');
+    }
+
     if (!_getFmea() || _getFmea().length === 0) {
       listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)]">Архив пуст</div>`;
       return;
@@ -1301,45 +1311,159 @@ let gameChartInstance = null;
       .filter(f => f && f.id && !f._deleted && f.date && f.title && f.defects)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    listContainer.innerHTML = `<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">` + sorted.map(f => {
-      let isOwner = !f.author || f.author === currentEngineer;
+    if (!sorted.length) {
+      listContainer.innerHTML = `<div class="text-center py-8 text-slate-400 text-[10px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)]">Архив пуст</div>`;
+      return;
+    }
 
-      let previewHtml = '';
-      const photos = (f.defects || []).map(d => d.photo).filter(Boolean);
-      if (photos.length > 0) {
-        previewHtml = `<img src="${window.getPhotoSrc(photos[0])}" class="w-full h-full object-cover">`;
-      } else {
-        previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
+    const isListView = (typeof window.getKnowledgeViewMode === 'function'
+      ? window.getKnowledgeViewMode('fmea')
+      : 'cards') === 'list';
+    const itemsWrapClass = isListView
+      ? 'flex flex-col gap-1.5'
+      : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3';
+
+    const fmeaGroupLabels = (f) => {
+      if (Array.isArray(f.projectNames) && f.projectNames.length) {
+        return [...new Set(f.projectNames.map(n => String(n).trim()).filter(Boolean))];
       }
+      const raw = String(f.project_display_name || f.projectName || f.project_canonical_key || f.project || '').trim();
+      if (!raw) return ['Без объекта'];
+      if (raw === 'Все объекты') return [raw];
+      if (raw.includes(',')) {
+        const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.length > 1) return [...new Set(parts)];
+      }
+      return [raw];
+    };
+
+    const renderFmeaItem = (f) => {
+      const isOwner = !f.author || f.author === currentEngineer;
+      const safeTitle = String(f.title || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const authorShort = f.author ? f.author.split(' ')[0] : 'Инженер';
+      const dateStr = new Date(f.date).toLocaleDateString('ru-RU');
+      const defectN = (f.defects || []).length;
+      const photos = (f.defects || []).map(d => d.photo).filter(Boolean);
+      const thumb = photos.length > 0
+        ? `<img src="${window.getPhotoSrc(photos[0])}" class="w-full h-full object-cover">`
+        : `<div class="w-full h-full flex items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-5 h-5 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
+
+      if (isListView) {
+        return `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm flex items-center gap-2.5 p-2 active:scale-[0.99] transition-transform relative cursor-pointer" onclick="rbi_viewFmea('${f.id}')">
+            <div class="w-11 h-11 rounded-lg overflow-hidden shrink-0 border border-[var(--card-border)]">${thumb}</div>
+            <div class="min-w-0 flex-1">
+                <div class="text-[12px] font-bold text-slate-800 dark:text-white truncate leading-tight">${f.title}</div>
+                <div class="text-[9px] font-bold text-slate-400 truncate mt-0.5">${f.periodName || 'FMEA'} · ${defectN} деф. · ${authorShort} · ${dateStr}</div>
+            </div>
+            <button onclick="event.stopPropagation(); openUniversalActionSheet('${f.id}', 'fmea', '${safeTitle}', ${isOwner})" class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-slate-400 hover:bg-[var(--hover-bg)] active:scale-90">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+            </button>
+        </div>`;
+      }
+
+      const previewHtml = photos.length > 0
+        ? `<img src="${window.getPhotoSrc(photos[0])}" class="w-full h-full object-cover">`
+        : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
 
       return `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm overflow-hidden flex flex-col active:scale-[0.98] transition-transform relative cursor-pointer" onclick="rbi_viewFmea('${f.id}')">
-            
             <div class="h-24 sm:h-28 border-b border-[var(--card-border)] relative">
                 ${previewHtml}
-                <button onclick="event.stopPropagation(); openUniversalActionSheet('${f.id}', 'fmea', '${f.title.replace(/'/g, "\\'")}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
+                <button onclick="event.stopPropagation(); openUniversalActionSheet('${f.id}', 'fmea', '${safeTitle}', ${isOwner})" class="absolute top-2 right-2 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white active:scale-90 transition-transform shadow-md border border-white/20">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
                 </button>
-                <div class="absolute bottom-2 left-2 bg-purple-600 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">${f.periodName}</div>
+                <div class="absolute bottom-2 left-2 bg-purple-600 text-white text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-md">${f.periodName || 'FMEA'}</div>
             </div>
-            
-            <div class="p-3 flex flex-col flex-1">
+            <div class="p-3 flex flex-col flex-1 min-w-0">
                 <div class="text-[12px] font-bold text-slate-800 dark:text-white leading-tight line-clamp-2 mb-1">${f.title}</div>
-                <div class="text-[9px] text-slate-500 font-bold mb-2">Разобрано дефектов: ${(f.defects || []).length} шт.</div>
-                
-                <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center">
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate pr-2">
+                <div class="text-[9px] text-slate-500 font-bold mb-2">Разобрано дефектов: ${defectN} шт.</div>
+                <div class="mt-auto border-t border-[var(--card-border)] pt-2 flex justify-between items-center gap-2">
+                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate min-w-0">
                         <svg class="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        ${f.author ? f.author.split(' ')[0] : 'Инженер'}
+                        ${authorShort}
                     </div>
-                    <div class="text-[9px] font-black text-slate-400">${new Date(f.date).toLocaleDateString('ru-RU')}</div>
+                    <div class="text-[9px] font-black text-slate-400 shrink-0">${dateStr}</div>
                 </div>
             </div>
-            
-        </div>
-        `;
-    }).join('') + `</div>`;
+        </div>`;
+    };
+
+    const grouped = {};
+    sorted.forEach((f) => {
+      fmeaGroupLabels(f).forEach((pName) => {
+        if (!grouped[pName]) grouped[pName] = [];
+        grouped[pName].push(f);
+      });
+    });
+    const collator = new Intl.Collator('ru');
+    const groupKeys = Object.keys(grouped).sort((a, b) => {
+      if (a === 'Без объекта') return 1;
+      if (b === 'Без объекта') return -1;
+      if (a === 'Все объекты') return 1;
+      if (b === 'Все объекты') return -1;
+      return collator.compare(a, b);
+    });
+
+    let groupIndex = 0;
+    listContainer.innerHTML = groupKeys.map((pName) => {
+      const items = grouped[pName];
+      const safeGroupId = `fmea-group-${groupIndex++}`;
+      const cardsHtml = items.map(renderFmeaItem).join('');
+      return `
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
+                <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
+                    const body = document.getElementById('${safeGroupId}');
+                    const icon = this.querySelector('.chevron-icon');
+                    if (body.classList.contains('hidden')) {
+                        body.classList.remove('hidden');
+                        icon.style.transform = 'rotate(180deg)';
+                    } else {
+                        body.classList.add('hidden');
+                        icon.style.transform = 'rotate(0deg)';
+                    }
+                ">
+                    <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                        <div class="w-8 h-8 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-[10px] flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-800">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${String(pName).replace(/</g, '&lt;')}</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0 pl-1">
+                        <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} шт</span>
+                        <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
+                <div id="${safeGroupId}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2.5">
+                    <div class="${itemsWrapClass}">${cardsHtml}</div>
+                </div>
+            </div>`;
+    }).join('');
   };
+
+  function _setFmeaViewModalLayout(on) {
+    const modal = document.getElementById('modal-overlay');
+    const box = modal && modal.querySelector('.modal-content');
+    if (!box) return;
+    const defaultClose = box.querySelector(':scope > button[data-notify-action="closeModal"]');
+    if (on) {
+      box.style.maxWidth = 'min(960px, 96vw)';
+      box.style.width = '96vw';
+      box.style.maxHeight = '94vh';
+      box.style.padding = (window.innerWidth < 480) ? '16px' : '20px 24px';
+      if (defaultClose) defaultClose.style.display = 'none';
+      modal.dataset.fmeaViewWide = '1';
+    } else if (modal.dataset.fmeaViewWide === '1') {
+      box.style.maxWidth = '';
+      box.style.width = '';
+      box.style.maxHeight = '';
+      box.style.padding = '';
+      if (defaultClose) defaultClose.style.display = '';
+      delete modal.dataset.fmeaViewWide;
+    }
+  }
 
   // Перенесено из js/game.js (строка 2551).
   async function rbi_viewFmea(fmeaId) {
@@ -1350,14 +1474,14 @@ let gameChartInstance = null;
 
     let rowsHtml = '';
     for (let d of sortedDefects) {
-      let rpnColor = 'text-green-600 bg-green-50 border-green-200';
-      if (d.rpn >= 300) rpnColor = 'text-orange-600 bg-orange-50 border-orange-200';
-      if (d.rpn >= 600) rpnColor = 'text-red-600 bg-red-50 border-red-200';
+      let rpnColor = 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700';
+      if (d.rpn >= 300) rpnColor = 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700';
+      if (d.rpn >= 600) rpnColor = 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700';
 
-      let photoHtml = `<div class="text-[9px] text-slate-400 italic border border-dashed border-slate-300 p-2 rounded text-center">Нет фото</div>`;
+      let photoHtml = `<div class="text-[9px] text-slate-400 italic border border-dashed border-slate-300 dark:border-slate-600 p-2 rounded text-center">Нет фото</div>`;
       if (d.photo) {
         const realSrc = await PhotoManager.getAsyncUrl(d.photo) || window.getPhotoSrc(d.photo);
-        photoHtml = `<img src="${realSrc}" class="w-14 h-14 object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${d.photo}')">`;
+        photoHtml = `<img src="${realSrc}" class="w-14 h-14 object-cover rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer" onclick="openPhotoViewer('${d.photo}')">`;
       }
 
       rowsHtml += `
@@ -1365,9 +1489,9 @@ let gameChartInstance = null;
             <div class="flex gap-3 mb-2 border-b border-slate-100 dark:border-slate-700 pb-2">
                 <div class="shrink-0">${photoHtml}</div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-[9px] font-bold text-slate-500 uppercase">${d.workTitle}</div>
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight">${d.contractor}</div>
-                    <div class="text-[11px] font-bold text-red-600 mt-0.5">${d.defectName} (Повторов: ${d.count})</div>
+                    <div class="text-[9px] font-bold text-slate-500 uppercase truncate">${d.workTitle || ''}</div>
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight truncate">${d.contractor || ''}</div>
+                    <div class="text-[11px] font-bold text-red-600 mt-0.5">${d.defectName || ''} (Повторов: ${d.count || 0})</div>
                 </div>
                 <div class="shrink-0 text-center">
                     <div class="text-[8px] font-black text-slate-400 uppercase mb-1">RPN</div>
@@ -1377,20 +1501,20 @@ let gameChartInstance = null;
             
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
                 <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <span class="font-black text-slate-500 uppercase block mb-1">Причина (${d.stage}):</span>
-                    <span class="text-slate-700 dark:text-slate-300">${d.cause || '-'}</span>
+                    <span class="font-black text-slate-500 uppercase block mb-1">Причина (${d.stage || '-'}):</span>
+                    <span class="text-slate-700 dark:text-slate-300 break-words">${d.cause || '-'}</span>
                 </div>
                 <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
                     <span class="font-black text-slate-500 uppercase block mb-1">Последствия (Риски):</span>
-                    <span class="text-slate-700 dark:text-slate-300">${d.effect || '-'}</span>
+                    <span class="text-slate-700 dark:text-slate-300 break-words">${d.effect || '-'}</span>
                 </div>
                 <div class="bg-blue-50 dark:bg-blue-900/10 p-2 rounded-lg border border-blue-100 dark:border-blue-800/50">
                     <span class="font-black text-blue-600 uppercase block mb-1">Как устранить (Fix):</span>
-                    <span class="text-blue-900 dark:text-blue-200">${d.fix || '-'}</span>
+                    <span class="text-blue-900 dark:text-blue-200 break-words">${d.fix || '-'}</span>
                 </div>
                 <div class="bg-green-50 dark:bg-green-900/10 p-2 rounded-lg border border-green-100 dark:border-green-800/50">
                     <span class="font-black text-green-600 uppercase block mb-1">Предотвращение:</span>
-                    <span class="text-green-900 dark:text-green-200">${d.prevent || '-'}</span>
+                    <span class="text-green-900 dark:text-green-200 break-words">${d.prevent || '-'}</span>
                 </div>
             </div>
         </div>`;
@@ -1399,28 +1523,352 @@ let gameChartInstance = null;
     const modal = document.getElementById('modal-overlay');
     document.getElementById('modal-icon').innerHTML = '';
     document.getElementById('modal-title').innerHTML = `
-        <div class="flex justify-between items-center w-full">
-            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📊 FMEA Отчет</span>
-            <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
+        <div class="flex justify-between items-center w-full gap-2">
+            <span class="text-[13px] sm:text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2 min-w-0 truncate">📊 FMEA Отчет</span>
+            <button onclick="rbi_closeFmeaViewModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg shrink-0">✕</button>
         </div>
     `;
+    const projectLabel = String(record.project_display_name || record.projectName || record.project || '').trim() || 'Без объекта';
+    const canBind = _fmeaCanBindRecord(record);
+    const bindBtn = canBind
+      ? `<button onclick="rbi_openFmeaBindModal('${String(record.id).replace(/'/g, "\\'")}')" class="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-1 rounded-lg text-[9px] font-black uppercase active:scale-95 shrink-0">Изменить объект</button>`
+      : '';
+
     document.getElementById('modal-body').innerHTML = `
-        <div class="text-[11px] font-bold text-slate-500 mb-4 border-b border-slate-200 dark:border-slate-700 pb-3 flex justify-between items-center">
-            <span>Инженер: <b>${record.author}</b></span>
-            <span>Период: <b>${record.periodName}</b></span>
+        <div class="text-[11px] font-bold text-slate-500 mb-3 border-b border-slate-200 dark:border-slate-700 pb-3 flex flex-wrap justify-between items-center gap-2">
+            <span class="truncate">Инженер: <b>${record.author || '—'}</b></span>
+            <span class="truncate">Период: <b>${record.periodName || '—'}</b></span>
         </div>
-        <div class="max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 pb-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
+            <div class="min-w-0 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest mr-1.5">Объект</span>
+                <span class="truncate">${projectLabel.replace(/</g, '&lt;')}</span>
+            </div>
+            ${bindBtn}
+        </div>
+        <div class="max-h-[calc(94vh-200px)] overflow-y-auto custom-scrollbar pr-1 pb-4">
             ${rowsHtml}
         </div>
-        <div class="flex gap-2 mt-2">
-            <button onclick="rbi_exportFmeaExcel('${record.id}')" class="flex-[0.5] bg-green-50 text-green-700 border border-green-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> В Excel</button>
-            <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-black text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В PDF</button>
-            <button onclick="rbi_printFmeaPdf('${record.id}', 'browser')" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
+        <div class="flex flex-col sm:flex-row gap-2 mt-2">
+            <button onclick="rbi_exportFmeaExcel('${record.id}')" class="w-full sm:flex-[0.5] bg-green-50 text-green-700 border border-green-200 py-3 sm:py-3.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> В Excel</button>
+            <button onclick="rbi_printFmeaPdf('${record.id}', 'script')" class="w-full sm:flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 sm:py-3.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> В PDF</button>
+            <button onclick="rbi_printFmeaPdf('${record.id}', 'browser')" class="w-full sm:flex-1 bg-indigo-600 text-white py-3 sm:py-3.5 rounded-xl font-black text-[10px] sm:text-[11px] uppercase shadow-md active:scale-95 transition-transform flex items-center justify-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
         </div>
     `;
+    _setFmeaViewModalLayout(true);
+    if (!window._fmeaWideModalHooked) {
+      window._fmeaWideModalHooked = true;
+      const prevClose = window.closeModal;
+      window.closeModal = function () {
+        _setFmeaViewModalLayout(false);
+        if (typeof prevClose === 'function') return prevClose.apply(this, arguments);
+      };
+    }
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
   };
+
+  function rbi_closeFmeaViewModal() {
+    _setFmeaViewModalLayout(false);
+    if (typeof closeModal === 'function') closeModal();
+  }
+
+  /* ── FMEA: привязка к объекту (админ — любые, инженер — свои) ─────────────── */
+
+  function _fmeaIsDemoMode() {
+    if (GameActions._ctx && GameActions._ctx.appMode) return GameActions._ctx.appMode.isDemo();
+    return window.RBI?.services?.appMode?.isDemo?.() === true;
+  }
+
+  function _fmeaTriggerSync(mode) {
+    const m = mode || 'silent';
+    if (GameActions._ctx && GameActions._ctx.sync) return GameActions._ctx.sync.trigger(m);
+    if (window.RBI?.services?.sync) return window.RBI.services.sync.trigger(m);
+    if (typeof triggerSync === 'function') return triggerSync(m);
+    return Promise.resolve(false);
+  }
+
+  function _fmeaPermSvc() {
+    return (GameActions._ctx && GameActions._ctx.permissions)
+      || window.RBI?.services?.permissions
+      || null;
+  }
+
+  function _fmeaIsAdmin() {
+    const perm = _fmeaPermSvc();
+    return !!(perm && typeof perm.isAdmin === 'function' && perm.isAdmin());
+  }
+
+  function _fmeaCurrentEngineerName() {
+    return String(_getSetting('engineerName')
+      || document.getElementById('inp-inspector')?.value
+      || '').trim();
+  }
+
+  function _fmeaCanBindRecord(rec) {
+    if (!rec) return false;
+    if (_fmeaIsAdmin()) return true;
+    const me = _fmeaCurrentEngineerName();
+    return !rec.author || !me || rec.author === me;
+  }
+
+  function _fmeaGetAssignedKeys() {
+    const perm = _fmeaPermSvc();
+    if (perm && typeof perm.getAssignedProjects === 'function') {
+      const keys = perm.getAssignedProjects();
+      if (Array.isArray(keys) && keys.length) return keys;
+    }
+    if (typeof appSettings !== 'undefined' && Array.isArray(appSettings.assignedProjects)) {
+      return appSettings.assignedProjects;
+    }
+    return [];
+  }
+
+  function _fmeaResolveDisplayName(key) {
+    const raw = String(key || '').trim();
+    if (!raw) return '';
+    if (typeof ObjectDirectory !== 'undefined' && Array.isArray(ObjectDirectory.objects)) {
+      const obj = ObjectDirectory.objects.find(o => o.canonical_key === raw || o.display_name === raw);
+      if (obj) return String(obj.display_name || obj.canonical_key || raw).trim();
+    }
+    const hit = _getAllInspections().find(c =>
+      c.project_canonical_key === raw
+      || c.projectName === raw
+      || c.project_display_name === raw
+    );
+    if (hit) return String(hit.project_display_name || hit.projectName || raw).trim();
+    return raw;
+  }
+
+  function _fmeaResolveCanonicalKey(displayOrKey) {
+    const raw = String(displayOrKey || '').trim();
+    if (!raw || raw === 'Все объекты') return '';
+    if (typeof ObjectDirectory !== 'undefined' && Array.isArray(ObjectDirectory.objects)) {
+      const byKey = ObjectDirectory.objects.find(o => o.canonical_key === raw);
+      if (byKey) return String(byKey.canonical_key || '').trim();
+      const byName = ObjectDirectory.objects.find(o => o.display_name === raw);
+      if (byName) return String(byName.canonical_key || '').trim();
+    }
+    const hit = _getAllInspections().find(c =>
+      c.project_display_name === raw
+      || c.projectName === raw
+      || c.project_canonical_key === raw
+    );
+    if (hit) return String(hit.project_canonical_key || '').trim();
+    return '';
+  }
+
+  function _fmeaCollectAllProjectNames() {
+    const fromInsp = _getAllInspections()
+      .map(c => String(c.project_display_name || c.projectName || '').trim())
+      .filter(Boolean);
+    const fromAssigned = _fmeaGetAssignedKeys().map(_fmeaResolveDisplayName).filter(Boolean);
+    const fromFmea = (_getFmea() || [])
+      .map(f => String(f.project_display_name || f.projectName || '').trim())
+      .filter(Boolean)
+      .filter(n => n !== 'Все объекты' && !n.includes(','));
+    return [...new Set([...fromInsp, ...fromAssigned, ...fromFmea])].sort((a, b) => a.localeCompare(b, 'ru'));
+  }
+
+  function _fmeaSelectableProjectNames() {
+    const all = _fmeaCollectAllProjectNames();
+    if (_fmeaIsAdmin()) return all;
+    const names = [];
+    _fmeaGetAssignedKeys().forEach((key) => {
+      const display = _fmeaResolveDisplayName(key);
+      if (display && !names.includes(display)) names.push(display);
+    });
+    return names.sort((a, b) => a.localeCompare(b, 'ru'));
+  }
+
+  function _fmeaCurrentBindSelection(rec) {
+    if (!rec) return { isAll: false, selected: [] };
+    if (Array.isArray(rec.projectNames) && rec.projectNames.length) {
+      return { isAll: false, selected: rec.projectNames.map(n => String(n).trim()).filter(Boolean) };
+    }
+    const raw = String(rec.project_display_name || rec.projectName || rec.project || '').trim();
+    if (!raw || raw === 'Без объекта') return { isAll: false, selected: [] };
+    if (raw === 'Все объекты') return { isAll: true, selected: [] };
+    if (raw.includes(',')) {
+      return { isAll: false, selected: raw.split(',').map(s => s.trim()).filter(Boolean) };
+    }
+    return { isAll: false, selected: [raw] };
+  }
+
+  function _fmeaApplyProjectFields(rec, isAll, selected) {
+    const names = Array.isArray(selected) ? selected.map(s => String(s).trim()).filter(Boolean) : [];
+    if (isAll) {
+      rec.projectName = 'Все объекты';
+      rec.projectNames = [];
+      rec.project = 'Все объекты';
+      rec.project_display_name = 'Все объекты';
+      rec.project_canonical_key = '';
+    } else if (names.length === 1) {
+      rec.projectName = names[0];
+      rec.projectNames = names.slice();
+      rec.project = names[0];
+      rec.project_display_name = names[0];
+      rec.project_canonical_key = _fmeaResolveCanonicalKey(names[0]);
+    } else {
+      rec.projectName = names.join(', ');
+      rec.projectNames = names.slice();
+      rec.project = rec.projectName;
+      rec.project_display_name = rec.projectName;
+      rec.project_canonical_key = '';
+    }
+  }
+
+  function rbi_closeFmeaBindModal() {
+    _setFmeaViewModalLayout(false);
+    if (typeof closeModal === 'function') closeModal();
+  }
+
+  function rbi_openFmeaBindModal(fmeaId) {
+    const rec = _getFmea().find(f => String(f.id) === String(fmeaId));
+    if (!rec) return showToast('⚠️ FMEA не найден');
+    if (!_fmeaCanBindRecord(rec)) {
+      return showToast('⚠️ Нет прав менять привязку чужого FMEA');
+    }
+
+    const isAdmin = _fmeaIsAdmin();
+    const options = _fmeaSelectableProjectNames();
+    if (!isAdmin && !options.length) {
+      return showToast('⚠️ Нет закреплённых объектов — обратитесь к администратору');
+    }
+
+    const current = _fmeaCurrentBindSelection(rec);
+    let defaultAll = isAdmin && current.isAll;
+    let defaultSelected = current.selected.filter(n => options.includes(n));
+    if (!isAdmin) {
+      defaultAll = false;
+      if (!defaultSelected.length && options.length === 1) defaultSelected = [options[0]];
+    }
+
+    const projBoxes = options.map((p) => {
+      const safe = p.replace(/"/g, '&quot;');
+      const checked = !defaultAll && defaultSelected.includes(p) ? 'checked' : '';
+      return `
+            <label class="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700 shadow-sm active:scale-[0.99]">
+                <input type="checkbox" value="${safe}" class="fmea-bind-proj-cb w-5 h-5 accent-orange-600 rounded cursor-pointer" ${checked} onchange="rbi_onFmeaBindProjectChange()">
+                <span class="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate">${p}</span>
+            </label>`;
+    }).join('');
+
+    const allBlock = isAdmin ? `
+        <label class="flex items-center gap-3 p-3 mb-2 bg-orange-50 dark:bg-orange-950/30 rounded-xl cursor-pointer border border-orange-200 dark:border-orange-800">
+            <input type="checkbox" id="fmea-bind-proj-all" class="w-5 h-5 accent-orange-600 rounded cursor-pointer" ${defaultAll ? 'checked' : ''} onchange="rbi_onFmeaBindProjectAllChange()">
+            <span class="text-[13px] font-black text-orange-700 dark:text-orange-300">Все объекты</span>
+        </label>` : '';
+
+    const curLabel = String(rec.project_display_name || rec.projectName || '').trim() || 'Без объекта';
+    const safeId = String(fmeaId).replace(/'/g, "\\'");
+
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `
+        <div class="flex justify-between items-center w-full gap-2">
+            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white">🏗 Привязка FMEA к объекту</span>
+            <button onclick="rbi_closeFmeaBindModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg shrink-0">✕</button>
+        </div>`;
+
+    document.getElementById('modal-body').innerHTML = `
+        <div class="max-h-[calc(94vh-140px)] overflow-y-auto custom-scrollbar pr-0.5">
+            <div class="text-[11px] text-slate-500 mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
+                <div class="font-bold text-slate-700 dark:text-slate-200 mb-1">${String(rec.title || 'FMEA').replace(/</g, '&lt;')}</div>
+                <div>Сейчас: <b class="text-slate-800 dark:text-slate-100">${curLabel.replace(/</g, '&lt;')}</b>
+                    ${isAdmin ? '' : ' · доступны только ваши объекты'}
+                </div>
+            </div>
+            <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Объект <span class="text-orange-500">*</span></label>
+            ${allBlock}
+            <div class="space-y-2 mb-4">
+                ${projBoxes || `<div class="text-[11px] text-slate-400 font-bold py-6 text-center">Нет доступных объектов</div>`}
+            </div>
+            <p class="text-[10px] text-slate-400 font-bold mb-4">${isAdmin ? 'Можно выбрать все, один или несколько' : 'Выберите один или несколько своих объектов'}</p>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-2 sticky bottom-0 bg-[var(--card-bg)] pt-1">
+            <button onclick="rbi_closeFmeaBindModal()" class="flex-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase border border-slate-200 dark:border-slate-700">Отмена</button>
+            <button onclick="rbi_saveFmeaBind('${safeId}')" class="flex-1 bg-orange-500 text-white py-3.5 rounded-xl font-black text-[11px] uppercase shadow-md active:scale-95">Сохранить привязку</button>
+        </div>`;
+
+    _setFmeaViewModalLayout(true);
+    if (!window._fmeaWideModalHooked) {
+      window._fmeaWideModalHooked = true;
+      const prevClose = window.closeModal;
+      window.closeModal = function () {
+        _setFmeaViewModalLayout(false);
+        if (typeof prevClose === 'function') return prevClose.apply(this, arguments);
+      };
+    }
+
+    const modal = document.getElementById('modal-overlay');
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+  }
+
+  function rbi_onFmeaBindProjectAllChange() {
+    const allCb = document.getElementById('fmea-bind-proj-all');
+    if (allCb && allCb.checked) {
+      document.querySelectorAll('.fmea-bind-proj-cb').forEach(cb => { cb.checked = false; });
+    }
+  }
+
+  function rbi_onFmeaBindProjectChange() {
+    const any = document.querySelectorAll('.fmea-bind-proj-cb:checked').length > 0;
+    if (any) {
+      const allCb = document.getElementById('fmea-bind-proj-all');
+      if (allCb) allCb.checked = false;
+    }
+  }
+
+  async function rbi_saveFmeaBind(fmeaId) {
+    if (_fmeaIsDemoMode()) return showToast('В демо-режиме сохранение отключено');
+    const rec = _getFmea().find(f => String(f.id) === String(fmeaId));
+    if (!rec) return showToast('⚠️ FMEA не найден');
+    if (!_fmeaCanBindRecord(rec)) {
+      return showToast('⚠️ Нет прав менять привязку чужого FMEA');
+    }
+
+    const isAdmin = _fmeaIsAdmin();
+    const allowed = _fmeaSelectableProjectNames();
+    const allCb = document.getElementById('fmea-bind-proj-all');
+    const isAll = !!(isAdmin && allCb && allCb.checked);
+    let selected = Array.from(document.querySelectorAll('.fmea-bind-proj-cb:checked'))
+      .map(cb => String(cb.value || '').trim())
+      .filter(Boolean);
+    if (!isAdmin) selected = selected.filter(n => allowed.includes(n));
+
+    if (!isAll && selected.length === 0) {
+      return showToast(isAdmin
+        ? '⚠️ Выберите объект: все, один или несколько'
+        : '⚠️ Выберите один или несколько своих объектов');
+    }
+
+    _fmeaApplyProjectFields(rec, isAll, selected);
+    rec.updatedAt = new Date().toISOString();
+    rec.updated_at = rec.updatedAt;
+    rec.source = 'local';
+    rec.syncStatus = 'not_synced';
+    rec.sync_status = 'not_synced';
+    rec.syncBlockReason = '';
+    rec.sync_block_reason = '';
+
+    await _storage().put(_storage().stores().FMEA, rec);
+    if (!_fmeaIsDemoMode()) {
+      if (GameActions._ctx && GameActions._ctx.sync) {
+        GameActions._ctx.sync.enqueue('SAVE_FMEA', rec);
+      } else if (window.RBI?.services?.sync) {
+        window.RBI.services.sync.enqueue('SAVE_FMEA', rec);
+      } else if (window.SyncQueueManager) {
+        window.SyncQueueManager.enqueue('SAVE_FMEA', rec);
+      }
+    }
+    localStorage.setItem('rbi_cloud_dirty', '1');
+    _fmeaTriggerSync('silent');
+
+    rbi_closeFmeaBindModal();
+    rbi_renderFmeaRegistry();
+    showToast('✅ Объект FMEA обновлён');
+  }
 
   // === FMEA: ГЕНЕРАЦИЯ МЕГА-ТАБЛИЦЫ И РУЧНАЯ СТРОКА ===
   // Перенесено из js/game.js (строка 2737).
@@ -1788,6 +2236,9 @@ export {
   profileNameLockStart, profileNameLockCancel, renderRadarChart, renderStatsCharts, gameShowBadgeInfo,
   gameInjectManagerModals, gameOpenManagerPanelAuth, switchManagerTab, gameRenderManagerAnalytics,
   gameOpenTaskDetails, gameOpenTopModal, gameOpenImpactModal, rbi_openQualityDaySettings,
-  rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_generateFmeaTable,
+  rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_closeFmeaViewModal,
+  rbi_openFmeaBindModal, rbi_closeFmeaBindModal, rbi_saveFmeaBind,
+  rbi_onFmeaBindProjectAllChange, rbi_onFmeaBindProjectChange,
+  rbi_generateFmeaTable,
   rbi_addManualFmeaRow, gameRenderAssignedProjectChips, gameOpenAiKbModal, GameRender
 };

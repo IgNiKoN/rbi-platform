@@ -298,6 +298,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
                 data.engineerName ||
                 data.inspector_name ||
                 data.inspectorName ||
+                data.author ||
                 iName;
 
             payload.inspector_name =
@@ -305,6 +306,7 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
                 data.inspectorName ||
                 data.engineer_name ||
                 data.engineerName ||
+                data.author ||
                 iName;
 
             payload.contractor_name =

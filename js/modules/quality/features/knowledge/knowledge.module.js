@@ -2090,14 +2090,16 @@ window.knowledge_formatNorms = function (text) {
 // =========================================================================
 
 // Режим отображения по вкладкам: 'cards' | 'list'
-// scope: twi | docs | nodes | practices | reports
+// scope: twi | docs | nodes | practices | reports | meetings | fmea
 // Ключи: knowledgeViewModeTwi и т.д.; legacy knowledgeViewMode — fallback.
 window._KB_VIEW_SCOPE_KEYS = {
     twi: 'knowledgeViewModeTwi',
     docs: 'knowledgeViewModeDocs',
     nodes: 'knowledgeViewModeNodes',
     practices: 'knowledgeViewModePractices',
-    reports: 'knowledgeViewModeReports'
+    reports: 'knowledgeViewModeReports',
+    meetings: 'knowledgeViewModeMeetings',
+    fmea: 'knowledgeViewModeFmea'
 };
 
 window.getKnowledgeViewMode = function (scope) {
@@ -2120,7 +2122,7 @@ window.setKnowledgeViewMode = function (scope, mode) {
     // Совместимость: setKnowledgeViewMode('list') без scope → legacy (все вкладки)
     if (arguments.length === 1 && (scope === 'list' || scope === 'cards')) {
         mode = scope;
-        ['twi', 'docs', 'nodes', 'practices', 'reports'].forEach(function (s) {
+        ['twi', 'docs', 'nodes', 'practices', 'reports', 'meetings', 'fmea'].forEach(function (s) {
             window.setKnowledgeViewMode(s, mode);
         });
         return;
@@ -2138,7 +2140,9 @@ window.setKnowledgeViewMode = function (scope, mode) {
         docs: 'set-kb-view-docs',
         nodes: 'set-kb-view-nodes',
         practices: 'set-kb-view-practices',
-        reports: 'set-kb-view-reports'
+        reports: 'set-kb-view-reports',
+        meetings: 'set-kb-view-meetings',
+        fmea: 'set-kb-view-fmea'
     }[scope];
     var sel = selId ? document.getElementById(selId) : null;
     if (sel && sel.value !== mode) sel.value = mode;
@@ -2152,6 +2156,8 @@ window.setKnowledgeViewMode = function (scope, mode) {
     else if (scope === 'nodes' && typeof window.renderNodesList === 'function') window.renderNodesList();
     else if (scope === 'practices' && typeof window.rbi_renderPracticesTab === 'function') window.rbi_renderPracticesTab();
     else if (scope === 'reports' && typeof window.renderReportsList === 'function') window.renderReportsList();
+    else if (scope === 'meetings' && typeof window.rbi_renderMeetingTab === 'function') window.rbi_renderMeetingTab();
+    else if (scope === 'fmea' && typeof window.rbi_renderFmeaRegistry === 'function') window.rbi_renderFmeaRegistry();
 };
 
 window.kbViewModeToggleHtml = function (scope) {

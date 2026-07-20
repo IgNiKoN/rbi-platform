@@ -78,6 +78,8 @@
         knowledgeViewModeNodes: 'cards',
         knowledgeViewModePractices: 'cards',
         knowledgeViewModeReports: 'cards',
+        knowledgeViewModeMeetings: 'cards',
+        knowledgeViewModeFmea: 'cards',
         anaEngPareto: true,
         anaOpTrend: true,
         anaOpLeader: true,

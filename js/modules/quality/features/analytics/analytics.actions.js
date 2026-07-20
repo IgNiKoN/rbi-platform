@@ -21,6 +21,26 @@
 
 import { AnalyticsState } from './analytics.state.js';
 
+/** Ключ линии подрядчика на трендах — тот же формат, что в списке/фильтре. */
+function trendContractorKey(item) {
+    const name = String(item?.contractorName || 'Неизвестно').trim() || 'Неизвестно';
+    const proj = String(
+        item?.project_display_name || item?.projectName || item?.project_canonical_key || 'Без объекта'
+    ).trim() || 'Без объекта';
+    return `${name} [${proj}]`;
+}
+
+function _trendCatMatchesFilter(cat, allowedCats) {
+    if (!allowedCats || !allowedCats.length) return false;
+    if (allowedCats.includes(cat)) return true;
+    // Совместимость: в фильтре/PDF иногда приходит голое имя подрядчика
+    return allowedCats.some((a) => {
+        const raw = String(a || '').trim();
+        if (!raw) return false;
+        return cat === raw || cat.startsWith(raw + ' [');
+    });
+}
+
 // Перенесено из app.js 1:1 — умный генератор данных для трендовых графиков.
 // Вызывает window.getWeekNumber (перенесена в js/shared/math.utils.js,
 // classic-script, подключён раньше analytics.module.js в index.html).
@@ -41,7 +61,7 @@ function buildTrendChartData(data, fieldName, allowedCats = [], period = 'MONTH'
         // УМНОЕ ИМЯ: Подрядчик + Объект
         let cat = fieldName === 'TOTAL' ? 'Общий УрК' : (item[fieldName] || 'Неизвестно');
         if (fieldName === 'contractorName') {
-            cat = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
+            cat = trendContractorKey(item);
         }
         categoriesTotal[cat] = (categoriesTotal[cat] || 0) + 1;
 
@@ -53,8 +73,15 @@ function buildTrendChartData(data, fieldName, allowedCats = [], period = 'MONTH'
 
     let targetCats = [];
     if (fieldName === 'TOTAL') targetCats = ['Общий УрК'];
-    else if (allowedCats && allowedCats.length > 0) targetCats = allowedCats.filter(c => categoriesTotal[c]);
-    else targetCats = Object.keys(categoriesTotal).sort((a, b) => categoriesTotal[b] - categoriesTotal[a]).slice(0, 5);
+    else if (allowedCats && allowedCats.length > 0) {
+        targetCats = Object.keys(categoriesTotal)
+            .filter((c) => _trendCatMatchesFilter(c, allowedCats))
+            .sort((a, b) => categoriesTotal[b] - categoriesTotal[a]);
+        // Сохраняем порядок выбора пользователя, если все ключи точные
+        const exactOrdered = allowedCats.filter((c) => categoriesTotal[c]);
+        if (exactOrdered.length === allowedCats.length) targetCats = exactOrdered;
+    }
+    else targetCats = Object.keys(categoriesTotal).sort((a, b) => categoriesTotal[b] - categoriesTotal[a]).slice(0, 10);
 
     const labels = Object.keys(timeMap);
     const colors = ['#4f46e5', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#db2777', '#d97706', '#059669', '#2563eb'];
@@ -67,13 +94,15 @@ function buildTrendChartData(data, fieldName, allowedCats = [], period = 'MONTH'
             borderColor: fieldName === 'TOTAL' ? '#4f46e5' : colors[i % colors.length],
             backgroundColor: fieldName === 'TOTAL' ? 'rgba(79, 70, 229, 0.1)' : colors[i % colors.length],
             fill: fieldName === 'TOTAL',
-            tension: 0.4, borderWidth: 3, pointRadius: 4, spanGaps: true
+            // Тоньше линии при до 10 подрядчиках — легенда и пересечения читаемее
+            tension: 0.35, borderWidth: fieldName === 'TOTAL' ? 2 : 1.5, pointRadius: fieldName === 'TOTAL' ? 3 : 2, spanGaps: true
         };
     });
 
     return { labels, datasets };
 }
 window.buildTrendChartData = buildTrendChartData;
+window.trendContractorKey = trendContractorKey;
 
 // ─── Приватные хелперы (перенесено из analytics.legacy.js, строки 12–91) ───
 
@@ -489,28 +518,45 @@ export const AnalyticsActions = {
     // =========================================================================
     openChartFilterModal(type) {
         const data = AnalyticsActions.getFilteredAnalyticsData();
-        const field = type === 'contrs' ? 'contractorName' : 'templateTitle';
-        const title = type === 'contrs' ? 'Линии: Подрядчики' : 'Линии: Виды работ';
+        // contrs/onepager — линии подрядчик+объект (как в buildTrendChartData);
+        // works — виды работ. Раньше для onepager ошибочно брался templateTitle,
+        // а для contrs — голое contractorName без объекта → фильтр не попадал в ключи графика.
+        const isContractorLines = (type === 'contrs' || type === 'onepager');
+        const title = isContractorLines ? 'Линии: Подрядчики' : 'Линии: Виды работ';
 
         const counts = {};
-        data.forEach(i => { if (i[field]) counts[i[field]] = (counts[i[field]] || 0) + 1; });
+        data.forEach((i) => {
+            if (!i || !i.metrics) return;
+            let key = '';
+            if (isContractorLines) {
+                if (!i.contractorName) return;
+                key = trendContractorKey(i);
+            } else {
+                key = i.templateTitle || '';
+                if (!key) return;
+            }
+            counts[key] = (counts[key] || 0) + 1;
+        });
         const uniqueItems = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
 
+        if (!window.selectedChartFilters[type]) window.selectedChartFilters[type] = [];
         const isAuto = window.selectedChartFilters[type].length === 0;
 
         let html = `<div class="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar mb-4 pr-1">`;
         html += `<label class="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-xl mb-3 font-bold cursor-pointer text-indigo-800 dark:text-indigo-300">
             <input type="checkbox" id="chart-filter-auto" class="w-5 h-5 accent-indigo-600" onchange="if(this.checked) document.querySelectorAll('.chart-filter-cb').forEach(cb => cb.checked = false)" ${isAuto ? 'checked' : ''}>
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Автовыбор (ТОП-5)
+            Автовыбор (до 10)
         </label>`;
 
         uniqueItems.forEach(item => {
             const isChecked = !isAuto && window.selectedChartFilters[type].includes(item);
+            const safeVal = String(item).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const safeLabel = String(item).replace(/</g, '&lt;');
             html += `<label class="flex items-center gap-3 p-3 bg-[var(--card-bg)] hover:bg-[var(--hover-bg)] rounded-xl cursor-pointer border border-[var(--card-border)] transition-colors">
-                <input type="checkbox" value="${item}" class="chart-filter-cb w-5 h-5 accent-indigo-600" ${isChecked ? 'checked' : ''} onchange="document.getElementById('chart-filter-auto').checked = false">
-                <span class="text-[12px] truncate flex-1">${item}</span>
-                <span class="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-bold">${counts[item]} шт</span>
+                <input type="checkbox" value="${safeVal}" class="chart-filter-cb w-5 h-5 accent-indigo-600 shrink-0" ${isChecked ? 'checked' : ''} onchange="document.getElementById('chart-filter-auto').checked = false">
+                <span class="text-[12px] truncate flex-1 min-w-0" title="${safeVal}">${safeLabel}</span>
+                <span class="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md font-bold shrink-0">${counts[item]} шт</span>
             </label>`;
         });
         html += `</div>
@@ -563,6 +609,11 @@ export const AnalyticsActions = {
                 _chartInstances()['chart_onepager_trend'].data = window.buildTrendChartData(data, 'TOTAL', [], window.trendGroupings.global);
                 _chartInstances()['chart_onepager_trend'].update();
             }
+            // Фильтр линий подрядчиков на Сводке: полный ререндер, чтобы
+            // сохранить автологику «до 10» при пустом фильтре.
+            if (type === 'onepager' && typeof window.renderOnePagerSubTab === 'function') {
+                window.renderOnePagerSubTab(data);
+            }
         }
     },
 
@@ -606,8 +657,16 @@ export const AnalyticsActions = {
     saveExpertEdit() {
         const modalInput = document.getElementById('modal-expert-input');
         if (!modalInput || !window.currentEditingExpertKey) return;
-        const newText = modalInput.value.trim();
+        let newText = modalInput.value.trim();
         if (newText === "") return showToast('Текст не может быть пустым!');
+
+        // Сводка One-Pager: лимит 500 символов, чтобы печать A3 не уезжала на 2-ю страницу.
+        const isOnePagerPdca = window.currentEditingExpertKey === 'global_onepager_pdca'
+            || String(window.currentEditingExpertKey || '').endsWith('_pdca');
+        if (isOnePagerPdca && newText.length > 500) {
+            newText = newText.slice(0, 499).trimEnd() + '…';
+            showToast('Текст обрезан до 500 символов для печати');
+        }
 
         _reports().setExpertConclusion(window.currentEditingExpertKey, newText);
         AnalyticsActions.cancelExpertEdit(); scheduleSessionSave();

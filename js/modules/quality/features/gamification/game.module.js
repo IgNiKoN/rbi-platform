@@ -29,7 +29,10 @@ import {
   profileNameLockStart, profileNameLockCancel, renderRadarChart, renderStatsCharts, gameShowBadgeInfo,
   gameInjectManagerModals, gameOpenManagerPanelAuth, switchManagerTab, gameRenderManagerAnalytics,
   gameOpenTaskDetails, gameOpenTopModal, gameOpenImpactModal, rbi_openQualityDaySettings,
-  rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_generateFmeaTable,
+  rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_closeFmeaViewModal,
+  rbi_openFmeaBindModal, rbi_closeFmeaBindModal, rbi_saveFmeaBind,
+  rbi_onFmeaBindProjectAllChange, rbi_onFmeaBindProjectChange,
+  rbi_generateFmeaTable,
   rbi_addManualFmeaRow, gameRenderAssignedProjectChips, gameOpenAiKbModal, GameRender
 } from './game.render.js';
 
@@ -107,6 +110,12 @@ window.rbi_openQualityDaySettings = rbi_openQualityDaySettings;
 window.rbi_renderFmeaHistory = rbi_renderFmeaHistory;
 window.rbi_renderFmeaRegistry = rbi_renderFmeaRegistry;
 window.rbi_viewFmea = rbi_viewFmea;
+window.rbi_closeFmeaViewModal = rbi_closeFmeaViewModal;
+window.rbi_openFmeaBindModal = rbi_openFmeaBindModal;
+window.rbi_closeFmeaBindModal = rbi_closeFmeaBindModal;
+window.rbi_saveFmeaBind = rbi_saveFmeaBind;
+window.rbi_onFmeaBindProjectAllChange = rbi_onFmeaBindProjectAllChange;
+window.rbi_onFmeaBindProjectChange = rbi_onFmeaBindProjectChange;
 window.rbi_generateFmeaTable = rbi_generateFmeaTable;
 window.rbi_addManualFmeaRow = rbi_addManualFmeaRow;
 window.gameRenderAssignedProjectChips = gameRenderAssignedProjectChips;

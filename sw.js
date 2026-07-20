@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.9';
+const SW_VERSION = '18.57.50';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -203,6 +203,7 @@ const urlsToCache = [
 
   // Step 32 — Meetings Module (Wrapper, Шаг 1/10)
   './js/modules/quality/features/meetings/meetings.module.js',
+  './js/modules/quality/features/meetings/meetings.protocol.js',
 
   // Compact Module Restructure, шаг 1 — агрегирующий platform module quality
   './js/modules/quality/manifest.js',

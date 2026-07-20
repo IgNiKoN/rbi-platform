@@ -1352,57 +1352,70 @@ export const AnalyticsRender = {
 
             // Защита от поломки HTML из-за кавычек в названиях
             const safeName = c.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+            // Короткая плашка достоверности: на 2-колоночной сетке телефона
+            // полное «Предварительный» ломало выравнивание цифр.
+            const confFull = String(m.confStatus || '');
+            let confShort = confFull;
+            if (/сбор/i.test(confFull)) confShort = 'Сбор';
+            else if (/предварительн/i.test(confFull)) confShort = 'Предв.';
+            else if (/базов/i.test(confFull)) confShort = 'Базов.';
+            else if (/уверен/i.test(confFull)) confShort = 'Увер.';
+            else if (/стабил/i.test(confFull)) confShort = 'Стаб.';
+            else if (/эталон/i.test(confFull)) confShort = 'Эталон';
 
             html += `
-            <div class="bg-[var(--card-bg)] border ${borderClass} rounded-xl p-3 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform flex flex-col justify-between" onclick="showContractorDetailView('${safeName}')">
-                ${isPrelim ? '<div class="absolute top-0 right-0 bg-slate-200 text-slate-600 text-[8px] font-black px-2 py-1 rounded-bl-lg uppercase" title="Нужно больше проверок">Сбор</div>' : ''}
+            <div class="bg-[var(--card-bg)] border ${borderClass} rounded-xl p-2.5 sm:p-3 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform flex flex-col justify-between min-w-0" onclick="showContractorDetailView('${safeName}')">
+                ${isPrelim ? '<div class="absolute top-0 right-0 z-[1] bg-slate-200 text-slate-600 text-[7px] font-black px-1.5 py-0.5 rounded-bl-lg uppercase leading-none" title="Нужно больше проверок">Сбор</div>' : ''}
                 
-                <div>
-                    <div class="text-[11px] font-black text-slate-800 dark:text-white leading-snug mb-1 pr-6 break-words">${c.name}</div>
-                    <div class="text-[9px] font-bold text-[var(--text-muted)] truncate mb-2">${c.workType}</div>
+                <div class="min-w-0">
+                    <div class="text-[10px] sm:text-[11px] font-black text-slate-800 dark:text-white leading-snug mb-0.5 pr-8 line-clamp-2 break-words">${c.name}</div>
+                    <div class="text-[8px] sm:text-[9px] font-bold text-[var(--text-muted)] truncate mb-2">${c.workType}</div>
 
-                    <div class="flex items-stretch gap-3 mb-2">
-                        <div class="flex-1 flex flex-col">
-                            <div class="text-[8px] uppercase text-slate-400 font-bold">Надежность</div>
-                            <div class="text-2xl font-black leading-none" style="color:${relColor}">${isPrelim ? '--' : m.finalC}<span class="text-sm">%</span></div>
-                            <div class="text-[8px] text-slate-400 font-bold mt-0.5">± ${isPrelim ? '-' : m.ci95_margin.toFixed(1)}%</div>
-                            <span class="text-[7px] ${m.confCls} border rounded px-1 font-bold uppercase mt-1 self-start" title="Достоверность рейтинга (N=${m.count})">${m.confStatus}</span>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div class="min-w-0 flex flex-col">
+                            <div class="text-[7px] sm:text-[8px] uppercase text-slate-400 font-bold truncate">Надежность</div>
+                            <div class="text-xl sm:text-2xl font-black leading-none tabular-nums" style="color:${relColor}">${isPrelim ? '--' : m.finalC}<span class="text-xs sm:text-sm">%</span></div>
+                            <div class="text-[7px] sm:text-[8px] text-slate-400 font-bold mt-0.5 h-3 tabular-nums">± ${isPrelim ? '-' : m.ci95_margin.toFixed(1)}%</div>
+                            <div class="h-4 mt-1 min-w-0">
+                                <span class="inline-block max-w-full truncate text-[7px] ${m.confCls} border rounded px-1 font-bold uppercase leading-4" title="Достоверность рейтинга (N=${m.count}): ${confFull}">${confShort}</span>
+                            </div>
                         </div>
-                        <div class="flex-1 flex flex-col border-l border-[var(--card-border)] pl-3">
-                            <div class="text-[8px] uppercase text-slate-400 font-bold">Ур. качества</div>
-                            <div class="text-2xl font-black leading-none" style="color:${urkColor}">${m.baseUrkContrPerc}<span class="text-sm">%</span></div>
-                            <div class="text-[10px] font-bold mt-0.5" style="color:${hasDoc ? docColor : 'transparent'}">${hasDoc ? `Док ${m.documentaryC}%${docGapWarn}` : '&nbsp;'}</div>
+                        <div class="min-w-0 flex flex-col border-l border-[var(--card-border)] pl-2">
+                            <div class="text-[7px] sm:text-[8px] uppercase text-slate-400 font-bold truncate">Ур. качества</div>
+                            <div class="text-xl sm:text-2xl font-black leading-none tabular-nums" style="color:${urkColor}">${m.baseUrkContrPerc}<span class="text-xs sm:text-sm">%</span></div>
+                            <div class="text-[8px] sm:text-[10px] font-bold mt-0.5 h-3 truncate tabular-nums" style="color:${hasDoc ? docColor : 'transparent'}">${hasDoc ? `Док ${m.documentaryC}%${docGapWarn}` : '&nbsp;'}</div>
+                            <div class="h-4 mt-1" aria-hidden="true"></div>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Информационная панель (Счетчики дефектов) -->
-                <div class="flex justify-between items-center bg-[var(--hover-bg)] rounded-md px-2 py-1.5 mb-2 border border-[var(--card-border)]">
-                    <div class="text-[8px] font-black text-slate-500 uppercase">Дефекты:</div>
-                    <div class="flex gap-1">
-                        <span class="text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-1 rounded" title="B1">B1: ${c.b1}</span>
-                        <span class="text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-100 px-1 rounded" title="B2">B2: ${c.b2}</span>
-                        <span class="text-[8px] font-black text-red-600 bg-red-50 border border-red-100 px-1 rounded" title="B3">B3: ${m.n_изделий_с_B3}</span>
+                <div class="flex flex-wrap justify-between items-center gap-1 bg-[var(--hover-bg)] rounded-md px-1.5 py-1.5 mb-2 border border-[var(--card-border)]">
+                    <div class="text-[7px] sm:text-[8px] font-black text-slate-500 uppercase shrink-0">Деф.</div>
+                    <div class="flex flex-wrap justify-end gap-0.5 min-w-0">
+                        <span class="text-[7px] sm:text-[8px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-1 rounded tabular-nums" title="B1">B1:${c.b1}</span>
+                        <span class="text-[7px] sm:text-[8px] font-black text-orange-600 bg-orange-50 border border-orange-100 px-1 rounded tabular-nums" title="B2">B2:${c.b2}</span>
+                        <span class="text-[7px] sm:text-[8px] font-black text-red-600 bg-red-50 border border-red-100 px-1 rounded tabular-nums" title="B3">B3:${m.n_изделий_с_B3}</span>
                     </div>
                 </div>
 
                 <!-- Информационная панель (Коэффициенты) -->
-                <div class="grid grid-cols-4 gap-1 pt-2 border-t border-[var(--card-border)] text-center">
-                    <div>
-                        <div class="text-[7px] text-slate-500 uppercase font-bold" title="Выборка">Пров.</div>
-                        <div class="text-[10px] font-black text-slate-800 dark:text-white">${m.count}</div>
+                <div class="grid grid-cols-4 gap-0.5 pt-2 border-t border-[var(--card-border)] text-center">
+                    <div class="min-w-0">
+                        <div class="text-[6px] sm:text-[7px] text-slate-500 uppercase font-bold truncate" title="Выборка">Пров.</div>
+                        <div class="text-[9px] sm:text-[10px] font-black text-slate-800 dark:text-white tabular-nums">${m.count}</div>
                     </div>
-                    <div class="border-l border-slate-200 dark:border-slate-700">
-                        <div class="text-[7px] text-slate-500 uppercase font-bold" title="Стабильность">Стаб.</div>
-                        <div class="text-[10px] font-black ${isPrelim ? 'text-slate-400' : m.stabColor}">${isPrelim ? '-' : m.stabilityIndex}</div>
+                    <div class="min-w-0 border-l border-slate-200 dark:border-slate-700">
+                        <div class="text-[6px] sm:text-[7px] text-slate-500 uppercase font-bold truncate" title="Стабильность">Стаб.</div>
+                        <div class="text-[9px] sm:text-[10px] font-black tabular-nums ${isPrelim ? 'text-slate-400' : m.stabColor}">${isPrelim ? '-' : m.stabilityIndex}</div>
                     </div>
-                    <div class="border-l border-slate-200 dark:border-slate-700">
-                        <div class="text-[7px] text-slate-500 uppercase font-bold" title="Системность (Ks)">Ks</div>
-                        <div class="text-[10px] font-black ${m.ks < 1 ? 'text-red-500' : 'text-slate-700 dark:text-slate-300'}">${m.ks.toFixed(2)}</div>
+                    <div class="min-w-0 border-l border-slate-200 dark:border-slate-700">
+                        <div class="text-[6px] sm:text-[7px] text-slate-500 uppercase font-bold truncate" title="Системность (Ks)">Ks</div>
+                        <div class="text-[9px] sm:text-[10px] font-black tabular-nums ${m.ks < 1 ? 'text-red-500' : 'text-slate-700 dark:text-slate-300'}">${m.ks.toFixed(2)}</div>
                     </div>
-                    <div class="border-l border-slate-200 dark:border-slate-700">
-                        <div class="text-[7px] text-slate-500 uppercase font-bold" title="Критичность (Kcrit)">Kcrit</div>
-                        <div class="text-[10px] font-black ${m.kcritC < 1 ? 'text-red-500' : 'text-slate-700 dark:text-slate-300'}">${m.kcritC.toFixed(2)}</div>
+                    <div class="min-w-0 border-l border-slate-200 dark:border-slate-700">
+                        <div class="text-[6px] sm:text-[7px] text-slate-500 uppercase font-bold truncate" title="Критичность (Kcrit)">Kcrit</div>
+                        <div class="text-[9px] sm:text-[10px] font-black tabular-nums ${m.kcritC < 1 ? 'text-red-500' : 'text-slate-700 dark:text-slate-300'}">${m.kcritC.toFixed(2)}</div>
                     </div>
                 </div>
             </div>`;
@@ -1445,7 +1458,9 @@ export const AnalyticsRender = {
 
         const groupedC = {};
         data.forEach(item => {
-            const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
+            const cKey = (typeof window.trendContractorKey === 'function')
+                ? window.trendContractorKey(item)
+                : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
             groupedC[cKey] = groupedC[cKey] || [];
             groupedC[cKey].push(item);
         });
@@ -1458,7 +1473,7 @@ export const AnalyticsRender = {
         for (let cName in groupedC) {
             if (groupedC[cName].length >= 3) {
                 const m = _contractorMetricsCached(cName, groupedC[cName]);
-                if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
+                if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7, prevVal: null });
             }
         }
         ratingData.sort((a, b) => b.val - a.val);
@@ -1485,6 +1500,25 @@ export const AnalyticsRender = {
             const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
             prevData = sortedData.slice(0, half);
         }
+
+        // Динамика рейтинга подрядчика к предыдущему периоду (та же база, что у KPI).
+        const currProjects = new Set(data.map(i => i.project_canonical_key || i.project_display_name || i.projectName).filter(Boolean));
+        const prevGroupedC = {};
+        prevData.forEach(item => {
+            const p = item.project_canonical_key || item.project_display_name || item.projectName;
+            if (currProjects.size && p && !currProjects.has(p)) return;
+            const cKey = (typeof window.trendContractorKey === 'function')
+                ? window.trendContractorKey(item)
+                : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
+            (prevGroupedC[cKey] = prevGroupedC[cKey] || []).push(item);
+        });
+        ratingData.forEach(r => {
+            const prevItems = prevGroupedC[r.name];
+            if (prevItems && prevItems.length >= 3) {
+                const pm = _contractorMetricsCached(r.name, prevItems);
+                if (pm) r.prevVal = pm.finalC;
+            }
+        });
 
         let prevAvgUrk = 0; let prevIko = "0.00"; let prevChecks = prevData.length; let prevContrsCount = 0;
         if (prevData.length > 0) {
@@ -1521,7 +1555,7 @@ export const AnalyticsRender = {
         if (ratingData.length <= 10) {
             defaultChartContrs = ratingData.map(r => r.name);
         } else {
-            defaultChartContrs = [...ratingData.slice(0, 5).map(r => r.name), ...ratingData.slice(-5).map(r => r.name)];
+            defaultChartContrs = ratingData.slice(0, 10).map(r => r.name);
             isTruncatedForChart = true;
         }
 
@@ -1604,30 +1638,37 @@ export const AnalyticsRender = {
         const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
         const pdcaKey = 'global_onepager_pdca';
+        const OP_PDCA_MAX_CHARS = 500;
+        const clipPdca = (text) => {
+            const t = String(text || '').trim();
+            if (t.length <= OP_PDCA_MAX_CHARS) return t;
+            return t.slice(0, OP_PDCA_MAX_CHARS - 1).trimEnd() + '…';
+        };
         let rawPdcaText = _reports().getExpertConclusion(pdcaKey) || "";
         if (!_reports().getExpertConclusion(pdcaKey)) {
-            rawPdcaText = `[АНАЛИТИКА ДАШБОРДА]\nИндекс критичности объекта (ИКО): ${mData.IKO}.\nРаботы в красной зоне: ${mData.redZonePerc}%.\nОхват: ${data.length} проверок.\n\n`;
+            rawPdcaText = `[АНАЛИТИКА]\nИКО: ${mData.IKO}. Красная зона: ${mData.redZonePerc}%. Проверок: ${data.length}.\n\n`;
 
-            const topDefectsForPdca = [...topB3, ...topB2].sort((a, b) => b.count - a.count).slice(0, 3);
+            const topDefectsForPdca = [...topB3, ...topB2].sort((a, b) => b.count - a.count).slice(0, 2);
             if (topDefectsForPdca.length > 0) {
-                rawPdcaText += `[КЛЮЧЕВЫЕ ПРОБЛЕМЫ]\n` + topDefectsForPdca.map((d, idx) => `${idx + 1}. ${d.name} (${d.count} случ., ${d.contr})`).join('\n') + `\n\n`;
+                rawPdcaText += `[ПРОБЛЕМЫ]\n` + topDefectsForPdca.map((d, idx) => `${idx + 1}. ${d.name} (${d.count}, ${d.contr})`).join('\n') + `\n\n`;
             }
 
-            const worstContractors = ratingData.filter(r => r.val < 85).slice(0, 3);
+            const worstContractors = ratingData.filter(r => r.val < 85).slice(0, 2);
             if (worstContractors.length > 0) {
-                rawPdcaText += `[ПРОБЛЕМНЫЕ ПОДРЯДЧИКИ]\n` + worstContractors.map((r, idx) => `${idx + 1}. ${r.name} — ${r.val}%`).join('\n') + `\n\n`;
+                rawPdcaText += `[ПОДРЯДЧИКИ]\n` + worstContractors.map((r, idx) => `${idx + 1}. ${r.name} — ${r.val}%`).join('\n') + `\n\n`;
             }
 
-            rawPdcaText += `[ПЛАН ДЕЙСТВИЙ]\n`;
+            rawPdcaText += `[ПЛАН]\n`;
             if (isGlobalDanger) {
-                rawPdcaText += `1. Ограничить подписание КС-2 для подрядчиков в красной зоне.\n2. Провести аудит квалификации персонала.\n`;
-                if (worstContractors.length > 0) rawPdcaText += `3. Назначить внеплановый разбор по подрядчикам: ${worstContractors.map(r => r.name).join(', ')}.\n`;
-                if (topDefectsForPdca.length > 0) rawPdcaText += `4. Провести точечный контроль по дефекту-лидеру: «${topDefectsForPdca[0].name}».\n`;
+                rawPdcaText += `1. Ограничить КС-2 для красной зоны.\n2. Аудит квалификации персонала.\n`;
+                if (worstContractors.length > 0) rawPdcaText += `3. Разбор: ${worstContractors.map(r => r.name).join(', ')}.\n`;
             } else {
-                rawPdcaText += `Процесс находится в управляемой зоне. Ресурсы направить на профилактику системных дефектов.\n`;
-                if (topDefectsForPdca.length > 0) rawPdcaText += `Приоритет — предупреждение повторения дефекта «${topDefectsForPdca[0].name}».\n`;
+                rawPdcaText += `Процесс в управляемой зоне. Фокус — профилактика системных дефектов.\n`;
+                if (topDefectsForPdca.length > 0) rawPdcaText += `Приоритет: «${topDefectsForPdca[0].name}».\n`;
             }
         }
+        rawPdcaText = clipPdca(rawPdcaText);
+        const pdcaWasClipped = String(_reports().getExpertConclusion(pdcaKey) || '').trim().length > OP_PDCA_MAX_CHARS;
         let uiPdcaText = rawPdcaText.replace(/\n/g, '<br>').replace(/^\[(.*?)\]/gm, '<b class="text-slate-800 dark:text-white text-[11px] block mt-2 mb-1">$1</b>');
 
         // --- ТЕПЛОВАЯ КАРТА (МАТРИЦА РИСКОВ) ---
@@ -1653,20 +1694,19 @@ export const AnalyticsRender = {
         let heatmapHtml = '';
         const stageNames = Object.keys(heatmapStages).sort();
 
-        // Берем топ-5 самых проверяемых подрядчиков ИМЕННО из текущей выборки
+        // Все подрядчики текущей выборки; горизонтальный скролл, если не влезают.
         const topMatrixContrs = Object.keys(contrCheckCounts)
-            .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a])
-            .slice(0, 5);
+            .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a]);
 
         if (stageNames.length > 0 && topMatrixContrs.length > 0) {
-            heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2"><table class="w-full text-left border-collapse text-[10px]">
-                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black">Вид работ / Подрядчик</th>`;
+            heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2 -mx-1 px-1"><table class="text-left border-collapse text-[10px] w-full" style="min-width: ${Math.max(320, 140 + topMatrixContrs.length * 96)}px;">
+                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black sticky left-0 z-10 bg-[var(--hover-bg)] min-w-[120px]">Вид работ / Подрядчик</th>`;
 
-            topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold truncate max-w-[80px]" title="${c}">${c.substring(0, 10)}</th>`);
+            topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold min-w-[96px] max-w-[140px] whitespace-normal leading-tight" title="${c}">${c}</th>`);
             heatmapHtml += `</tr></thead><tbody>`;
 
             stageNames.forEach(stage => {
-                heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-slate-700 dark:text-slate-300 truncate max-w-[120px]" title="${stage}">${stage}</td>`;
+                heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-slate-700 dark:text-slate-300 sticky left-0 z-10 bg-[var(--card-bg)] min-w-[120px] max-w-[160px] whitespace-normal leading-tight" title="${stage}">${stage}</td>`;
                 topMatrixContrs.forEach(contr => {
                     const cell = heatmapStages[stage][contr];
                     if (!cell) {
@@ -1764,33 +1804,50 @@ export const AnalyticsRender = {
                         </div>
 
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
-                            <div class="flex justify-between items-center mb-2">
-                                <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase">Динамика Подрядчиков (Ср. УРк)</div>
-                                <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 rounded px-2 py-1 active:scale-95 shadow-sm flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Фильтр
-                                </button>
+                            <div class="flex justify-between items-center mb-2 gap-2">
+                                <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase min-w-0">Динамика уровня качества</div>
+                                <div class="flex gap-1 shrink-0">
+                                    <button onclick="openChartFilterModal('onepager')" class="text-[9px] font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 rounded px-2 py-1 active:scale-95 shadow-sm flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> Линии
+                                    </button>
+                                    <select onchange="updateTrendCharts('onepager', this.value)" class="text-[9px] font-semibold border border-indigo-200 text-indigo-700 bg-white dark:bg-slate-800 dark:text-indigo-300 rounded px-1 py-1 outline-none cursor-pointer shadow-sm">
+                                        <option value="WEEK" ${window.trendGroupings.onepager === 'WEEK' ? 'selected' : ''}>Недели</option>
+                                        <option value="MONTH" ${(window.trendGroupings.onepager || 'MONTH') === 'MONTH' ? 'selected' : ''}>Месяцы</option>
+                                    </select>
+                                </div>
                             </div>
                             <div style="height: 180px; position: relative;"><canvas id="op-line-chart"></canvas></div>
                         </div>
 
                         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-3 shadow-sm flex flex-col">
                             <div class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-3 flex items-center gap-1.5">
-                                <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg> 
-                                Рейтинг Подрядчиков (ИУрК)
+                                <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                                Рейтинг подрядчиков по надежности
                             </div>
-                            <div class="space-y-2.5 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
-                                ${ratingData.map(r => `
-                                    <div class="flex items-center gap-2">
-                                        <div class="w-24 text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" title="${r.name}">${r.name}</div>
-                                        <div class="flex-1 h-2.5 bg-[var(--hover-bg)] rounded-full overflow-hidden border border-[var(--card-border)] relative">
+                            <div class="space-y-1 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+                                ${ratingData.map(r => {
+                                    let deltaHtml = `<span class="text-[8px] text-slate-400 font-bold">—</span>`;
+                                    if (r.prevVal !== null && r.prevVal !== undefined) {
+                                        const diff = r.val - r.prevVal;
+                                        if (Math.abs(diff) < 0.5) deltaHtml = `<span class="text-[8px] text-slate-400 font-bold">▬0</span>`;
+                                        else {
+                                            const good = diff > 0;
+                                            deltaHtml = `<span class="text-[8px] font-black ${good ? 'text-green-500' : 'text-red-500'}">${diff > 0 ? '▲' : '▼'}${Math.abs(Math.round(diff))}</span>`;
+                                        }
+                                    }
+                                    return `
+                                    <div class="flex items-center gap-1.5 py-0.5">
+                                        <div class="w-[46%] min-w-0 text-[10px] font-bold text-slate-700 dark:text-slate-300 leading-tight whitespace-normal break-words" title="${r.name}">${r.name}</div>
+                                        <div class="flex-1 min-w-0 max-w-[28%] h-1.5 bg-[var(--hover-bg)] rounded-full overflow-hidden border border-[var(--card-border)] relative">
                                             <div class="h-full ${r.val < 70 ? 'bg-red-500' : (r.val < 85 ? 'bg-orange-500' : 'bg-green-500')}" style="width:${r.val}%"></div>
                                         </div>
-                                        <div class="w-14 flex items-center justify-end gap-1 shrink-0">
-                                            ${r.isPrelim ? '<span class="text-[8px] text-slate-400 font-bold border border-slate-300 rounded px-1" title="Предварительный рейтинг">СБОР</span>' : ''}
+                                        <div class="w-[68px] shrink-0 flex items-center justify-end gap-1 leading-none" title="${trendLabel}">
+                                            ${r.isPrelim ? '<span class="text-[7px] text-slate-400 font-bold border border-slate-300 rounded px-0.5" title="Предварительный рейтинг">СБОР</span>' : ''}
                                             <span class="text-[11px] font-black ${r.val < 70 ? 'text-red-500' : (r.val < 85 ? 'text-orange-500' : 'text-green-500')}">${r.val}%</span>
+                                            ${deltaHtml}
                                         </div>
-                                    </div>
-                                `).join('') || '<div class="text-[10px] text-[var(--text-muted)] text-center py-2">Недостаточно данных</div>'}
+                                    </div>`;
+                                }).join('') || '<div class="text-[10px] text-[var(--text-muted)] text-center py-2">Недостаточно данных</div>'}
                             </div>
                         </div>
                     </div>
@@ -1867,25 +1924,26 @@ export const AnalyticsRender = {
                 </details>
                 ` : ''}
 
-                <!-- АККОРДЕОН 5: УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ -->
+                <!-- АККОРДЕОН 5: АНАЛИТИКА КАЧЕСТВА -->
                 <details class="${isGlobalDanger ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800' : 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'} border rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
-                    <summary class="p-3.5 font-bold text-[11px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase tracking-widest cursor-pointer flex justify-between items-center rounded-2xl transition-colors select-none">
-                        <span class="flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
-                            Управленческое Решение
+                    <summary class="p-3.5 font-bold text-[10px] sm:text-[11px] ${isGlobalDanger ? 'text-orange-800 dark:text-orange-500' : 'text-green-800 dark:text-green-500'} uppercase tracking-wide cursor-pointer flex justify-between items-center rounded-2xl transition-colors select-none gap-2">
+                        <span class="flex items-center gap-2 min-w-0 leading-snug">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                            <span>Аналитика качества <span class="font-semibold normal-case tracking-normal opacity-80">(вывод и рекомендация инженера)</span></span>
                         </span>
-                        <span class="transition-transform group-open:rotate-180">▼</span>
+                        <span class="transition-transform group-open:rotate-180 shrink-0">▼</span>
                     </summary>
                     <div class="p-4 border-t ${isGlobalDanger ? 'border-orange-200 dark:border-orange-800' : 'border-green-200 dark:border-green-800'} rounded-b-2xl">
-                        <div class="flex justify-between items-center mb-3">
-                            <div class="text-[10px] font-bold uppercase opacity-70">Стратегия действий</div>
-                            <div class="flex gap-2">
+                        <div class="flex justify-between items-center mb-3 gap-2">
+                            <div class="text-[10px] font-bold uppercase opacity-70">До ${OP_PDCA_MAX_CHARS} символов (печать A3)</div>
+                            <div class="flex gap-2 shrink-0">
                                 <button onclick="window.RBI.services.ai.generateOnePagerForecastAi('${pdcaKey}')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1.5"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> AI-Анализ</button>
                                 <button onclick="editExpertText('${pdcaKey}', 'hidden_pdca_text')" class="text-[9px] font-bold bg-white/70 dark:bg-black/30 border border-black/10 dark:border-white/10 px-2.5 py-1.5 rounded shadow-sm active:scale-95 flex items-center gap-1.5"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg> Изменить</button>
                             </div>
                         </div>
-                        <textarea id="hidden_pdca_text" class="hidden">${rawPdcaText}</textarea>
-                        <div class="text-[12px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-medium">${uiPdcaText}</div>
+                        ${pdcaWasClipped ? '<div class="text-[9px] font-bold text-amber-700 dark:text-amber-400 mb-2 uppercase">Текст обрезан до 500 символов для печати</div>' : ''}
+                        <textarea id="hidden_pdca_text" class="hidden" maxlength="${OP_PDCA_MAX_CHARS}">${rawPdcaText.replace(/</g, '&lt;')}</textarea>
+                        <div class="text-[12px] leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-medium max-h-[220px] overflow-y-auto custom-scrollbar">${uiPdcaText}</div>
                     </div>
                 </details>
 
@@ -1906,7 +1964,7 @@ export const AnalyticsRender = {
             const ctxLine = document.getElementById('op-line-chart');
             if (ctxLine) {
                 const trendData = window.buildTrendChartData(data, 'contractorName', activeLineFilters, window.trendGroupings.onepager || 'MONTH');
-                trendData.datasets.forEach(ds => { ds.borderWidth = 2; ds.pointRadius = 2; });
+                trendData.datasets.forEach(ds => { ds.borderWidth = 1.5; ds.pointRadius = 2; });
 
                 if (_chartInstances()['op-line-chart']) _chartInstances()['op-line-chart'].destroy();
                 _chartInstances()['op-line-chart'] = new Chart(ctxLine.getContext('2d'), {
@@ -1924,7 +1982,7 @@ export const AnalyticsRender = {
                             legend: { position: 'right', labels: { boxWidth: 8, font: { size: 8 } } },
                             title: {
                                 display: isTruncatedForChart,
-                                text: 'Отображен ТОП-5 лучших и ТОП-5 худших подрядчиков',
+                                text: 'Отображены до 10 подрядчиков (по рейтингу)',
                                 color: '#94a3b8',
                                 font: { size: 10, weight: 'bold' },
                                 padding: { bottom: 5 }
@@ -2979,6 +3037,15 @@ export const AnalyticsRender = {
         AnalyticsRender.renderReportsList();
     },
 
+    _reportCardAuthor(r) {
+        return String(r.created_by || r.engineer_name || r.metadata?.author || 'Инженер').trim() || 'Инженер';
+    },
+
+    _reportCardPeriod(r) {
+        const raw = r.metadata?.period || r.metadata?.periodLabel || '';
+        return String(raw).trim() || 'Период не указан';
+    },
+
     _renderReportCard(r, isListView) {
         const syncBadge = getSyncBadgeHtml(r);
         const isOwner = !r.created_by || r.created_by === (_getSetting('engineerName') || 'Инженер');
@@ -2986,6 +3053,8 @@ export const AnalyticsRender = {
         const safeTitle = String(r.title || '').replace(/'/g, "\\'");
         const dateStr = new Date(r.generated_at).toLocaleDateString('ru-RU');
         const sizeStr = ((r.file_size || 0) / 1024 / 1024).toFixed(2) + ' MB';
+        const author = AnalyticsRender._reportCardAuthor(r);
+        const period = AnalyticsRender._reportCardPeriod(r);
 
         if (isListView) {
             return `
@@ -2994,7 +3063,8 @@ export const AnalyticsRender = {
                 <div class="w-9 h-9 rounded-lg shrink-0 bg-slate-50 dark:bg-slate-900 border border-[var(--card-border)] flex items-center justify-center"><span class="text-[7px] font-black text-indigo-500">PDF</span></div>
                 <div class="min-w-0 flex-1">
                     <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${r.title}</div>
-                    <div class="text-[9px] font-bold text-slate-400 truncate mt-0.5">${docKind !== 'Прочее' ? docKind + ' · ' : ''}${r.created_by || 'Инженер'} · ${dateStr} · ${sizeStr}</div>
+                    <div class="text-[9px] font-bold text-slate-400 truncate mt-0.5">${docKind !== 'Прочее' ? docKind + ' · ' : ''}Автор: ${author} · ${dateStr}</div>
+                    <div class="text-[9px] font-bold text-slate-500 truncate">Период: ${period}</div>
                 </div>
                 <div class="shrink-0">${syncBadge}</div>
                 <button onclick="event.stopPropagation(); openUniversalActionSheet('${r.id}', 'report', '${safeTitle}', ${isOwner})" class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-slate-400 hover:bg-[var(--hover-bg)] active:scale-90">
@@ -3020,14 +3090,14 @@ export const AnalyticsRender = {
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
                     </button>
                 </div>
-                <div class="p-3 flex flex-col flex-1">
+                <div class="p-3 flex flex-col flex-1 min-w-0">
                     ${docKindTag}
                     <div class="text-[12px] font-black text-slate-800 dark:text-white leading-tight mb-2 line-clamp-2">${r.title}</div>
-                    <div class="text-[9px] font-bold text-slate-400 truncate mb-0.5">👤 ${r.created_by || 'Инженер'}</div>
-                    ${r.metadata?.period ? `<div class="text-[9px] font-bold text-slate-400 truncate mb-1">📅 ${r.metadata.period}</div>` : ''}
-                    <div class="mt-auto pt-2 flex justify-between items-center">
-                        <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400">${sizeStr} ${syncBadge}</div>
-                        <div class="text-[9px] font-black text-slate-400">${dateStr}</div>
+                    <div class="text-[9px] font-bold text-slate-500 truncate mb-0.5">Автор: ${author}</div>
+                    <div class="text-[9px] font-bold text-slate-500 truncate mb-1">Период: ${period}</div>
+                    <div class="mt-auto pt-2 flex justify-between items-center gap-2">
+                        <div class="flex items-center gap-1 text-[9px] font-bold text-slate-400 min-w-0">${sizeStr} ${syncBadge}</div>
+                        <div class="text-[9px] font-black text-slate-400 shrink-0">${dateStr}</div>
                     </div>
                 </div>
             </div>`;

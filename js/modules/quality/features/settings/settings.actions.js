@@ -119,6 +119,8 @@
             knowledgeViewModeNodes: 'nodes',
             knowledgeViewModePractices: 'practices',
             knowledgeViewModeReports: 'reports',
+            knowledgeViewModeMeetings: 'meetings',
+            knowledgeViewModeFmea: 'fmea',
             // legacy: пишем во все scope (миграция со старого единого ключа)
             knowledgeViewMode: null
         };
@@ -127,7 +129,7 @@
             if (scope) {
                 setKbViewMode(scope, val);
             } else {
-                ['twi', 'docs', 'nodes', 'practices', 'reports'].forEach(function (s) {
+                ['twi', 'docs', 'nodes', 'practices', 'reports', 'meetings', 'fmea'].forEach(function (s) {
                     setKbViewMode(s, val);
                 });
             }
@@ -182,6 +184,8 @@
             knowledgeViewModeNodes: 'cards',
             knowledgeViewModePractices: 'cards',
             knowledgeViewModeReports: 'cards',
+            knowledgeViewModeMeetings: 'cards',
+            knowledgeViewModeFmea: 'cards',
             anaEngPareto: true, anaOpTrend: true, anaOpLeader: true, anaEngAi: true, anaEngPhotos: true, anaOpTopDefects: true,
             autoBackupEnabled: false, autoBackupDay: '5', autoBackupShare: false, autoManagerEnabled: false, autoManagerDay: '5',
             brandColor: '#1c2b39', brandLogo: '', autoReportEnabled: false, autoReportDay: '1', autoReportType: 'global_onepager'

@@ -1,5 +1,5 @@
 /* Файл: js/modules/quality/features/shared/multi-filter.js */
-/* Мульти-фильтры (модалка Объект/Подрядчик/Инспектор/Вид работ) — общая логика для features quality/history и quality/analytics */
+/* Мульти-фильтры (dropdown Объект/Подрядчик/Инспектор/Вид работ) — общая логика для features quality/history и quality/analytics */
 
 // === МУЛЬТИ-ФИЛЬТРЫ (ЛОГИКА МОДАЛКИ С ПРАВАМИ ДОСТУПА) ===
 let _ctx = null;
@@ -77,7 +77,69 @@ window.activeMultiFilters = activeMultiFilters;
 let currentFilterContext = ''; // 'history' или 'analytics'
 let currentFilterType = '';    // 'project', 'contractor' и т.д.
 
+const MULTI_FILTER_BTN_IDS = {
+    history: { project: 'btn-hist-project', contractor: 'btn-hist-contractor', inspector: 'btn-hist-inspector' },
+    analytics: {
+        project: 'btn-ana-project',
+        contractor: 'btn-ana-contractor',
+        inspector: 'btn-ana-inspector',
+        template: 'btn-ana-template'
+    }
+};
+
+function _escapeFilterAttr(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function _positionMultiFilterDropdown(anchorBtn) {
+    const content = document.getElementById('multi-filter-modal-content');
+    if (!content) return;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const gap = 6;
+    const pad = 8;
+    const maxW = Math.min(360, vw - pad * 2);
+    const minW = Math.min(240, maxW);
+
+    let width = maxW;
+    let left = pad;
+    let top = pad;
+
+    if (anchorBtn) {
+        const rect = anchorBtn.getBoundingClientRect();
+        width = Math.max(minW, Math.min(maxW, Math.max(rect.width, 260)));
+        left = Math.min(Math.max(pad, rect.left), vw - width - pad);
+        const below = rect.bottom + gap;
+        const above = rect.top - gap;
+        const preferBelow = below + 280 < vh || below >= above;
+        top = preferBelow ? below : Math.max(pad, above - Math.min(360, vh * 0.55));
+        if (preferBelow && top + 200 > vh) {
+            top = Math.max(pad, vh - Math.min(360, vh * 0.55) - pad);
+        }
+    }
+
+    content.style.width = `${width}px`;
+    content.style.left = `${left}px`;
+    content.style.top = `${top}px`;
+    content.style.maxHeight = `${Math.min(360, vh - top - pad)}px`;
+}
+
 function openMultiFilterModal(type, title, context) {
+    const overlay = document.getElementById('multi-filter-modal-overlay');
+    const content = document.getElementById('multi-filter-modal-content');
+    if (!overlay || !content) return;
+
+    // Повторный клик по той же кнопке (панель уже открыта) — закрыть, как у периода.
+    if (overlay.style.display === 'block' && currentFilterType === type && currentFilterContext === context) {
+        closeMultiFilterModal();
+        return;
+    }
+
     currentFilterType = type;
     currentFilterContext = context;
 
@@ -180,39 +242,33 @@ function openMultiFilterModal(type, title, context) {
     if (uniqueValues.length === 0) {
         listEl.innerHTML = `<div class="p-8 text-center flex flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500"><svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg><span class="text-xs font-bold uppercase tracking-wider">Нет данных</span></div>`;
     } else {
-        // ИСПРАВЛЕНИЕ UX (см. current_plan.md, блок "Мультифильтры неудобны"):
-        // раньше был единый <label>, оборачивающий чекбокс+текст — клик В ЛЮБОЕ
-        // место строки лишь переключал чекбокс, реальное применение требовало
-        // отдельного нажатия «Применить». Теперь это НЕ <label> (нет неявной
-        // чекбокс-привязки): клик по тексту — applyMultiFilterSingle(val), сразу
-        // выбирает только это значение и закрывает модалку; клик по чекбоксу —
-        // обычное нативное переключение (без действия из delegation, состояние
-        // читается только при "Выбрать всё"/"Применить"), не закрывает модалку,
-        // позволяя набрать несколько значений.
+        // Клик по тексту — applyMultiFilterSingle (один выбор, сразу применить и закрыть).
+        // Чекбокс — мультивыбор; применение по «Применить» / «Выбрать всё».
         listEl.innerHTML = uniqueValues.map(val => {
             const isChecked = currentSelected.length === 0 || currentSelected.includes(val);
-            let displayVal = val;
+            const displayVal = _escapeFilterAttr(val);
             const singleArgs = JSON.stringify([val]).replace(/'/g, '&#39;');
 
             return `
-            <div class="filter-item-row flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-600">
-                <input type="checkbox" value="${val}" class="filter-modal-cb w-5 h-5 accent-indigo-600 rounded cursor-pointer shrink-0" ${isChecked ? 'checked' : ''}>
-                <span class="text-[13px] font-bold text-slate-700 dark:text-slate-200 filter-item-text truncate flex-1 leading-none pt-0.5 cursor-pointer active:scale-[0.98] transition-transform"
+            <div class="filter-item-row flex items-center gap-2.5 px-2.5 py-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-600">
+                <input type="checkbox" value="${displayVal}" class="filter-modal-cb w-4 h-4 accent-indigo-600 rounded cursor-pointer shrink-0" ${isChecked ? 'checked' : ''}>
+                <span class="text-[12px] font-bold text-slate-700 dark:text-slate-200 filter-item-text truncate flex-1 leading-snug cursor-pointer active:scale-[0.98] transition-transform"
                     data-multifilter-action="applyMultiFilterSingle" data-multifilter-action-args='${singleArgs}'>${displayVal}</span>
             </div>`;
         }).join('');
     }
 
-    const overlay = document.getElementById('multi-filter-modal-overlay');
-    const content = document.getElementById('multi-filter-modal-content');
+    const btnId = (MULTI_FILTER_BTN_IDS[context] || {})[type];
+    const anchorBtn = btnId ? document.getElementById(btnId) : null;
+    _positionMultiFilterDropdown(anchorBtn);
 
-    overlay.style.display = 'flex';
-    document.body.classList.add('modal-open');
-
-    setTimeout(() => {
+    overlay.style.display = 'block';
+    overlay.classList.remove('pointer-events-none');
+    content.classList.remove('opacity-0', 'scale-95', 'pointer-events-none');
+    requestAnimationFrame(() => {
         overlay.classList.remove('opacity-0');
-        content.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95');
-    }, 10);
+        content.classList.remove('opacity-0', 'scale-95');
+    });
 }
 window.openMultiFilterModal = openMultiFilterModal;
 
@@ -220,15 +276,15 @@ window.openMultiFilterModal = openMultiFilterModal;
 function closeMultiFilterModal() {
     const overlay = document.getElementById('multi-filter-modal-overlay');
     const content = document.getElementById('multi-filter-modal-content');
+    if (!overlay || !content) return;
 
-    // Плавное исчезновение
-    overlay.classList.add('opacity-0');
-    content.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95');
+    overlay.classList.add('opacity-0', 'pointer-events-none');
+    content.classList.add('opacity-0', 'scale-95', 'pointer-events-none');
 
     setTimeout(() => {
-        if (overlay) overlay.style.display = 'none';
-        document.body.classList.remove('modal-open');
-    }, 300);
+        overlay.style.display = 'none';
+        overlay.classList.remove('pointer-events-none');
+    }, 150);
 }
 window.closeMultiFilterModal = closeMultiFilterModal;
 
@@ -327,9 +383,8 @@ function updateFilterButtonLabels() {
 }
 
 // =========================================================================
-// РАЗМЕТКА МОДАЛКИ «multi-filter-modal-overlay» (перенос из
-// index.html:1360-1418, перенос 30 modal/overlay-блоков #app-modals в
-// JS-рендер). HTML-строка 1:1 идентична прежней статичной разметке.
+// РАЗМЕТКА DROPDOWN «multi-filter-modal-overlay» — панель у кнопки фильтра
+// (вместо полноэкранной модалки). Имена id/функций сохранены для совместимости.
 // =========================================================================
 (function mountMultiFilterModalOverlayMarkup() {
     if (document.getElementById('multi-filter-modal-overlay')) return;
@@ -339,57 +394,56 @@ function updateFilterButtonLabels() {
     if (!root) return;
     root.insertAdjacentHTML('beforeend', `
     <div id="multi-filter-modal-overlay"
-        class="fixed inset-0 bg-slate-900/70 z-[3000] hidden items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
+        class="fixed inset-0 z-[3000] transition-opacity duration-150 opacity-0"
+        style="display:none"
         data-multifilter-action="closeMultiFilterModal">
-        <div class="bg-[var(--bg-main)] w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full sm:translate-y-4 sm:scale-95 flex flex-col max-h-[85vh] border border-slate-200/50 dark:border-slate-700/50"
+        <div class="fixed bg-[var(--bg-main)] rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden opacity-0 scale-95 transition-all duration-150 origin-top"
             id="multi-filter-modal-content" onclick="event.stopPropagation()">
 
             <div
-                class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md rounded-t-3xl z-10">
-                <div class="font-black text-[13px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5"
+                class="px-3 py-2.5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center shrink-0 bg-white/90 dark:bg-slate-800/90">
+                <div class="font-black text-[11px] uppercase tracking-tight text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 min-w-0"
                     id="multi-filter-title">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z">
                         </path>
                     </svg>
-                    Фильтр
+                    <span class="truncate">Фильтр</span>
                 </div>
-                <div class="flex gap-3 items-center">
-                    <button data-multifilter-action="selectAllMultiFilter"
-                        class="text-[10px] font-bold text-slate-500 hover:text-indigo-500 uppercase active:scale-95 transition-colors">Выбрать
+                <div class="flex gap-2 items-center shrink-0">
+                    <button type="button" data-multifilter-action="selectAllMultiFilter"
+                        class="text-[9px] font-bold text-slate-500 hover:text-indigo-500 uppercase active:scale-95 transition-colors px-1">Выбрать
                         всё</button>
-                    <button data-multifilter-action="closeMultiFilterModal"
-                        class="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-600">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <button type="button" data-multifilter-action="closeMultiFilterModal"
+                        class="w-7 h-7 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 border border-slate-200 dark:border-slate-600">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
                         </svg>
                     </button>
                 </div>
             </div>
 
-            <div
-                class="p-3 border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm z-10 relative">
-                <span class="absolute left-6 top-5 text-slate-400"><svg class="w-4 h-4" fill="none"
+            <div class="px-2.5 py-2 border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 relative shrink-0">
+                <span class="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><svg class="w-3.5 h-3.5" fill="none"
                         stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round"
                             d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                     </svg></span>
                 <input type="text" id="multi-filter-search"
-                    class="input-base text-[12px] !py-2.5 pl-10 bg-white dark:bg-slate-900 shadow-inner"
-                    placeholder="Быстрый поиск..." oninput="filterMultiModalList()">
+                    class="input-base text-[11px] !py-2 pl-8 bg-white dark:bg-slate-900 shadow-inner"
+                    placeholder="Поиск..." oninput="filterMultiModalList()">
             </div>
 
-            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-2 bg-slate-50 dark:bg-slate-900/50"
+            <div class="flex-1 overflow-y-auto p-2 custom-scrollbar space-y-1.5 bg-slate-50 dark:bg-slate-900/50 min-h-0"
                 id="multi-filter-list">
-                <!-- Чекбоксы генерируются здесь -->
             </div>
 
             <div
-                class="p-4 border-t border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-b-3xl shrink-0 z-10">
-                <button data-multifilter-action="applyMultiFilter"
-                    class="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[12px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                class="p-2.5 border-t border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 shrink-0">
+                <button type="button" data-multifilter-action="applyMultiFilter"
+                    class="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-black text-[11px] uppercase tracking-widest shadow-sm active:scale-95 transition-transform flex justify-center items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
                     </svg>
                     Применить

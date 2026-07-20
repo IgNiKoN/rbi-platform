@@ -468,6 +468,46 @@ var SettingsRender = {
                     </div>
                 </details>
 
+                <!-- ОТОБРАЖЕНИЕ АРХИВОВ (Совещания / FMEA) -->
+                <details
+                    class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
+                    <summary
+                        class="p-4 font-black text-[12px] text-slate-800 dark:text-white uppercase tracking-tight cursor-pointer flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 transition-colors select-none group-open:border-b border-[var(--card-border)] rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M4 6h16M4 10h16M4 14h10M4 18h10"></path>
+                            </svg>
+                            Отображение архивов
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-slate-400">▼</span>
+                    </summary>
+                    <div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center gap-3">
+                            <div class="min-w-0">
+                                <div class="font-bold text-sm">Совещания</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список по умолчанию</div>
+                            </div>
+                            <select id="set-kb-view-meetings" class="input-base w-36 shrink-0"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeMeetings" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                        <div class="p-4 flex justify-between items-center gap-3 rounded-b-2xl">
+                            <div class="min-w-0">
+                                <div class="font-bold text-sm">FMEA</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Карточки или список по умолчанию</div>
+                            </div>
+                            <select id="set-kb-view-fmea" class="input-base w-36 shrink-0"
+                                data-settings-action="toggleSetting" data-settings-action-key="knowledgeViewModeFmea" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="cards">Карточки</option>
+                                <option value="list">Список</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+
                 <!-- АНАЛИТИКА И ОТЧЕТЫ -->
                 <details
                     class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden">
@@ -1229,6 +1269,8 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (document.getElementById('set-kb-view-nodes')) document.getElementById('set-kb-view-nodes').value = _kbViewVal('nodes', 'knowledgeViewModeNodes');
         if (document.getElementById('set-kb-view-practices')) document.getElementById('set-kb-view-practices').value = _kbViewVal('practices', 'knowledgeViewModePractices');
         if (document.getElementById('set-kb-view-reports')) document.getElementById('set-kb-view-reports').value = _kbViewVal('reports', 'knowledgeViewModeReports');
+        if (document.getElementById('set-kb-view-meetings')) document.getElementById('set-kb-view-meetings').value = _kbViewVal('meetings', 'knowledgeViewModeMeetings');
+        if (document.getElementById('set-kb-view-fmea')) document.getElementById('set-kb-view-fmea').value = _kbViewVal('fmea', 'knowledgeViewModeFmea');
 
         // 2. Переключатели логики
         if (document.getElementById('set-swipe')) document.getElementById('set-swipe').checked = _getSetting('swipeEnabled');

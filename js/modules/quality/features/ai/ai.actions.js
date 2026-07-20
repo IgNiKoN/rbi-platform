@@ -277,14 +277,16 @@ async function generateOnePagerForecastAi(pdcaKey) {
             .map(x => `${x.name} (${x.m.finalC}%)`)
             .join(', ') || 'нет';
 
-        const promptSystem = 'Ты директор по качеству. Кратко (до 100 слов): ОЦЕНКА, РИСКИ, ПЛАН ИЗ 3 ПУНКТОВ. ЗАПРЕЩЕНО использовать слово "авария"/"аварийный" — используй формулировку "критический дефект вес 3".';
+        const promptSystem = 'Ты директор по качеству. Очень кратко, максимум 500 символов: ОЦЕНКА, РИСКИ, ПЛАН ИЗ 3 ПУНКТОВ. Без воды. ЗАПРЕЩЕНО использовать слово "авария"/"аварийный" — используй формулировку "критический дефект вес 3".';
         const promptUser = `Анализ ${data.length} проверок. ИКО: ${IKO}. В красной зоне: ${redZone}%. Критических дефектов (вес 3): ${sumB3}. Проблемные подрядчики: ${worstContrs}.`;
 
-        const response = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 350 });
+        let response = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 220 });
+        response = String(response || '').trim();
+        if (response.length > 500) response = response.slice(0, 499).trimEnd() + '…';
         _reports().setExpertConclusion(pdcaKey, response);
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('analytics:renderRequested', {});
-        showToast("✨ Управленческое решение обновлено!");
+        showToast("✨ Аналитика качества обновлена!");
     } catch (e) { showToast("❌ Ошибка: " + e.message); }
 };
 

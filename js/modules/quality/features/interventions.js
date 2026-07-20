@@ -1529,6 +1529,15 @@ window.openUniversalActionSheet = function (id, type, title, isOwner, extraData)
             <span class="text-[12px] font-bold">Скачать PDF</span>
         </button>`;
     }
+    if ((type === 'meeting' || type === 'fmea') && isOwner) {
+        btnsHtml += `
+        <button onclick="handleUasAction('${id}', '${type}', 'bind')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Привязать к объекту</span>
+        </button>`;
+    }
     // Переиндексировать и отправить (Только НД, только администратор)
     if (type === 'doc' && _permSvc && _permSvc.isAdmin()) {
         btnsHtml += `
@@ -1621,6 +1630,7 @@ window.handleUasAction = function (id, type, action) {
         if (type === 'fmea') {
             if (action === 'view') rbi_viewFmea(id);
             if (action === 'edit') rbi_loadFmeaToWorkspace(id);
+            if (action === 'bind' && typeof rbi_openFmeaBindModal === 'function') rbi_openFmeaBindModal(id);
             if (action === 'pdf') rbi_printFmeaPdf(id, 'script');
             if (action === 'delete') rbi_deleteFmea(id);
         }
@@ -1628,6 +1638,7 @@ window.handleUasAction = function (id, type, action) {
         if (type === 'meeting') {
             if (action === 'view') rbi_openSavedMeeting(id);
             if (action === 'edit') rbi_openSavedMeeting(id); // Совещания редактируются в том же окне просмотра
+            if (action === 'bind' && typeof rbi_openMeetingBindModal === 'function') rbi_openMeetingBindModal(id);
             if (action === 'pdf') rbi_printMeetingPdf(id, 'script');
             if (action === 'delete') rbi_deleteMeeting(id);
         }

@@ -9,6 +9,7 @@
  */
 
 import { ReportsState } from './reports.state.js';
+import { buildMeetingProtocolHtml } from '../meetings/meetings.protocol.js';
 
 function _getSetting(key) {
     if (ReportsActions._ctx && ReportsActions._ctx.settings) return ReportsActions._ctx.settings.get(key);
@@ -565,6 +566,8 @@ async function handleFabExportAction(actionType, mode = 'script') {
             await exportPdfPoster(data, mode);
         } else if (actionType === 'onepager') {
             await exportPdfOnePager(data, mode); // Старый fallback
+        } else if (actionType === 'onepager_v2') {
+            await exportPdfOnePagerV2(data, mode);
         } else if (actionType === 'global_onepager') {
             await exportPdfGlobalOnePager(data, mode); // Старый fallback
         } else if (actionType === 'data') {
@@ -970,13 +973,68 @@ function classifyDocKind(title) {
     if (title.includes('День Качества')) return 'День качества';
     if (title.includes('Плакат Качества')) return 'Плакат качества';
     if (title.includes('Паспорта Подрядчиков') || title.includes('Список подрядчиков') || title.includes('Срез:') || title.includes('Отчет для')) return 'Отчёт по подрядчику';
-    if (title.includes('Сводка для Руководства') || title.includes('Полный отчет по объекту') || title.includes('База проверок')) return 'Сводный отчёт';
+    if (title.includes('Сводка для Руководства') || title.includes('One-Pager 2.0') || title.includes('Полный отчет по объекту') || title.includes('База проверок')) return 'Сводный отчёт';
     return 'Прочее';
 }
 
-async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script') {
+/** Период выгрузки для шапки PDF и карточки архива: «с ДД.ММ.ГГГГ по ДД.ММ.ГГГГ». */
+function resolveExportPeriodLabel(overridePeriod) {
+    if (overridePeriod != null && String(overridePeriod).trim()) {
+        return String(overridePeriod).trim();
+    }
+    const fmt = (d) => {
+        if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '…';
+        return d.toLocaleDateString('ru-RU');
+    };
+    const range = (from, to) => `с ${fmt(from)} по ${fmt(to)}`;
+    const sel = document.getElementById('global-filter-period')?.value || 'ALL';
+    const now = new Date();
+
+    if (sel === 'DAY') {
+        return range(now, now);
+    }
+    if (sel === 'WEEK') {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 7);
+        return range(from, now);
+    }
+    if (sel === 'MONTH') {
+        const from = new Date(now);
+        from.setDate(from.getDate() - 30);
+        return range(from, now);
+    }
+    if (sel === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        if (dFrom || dTo) {
+            const from = dFrom ? new Date(dFrom) : null;
+            const to = dTo ? new Date(dTo) : null;
+            return `с ${from ? fmt(from) : '…'} по ${to ? fmt(to) : '…'}`;
+        }
+    }
+    return 'Всё время';
+}
+
+/** Период документа по дате сохранения и типу периода (FMEA «Неделя»/«Месяц»). */
+function resolveDocPeriodLabel(dateIso, periodName) {
+    const fmt = (d) => d.toLocaleDateString('ru-RU');
+    const to = dateIso ? new Date(dateIso) : new Date();
+    if (Number.isNaN(to.getTime())) return periodName || 'Всё время';
+    const name = String(periodName || '');
+    const from = new Date(to);
+    if (/месяц/i.test(name)) from.setDate(from.getDate() - 30);
+    else if (/недел/i.test(name)) from.setDate(from.getDate() - 7);
+    const label = `с ${fmt(from)} по ${fmt(to)}`;
+    if (name && !/недел|месяц|день|сегодня|ручн/i.test(name)) {
+        return `${name} (${label})`;
+    }
+    return label;
+}
+
+async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script', meta = null) {
     window._pdfGenerating = true;
     const isBackground = (mode === 'background');
+    const exportMeta = (meta && typeof meta === 'object') ? meta : null;
 
     const loader = document.getElementById('global-loader');
     const loaderText = document.getElementById('global-loader-text');
@@ -998,17 +1056,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         inspName = _analyticsFilters().inspector.length > 0 ? _analyticsFilters().inspector.join(', ') : 'Все инспекторы';
     }
 
-    // Автор отчета и период — для брендированной шапки PDF
-    const reportAuthor = _getSetting('engineerName') || document.getElementById('inp-inspector')?.value.trim() || 'Инженер';
-    let reportPeriod = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
-    if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
-        const dFrom = document.getElementById('filter-date-from')?.value;
-        const dTo = document.getElementById('filter-date-to')?.value;
-        if (dFrom || dTo) {
-            const fmt = (d) => d ? new Date(d).toLocaleDateString('ru-RU') : '...';
-            reportPeriod = `с ${fmt(dFrom)} по ${fmt(dTo)}`;
-        }
-    }
+    // Автор и период — в шапку PDF и в карточку архива (всегда)
+    const reportAuthor = String(
+        exportMeta?.author
+        || _getSetting('engineerName')
+        || document.getElementById('inp-inspector')?.value
+        || 'Инженер'
+    ).trim() || 'Инженер';
+    const reportPeriod = resolveExportPeriodLabel(exportMeta?.period);
 
     const MARGIN_MM = 10;
     const MM_TO_PX = 3.7795;
@@ -1045,7 +1100,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         } catch (e) { console.warn("QR не сгенерирован", e); }
     }
 
-    const headerHtml = await getBrandedHeader(title, mode, qrDataUrl, reportAuthor, reportPeriod);
+    const headerHtml = await getBrandedHeader(title, mode, qrDataUrl, reportAuthor, reportPeriod, exportMeta?.headerOpts || null);
     const fullHtml = headerHtml + content;
 
     // ============================================================================
@@ -1100,7 +1155,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             title: title,
             blob: printPdfBlob,
             project: projName,
-            period: 'Всё время',
+            period: reportPeriod,
+            author: reportAuthor,
             forcedId: reportId,
             publicToken: publicToken
         }, fullHtml);
@@ -1315,7 +1371,16 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         if (loaderText) loaderText.innerText = "Создание PDF…";
         await new Promise(r => requestAnimationFrame(r));
 
-        const pagesHtml = fullHtml.split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
+        // Постраничная сборка: раньше на КАЖДОМ листе снова resolveLocalPhotosForPdf
+        // (последовательно по всем img) — на отчёте компании это N×дорого при том же качестве.
+        // Резолвим фото один раз до split; дальше в листах уже data:-src.
+        const preResolveRoot = document.createElement('div');
+        preResolveRoot.innerHTML = fullHtml;
+        if (loaderText) loaderText.innerText = "Подготовка изображений…";
+        await resolveLocalPhotosForPdf(preResolveRoot);
+        const resolvedHtml = preResolveRoot.innerHTML;
+
+        const pagesHtml = resolvedHtml.split(/<div class=["']pdf-page-break page-break-before["']><\/div>/gi);
         const isWeakDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
 
         let pdfBlob;
@@ -1331,7 +1396,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 pageDiv.innerHTML = pagesHtml[i];
                 hiddenDiv.appendChild(pageDiv);
 
-                await resolveLocalPhotosForPdf(pageDiv);
+                // Фото уже data: — повторный полный resolve не нужен.
                 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
                 // ИСПРАВЛЕНИЕ: создаем PDF на первом цикле
@@ -1353,10 +1418,9 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         } else {
             const rootDiv = document.createElement('div');
             rootDiv.className = 'pdf-print-root';
-            rootDiv.innerHTML = fullHtml;
+            rootDiv.innerHTML = resolvedHtml;
             hiddenDiv.appendChild(rootDiv);
 
-            await resolveLocalPhotosForPdf(rootDiv);
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
             // Получаем сам файл (Blob)
@@ -1376,7 +1440,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             title: title,
             blob: pdfBlob,
             project: projName,
-            period: 'Всё время',
+            period: reportPeriod,
+            author: reportAuthor,
             forcedId: reportId,
             publicToken: publicToken
         }, fullHtml);
@@ -1457,15 +1522,16 @@ function escapeHtml(str) {
 // printPdfShell (этот же файл).
 async function resolveLocalPhotosForPdf(container) {
     const images = Array.from(container.querySelectorAll('img'));
-    for (const img of images) {
+    // Параллельно по img: результат тот же (data: в src), без изменения качества PDF.
+    await Promise.all(images.map(async (img) => {
         let src = img.getAttribute('data-local-src') || img.getAttribute('src');
-        if (!src || src.startsWith('data:')) continue;
+        if (!src || src.startsWith('data:')) return;
 
         let base64 = null;
         if (src.startsWith('local://') || src.startsWith('cloud://') || src.startsWith('http')) {
             base64 = await PhotoManager.getBase64(src);
         }
-        if (!base64) continue;
+        if (!base64) return;
 
         img.src = base64;
         img.removeAttribute('data-local-src');
@@ -1483,42 +1549,52 @@ async function resolveLocalPhotosForPdf(container) {
                 setTimeout(resolve, 12000);
             }
         });
-    }
+    }));
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 }
 
 // Генератор брендированной шапки (По брендбуку RBI). Перенесено из
 // export.js:getBrandedHeader (группа G4-helpers).
-async function getBrandedHeader(title, mode, qrCodeDataUrl = null, author = null, period = null) {
+async function getBrandedHeader(title, mode, qrCodeDataUrl = null, author = null, period = null, opts = null) {
     let logoHtml = '';
     const brandColor = _getSetting('brandColor') || '#1c2b39';
-    const goldColor = '#c49a5f';
+    const headerOpts = opts && typeof opts === 'object' ? opts : {};
+    const logoH = Number(headerOpts.logoH) || 45;
+    const qrPx = Number(headerOpts.qrPx) || 70;
+    const marginBottom = headerOpts.marginBottom != null ? Number(headerOpts.marginBottom) : 25;
+    const paddingBottom = headerOpts.paddingBottom != null ? Number(headerOpts.paddingBottom) : 15;
 
     if (_getSetting('brandLogo')) {
         const logoSrc = await PhotoManager.getAsyncUrl(_getSetting('brandLogo')) || _getSetting('brandLogo');
-        logoHtml = `<img src="${logoSrc}" style="height:45px; width:auto; max-width:200px; object-fit:contain; background: transparent; display: block;">`;
+        logoHtml = `<img src="${logoSrc}" style="height:${logoH}px; width:auto; max-width:220px; object-fit:contain; background: transparent; display: block;">`;
     }
 
     const qrHtml = qrCodeDataUrl
-        ? `<div style="width:70px; height:70px; border:2px solid ${_getSetting('brandColor') || '#4f46e5'}; padding:3px; border-radius:4px; background: white;"><img src="${qrCodeDataUrl}" style="width:100%; height:100%;"></div><div style="font-size: 6px; color: #94a3b8; text-align: center; margin-top: 2px;">После синхр.</div>`
+        ? `<div style="display:inline-block; text-align:center;">
+            <div style="width:${qrPx}px; height:${qrPx}px; border:2px solid ${brandColor}; padding:4px; border-radius:6px; background: white; box-sizing:border-box;">
+                <img src="${qrCodeDataUrl}" style="width:100%; height:100%; image-rendering:pixelated;">
+            </div>
+            <div style="font-size: 7px; color: #64748b; text-align: center; margin-top: 3px; font-weight:700;">Скан · публичный отчёт</div>
+           </div>`
         : '';
 
-    const fontSizeTitle = mode === 'browser' ? '18pt' : '22px';
+    const fontSizeTitle = mode === 'browser' ? '18pt' : (headerOpts.titlePx ? `${headerOpts.titlePx}px` : '22px');
     const fontSizeSub = mode === 'browser' ? '9pt' : '12px';
 
     return `
         <style>
             /* уже определены в printPdfShell, дублировать не нужно */
         </style>
-        <div class="no-break" style="border-bottom: 3px solid ${brandColor}; padding-bottom: 15px; margin-bottom: 25px;">
+        <div class="no-break" style="border-bottom: 3px solid ${brandColor}; padding-bottom: ${paddingBottom}px; margin-bottom: ${marginBottom}px;">
             <table style="width: 100%; border: none; border-spacing: 0;">
                 <tr>
-                    <td style="width: 25%; vertical-align: middle;">${logoHtml}</td>
-                    <td style="width: 50%; vertical-align: middle; text-align: center;">
+                    <td style="width: 22%; vertical-align: middle;">${logoHtml}</td>
+                    <td style="width: 56%; vertical-align: middle; text-align: center;">
                         <h1 style="font-family: 'Playfair Display', 'Georgia', serif; font-size:${fontSizeTitle}; font-weight:normal; text-transform:uppercase; margin:0; color:${brandColor};">${title}</h1>
-                        <div style="font-family: 'Bricolage Grotesque', 'Verdana', sans-serif; font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}${author ? ` | АВТОР: ${author}` : ''}${period ? ` | ПЕРИОД: ${period}` : ''}</div>
+                        <div style="font-family: 'Bricolage Grotesque', 'Verdana', sans-serif; font-size:${fontSizeSub}; margin-top:5px; color:#4c7288;">Сформировано: ${new Date().toLocaleString('ru-RU')}</div>
+                        <div style="font-family: 'Bricolage Grotesque', 'Verdana', sans-serif; font-size:${fontSizeSub}; margin-top:4px; color:#1c2b39; font-weight:700;">АВТОР: ${author || 'Инженер'} &nbsp;|&nbsp; ПЕРИОД: ${period || 'Всё время'}</div>
                     </td>
-                    <td style="width: 25%; vertical-align: middle; text-align: right;">${qrHtml}</td>
+                    <td style="width: 22%; vertical-align: middle; text-align: right;">${qrHtml}</td>
                 </tr>
             </table>
         </div>
@@ -1754,7 +1830,7 @@ async function saveReportToLocal(reportData, htmlContent) {
 
         project_canonical_key: canonicalKey || reportData.project,
         project_display_name: reportData.project,
-        engineer_name: _getSetting('engineerName') || 'Инженер',
+        engineer_name: reportData.author || _getSetting('engineerName') || 'Инженер',
 
         report_type: reportData.type,
         doc_kind: reportData.docKind || 'Прочее',
@@ -1767,13 +1843,14 @@ async function saveReportToLocal(reportData, htmlContent) {
 
         metadata: {
             project: reportData.project,
-            period: reportData.period,
+            period: reportData.period || 'Всё время',
+            author: reportData.author || _getSetting('engineerName') || 'Инженер',
             public_token: publicToken
         },
 
         public_token: publicToken,
         snapshot_html: publicHtmlContent, // Теперь переменная существует!
-        created_by: _getSetting('engineerName') || 'Инженер',
+        created_by: reportData.author || _getSetting('engineerName') || 'Инженер',
 
         source: 'local',
         sync_status: 'not_synced',
@@ -1848,7 +1925,9 @@ async function exportPdfOnePager(data, mode = 'script') {
 
     const groupedC = {};
     data.forEach(item => {
-        const cKey = (item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']';
+        const cKey = (typeof window.trendContractorKey === 'function')
+            ? window.trendContractorKey(item)
+            : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
         groupedC[cKey] = groupedC[cKey] || [];
         groupedC[cKey].push(item);
     });
@@ -1869,7 +1948,7 @@ async function exportPdfOnePager(data, mode = 'script') {
     for (let cName in groupedC) {
         if (groupedC[cName].length >= 3) {
             const m = getContractorMetrics(groupedC[cName], _templates().getUserTemplates());
-            if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7 });
+            if (m) ratingData.push({ name: cName, val: m.finalC, count: m.count, b3: m.n_изделий_с_B3, isPrelim: m.count < 7, prevVal: null });
         }
     }
     ratingData.sort((a, b) => b.val - a.val);
@@ -1896,6 +1975,24 @@ async function exportPdfOnePager(data, mode = 'script') {
         const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
         prevData = sortedData.slice(0, half);
     }
+
+    const currProjectsPdf = new Set(data.map(i => i.project_canonical_key || i.project_display_name || i.projectName).filter(Boolean));
+    const prevGroupedPdf = {};
+    prevData.forEach(item => {
+        const p = item.project_canonical_key || item.project_display_name || item.projectName;
+        if (currProjectsPdf.size && p && !currProjectsPdf.has(p)) return;
+        const cKey = (typeof window.trendContractorKey === 'function')
+            ? window.trendContractorKey(item)
+            : ((item.contractorName || 'Неизвестно') + ' [' + (item.projectName || 'Без объекта') + ']');
+        (prevGroupedPdf[cKey] = prevGroupedPdf[cKey] || []).push(item);
+    });
+    ratingData.forEach(r => {
+        const prevItems = prevGroupedPdf[r.name];
+        if (prevItems && prevItems.length >= 3) {
+            const pm = getContractorMetrics(prevItems, _templates().getUserTemplates());
+            if (pm) r.prevVal = pm.finalC;
+        }
+    });
 
     let prevAvgUrk = 0; let prevIko = "0.00"; let prevChecks = prevData.length; let prevContrsCount = 0;
     if (prevData.length > 0) {
@@ -1977,32 +2074,57 @@ async function exportPdfOnePager(data, mode = 'script') {
     const cLine = document.getElementById('op-line-chart');
     const imgLine = cLine ? `<img style="width:100%; height:100%; object-fit:contain;" src="${cLine.toDataURL('image/png')}">` : '';
 
-    const pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
+    const OP_PDCA_MAX_CHARS = 500;
+    let pdcaTextRaw = document.getElementById('hidden_pdca_text')?.value || "Нет данных для формирования решения.";
+    pdcaTextRaw = String(pdcaTextRaw).trim();
+    if (pdcaTextRaw.length > OP_PDCA_MAX_CHARS) pdcaTextRaw = pdcaTextRaw.slice(0, OP_PDCA_MAX_CHARS - 1).trimEnd() + '…';
     const pdfFormattedText = pdcaTextRaw.replace(/^\[(.*?)\]/gm, '<div style="font-size: 12px; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 4px;">$1</div>').replace(/\n/g, '<br>');
 
     const isGlobalDanger = parseFloat(mData.IKO) >= 0.60 || sumB3 > 0;
 
+    // Печать: строки рейтинга строго однострочные + потолок по высоте блока.
+    // После правок UI (wrap имён / ▲▼ отдельной строкой) левая колонка раздувалась
+    // и html2pdf уводил весь onepager на 2-ю страницу.
     let ratingHtml = '';
     if (ratingData.length === 0) {
-        ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 20px;">Нет данных</div>`;
+        ratingHtml = `<div style="font-size:${mode === 'browser' ? '8pt' : '10px'}; color:#94a3b8; text-align:center; padding: 12px;">Нет данных</div>`;
     } else {
-        const renderRow = (r) => `
-            <table style="width:100%; margin-bottom:6px; border-collapse:collapse; table-layout: fixed;">
+        const renderRow = (r) => {
+            let delta = '<span style="font-size:8px;color:#94a3b8;font-weight:bold;margin-left:4px;">—</span>';
+            if (r.prevVal !== null && r.prevVal !== undefined) {
+                const diff = r.val - r.prevVal;
+                if (Math.abs(diff) < 0.5) delta = '<span style="font-size:8px;color:#94a3b8;font-weight:bold;margin-left:4px;">▬0</span>';
+                else {
+                    const good = diff > 0;
+                    delta = `<span style="font-size:8px;font-weight:900;color:${good ? '#22c55e' : '#ef4444'};margin-left:4px;">${diff > 0 ? '▲' : '▼'}${Math.abs(Math.round(diff))}</span>`;
+                }
+            }
+            return `
+            <table style="width:100%; margin-bottom:3px; border-collapse:collapse; table-layout: fixed;">
                 <tr>
-                    <td style="width:40%; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${r.name}</td>
-                    <td style="width:45%; vertical-align: middle;">
-                        <div style="background:#e2e8f0; height:10px; border-radius:5px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
+                    <td style="width:46%; font-size:${mode === 'browser' ? '7pt' : '9px'}; font-weight:bold; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:6px; vertical-align:middle;" title="${String(r.name).replace(/"/g, '&quot;')}">${r.name}</td>
+                    <td style="width:30%; vertical-align: middle;">
+                        <div style="background:#e2e8f0; height:7px; border-radius:4px; border:1px solid #cbd5e1; width:100%; overflow:hidden;">
                             <div style="width:${r.val}%; background:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; height:100%;"></div>
                         </div>
                     </td>
-                    <td style="width:15%; text-align:right; font-size:${mode === 'browser' ? '8pt' : '11px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')};">
-                        ${r.val}%
+                    <td style="width:24%; text-align:right; font-size:${mode === 'browser' ? '7.5pt' : '10px'}; font-weight:900; color:${r.val < 70 ? '#ef4444' : (r.val < 85 ? '#f59e0b' : '#22c55e')}; vertical-align:middle; white-space:nowrap;">
+                        ${r.val}%${delta}
                     </td>
                 </tr>
             </table>`;
+        };
 
-        if (ratingData.length <= 10) ratingHtml = ratingData.map(renderRow).join('');
-        else ratingHtml = ratingData.slice(0, 5).map(renderRow).join('') + `<div style="text-align:center; font-size:9px; color:#94a3b8; font-weight:bold; padding:2px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:2px 0;">... Скрыто ${ratingData.length - 10} ...</div>` + ratingData.slice(-5).map(renderRow).join('');
+        // На A3-листе держим компактный топ, иначе левая колонка выталкивает страницу.
+        const pdfRating = ratingData.length <= 8
+            ? ratingData
+            : [...ratingData.slice(0, 4), null, ...ratingData.slice(-3)];
+        ratingHtml = pdfRating.map(r => {
+            if (!r) {
+                return `<div style="text-align:center; font-size:8px; color:#94a3b8; font-weight:bold; padding:1px 0; border-top:1px dashed #cbd5e1; border-bottom:1px dashed #cbd5e1; margin:1px 0;">… ещё ${ratingData.length - 7} …</div>`;
+            }
+            return renderRow(r);
+        }).join('');
     }
 
     const fontSizeSmall = mode === 'browser' ? '7pt' : '9px';
@@ -2061,14 +2183,14 @@ async function exportPdfOnePager(data, mode = 'script') {
                         </tr>
                     </table>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 10px; height: auto; min-height:${mode === 'browser' ? '50mm' : '200px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 5px; text-align: center;">📈 Динамика Подрядчиков</div>
-                        <div style="height:${mode === 'browser' ? '40mm' : '160px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; margin-bottom: 8px; height: ${mode === 'browser' ? '48mm' : '190px'}; box-sizing: border-box; overflow: hidden;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 4px; text-align: center;">📈 Динамика уровня качества</div>
+                        <div style="height:${mode === 'browser' ? '36mm' : '145px'}; text-align:center; overflow: hidden;">${imgLine ? imgLine : '<span style="color:#94a3b8; font-size:12px;">График не сформирован</span>'}</div>
                     </div>
 
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; height: auto; min-height:${mode === 'browser' ? '60mm' : '250px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 12px; text-align: center;">🏆 Интегральный УрК</div>
-                        <div style="width: 100%;">${ratingHtml}</div>
+                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; height: ${mode === 'browser' ? '52mm' : '210px'}; box-sizing: border-box; overflow: hidden;">
+                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 6px; text-align: center;">🏆 Рейтинг по надежности</div>
+                        <div style="width: 100%; max-height: ${mode === 'browser' ? '42mm' : '170px'}; overflow: hidden;">${ratingHtml}</div>
                     </div>
                 </td>
 
@@ -2078,9 +2200,9 @@ async function exportPdfOnePager(data, mode = 'script') {
                     ${await buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
                     ${await buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
 
-                    <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 15px;">
-                        <h3 style="margin: 0 0 8px 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 2px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 6px;">🎯 Управленческое Решение и Риски</h3>
-                        <div style="font-size: ${mode === 'browser' ? '10pt' : '13px'}; line-height: 1.5; color: #1e293b; columns: 2; column-gap: 20px;">${pdfFormattedText}</div>
+                    <div class="no-break" style="background: ${isGlobalDanger ? '#fffbeb' : '#f0fdf4'}; border: 2px solid ${isGlobalDanger ? '#fde68a' : '#bbf7d0'}; border-radius: 8px; padding: 10px; max-height: ${mode === 'browser' ? '38mm' : '145px'}; overflow: hidden; box-sizing: border-box;">
+                        <h3 style="margin: 0 0 4px 0; font-size: ${mode === 'browser' ? '9pt' : '11px'}; color: ${isGlobalDanger ? '#b45309' : '#166534'}; text-transform: uppercase; border-bottom: 1px solid ${isGlobalDanger ? '#fde047' : '#86efac'}; padding-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">🎯 Аналитика качества (вывод инженера)</h3>
+                        <div style="font-size: ${mode === 'browser' ? '8.5pt' : '11px'}; line-height: 1.35; color: #1e293b; columns: 2; column-gap: 14px;">${pdfFormattedText}</div>
                     </div>
                 </td>
             </tr>
@@ -2088,6 +2210,829 @@ async function exportPdfOnePager(data, mode = 'script') {
     `;
 
     printPdfShell("Сводка для Руководства", content, "A3", "landscape", mode);
+}
+
+/**
+ * One-Pager 2.0 — один лист A3 landscape для руководства.
+ * Старый onepager не трогаем: отдельный actionType `onepager_v2`.
+ */
+async function exportPdfOnePagerV2(data, mode = 'script') {
+    if (!data || data.length === 0) return showToast('Нет данных для выгрузки');
+    const _allInspections = _getAllInspections();
+    const DAY_MS = 86400000;
+
+    const resolveDocScore = (i) => {
+        if (!i || !i.metrics) return null;
+        if (i.metrics.documentary !== undefined && i.metrics.documentary !== null) return Number(i.metrics.documentary);
+        if (typeof window.getDocumentaryScore !== 'function' || !i.state || !i.templateKey) return null;
+        const tType = i.templateKey.split('_')[0];
+        const tKey = i.templateKey.replace(tType + '_', '');
+        const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey]
+            ? _templates().getSystemTemplates()[tKey].groups
+            : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
+        return window.getDocumentaryScore(i.state, getFlatList(cl));
+    };
+    let sumUrk = 0, sumDoc = 0, cntDoc = 0;
+    data.forEach(i => {
+        sumUrk += Number(i.metrics?.final) || 0;
+        const ds = resolveDocScore(i);
+        if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { sumDoc += ds; cntDoc++; }
+    });
+    const currAvgUrk = Math.round(sumUrk / data.length);
+    const currAvgDoc = cntDoc > 0 ? Math.round(sumDoc / cntDoc) : null;
+    const currInt = typeof getObjectIntegralMetrics === 'function'
+        ? getObjectIntegralMetrics(data, _templates().getUserTemplates())
+        : null;
+    const mData = currInt || { redZonePerc: 0, IKO: '0.00' };
+
+    const groupedC = {};
+    data.forEach(item => {
+        const cKey = (typeof window.trendContractorKey === 'function')
+            ? window.trendContractorKey(item)
+            : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
+        (groupedC[cKey] = groupedC[cKey] || []).push(item);
+    });
+    const currContrCount = Object.keys(groupedC).length;
+
+    const dominantWorkType = (items) => {
+        const counts = {};
+        items.forEach(i => {
+            const t = i.templateTitle || i.workTitle || i.checklistName || '—';
+            counts[t] = (counts[t] || 0) + 1;
+        });
+        return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || '—';
+    };
+
+    let sumRel = 0, relN = 0;
+    const ratingRel = [];
+    for (const cName in groupedC) {
+        const m = getContractorMetrics(groupedC[cName], _templates().getUserTemplates());
+        if (!m) continue;
+        ratingRel.push({
+            name: cName,
+            val: m.finalC,
+            count: m.count,
+            doc: m.documentaryC != null ? m.documentaryC : null,
+            workType: dominantWorkType(groupedC[cName])
+        });
+        if (m.count >= 7) { sumRel += m.finalC; relN++; }
+    }
+    ratingRel.sort((a, b) => b.val - a.val);
+    const avgReliability = relN > 0 ? Math.round(sumRel / relN) : null;
+
+    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    const now = new Date();
+    let prevData = [];
+    let trendLabel = 'к 1-й пол.';
+    if (selPeriod === 'WEEK') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
+        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
+        trendLabel = 'к прош. нед.';
+    } else if (selPeriod === 'MONTH') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
+        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
+        trendLabel = 'к прош. мес.';
+    } else {
+        const sorted = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+        prevData = sorted.slice(0, Math.floor(sorted.length / 2));
+    }
+
+    let prevAvgUrk = 0, prevAvgDoc = null, prevIko = '0.00', prevChecks = prevData.length, prevContrs = 0, prevRel = null;
+    if (prevData.length > 0) {
+        const pSum = prevData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
+        prevAvgUrk = Math.round(pSum / prevData.length);
+        let pSumDoc = 0, pCntDoc = 0;
+        prevData.forEach(i => {
+            const ds = resolveDocScore(i);
+            if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { pSumDoc += ds; pCntDoc++; }
+        });
+        if (pCntDoc > 0) prevAvgDoc = Math.round(pSumDoc / pCntDoc);
+        prevContrs = new Set(prevData.map(i => i.contractorName).filter(Boolean)).size;
+        const pInt = typeof getObjectIntegralMetrics === 'function'
+            ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
+        if (pInt) prevIko = pInt.IKO;
+        const pGrouped = {};
+        prevData.forEach(item => {
+            const cKey = (typeof window.trendContractorKey === 'function')
+                ? window.trendContractorKey(item)
+                : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
+            (pGrouped[cKey] = pGrouped[cKey] || []).push(item);
+        });
+        let ps = 0, pn = 0;
+        for (const k in pGrouped) {
+            if (pGrouped[k].length < 7) continue;
+            const m = getContractorMetrics(pGrouped[k], _templates().getUserTemplates());
+            if (m) { ps += m.finalC; pn++; }
+        }
+        if (pn > 0) prevRel = Math.round(ps / pn);
+    }
+
+    const renderTrend = (curr, prev, label, inverse = false) => {
+        if (prev === undefined || prev === null || prev === '' || Number.isNaN(parseFloat(prev))) {
+            return `<div style="text-align:center;"><span style="color:#94a3b8;font-size:7px;font-weight:bold;">нет базы</span></div>`;
+        }
+        const diff = parseFloat(curr) - parseFloat(prev);
+        if (Math.abs(diff) < 0.01) {
+            return `<div style="text-align:center;"><span style="color:#94a3b8;font-size:10px;font-weight:900;">▬0</span><div style="font-size:6.5px;color:#94a3b8;text-transform:uppercase;">${label}</div></div>`;
+        }
+        const good = inverse ? diff < 0 : diff > 0;
+        return `<div style="text-align:center;"><span style="color:${good ? '#16a34a' : '#dc2626'};font-size:11px;font-weight:900;">${diff > 0 ? '▲' : '▼'}${Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)}</span><div style="font-size:6.5px;color:#94a3b8;text-transform:uppercase;">${label}</div></div>`;
+    };
+
+    // Вертикальные столбцы по подрядчикам: текущее значение + Δ к пред. интервалу
+    const chartPeriod = (selPeriod === 'WEEK' || selPeriod === 'DAY') ? 'WEEK' : 'MONTH';
+    const bucketKeys = [];
+    if (chartPeriod === 'WEEK') {
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now);
+            d.setDate(now.getDate() - i * 7);
+            const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+            monday.setHours(0, 0, 0, 0);
+            const end = new Date(monday); end.setDate(monday.getDate() + 7);
+            bucketKeys.push({ start: monday, end });
+        }
+    } else {
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            bucketKeys.push({
+                start: new Date(d.getFullYear(), d.getMonth(), 1),
+                end: new Date(d.getFullYear(), d.getMonth() + 1, 1)
+            });
+        }
+    }
+    const cleanContrName = (name) => String(name || '').replace(/\s*\[.*?\]\s*$/, '').trim() || String(name || '');
+    const wrapToWidth = (ctx, text, maxWidth, maxLines) => {
+        const words = String(text || '—').replace(/\s+/g, ' ').trim().split(' ');
+        const lines = [];
+        let cur = '';
+        const push = (s) => { if (s) lines.push(s); };
+        for (let wi = 0; wi < words.length; wi++) {
+            const w = words[wi];
+            const test = cur ? `${cur} ${w}` : w;
+            if (ctx.measureText(test).width <= maxWidth) {
+                cur = test;
+                continue;
+            }
+            if (cur) push(cur);
+            if (lines.length >= maxLines - 1) {
+                // остаток текста целиком в последнюю строку (без обрезки «…»)
+                push([w].concat(words.slice(wi + 1)).join(' '));
+                cur = '';
+                break;
+            }
+            // слишком длинное слово — дробим по символам, но без потери хвоста
+            if (ctx.measureText(w).width > maxWidth) {
+                let chunk = '';
+                for (const ch of w) {
+                    const t2 = chunk + ch;
+                    if (ctx.measureText(t2).width > maxWidth && chunk) {
+                        push(chunk);
+                        chunk = ch;
+                        if (lines.length >= maxLines - 1) {
+                            push(chunk + w.slice(w.indexOf(ch) + 1) + (words.slice(wi + 1).length ? ' ' + words.slice(wi + 1).join(' ') : ''));
+                            chunk = '';
+                            wi = words.length;
+                            break;
+                        }
+                    } else chunk = t2;
+                }
+                cur = chunk;
+            } else {
+                cur = w;
+            }
+        }
+        if (cur && lines.length < maxLines) push(cur);
+        else if (cur) lines[lines.length - 1] = (lines[lines.length - 1] || '') + ' ' + cur;
+        return lines.length ? lines : ['—'];
+    };
+    const bucketAvgUrk = (items, start, end) => {
+        const slice = items.filter(i => { const d = new Date(i.date); return d >= start && d < end; });
+        if (slice.length < 1) return null;
+        const sum = slice.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
+        return Math.round(sum / slice.length);
+    };
+    const bucketIurk = (items, start, end) => {
+        const slice = items.filter(i => { const d = new Date(i.date); return d >= start && d < end; });
+        if (slice.length < 1) return null;
+        const metrics = getContractorMetrics(slice, _templates().getUserTemplates(), false);
+        return metrics ? metrics.finalC : null;
+    };
+    const deltaForContractor = (items, valueFn) => {
+        for (let i = bucketKeys.length - 1; i >= 1; i--) {
+            const curV = valueFn(items, bucketKeys[i].start, bucketKeys[i].end);
+            const prevV = valueFn(items, bucketKeys[i - 1].start, bucketKeys[i - 1].end);
+            if (curV != null && prevV != null) return { last: curV, prev: prevV, delta: curV - prevV };
+        }
+        return null;
+    };
+    const growthHint = chartPeriod === 'WEEK'
+        ? 'Δ к предыдущей неделе, п.п.'
+        : 'Δ к предыдущему месяцу, п.п.';
+
+    const makeVerticalContractorBars = (rows) => {
+        if (!rows.length) return null;
+        const n = rows.length;
+        const values = rows.map(r => r.value);
+        const colors = values.map(v => (v < 70 ? '#ef4444' : (v < 85 ? '#f59e0b' : '#22c55e')));
+        const barMax = Math.max(10, Math.min(36, Math.floor(780 / Math.max(n, 1))));
+        const fontMain = n > 12 ? 9 : 11;
+        const fontDelta = n > 12 ? 10 : 12;
+        const chartW = Math.max(980, n * 92);
+        const labelPlugin = {
+            id: 'op2BarLabelsFull',
+            afterDatasetsDraw(chart) {
+                const { ctx, chartArea } = chart;
+                const meta0 = chart.getDatasetMeta(0);
+                if (!meta0 || !meta0.data) return;
+                const slotW = Math.max(48, (chartArea.right - chartArea.left) / n - 6);
+                meta0.data.forEach((bar, i) => {
+                    const r = rows[i];
+                    if (!r || !bar) return;
+                    const x = bar.x;
+                    const top = bar.y;
+                    const h = Math.abs(bar.base - top);
+                    const dTxt = (r.delta == null || Number.isNaN(r.delta))
+                        ? 'н/д'
+                        : ((r.delta > 0 ? '+' : '') + r.delta);
+                    const dColor = (r.delta == null || Number.isNaN(r.delta))
+                        ? '#94a3b8'
+                        : (r.delta > 0 ? '#15803d' : (r.delta < 0 ? '#b91c1c' : '#64748b'));
+                    ctx.save();
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = `bold ${fontMain}px Verdana, sans-serif`;
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fillText(String(r.value) + '%', x, top - 10);
+                    ctx.font = `bold ${fontDelta}px Verdana, sans-serif`;
+                    if (h >= 24) {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText(dTxt, x, top + h * 0.45);
+                    } else {
+                        ctx.fillStyle = dColor;
+                        ctx.fillText(dTxt, x, top - 20);
+                    }
+                    // Подписи под столбцом: подрядчик + вид работ с переносом, без «…»
+                    ctx.textBaseline = 'top';
+                    let y = chartArea.bottom + 4;
+                    ctx.font = `bold ${n > 10 ? 7.5 : 8.5}px Verdana, sans-serif`;
+                    ctx.fillStyle = '#0f172a';
+                    wrapToWidth(ctx, cleanContrName(r.name), slotW, 4).forEach(line => {
+                        ctx.fillText(line, x, y);
+                        y += n > 10 ? 9 : 10;
+                    });
+                    ctx.font = `${n > 10 ? 7 : 8}px Verdana, sans-serif`;
+                    ctx.fillStyle = '#64748b';
+                    wrapToWidth(ctx, r.workType || '—', slotW, 4).forEach(line => {
+                        ctx.fillText(line, x, y);
+                        y += n > 10 ? 8 : 9;
+                    });
+                    ctx.restore();
+                });
+            }
+        };
+        return generatePdfChart({
+            type: 'bar',
+            data: {
+                labels: rows.map(() => ''),
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderRadius: 3,
+                    maxBarThickness: barMax
+                }]
+            },
+            options: {
+                layout: { padding: { top: 26, bottom: 78, left: 4, right: 4 } },
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: { font: { size: 8 }, stepSize: 20 },
+                        grid: { color: '#e2e8f0' }
+                    },
+                    x: {
+                        ticks: { display: false },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (items) => {
+                                const r = rows[items[0].dataIndex];
+                                return `${cleanContrName(r.name)}\n${r.workType || ''}`;
+                            },
+                            label: (ctx) => {
+                                const r = rows[ctx.dataIndex];
+                                const d = (r.delta == null) ? 'н/д' : ((r.delta > 0 ? '+' : '') + r.delta + ' п.п.');
+                                return `${r.value}% · Δ ${d}`;
+                            }
+                        }
+                    }
+                }
+            },
+            plugins: [labelPlugin]
+        }, chartW, 255);
+    };
+
+    // Все подрядчики выборки, у которых есть проверки
+    const chartRows = Object.keys(groupedC).map(cName => {
+        const items = groupedC[cName] || [];
+        if (!items.length) return null;
+        const urkNow = Math.round(items.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0) / items.length);
+        const m = getContractorMetrics(items, _templates().getUserTemplates());
+        const dUrk = deltaForContractor(items, bucketAvgUrk);
+        const dIurk = deltaForContractor(items, bucketIurk);
+        return {
+            name: cName,
+            workType: dominantWorkType(items),
+            urk: { value: urkNow, delta: dUrk ? dUrk.delta : null },
+            iurk: { value: m ? m.finalC : urkNow, delta: dIurk ? dIurk.delta : null }
+        };
+    }).filter(Boolean).sort((a, b) => b.urk.value - a.urk.value);
+
+    const urkBarRows = chartRows.map(r => ({
+        name: r.name, workType: r.workType, value: r.urk.value, delta: r.urk.delta
+    }));
+    const iurkBarRows = chartRows.map(r => ({
+        name: r.name, workType: r.workType, value: r.iurk.value, delta: r.iurk.delta
+    }));
+    const imgUrk = makeVerticalContractorBars(urkBarRows);
+    const imgRel = makeVerticalContractorBars(iurkBarRows);
+
+    // ── ПК СК (без детализации) за период фильтра выгрузки ───────────────
+    let skRecords = (_getSkRecords() || []).filter(r => !r._deleted);
+    let lastSkLoad = null;
+    skRecords.forEach(r => {
+        const loadTs = r.last_imported_at || r.first_imported_at || r.imported_at || r.synced_at || r.updated_at;
+        if (!loadTs) return;
+        const d = new Date(loadTs);
+        if (!Number.isNaN(d.getTime()) && (!lastSkLoad || d > lastSkLoad)) lastSkLoad = d;
+    });
+    let periodDays = 30;
+    if (selPeriod === 'DAY') {
+        periodDays = 1;
+        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
+    } else if (selPeriod === 'WEEK') {
+        periodDays = 7;
+        const w = new Date(now); w.setDate(now.getDate() - 7);
+        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= w);
+    } else if (selPeriod === 'MONTH') {
+        periodDays = 30;
+        const m = new Date(now); m.setDate(now.getDate() - 30);
+        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= m);
+    } else if (selPeriod === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        const fromD = dFrom ? new Date(dFrom) : null;
+        const toD = dTo ? new Date(dTo) : now;
+        if (dTo) toD.setHours(23, 59, 59, 999);
+        if (fromD && toD) periodDays = Math.max(1, Math.ceil((toD - fromD) / DAY_MS));
+        if (dFrom) skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= new Date(dFrom));
+        if (dTo) {
+            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
+            skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) <= tDate);
+        }
+    } else {
+        const dates = skRecords.map(r => r.date_issued ? new Date(r.date_issued).getTime() : NaN).filter(n => !Number.isNaN(n));
+        if (dates.length) {
+            periodDays = Math.max(1, Math.ceil((Math.max(...dates) - Math.min(...dates)) / DAY_MS) || 1);
+        }
+    }
+    const fProj = _analyticsFilters().project || [];
+    const fContr = _analyticsFilters().contractor || [];
+    if (fProj.length) {
+        skRecords = skRecords.filter(r =>
+            fProj.includes(r.project_display_name) || fProj.includes(r.project_canonical_key) || fProj.includes(r.display_name) || fProj.includes(r.projectName));
+    }
+    if (fContr.length) {
+        skRecords = skRecords.filter(r =>
+            fContr.includes(r.contractor_name) || fContr.includes(r.contractor) || fContr.includes(r.contractor_canonical_key));
+    }
+
+    const isSkOpen = (r) => !(r.is_verified_closed === true
+        || r.status_normalized === 'verified'
+        || String(r.status || '').toLowerCase().trim() === 'проверено');
+
+    let skOpen = 0, skOverdue = 0;
+    const overdueDepths = [];
+    const closingTimes = [];
+    skRecords.forEach(r => {
+        const open = isSkOpen(r);
+        if (open) skOpen++;
+        const issued = r.date_issued ? new Date(r.date_issued) : null;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+        if (issued && resolved && !Number.isNaN(issued.getTime()) && !Number.isNaN(resolved.getTime()) && resolved >= issued) {
+            closingTimes.push(Math.max(0, Math.ceil((resolved - issued) / DAY_MS)));
+        }
+        if (!deadline || Number.isNaN(deadline.getTime())) return;
+        if (open && now > deadline) {
+            skOverdue++;
+            overdueDepths.push(Math.max(0, Math.ceil((now - deadline) / DAY_MS)));
+        } else if (!open && resolved && resolved > deadline) {
+            skOverdue++;
+            overdueDepths.push(Math.max(0, Math.ceil((resolved - deadline) / DAY_MS)));
+        }
+    });
+    const skClosed = skRecords.length - skOpen;
+    const skResolved = skRecords.filter(r => !!r.date_resolved).length;
+    const avgOverdueDepth = overdueDepths.length
+        ? Math.round(overdueDepths.reduce((a, b) => a + b, 0) / overdueDepths.length)
+        : 0;
+    const avgResolveDays = closingTimes.length
+        ? Math.round(closingTimes.reduce((a, b) => a + b, 0) / closingTimes.length)
+        : null;
+    const weeksInPeriod = Math.max(periodDays / 7, 0.14);
+    const skIssuePace = Math.round((skRecords.length / weeksInPeriod) * 10) / 10;
+    const skClosePace = Math.round((skResolved / weeksInPeriod) * 10) / 10;
+    const lastSkLoadLabel = lastSkLoad
+        ? lastSkLoad.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'не зафиксирована';
+    const skPeriodHint = selPeriod === 'ALL' ? 'весь период'
+        : (selPeriod === 'DAY' ? 'сегодня'
+            : (selPeriod === 'WEEK' ? '7 дней'
+                : (selPeriod === 'MONTH' ? '30 дней' : 'свой период')));
+
+    // Сводка по подрядчикам — компактная таблица + визуальные бары / мини-график
+    const escPdf = (s) => String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const urkTone = (v) => (v < 70 ? '#ef4444' : (v < 85 ? '#f59e0b' : '#22c55e'));
+    const riskTone = (v) => (v >= 20 ? '#ef4444' : (v > 0 ? '#f59e0b' : '#22c55e'));
+    const miniBar = (pct, color, label) => `
+        <div style="min-width:44px;">
+            <div style="font-size:7.5px;font-weight:900;color:${color};text-align:center;line-height:1;">${label}</div>
+            <div style="background:#e2e8f0;height:5px;border-radius:3px;overflow:hidden;margin-top:1px;">
+                <div style="width:${Math.max(0, Math.min(100, pct))}%;height:100%;background:${color};border-radius:3px;"></div>
+            </div>
+        </div>`;
+    const contrStats = chartRows.map(r => {
+        const items = groupedC[r.name] || [];
+        let sumB1 = 0, sumB2 = 0, sumB3 = 0, checksWithB3 = 0;
+        items.forEach(i => {
+            if (!i.metrics) return;
+            sumB1 += Number(i.metrics.n_B1_fail) || 0;
+            sumB2 += Number(i.metrics.n_B2_fail) || 0;
+            sumB3 += Number(i.metrics.n_B3_fail) || 0;
+            if (i.metrics.b3_found || (Number(i.metrics.n_B3_fail) || 0) > 0) checksWithB3++;
+        });
+        const m = getContractorMetrics(items, _templates().getUserTemplates(), false);
+        const n = items.length;
+        const percCrit = n ? Math.round((checksWithB3 / n) * 100) : 0;
+        const rB2 = m ? Math.round(m.maxFailRate) : 0;
+        return {
+            name: cleanContrName(r.name),
+            workType: r.workType || '—',
+            n,
+            urk: r.urk.value,
+            iurk: m ? m.finalC : r.iurk.value,
+            defects: sumB1 + sumB2 + sumB3,
+            b2: sumB2,
+            b3: sumB3,
+            rB2,
+            percCrit
+        };
+    }).sort((a, b) => b.percCrit - a.percCrit || b.b3 - a.b3 || b.n - a.n);
+
+    const maxDef = Math.max(1, ...contrStats.map(c => c.defects));
+    const contrStatsRows = contrStats.map((c, idx) => {
+        const uC = urkTone(c.urk);
+        const iC = urkTone(c.iurk);
+        const critC = riskTone(c.percCrit);
+        const rb2C = c.rB2 >= 40 ? '#ef4444' : (c.rB2 >= 20 ? '#f59e0b' : '#64748b');
+        const bg = idx % 2 ? '#f8fafc' : '#fff';
+        const defW = Math.round((c.defects / maxDef) * 100);
+        return `<tr style="background:${bg};">
+            <td style="padding:1px 4px;border-bottom:1px solid #e2e8f0;vertical-align:middle;">
+                <div style="font-size:7.5px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${escPdf(c.name)}</div>
+                <div style="font-size:6px;font-weight:600;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;">${escPdf(c.workType)}</div>
+            </td>
+            <td style="padding:1px 2px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:8px;font-weight:900;color:#334155;">${c.n}</td>
+            <td style="padding:1px 3px;border-bottom:1px solid #e2e8f0;">${miniBar(c.urk, uC, c.urk + '%')}</td>
+            <td style="padding:1px 3px;border-bottom:1px solid #e2e8f0;">${miniBar(c.iurk, iC, c.iurk + '%')}</td>
+            <td style="padding:1px 3px;border-bottom:1px solid #e2e8f0;">
+                <div style="font-size:7.5px;font-weight:900;color:#0f172a;text-align:center;line-height:1;">${c.defects}</div>
+                <div style="background:#e2e8f0;height:4px;border-radius:2px;overflow:hidden;margin-top:1px;">
+                    <div style="width:${defW}%;height:100%;background:#64748b;"></div>
+                </div>
+            </td>
+            <td style="padding:1px 2px;border-bottom:1px solid #e2e8f0;text-align:center;">
+                <span style="display:inline-block;background:#fff7ed;color:#c2410c;border:1px solid #fdba74;border-radius:3px;padding:0 3px;font-size:7px;font-weight:900;">${c.b2}</span>
+            </td>
+            <td style="padding:1px 2px;border-bottom:1px solid #e2e8f0;text-align:center;">
+                <span style="display:inline-block;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:3px;padding:0 3px;font-size:7px;font-weight:900;">${c.b3}</span>
+            </td>
+            <td style="padding:1px 3px;border-bottom:1px solid #e2e8f0;">${miniBar(c.rB2, rb2C, c.rB2 + '%')}</td>
+            <td style="padding:1px 3px;border-bottom:1px solid #e2e8f0;">${miniBar(c.percCrit, critC, c.percCrit + '%')}</td>
+        </tr>`;
+    }).join('');
+
+    const critChartH = Math.min(160, Math.max(70, contrStats.length * 16 + 28));
+    const imgCritShare = contrStats.length ? generatePdfChart({
+        type: 'bar',
+        data: {
+            labels: contrStats.map(c => {
+                const n = c.name.length > 16 ? c.name.slice(0, 15) + '…' : c.name;
+                return n;
+            }),
+            datasets: [{
+                data: contrStats.map(c => c.percCrit),
+                backgroundColor: contrStats.map(c => riskTone(c.percCrit)),
+                borderRadius: 3,
+                maxBarThickness: 12
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            layout: { padding: { top: 2, bottom: 2, left: 0, right: 18 } },
+            scales: {
+                x: { min: 0, max: 100, ticks: { font: { size: 7 }, stepSize: 25 }, grid: { color: '#e2e8f0' } },
+                y: { ticks: { font: { size: 7, weight: '700' } }, grid: { display: false } }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `% проверок с B3: ${ctx.raw}%` } }
+            }
+        }
+    }, 420, critChartH) : null;
+
+    const defectsByContrHtml = `
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+            <tr>
+                <td style="width:62%;padding-right:6px;vertical-align:top;">
+                    <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                        <thead><tr style="background:#f1f5f9;">
+                            <th style="padding:2px 4px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:left;">Подрядчик / вид работ</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:6%;">N</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:11%;">УрК</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:11%;">ИУрК</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:9%;">Деф.</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:6%;">B2</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:6%;">B3</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:11%;">Повт.B2</th>
+                            <th style="padding:2px;font-size:6.5px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:11%;">% B3</th>
+                        </tr></thead>
+                        <tbody>${contrStatsRows || `<tr><td colspan="9" style="padding:6px;text-align:center;font-size:8px;color:#94a3b8;">Нет подрядчиков</td></tr>`}</tbody>
+                    </table>
+                </td>
+                <td style="width:38%;padding-left:2px;vertical-align:top;">
+                    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:4px 6px;box-sizing:border-box;">
+                        <div style="font-size:7px;font-weight:900;color:#475569;text-transform:uppercase;margin-bottom:2px;text-align:center;">Доля проверок с критическими дефектами (B3)</div>
+                        <div style="height:${critChartH}px;">${imgCritShare
+                            ? `<img src="${imgCritShare}" style="width:100%;height:100%;object-fit:contain;display:block;">`
+                            : `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:8px;">нет данных</div>`}</div>
+                    </div>
+                </td>
+            </tr>
+        </table>`;
+
+    // Рейтинг подрядчиков по просрочке ПК СК
+    const skContrMap = {};
+    skRecords.forEach(r => {
+        const c = r.contractor_name || r.contractor || 'Не указан';
+        if (!skContrMap[c]) skContrMap[c] = { total: 0, overdue: 0, depths: [] };
+        skContrMap[c].total++;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        if (!deadline || Number.isNaN(deadline.getTime())) return;
+        const open = isSkOpen(r);
+        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+        if (open && now > deadline) {
+            skContrMap[c].overdue++;
+            skContrMap[c].depths.push(Math.max(0, Math.ceil((now - deadline) / DAY_MS)));
+        } else if (!open && resolved && resolved > deadline) {
+            skContrMap[c].overdue++;
+            skContrMap[c].depths.push(Math.max(0, Math.ceil((resolved - deadline) / DAY_MS)));
+        }
+    });
+    const skContrRating = Object.keys(skContrMap).map(name => {
+        const d = skContrMap[name];
+        const avgDepth = d.depths.length ? Math.round(d.depths.reduce((a, b) => a + b, 0) / d.depths.length) : 0;
+        const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
+        return { name, overdue: d.overdue, overduePerc, avgDepth, total: d.total };
+    }).filter(x => x.overdue > 0).sort((a, b) => b.overdue - a.overdue || b.avgDepth - a.avgDepth).slice(0, 5);
+
+    const engMap = {};
+    const normRe = /(сп\s*\d|гост|ПУЭ|снип|шифр|тр\s|тк\s|ппр|\d+\s*(мм|см|м|%|град)|(лист|л\.|узел|уз\.|пункт|п\.|приказ[а-я]*)\s*(№\s*|от\s*)?\d+)/i;
+    skRecords.forEach(r => {
+        const name = (r.inspector && r.inspector.trim()) ? r.inspector.trim() : 'Не указан';
+        if (!engMap[name]) engMap[name] = { total: 0, matched: 0 };
+        engMap[name].total++;
+        const textLower = r.text ? String(r.text).toLowerCase() : '';
+        if (normRe.test(textLower)) engMap[name].matched++;
+    });
+    const engAccuracy = Object.keys(engMap).map(name => {
+        const d = engMap[name];
+        return {
+            name,
+            total: d.total,
+            matched: d.matched,
+            accuracy: d.total ? Math.round((d.matched / d.total) * 100) : 0
+        };
+    }).filter(e => e.total >= 3).sort((a, b) => b.accuracy - a.accuracy || b.total - a.total).slice(0, 5);
+
+    const ikoColor = parseFloat(mData.IKO) >= 0.6 ? '#dc2626' : (parseFloat(mData.IKO) >= 0.3 ? '#d97706' : '#16a34a');
+    const urkKpiValue = currAvgDoc != null
+        ? `<span style="color:#0f172a;">${currAvgUrk}%</span><span style="color:#94a3b8;font-size:12px;"> · </span><span style="color:#4f46e5;">${currAvgDoc}%</span>`
+        : `${currAvgUrk}%`;
+    const urkTrendHtml = (() => {
+        const tPhys = renderTrend(currAvgUrk, prevAvgUrk, 'физ.');
+        if (currAvgDoc == null) return renderTrend(currAvgUrk, prevAvgUrk, trendLabel);
+        const tDoc = renderTrend(currAvgDoc, prevAvgDoc, 'док.');
+        return `<table style="width:100%;border-collapse:collapse;"><tr><td style="width:50%;">${tPhys}</td><td style="width:50%;">${tDoc}</td></tr></table>`;
+    })();
+    const kpiCard = (label, valueHtml, trendHtml, extraStyle = '') => `
+        <td style="width:16.66%; padding:0 2px; vertical-align:top;">
+            <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:7px;padding:4px 6px 3px;height:58px;box-sizing:border-box;text-align:center;${extraStyle}">
+                <div style="font-size:7px;color:#64748b;text-transform:uppercase;font-weight:900;letter-spacing:0.01em;">${label}</div>
+                <div style="font-size:18px;font-weight:900;color:#0f172a;line-height:1.05;margin-top:2px;">${valueHtml}</div>
+                <div style="margin-top:1px;">${trendHtml}</div>
+            </div>
+        </td>`;
+
+    const th = (txt, w = '') => `<th style="padding:2px 3px;border-bottom:1px solid #cbd5e1;font-size:7px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:left;${w ? `width:${w};` : ''}">${txt}</th>`;
+    const thR = (txt, w = '') => `<th style="padding:2px 3px;border-bottom:1px solid #cbd5e1;font-size:7px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:right;${w ? `width:${w};` : ''}">${txt}</th>`;
+
+    const skContrRows = skContrRating.length
+        ? skContrRating.map((r, i) => `
+            <tr>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;color:#94a3b8;">${i + 1}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;text-align:right;">${r.total}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:9px;font-weight:900;color:#dc2626;text-align:right;">${r.overdue}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;color:#b45309;text-align:right;">${r.overduePerc}%</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;color:#b45309;text-align:right;">${r.avgDepth}</td>
+            </tr>`).join('')
+        : `<tr><td colspan="6" style="padding:8px;text-align:center;font-size:9px;color:#16a34a;font-weight:700;">Просрочек за период нет</td></tr>`;
+
+    const engRows = engAccuracy.length
+        ? engAccuracy.map((e, i) => {
+            const accColor = e.accuracy >= 80 ? '#16a34a' : (e.accuracy >= 50 ? '#d97706' : '#dc2626');
+            return `
+            <tr>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;color:#94a3b8;">${i + 1}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.name}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;text-align:right;">${e.total}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:8.5px;font-weight:800;text-align:right;">${e.matched}</td>
+                <td style="padding:2px 3px;border-bottom:1px solid #f1f5f9;font-size:9px;font-weight:900;color:${accColor};text-align:right;">${e.accuracy}%</td>
+            </tr>`;
+        }).join('')
+        : `<tr><td colspan="5" style="padding:8px;text-align:center;font-size:9px;color:#94a3b8;font-weight:700;">Нет данных ПК СК за период</td></tr>`;
+
+    const chartBox = (title, sub, img) => `
+        <div style="background:#fff;border:1px solid #cbd5e1;border-radius:7px;padding:5px 7px;height:228px;box-sizing:border-box;">
+            <div style="font-size:9.5px;font-weight:900;color:#0f172a;text-transform:uppercase;">${title}</div>
+            <div style="font-size:7px;color:#64748b;font-weight:700;margin:1px 0 2px;">${sub}</div>
+            <div style="height:192px;">${img
+                ? `<img src="${img}" style="width:100%;height:100%;object-fit:contain;display:block;">`
+                : `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;font-weight:700;text-align:center;">Недостаточно данных по подрядчикам</div>`}</div>
+        </div>`;
+
+    const content = `
+    <div class="no-break" style="font-family:'Bricolage Grotesque',Verdana,sans-serif;">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:5px;">
+            <tr>
+                ${kpiCard('Ср. УрК · физ. / докум.', urkKpiValue, urkTrendHtml)}
+                ${kpiCard('ИКО', `<span style="color:${ikoColor}">${mData.IKO}</span>`, renderTrend(mData.IKO, prevIko, trendLabel, true), parseFloat(mData.IKO) >= 0.6 ? 'background:#fef2f2;border-color:#fca5a5;' : '')}
+                ${kpiCard('Проверок', `${data.length}`, renderTrend(data.length, prevChecks, trendLabel))}
+                ${kpiCard('Подрядчиков', `${currContrCount}`, renderTrend(currContrCount, prevContrs, trendLabel))}
+                ${kpiCard('Красная зона', `<span style="color:#dc2626">${mData.redZonePerc}%</span>`, '<div style="font-size:6.5px;color:#94a3b8;">доля N&lt;70%</div>', 'background:#fef2f2;border-color:#fecaca;')}
+                ${kpiCard('Надёжность ср.', avgReliability != null ? `${avgReliability}%` : 'СБОР', renderTrend(avgReliability, prevRel, trendLabel))}
+            </tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:5px;">
+            <tr>
+                <td style="width:50%;padding-right:4px;vertical-align:top;">
+                    ${chartBox('УрК (физика) по подрядчикам', `Все подрядчики выборки (${chartRows.length}). Под столбцом — подрядчик и вид работ (без обрезки, с переносом). Внутри — Δ (${growthHint}). Документация — только в KPI сверху.`, imgUrk)}
+                </td>
+                <td style="width:50%;padding-left:4px;vertical-align:top;">
+                    ${chartBox('Надёжность (ИУрК) по подрядчикам', `Все подрядчики выборки. Под столбцом — подрядчик и вид работ. Высота = ИУрК %. Внутри — Δ (${growthHint}).`, imgRel)}
+                </td>
+            </tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:5px;">
+            <tr>
+                <td style="width:23%;padding-right:3px;vertical-align:top;">
+                    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;padding:6px 7px;box-sizing:border-box;">
+                        <div style="font-size:9px;font-weight:900;color:#1d4ed8;text-transform:uppercase;margin-bottom:2px;">ПК СК · сводка</div>
+                        <div style="font-size:7px;color:#64748b;font-weight:700;margin-bottom:3px;line-height:1.25;">Период: ${skPeriodHint}. По дате выдачи. Загрузка: ${lastSkLoadLabel}</div>
+                        <table style="width:100%;border-collapse:collapse;">
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Открыто</td><td style="text-align:center;font-size:12px;font-weight:900;color:#dc2626;width:42%;">${skOpen}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Закрыто</td><td style="text-align:center;font-size:12px;font-weight:900;">${skClosed}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Устранено (с датой)</td><td style="text-align:center;font-size:12px;font-weight:900;color:#16a34a;">${skResolved}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;border-top:1px solid #bfdbfe;padding-top:3px;">Просрочено</td><td style="text-align:center;font-size:12px;font-weight:900;color:#dc2626;border-top:1px solid #bfdbfe;padding-top:3px;">${skOverdue}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Ср. глубина проср., дн.</td><td style="text-align:center;font-size:12px;font-weight:900;color:#b45309;">${avgOverdueDepth}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Ср. срок устранения, дн.</td><td style="text-align:center;font-size:12px;font-weight:900;color:#0f172a;">${avgResolveDays != null ? avgResolveDays : '—'}</td></tr>
+                            <tr><td style="font-size:8.5px;color:#475569;padding:1px 0;">Темп выдача / закрытие</td><td style="text-align:center;font-size:10px;font-weight:900;color:#334155;">${skIssuePace} / ${skClosePace} в нед.</td></tr>
+                        </table>
+                    </div>
+                </td>
+                <td style="width:39%;padding:0 3px;vertical-align:top;">
+                    <div style="background:#fff;border:1px solid #fecaca;border-radius:7px;padding:6px 7px;box-sizing:border-box;">
+                        <div style="font-size:9px;font-weight:900;color:#991b1b;text-transform:uppercase;margin-bottom:3px;">Просрочка подрядчиков · ${skPeriodHint}</div>
+                        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                            <thead><tr>
+                                ${th('№', '16px')}${th('Подрядчик')}${thR('Всего', '36px')}${thR('Проср.', '40px')}${thR('Доля', '36px')}${thR('Глуб.', '40px')}
+                            </tr></thead>
+                            <tbody>${skContrRows}</tbody>
+                        </table>
+                    </div>
+                </td>
+                <td style="width:38%;padding-left:3px;vertical-align:top;">
+                    <div style="background:#fff;border:1px solid #c7d2fe;border-radius:7px;padding:6px 7px;box-sizing:border-box;">
+                        <div style="font-size:9px;font-weight:900;color:#3730a3;text-transform:uppercase;margin-bottom:3px;">Точность инженеров СК · ${skPeriodHint}</div>
+                        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                            <thead><tr>
+                                ${th('№', '16px')}${th('Инженер')}${thR('Выдано', '44px')}${thR('С норм.', '44px')}${thR('Точн.', '44px')}
+                            </tr></thead>
+                            <tbody>${engRows}</tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:3px;">
+            <tr>
+                <td style="width:34%;padding-right:3px;vertical-align:top;">
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;box-sizing:border-box;text-align:center;">
+                        <div style="font-size:7px;font-weight:900;color:#64748b;text-transform:uppercase;">Ср. срок устранения СК</div>
+                        <div style="font-size:15px;font-weight:900;color:#0f172a;line-height:1.1;">${avgResolveDays != null ? avgResolveDays + ' дн.' : '—'}</div>
+                    </div>
+                </td>
+                <td style="width:33%;padding:0 2px;vertical-align:top;">
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;box-sizing:border-box;text-align:center;">
+                        <div style="font-size:7px;font-weight:900;color:#64748b;text-transform:uppercase;">Темп СК · выд. / закр.</div>
+                        <div style="font-size:14px;font-weight:900;color:#0f172a;line-height:1.1;">${skIssuePace} / ${skClosePace}<span style="font-size:8px;color:#94a3b8;"> в нед.</span></div>
+                    </div>
+                </td>
+                <td style="width:33%;padding-left:3px;vertical-align:top;">
+                    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;box-sizing:border-box;text-align:center;">
+                        <div style="font-size:7px;font-weight:900;color:#64748b;text-transform:uppercase;">Баланс темпа</div>
+                        <div style="font-size:11px;font-weight:800;color:${skClosePace >= skIssuePace ? '#16a34a' : '#dc2626'};line-height:1.15;">${skClosePace >= skIssuePace ? 'закрытие ≥ выдачи' : 'долг растёт'}</div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 5px;margin-bottom:3px;box-sizing:border-box;">
+            <div style="font-size:7.5px;font-weight:900;color:#334155;text-transform:uppercase;margin-bottom:2px;">Сводка по подрядчикам · N · УрК/ИУрК · дефекты · повт. B2 · % проверок с B3</div>
+            ${defectsByContrHtml}
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:6px 8px;">
+            <div style="font-size:8.5px;font-weight:900;color:#0f172a;text-transform:uppercase;margin-bottom:3px;">Пояснения · формулы и коэффициенты</div>
+            <div style="font-size:7.5px;line-height:1.35;color:#b45309;font-weight:700;margin-bottom:4px;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:3px 6px;">
+                Важно: УрК физики и документации — <u>статический срез на момент осмотра</u>. Фиксируется состояние работ/документов именно в дату проверки; последующие устранения в эту оценку уже не входят (если не сделана новая проверка).
+            </div>
+            <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:7px;line-height:1.35;color:#334155;">
+                <tr>
+                    <td style="width:34%;padding:0 7px 0 0;vertical-align:top;">
+                        <b style="color:#0f172a;">УрК физики (осмотр)</b><br>
+                        База: Urk_base = (W_ok / W_tot)×100 — взвешенная доля «ok» по физическим пунктам (веса w=1/2/3; fail_escalated → вес 3). Документарные пункты в физику не входят.<br>
+                        Итог осмотра: <b>Urk = round(Urk_base × Kc × Kcrit)</b>, затем потолок Cap84 при наличии B2/B3/штрафов: Urk ≤ 84.<br>
+                        <b>Kc</b> (системность B2): при доле fail среди B2: 0–&lt;20% → 0.95; 20–&lt;50% → 0.85; ≥50% → 0.70; иначе 1.0.<br>
+                        <b>Kcrit</b>: есть B3 → 0.50; иначе 1.0.<br>
+                        <b>Ср. УрК физ.</b> на листе = среднее Urk по проверкам выборки.<br><br>
+                        <b>УрК документации</b>: Doc = (W_ok_doc / W_tot_doc)×100 только по пунктам type=documentary; без Kc/Kcrit и без Cap84. Ср. докум. = среднее Doc по проверкам, где док. пункты заполнены.
+                    </td>
+                    <td style="width:33%;padding:0 7px;vertical-align:top;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+                        <b style="color:#0f172a;">ИУрК подрядчика (надёжность)</b><br>
+                        База: Urk_contr_base = среднее Urk последних до 15 проверок.<br>
+                        <b>ИУрК = round(Urk_contr_base × Ks × KB3)</b>; если Ks&lt;1 или KB3&lt;1 → Cap84 (≤84).<br>
+                        <b>Ks</b> по макс. повторяемости дефекта B2 (R_sys): ≥60%→0.50; ≥40%→0.70; ≥20%→0.85; ≥10%→0.95; иначе 1.0.<br>
+                        <b>KB3</b> по доле осмотров с B3 (R_B3): ≥30%→0.50; ≥20%→0.70; ≥10%→0.85; ≥5%→0.90; &gt;0→0.95; иначе 1.0.<br>
+                        Стабильность: Stab = max(0, 1 − s/50)×100, s — СКО Urk.<br>
+                        <b>Надёжность ср.</b> на KPI = среднее ИУрК только при N≥7; иначе «СБОР».<br><br>
+                        <b>ИКО</b> = Σ(K_op × Wr) / Σ(Wr) по подрядчикам с N≥7.<br>
+                        K_op = 1 − (urk/100)×(stab/100)×(1 − 0.5·hasB3); Wr — riskWeight шаблона.<br>
+                        Пороги: &lt;0.30 низкий; 0.30–0.59 повышенный; ≥0.60 высокий риск.<br>
+                        <b>Красная зона %</b> = доля проверок подрядчиков (N≥7) с ИУрК&lt;70.
+                    </td>
+                    <td style="width:33%;padding:0 0 0 7px;vertical-align:top;">
+                        <b style="color:#0f172a;">Графики</b> — только физический УрК / ИУрК (документация — в KPI «Ср. УрК физ./докум.»). Все подрядчики выборки. Под столбцом — полное имя и вид работ с переносом строк. Δ = последний ${chartPeriod === 'WEEK' ? 'недельный' : 'месячный'} интервал − предыдущий (п.п.). Цвет: &lt;70 красный, 70–84 жёлтый, ≥85 зелёный.<br><br>
+                        <b style="color:#0f172a;">ПК СК</b> — замечания с датой выдачи в периоде фильтра. Открыто = не «проверено»; Закрыто = всего−открыто; Устранено = есть дата устранения.<br>
+                        Просрочка: deadline прошёл (открыто сейчас или закрыто с опозданием). Глубина = ср. дни опоздания.<br>
+                        Ср. срок устранения = avg(date_resolved − date_issued), дни.<br>
+                        Темп: выданные / недели окна; устранённые / те же недели.<br>
+                        Точность инженера = доля текстов со ссылкой на СП/ГОСТ/ППР/чертёж.<br>
+                        Сводка по подрядчикам: Пров. = число проверок; Деф. = сумма fail B1+B2+B3; B2/B3 = число пунктов; Повт.B2 = макс. повторяемость одного B2-пункта (%); % с B3 = доля проверок с критическим дефектом.
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>`;
+
+    printPdfShell('One-Pager 2.0', content, 'A3', 'landscape', mode, {
+        headerOpts: { qrPx: 100, logoH: 42, marginBottom: 6, paddingBottom: 6, titlePx: 17 }
+    });
 }
 
 async function exportPdfGlobalOnePager(data, mode = 'script') {
@@ -2376,28 +3321,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         else pdfIkoColor = '#16a34a';
         // ------------------------------------------------------------
         const pContractorsCount = new Set(pData.map(i => i.contractorName).filter(Boolean)).size;
-
-        let pIkoColor = "#64748b";
-        if (proj.IKO >= 0.6) pIkoColor = "#dc2626";
-        else if (proj.IKO >= 0.3) pIkoColor = "#d97706";
-        else pIkoColor = "#16a34a";
-
-        const sparkLabels = []; const sparkData = [];
-        for (let i = 5; i >= 0; i--) {
-            const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
-            const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
-            const weekChecks = pData.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
-            let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
-            sparkLabels.push(`-${i}н`);
-            sparkData.push(weekChecks.length > 0 ? Math.round(wSum / weekChecks.length) : null);
-        }
-
-        const sparkUrl = generatePdfChart({
-            type: 'line',
-            data: { labels: sparkLabels, datasets: [{ data: sparkData, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.2)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.4, spanGaps: true }] },
-            options: { scales: { x: { display: false }, y: { display: false, min: 0, max: 100 } }, plugins: { legend: { display: false } }, layout: { padding: 0 } }
-        }, 300, 100);
-        const imgSpark = `<img style="width:100%; height:100%; object-fit:cover; opacity: 0.4; display:block;" src="${sparkUrl}">`;
+        const pPrevContrsCount = new Set((prevProjectsMap[proj.name] || []).map(i => i.contractorName).filter(Boolean)).size;
 
         const groupedC = {};
         pData.forEach(item => { groupedC[item.contractorName] = groupedC[item.contractorName] || []; groupedC[item.contractorName].push(item); });
@@ -2474,7 +3398,6 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const topB2 = Object.values(b2Map).sort((a, b) => b.count - a.count).slice(0, 5);
         const topOK = Object.values(okMap).sort((a, b) => b.count - a.count).slice(0, 5);
 
-        // --- ВАЖНОЕ ИЗМЕНЕНИЕ ДЛЯ ФОТО: ИСПОЛЬЗУЕМ AWAIT ВНУТРИ ЦИКЛА ---
         const gridB3 = await buildPhotoGridHTML(topB3, '🚨 ТОП-5 Критических дефектов (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode);
         const gridB2 = await buildPhotoGridHTML(topB2, '🔄 ТОП-5 Повторяющихся нарушений (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode);
         const gridOK = await buildPhotoGridHTML(topOK, '✅ ТОП-5 Эталонных работ (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode);
@@ -2490,6 +3413,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
 
         // =========================================================
         // === СБОРКА БЛОКОВ (КУБИКОВ) ДЛЯ ШАБЛОНИЗАТОРА ===
+        // Метрики — ПО ОБЪЕКТУ (раньше ошибочно подставлялись global*).
         // =========================================================
         const blocksMap = {
             'header_metrics': `
@@ -2497,14 +3421,14 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                 <tr>
                     <td style="padding: 0 4px 8px 0; width:50%;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
-                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Глобальный УрК</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${globalAvgUrk}%</td><td>${renderTrend(globalAvgUrk, prevGlobalAvgUrk, trendLabel)}</td></tr></table>
+                            <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК объекта</div>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${currAvgUrk}%</td><td>${renderTrend(currAvgUrk, prevAvgUrk, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                     <td style="padding: 0 0 8px 4px; width:50%;">
-                        <div style="background: ${parseFloat(globalIKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(globalIKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
+                        <div style="background: ${parseFloat(mData.IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; padding: 10px; border-radius: 8px; border: 1px solid ${parseFloat(mData.IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                             <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pdfIkoColorGlobal}; line-height: 1;">${globalIKO}</td><td>${renderTrend(globalIKO, prevGlobalIko, trendLabel, true)}</td></tr></table>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: ${pdfIkoColor}; line-height: 1;">${mData.IKO}</td><td>${renderTrend(mData.IKO, prevIko, trendLabel, true)}</td></tr></table>
                         </div>
                     </td>
                 </tr>
@@ -2512,13 +3436,13 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
                     <td style="padding: 0 4px 8px 0;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                             <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${data.length}</td><td>${renderTrend(data.length, prevGlobalChecks, trendLabel)}</td></tr></table>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pChecksCount}</td><td>${renderTrend(pChecksCount, prevChecks, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                     <td style="padding: 0 0 8px 4px;">
                         <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; height: ${mode === 'browser' ? '23mm' : '85px'}; box-sizing: border-box;">
                             <div style="font-size: ${fsSmall}; color: #64748b; text-transform: uppercase; font-weight: 900;">Подрядчиков</div>
-                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${uniqueContractorsGlobal}</td><td>${renderTrend(uniqueContractorsGlobal, prevGlobalContrs, trendLabel)}</td></tr></table>
+                            <table style="width:100%; margin-top:5px; border-collapse: collapse;"><tr><td style="font-size: ${fsNum}; font-weight: 900; color: #0f172a; line-height: 1;">${pContractorsCount}</td><td>${renderTrend(pContractorsCount, pPrevContrsCount, trendLabel)}</td></tr></table>
                         </div>
                     </td>
                 </tr>
@@ -4175,7 +5099,13 @@ export const ReportsActions = {
             </div>
         `;
 
-        printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode);
+        {
+            const d = record.date ? new Date(record.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+            printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode, {
+                author: record.inspectorName || record.author || _getSetting('engineerName') || 'Инженер',
+                period: `с ${d} по ${d}`
+            });
+        }
     },
 
     /**
@@ -4354,7 +5284,13 @@ export const ReportsActions = {
             </tr></thead><tbody>${signaturesHtml}</tbody></table>
         `;
 
-        printPdfShell(`Акт-Эталон (Бета): ${record.contractorName}`, content, "A4", "portrait", mode);
+        {
+            const d = record.date ? new Date(record.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+            printPdfShell(`Акт-Эталон (Бета): ${record.contractorName}`, content, "A4", "portrait", mode, {
+                author: record.inspectorName || record.author || _getSetting('engineerName') || 'Инженер',
+                period: `с ${d} по ${d}`
+            });
+        }
     },
 
     /**
@@ -4391,83 +5327,21 @@ export const ReportsActions = {
         if (!meet) return;
 
         showToast("⏳ Формируем протокол...");
-
-        let photoHtml = '';
-        if (meet.qDayPhoto) {
-            const realSrc = await PhotoManager.getAsyncUrl(meet.qDayPhoto) || window.getPhotoSrc(meet.qDayPhoto);
-            photoHtml = `
-                <div style="height: 250px; display: flex; align-items: center; justify-content: center; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 20px;">
-                    <img src="${realSrc}" style="max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; margin: 0 auto;">
-                </div>
-            `;
+        const content = await buildMeetingProtocolHtml(meet);
+        if (typeof printPdfShell === 'function') {
+            const meetDate = meet.date ? new Date(meet.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+            printPdfShell(
+                `Протокол от ${meetDate}`,
+                content,
+                "A4",
+                "portrait",
+                mode,
+                {
+                    author: meet.author || _getSetting('engineerName') || 'Инженер',
+                    period: `с ${meetDate} по ${meetDate}`
+                }
+            );
         }
-
-        let agendaHtml = '';
-        if (meet.agenda && meet.agenda.length > 0) {
-            agendaHtml = meet.agenda.map((a, idx) => `
-                <tr style="border-bottom: 1px solid #e2e8f0; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'}; page-break-inside: avoid;">
-                    <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 35%;">
-                        <div style="font-size: 11px; font-weight: 900; color: #0f172a; margin-bottom: 4px;">${a.contr}</div>
-                        <div style="font-size: 11px; color: #b91c1c; font-weight: bold;">${a.defect}</div>
-                    </td>
-                    <td style="padding: 10px; border-right: 1px solid #e2e8f0; vertical-align: top; width: 45%;">
-                        <div style="font-size: 11px; color: #334155; margin-bottom: 4px;">${a.comment || 'Решение не зафиксировано'}</div>
-                        ${a.resp ? `<div style="font-size: 9px; color: #64748b; font-weight: bold;">Отв: ${a.resp}</div>` : ''}
-                    </td>
-                    <td style="padding: 10px; vertical-align: top; width: 20%; text-align: center;">
-                        <div style="background: ${a.isDone ? '#dcfce7' : '#ffedd5'}; color: ${a.isDone ? '#166534' : '#9a3412'}; padding: 4px 6px; border-radius: 4px; font-weight: bold; font-size: 10px; border: 1px solid ${a.isDone ? '#bbf7d0' : '#fed7aa'}; display: inline-block; margin-bottom: 4px;">${a.isDone ? 'Решено' : 'В работе'}</div>
-                        ${a.date ? `<div style="font-size: 9px; color: #475569; font-weight: bold;">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</div>` : ''}
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        const content = `
-            <div style="text-align: center; margin-bottom: 20px;">
-                <h1 style="font-size: 22px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">ПРОТОКОЛ СОВЕЩАНИЯ</h1>
-                <div style="font-size: 12px; color: #4f46e5; font-weight: bold; margin-top: 5px;">ДАТА: ${new Date(meet.date).toLocaleDateString('ru-RU')} | АВТОР: ${meet.author}</div>
-            </div>
-
-            ${photoHtml}
-
-            <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
-                <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #16a34a; border-bottom: 2px solid #bbf7d0; padding-bottom: 6px; margin-bottom: 10px;">✅ ИТОГОВОЕ РЕШЕНИЕ (МЕМО)</h3>
-                <div style="font-size: 12px; line-height: 1.6; color: #1e293b; white-space: pre-wrap; font-weight: 500;">${meet.memoText || 'Текст протокола отсутствует.'}</div>
-            </div>
-
-            ${meet.notes ? `
-            <div style="background: #fffbeb; border: 1px solid #fde047; padding: 15px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid;">
-                <h3 style="margin-top: 0; font-size: 13px; text-transform: uppercase; color: #b45309; border-bottom: 2px solid #fef08a; padding-bottom: 6px; margin-bottom: 10px;">📌 Дополнительные тезисы</h3>
-                <div style="font-size: 11px; line-height: 1.5; color: #713f12; white-space: pre-wrap;">${meet.notes}</div>
-            </div>` : ''}
-
-            <h3 style="font-size: 14px; text-transform: uppercase; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 15px;">📋 Детальная повестка и разбор дефектов</h3>
-            
-            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #cbd5e1;">
-                <thead style="background: #e2e8f0; text-transform: uppercase; font-size: 10px; color: #475569;">
-                    <tr>
-                        <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Подрядчик и Проблема</th>
-                        <th style="padding: 10px; border-right: 1px solid #cbd5e1; text-align: left;">Решение и Ответственный</th>
-                        <th style="padding: 10px; text-align: center;">Статус и Срок</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${agendaHtml || `<tr><td colspan="3" style="text-align: center; padding: 15px; font-size: 11px; color: #64748b;">Повестка не заполнена</td></tr>`}
-                </tbody>
-            </table>
-
-            <div style="margin-top: 40px; page-break-inside: avoid;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                    <tr>
-                        <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">${meet.author}</td>
-                        <td style="width: 20%;"></td>
-                        <td style="width: 40%; text-align: center; border-top: 1px solid #000; padding-top: 5px;">Подпись участников (Ознакомлен)</td>
-                    </tr>
-                </table>
-            </div>
-        `;
-
-        if (typeof printPdfShell === 'function') printPdfShell(`Протокол от ${new Date(meet.date).toLocaleDateString('ru-RU')}`, content, "A4", "portrait", mode);
     },
 
     /**
@@ -4546,7 +5420,17 @@ export const ReportsActions = {
         `;
 
         if (typeof printPdfShell === 'function') {
-            printPdfShell(`FMEA Анализ`, content, "A3", "landscape", mode);
+            printPdfShell(
+                `FMEA Анализ`,
+                content,
+                "A3",
+                "landscape",
+                mode,
+                {
+                    author: record.author || _getSetting('engineerName') || 'Инженер',
+                    period: resolveDocPeriodLabel(record.date, record.periodName)
+                }
+            );
         }
     },
 
@@ -4812,7 +5696,15 @@ export const ReportsActions = {
         }
 
         const orientation = card.type === 'INSPECTOR' ? 'landscape' : 'portrait';
-        printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode);
+        {
+            const d = card.date || card.createdAt || card.updatedAt
+                ? new Date(card.date || card.createdAt || card.updatedAt).toLocaleDateString('ru-RU')
+                : new Date().toLocaleDateString('ru-RU');
+            printPdfShell(`TWI: ${card.title}`, content, "A4", orientation, mode, {
+                author: card.author || card.owner || _getSetting('engineerName') || 'Инженер',
+                period: `с ${d} по ${d}`
+            });
+        }
     },
 
     /**
@@ -4895,7 +5787,11 @@ export const ReportsActions = {
         `;
 
         if (typeof printPdfShell === 'function') {
-            printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode);
+            const d = p.date ? new Date(p.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+            printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode, {
+                author: p.author || _getSetting('engineerName') || 'Инженер',
+                period: `с ${d} по ${d}`
+            });
         }
     },
 
@@ -5528,6 +6424,7 @@ if (typeof window !== 'undefined') {
     // renderReportFromTemplate — все остаются в export.js до группы G6).
     // Группа G1 закрыта этим присвоением целиком.
     window.exportPdfOnePager = exportPdfOnePager;
+    window.exportPdfOnePagerV2 = exportPdfOnePagerV2;
     window.exportPdfGlobalOnePager = exportPdfGlobalOnePager;
     window.exportPdfCurrentScreen = exportPdfCurrentScreen;
     window.exportPdfFullObjectReport = exportPdfFullObjectReport;
