@@ -238,6 +238,72 @@
     },
 
     // =====================================================================
+    // ФОТО УЗЛА: список (photos[]) + обратная совместимость с одиночным photo
+    // =====================================================================
+    _photosFromElementData: function (el) {
+      if (!el) return [];
+      if (Array.isArray(el.photos) && el.photos.length) {
+        return el.photos.filter(Boolean);
+      }
+      return el.photo ? [el.photo] : [];
+    },
+
+    _readPhotosFromContainer: function (container) {
+      if (!container) return [];
+      try {
+        const raw = container.dataset.photos;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        }
+      } catch (_) { /* ignore */ }
+      return container.dataset.photo ? [container.dataset.photo] : [];
+    },
+
+    _writePhotosToContainer: function (container, photos) {
+      const list = (photos || []).filter(Boolean);
+      container.dataset.photos = JSON.stringify(list);
+      container.dataset.photo = list[0] || '';
+    },
+
+    _renderElementPhotos: async function (elId, photos) {
+      const node = document.getElementById(elId);
+      if (!node) return;
+      const container = node.querySelector('.etalon-photo-container');
+      if (!container) return;
+      const list = (photos || []).filter(Boolean);
+      this._writePhotosToContainer(container, list);
+
+      if (!list.length) {
+        container.innerHTML = `
+        <button type="button" onclick="triggerEtalonPhotoUpload('${elId}')" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
+            📸 Прикрепить фото узла
+        </button>`;
+        return;
+      }
+
+      let thumbs = '';
+      for (let i = 0; i < list.length; i++) {
+        const ref = list[i];
+        const displayUrl = (ref.startsWith('local://') || ref.startsWith('cloud://'))
+          ? (await PhotoManager.getAsyncUrl(ref) || window.getPhotoSrc(ref))
+          : window.getPhotoSrc(ref);
+        thumbs += `
+        <div class="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 aspect-[4/3]">
+            <img src="${displayUrl}" class="w-full h-full object-cover cursor-pointer" onclick="setTimeout(() => openPhotoViewer('${ref}'), 100)" alt="">
+            <button type="button" onclick="event.stopPropagation();removeEtalonPhoto('${elId}', ${i})" class="absolute top-1.5 right-1.5 bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center font-black text-xs shadow-md active:scale-90" aria-label="Удалить фото">✕</button>
+            <div class="absolute bottom-1 left-1.5 text-[9px] font-black text-white bg-slate-900/60 px-1.5 py-0.5 rounded">${i + 1}/${list.length}</div>
+        </div>`;
+      }
+
+      container.innerHTML = `
+        <div class="grid grid-cols-2 gap-2 mt-1">${thumbs}</div>
+        <button type="button" onclick="triggerEtalonPhotoUpload('${elId}')" class="mt-2 w-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 py-2.5 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
+            + Ещё фото к узлу
+        </button>`;
+    },
+
+    // =====================================================================
     // ДОБАВЛЕНИЕ ЭЛЕМЕНТА ЭТАЛОНА
     // Перенесено из etalon.js (было window.addEtalonElement, строка 132).
     // =====================================================================
@@ -253,8 +319,8 @@
             <input type="text" class="etalon-el-name input-base text-[12px] mb-2 font-bold" placeholder="Название (напр: Устройство швов)">
             <textarea class="etalon-el-desc input-base text-[11px] h-12 resize-none mb-2" placeholder="Описание выполнения..."></textarea>
             
-            <div class="etalon-photo-container" data-photo="">
-                <button onclick="triggerEtalonPhotoUpload('${elId}')" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
+            <div class="etalon-photo-container" data-photo="" data-photos="[]">
+                <button type="button" onclick="triggerEtalonPhotoUpload('${elId}')" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
                     📸 Прикрепить фото узла
                 </button>
             </div>
@@ -274,47 +340,38 @@
     },
 
     // =====================================================================
-    // СОХРАНЕНИЕ ОТМЕЧЕННОГО ФОТО (после редактора)
-    // Перенесено из etalon.js (было window.saveEtalonMarkupPhoto, строка 161).
+    // СОХРАНЕНИЕ ОТМЕЧЕННОГО ФОТО (после редактора) — добавляет к списку узла
     // =====================================================================
     saveMarkupPhoto: async function () {
       if (!window.editorCanvas || !_uploadId) return;
 
-      // Получаем картинку с рисунками
       const base64 = window.editorCanvas.toDataURL('image/jpeg', 0.85);
       showToast("⚙️ Сохранение фото в базу...");
 
-      // Мгновенно сохраняем в бинарную базу данных телефона
       const localUrl = await PhotoManager.saveLocal(base64, 'etalon');
-
       const container = document.getElementById(_uploadId).querySelector('.etalon-photo-container');
-      container.dataset.photo = localUrl;
+      const list = this._readPhotosFromContainer(container);
+      list.push(localUrl);
+      await this._renderElementPhotos(_uploadId, list);
 
-      const displayUrl = localUrl.startsWith('local://')
-        ? (await PhotoManager.getAsyncUrl(localUrl) || window.getPhotoSrc(localUrl))
-        : window.getPhotoSrc(localUrl);
-
-      container.innerHTML = `
-    <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
-        <img src="${displayUrl}" class="w-full h-full object-contain cursor-pointer active:scale-95 transition-transform" onclick="setTimeout(() => openPhotoViewer('${localUrl}'), 100)">
-        <button onclick="removeEtalonPhoto('${_uploadId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
-    </div>`;
-
-      showToast("📸 Фото эталона сохранено!");
-      cancelPhotoEditor(); // Закрываем редактор
+      showToast("📸 Фото эталона сохранено (" + list.length + ")");
+      cancelPhotoEditor();
     },
 
     // =====================================================================
-    // УДАЛЕНИЕ ФОТО УЗЛА
-    // Перенесено из etalon.js (было window.removeEtalonPhoto, строка 188).
+    // УДАЛЕНИЕ ФОТО УЗЛА (index — конкретное; без index — все)
     // =====================================================================
-    removePhotoEl: function (elId) {
-      const container = document.getElementById(elId).querySelector('.etalon-photo-container');
-      container.dataset.photo = '';
-      container.innerHTML = `
-        <button onclick="triggerEtalonPhotoUpload('${elId}')" class="w-full bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 py-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[10px] uppercase active:scale-95 transition-colors flex items-center justify-center gap-2">
-            📸 Прикрепить фото (Камера / Галерея)
-        </button>`;
+    removePhotoEl: async function (elId, photoIndex) {
+      const container = document.getElementById(elId) && document.getElementById(elId).querySelector('.etalon-photo-container');
+      if (!container) return;
+      let list = this._readPhotosFromContainer(container);
+      if (photoIndex === undefined || photoIndex === null || photoIndex === '') {
+        list = [];
+      } else {
+        const idx = Number(photoIndex);
+        if (!Number.isNaN(idx)) list = list.filter((_, i) => i !== idx);
+      }
+      await this._renderElementPhotos(elId, list);
     },
 
     // =====================================================================
@@ -330,7 +387,7 @@
       var d = etalonRecord && etalonRecord.details || {};
       if (d.pdfData) urls.push(d.pdfData);
       (d.elements || []).forEach(function (el) {
-        if (el && el.photo) urls.push(el.photo);
+        EtalonActions._photosFromElementData(el).forEach(function (u) { urls.push(u); });
       });
       urls = urls.filter(function (u) { return typeof u === 'string' && u.startsWith('local://'); });
       if (urls.length === 0) return;
@@ -372,8 +429,15 @@
       document.querySelectorAll('.etalon-item').forEach(el => {
         const name = el.querySelector('.etalon-el-name').value.trim();
         const desc = el.querySelector('.etalon-el-desc').value.trim();
-        const photo = el.querySelector('.etalon-photo-container').dataset.photo || null;
-        if (name) elements.push({ name, desc, photo });
+        const photos = EtalonActions._readPhotosFromContainer(el.querySelector('.etalon-photo-container'));
+        if (name) {
+          elements.push({
+            name,
+            desc,
+            photos,
+            photo: photos[0] || null, // совместимость со старым просмотром/печатью
+          });
+        }
       });
 
       if (elements.length === 0) return showToast("⚠️ Добавьте хотя бы один элемент эталона!");
@@ -539,17 +603,26 @@
       let elementsHtml = '';
       for (let i = 0; i < elements.length; i++) {
         const el = elements[i];
-        let realPhoto = null;
-        if (el.photo) {
-          if (el.photo.startsWith('cloud://') || el.photo.startsWith('local://')) {
-            realPhoto = await PhotoManager.getAsyncUrl(el.photo);
-          } else {
-            realPhoto = window.getPhotoSrc(el.photo);
+        const photoRefs = EtalonActions._photosFromElementData(el);
+        let photoHtml = '';
+        if (!photoRefs.length) {
+          photoHtml = '<div class="text-xs text-slate-400 mt-2">Нет фото</div>';
+        } else {
+          photoHtml = '<div class="grid grid-cols-2 gap-2 mt-2">';
+          for (let p = 0; p < photoRefs.length; p++) {
+            const ref = photoRefs[p];
+            let realPhoto = null;
+            if (ref.startsWith('cloud://') || ref.startsWith('local://')) {
+              realPhoto = await PhotoManager.getAsyncUrl(ref);
+            } else {
+              realPhoto = window.getPhotoSrc(ref);
+            }
+            if (realPhoto) {
+              photoHtml += `<img src="${realPhoto}" class="w-full h-36 object-cover rounded-lg border border-slate-200 cursor-pointer bg-slate-50" onclick="openPhotoViewer('${ref}')">`;
+            }
           }
+          photoHtml += '</div>';
         }
-        let photoHtml = realPhoto
-          ? `<img src="${realPhoto}" class="w-full h-48 object-contain rounded-lg border border-slate-200 cursor-pointer mt-2 bg-slate-50" onclick="openPhotoViewer('${el.photo}')">`
-          : '<div class="text-xs text-slate-400 mt-2">Нет фото</div>';
 
         elementsHtml += `
             <div class="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-3">
@@ -697,15 +770,9 @@
         node.querySelector('.etalon-el-name').value = el.name || '';
         node.querySelector('.etalon-el-desc').value = el.desc || '';
 
-        if (el.photo) {
-          const realPhotoSrc = await PhotoManager.getAsyncUrl(el.photo) || window.getPhotoSrc(el.photo);
-          const container = node.querySelector('.etalon-photo-container');
-          container.dataset.photo = el.photo;
-          container.innerHTML = `
-                <div class="relative w-full h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-50 dark:bg-slate-900 mt-2">
-                    <img src="${realPhotoSrc}" class="w-full h-full object-contain cursor-pointer" onclick="setTimeout(() => openPhotoViewer('${el.photo}'), 100)">
-                    <button onclick="removeEtalonPhoto('${elId}')" class="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm shadow-md active:scale-90">✕</button>
-                </div>`;
+        const photos = EtalonActions._photosFromElementData(el);
+        if (photos.length) {
+          await EtalonActions._renderElementPhotos(elId, photos);
         }
       }
     },

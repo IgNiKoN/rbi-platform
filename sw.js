@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.129';
+const SW_VERSION = '18.57.130';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -79,6 +79,7 @@ const urlsToCache = [
   './js/services/file.service.js',
   './js/services/report.service.js',
   './js/services/contractor-directory.service.js',
+  './js/services/contractor-metrics.service.js',
   './js/services/object-directory.service.js',
   './js/services/task.service.js',
   './js/services/sk.service.js',
@@ -114,11 +115,17 @@ const urlsToCache = [
   // Фаза 9 — Knowledge Module
   './js/modules/quality/features/knowledge/knowledge.manifest.js',
   './js/modules/quality/features/knowledge/knowledge.module.js',
+  './js/modules/quality/features/knowledge/knowledge.state.js',
+  './js/modules/quality/features/knowledge/knowledge.actions.js',
+  './js/modules/quality/features/knowledge/knowledge.render.js',
   './js/modules/quality/features/knowledge/features/faq.js',
   './js/modules/quality/features/knowledge/index.js',
 
   // Фаза 10 — Tasks Module
   './js/modules/quality/features/tasks/tasks.module.js',
+  './js/modules/quality/features/tasks/tasks.state.js',
+  './js/modules/quality/features/tasks/tasks.actions.js',
+  './js/modules/quality/features/tasks/tasks.render.js',
 
   // Фаза 11 — Analytics Module
   './js/modules/quality/features/analytics/analytics.module.js',
@@ -203,6 +210,9 @@ const urlsToCache = [
 
   // Step 32 — Meetings Module (Wrapper, Шаг 1/10)
   './js/modules/quality/features/meetings/meetings.module.js',
+  './js/modules/quality/features/meetings/meetings.state.js',
+  './js/modules/quality/features/meetings/meetings.actions.js',
+  './js/modules/quality/features/meetings/meetings.render.js',
   './js/modules/quality/features/meetings/meetings.protocol.js',
 
   // Compact Module Restructure, шаг 1 — агрегирующий platform module quality

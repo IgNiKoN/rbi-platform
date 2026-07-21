@@ -7200,9 +7200,22 @@ export const ReportsActions = {
         let elementsHtml = '';
         for (let i = 0; i < d.elements.length; i++) {
             const el = d.elements[i];
-            let realPhotoSrc = '';
-            if (el.photo) {
-                realPhotoSrc = await PhotoManager.getAsyncUrl(el.photo) || window.getPhotoSrc(el.photo) || el.photo;
+            const photoRefs = (Array.isArray(el.photos) && el.photos.length)
+                ? el.photos.filter(Boolean)
+                : (el.photo ? [el.photo] : []);
+            let photosCell = '';
+            if (photoRefs.length) {
+                const imgs = [];
+                for (let p = 0; p < photoRefs.length; p++) {
+                    const ref = photoRefs[p];
+                    const realPhotoSrc = await PhotoManager.getAsyncUrl(ref) || window.getPhotoSrc(ref) || ref;
+                    if (!realPhotoSrc) continue;
+                    imgs.push(`
+                        <div style="width:100%;height:${photoRefs.length > 1 ? '180px' : '300px'};background:#f8fafc;border-radius:8px;border:1px solid #cbd5e1;overflow:hidden;margin-bottom:${p < photoRefs.length - 1 ? '8px' : '0'};">
+                            <img src="${realPhotoSrc}" style="width:100%;height:100%;object-fit:contain;display:block;margin:0 auto;">
+                        </div>`);
+                }
+                photosCell = `<td style="padding:15px;vertical-align:top;width:60%;text-align:center;">${imgs.join('')}</td>`;
             }
 
             elementsHtml += `
@@ -7212,11 +7225,7 @@ export const ReportsActions = {
                             <h3 style="color: #312e81; margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase;">${i + 1}. ${el.name}</h3>
                             <p style="font-size: 12px; color: #334155; white-space: pre-wrap; margin: 0; line-height: 1.5;">${el.desc || 'Описание отсутствует'}</p>
                         </td>
-                        ${realPhotoSrc ? `<td style="padding: 15px; vertical-align: top; width: 60%; text-align: center;">
-                            <div style="width: 100%; height: 300px; background: #f8fafc; border-radius: 8px; border: 1px solid #cbd5e1; overflow: hidden;">
-                                <img src="${realPhotoSrc}" style="width: 100%; height: 100%; object-fit: contain; display: block; margin: 0 auto;">
-                            </div>
-                        </td>` : ''}
+                        ${photosCell}
                     </tr>
                 </table>
             `;
