@@ -81,6 +81,14 @@
     editingId: null,
     photos: [] // { desc, date, photo (local:// id via PhotoManager) }
   };
+  var _v18OpenContext = { projectName: '', contractor: '', templateKey: '' };
+
+  function _draftNowV18() {
+    if (!window.RBIFormDraft || _v18.editingId) return;
+    window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.ETALON_V18, function () {
+      return EtalonV18Actions._collectNewDraft();
+    });
+  }
 
   function _row(tableId, values) {
     var fields = ROW_FIELDS[tableId];
@@ -264,13 +272,182 @@
 
   var EtalonV18Actions = {
 
+    _collectNewDraft: function () {
+      if (_v18.editingId || window._rbiEtalonV18SkipDraft) return null;
+
+      var inpProject = document.getElementById('inp-project');
+      var defaultProject = _v18OpenContext.projectName || (inpProject ? inpProject.value : '') || '';
+      var defaultContractor = _v18OpenContext.contractor || '';
+      var defaultTemplateKey = _v18OpenContext.templateKey || '';
+
+      var participants = _collectParticipants();
+      var photos = _v18.photos.map(function (p) {
+        return { desc: p.desc || '', date: p.date || '', photo: p.photo || '' };
+      }).filter(function (p) { return p.photo || p.desc; });
+
+      var payload = {
+        project: document.getElementById('etv18-project') ? document.getElementById('etv18-project').value : '',
+        contractor: document.getElementById('etv18-contractor') ? document.getElementById('etv18-contractor').value : '',
+        templateKey: document.getElementById('etv18-template') ? document.getElementById('etv18-template').value : '',
+        header: {
+          typeSmr: document.getElementById('etv18-type-smr') ? document.getElementById('etv18-type-smr').checked : false,
+          typeProduct: document.getElementById('etv18-type-product') ? document.getElementById('etv18-type-product').checked : false,
+          typeNode: document.getElementById('etv18-type-node') ? document.getElementById('etv18-type-node').checked : false,
+          typeFinish: document.getElementById('etv18-type-finish') ? document.getElementById('etv18-type-finish').checked : false,
+          typeOther: document.getElementById('etv18-type-other') ? document.getElementById('etv18-type-other').checked : false,
+          typeOtherText: document.getElementById('etv18-type-other-text') ? document.getElementById('etv18-type-other-text').value.trim() : '',
+          object: document.getElementById('etv18-object') ? document.getElementById('etv18-object').value.trim() : '',
+          address: document.getElementById('etv18-address') ? document.getElementById('etv18-address').value.trim() : '',
+          name: document.getElementById('etv18-name') ? document.getElementById('etv18-name').value.trim() : '',
+          location: document.getElementById('etv18-location') ? document.getElementById('etv18-location').value.trim() : '',
+          inspectionDate: document.getElementById('etv18-inspection-date') ? document.getElementById('etv18-inspection-date').value : ''
+        },
+        participants: participants,
+        scope: {
+          sampleComposition: document.getElementById('etv18-sampleComposition') ? document.getElementById('etv18-sampleComposition').value.trim() : '',
+          applicationZone: document.getElementById('etv18-applicationZone') ? document.getElementById('etv18-applicationZone').value.trim() : '',
+          sampleSize: document.getElementById('etv18-sampleSize') ? document.getElementById('etv18-sampleSize').value.trim() : '',
+          notIncluded: document.getElementById('etv18-notIncluded') ? document.getElementById('etv18-notIncluded').value.trim() : ''
+        },
+        documents: _collectRows('documentsTable'),
+        solutions: _collectRows('solutionsTable'),
+        materials: _collectRows('materialsTable'),
+        controls: _collectControls(),
+        tests: _collectRows('testsTable'),
+        remarks: _collectRows('remarksTable'),
+        decision: _collectDecision(),
+        attachments: _collectRows('attachmentsTable'),
+        photos: photos
+      };
+
+      var inpInspector = document.getElementById('inp-inspector');
+      var defaultInspector = inpInspector ? inpInspector.value.trim() : '';
+      var onlyDefaultParticipant = participants.length === 1 &&
+        !participants[0].organization &&
+        !participants[0].position &&
+        (participants[0].name || '').trim() === defaultInspector;
+
+      var header = payload.header || {};
+      var scope = payload.scope || {};
+      var decision = payload.decision || {};
+      var meaningful = !!(
+        (header.location || '').trim() ||
+        (header.object || '').trim() ||
+        (header.address || '').trim() ||
+        (header.name || '').trim() ||
+        (header.inspectionDate || '').trim() ||
+        header.typeSmr || header.typeProduct || header.typeNode || header.typeFinish || header.typeOther ||
+        (header.typeOtherText || '').trim() ||
+        !onlyDefaultParticipant ||
+        (scope.sampleComposition || '').trim() ||
+        (scope.applicationZone || '').trim() ||
+        (scope.sampleSize || '').trim() ||
+        (scope.notIncluded || '').trim() ||
+        payload.documents.length ||
+        payload.solutions.length ||
+        payload.materials.length ||
+        payload.controls.length ||
+        payload.tests.length ||
+        payload.remarks.length ||
+        payload.attachments.length ||
+        photos.length ||
+        (decision.result || '').trim() ||
+        (decision.storage || '').trim() ||
+        (decision.storagePlace || '').trim() ||
+        (payload.project && payload.project !== defaultProject) ||
+        (payload.contractor && payload.contractor !== defaultContractor) ||
+        (payload.templateKey && payload.templateKey !== defaultTemplateKey)
+      );
+
+      return meaningful ? payload : null;
+    },
+
+    _applyNewDraft: async function (draftPayload) {
+      if (!draftPayload) return;
+      var p = draftPayload;
+
+      if (p.project != null) document.getElementById('etv18-project').value = p.project;
+      if (p.contractor != null) document.getElementById('etv18-contractor').value = p.contractor;
+      if (p.templateKey) {
+        var tmplSelect = document.getElementById('etv18-template');
+        if (tmplSelect) tmplSelect.value = p.templateKey;
+      }
+
+      var h = p.header || {};
+      document.getElementById('etv18-type-smr').checked = !!h.typeSmr;
+      document.getElementById('etv18-type-product').checked = !!h.typeProduct;
+      document.getElementById('etv18-type-node').checked = !!h.typeNode;
+      document.getElementById('etv18-type-finish').checked = !!h.typeFinish;
+      document.getElementById('etv18-type-other').checked = !!h.typeOther;
+      document.getElementById('etv18-type-other-text').value = h.typeOtherText || '';
+      document.getElementById('etv18-object').value = h.object || '';
+      document.getElementById('etv18-address').value = h.address || '';
+      document.getElementById('etv18-name').value = h.name || '';
+      document.getElementById('etv18-location').value = h.location || '';
+      document.getElementById('etv18-inspection-date').value = h.inspectionDate || '';
+
+      var partTbody = document.querySelector('#etv18-participantsTable tbody');
+      if (partTbody) partTbody.innerHTML = '';
+      (p.participants || []).forEach(function (part) { _addParticipantRow(part); });
+      if (!p.participants || !p.participants.length) {
+        var inpInspector = document.getElementById('inp-inspector');
+        _addParticipantRow({ name: inpInspector ? inpInspector.value : '' });
+      }
+
+      var scope = p.scope || {};
+      document.getElementById('etv18-sampleComposition').value = scope.sampleComposition || '';
+      document.getElementById('etv18-applicationZone').value = scope.applicationZone || '';
+      document.getElementById('etv18-sampleSize').value = scope.sampleSize || '';
+      document.getElementById('etv18-notIncluded').value = scope.notIncluded || '';
+
+      function fillRows(tableId, rows) {
+        var tbody = document.querySelector('#' + tableId + ' tbody');
+        if (tbody) tbody.innerHTML = '';
+        (rows || []).forEach(function (r) { _addRow(tableId, r); });
+        if (!rows || !rows.length) _addRow(tableId);
+      }
+      fillRows('documentsTable', p.documents);
+      fillRows('solutionsTable', p.solutions);
+      fillRows('materialsTable', p.materials);
+      fillRows('testsTable', p.tests);
+      fillRows('remarksTable', p.remarks);
+      fillRows('attachmentsTable', p.attachments);
+
+      var ctrlTbody = document.querySelector('#etv18-controlTable tbody');
+      if (ctrlTbody) ctrlTbody.innerHTML = '';
+      (p.controls || []).forEach(function (c) { _addControlRow(c); });
+      if (!p.controls || !p.controls.length) _addControlRow();
+
+      var decision = p.decision || {};
+      if (decision.result) {
+        var decisionRadio = document.querySelector('input[name="etv18-decision"][value="' + decision.result + '"]');
+        if (decisionRadio) decisionRadio.checked = true;
+      }
+      if (decision.storage) {
+        var storageRadio = document.querySelector('input[name="etv18-storage"][value="' + decision.storage + '"]');
+        if (storageRadio) storageRadio.checked = true;
+      }
+      document.getElementById('etv18-storage-place').value = decision.storagePlace || '';
+
+      _v18.photos = (p.photos || []).map(function (photo) {
+        return { desc: photo.desc || '', date: photo.date || '', photo: photo.photo || '' };
+      });
+      await _hydratePhotoPreviews();
+    },
+
     /**
      * Открывает полноэкранный конструктор Акта-Эталона (Бета).
      * @param {Object} prefill — { contractor, templateKey, templateTitle, projectName, statusKey }
      */
     openConstructor: function (prefill) {
       var p = prefill || {};
-      _v18 = { editingId: null, photos: [] };
+      var skipDraft = !!window._rbiEtalonV18SkipDraft;
+      window._rbiEtalonV18SkipDraft = false;
+      if (!skipDraft) _v18.editingId = null;
+      _v18 = { editingId: _v18.editingId, photos: [] };
+
+      var FD = window.RBIFormDraft;
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_V18);
 
       if (window.EtalonV18Render) window.EtalonV18Render.mount();
 
@@ -328,15 +505,43 @@
       var titleEl = document.getElementById('etv18-title-text');
       if (titleEl) titleEl.innerText = (p.projectName || 'Новый Акт') + (p.contractor ? ' | ' + p.contractor : '');
 
+      _v18OpenContext = {
+        projectName: p.projectName || (inpProject ? inpProject.value : '') || '',
+        contractor: p.contractor || '',
+        templateKey: p.templateKey || ''
+      };
+
       var view = document.getElementById('etalon-v18-view');
       if (view) {
         view.classList.remove('hidden');
         document.body.classList.add('modal-open');
         view.scrollTo(0, 0);
       }
+
+      if (!skipDraft && FD) {
+        var decision = FD.askRestore(FD.KEYS.ETALON_V18, 'Акт-Эталон (Бета)');
+        if (decision === 'continue') {
+          var d = FD.get(FD.KEYS.ETALON_V18);
+          if (d && d.payload) {
+            EtalonV18Actions._applyNewDraft(d.payload).catch(function (e) {
+              console.warn('[EtalonV18Actions] restore draft failed', e);
+            });
+          }
+        }
+        if (view) {
+          FD.bindAutoSave(view, FD.KEYS.ETALON_V18, function () {
+            return EtalonV18Actions._collectNewDraft();
+          });
+        }
+      }
     },
 
     closeConstructor: function () {
+      var FD = window.RBIFormDraft;
+      if (FD && !_v18.editingId && !window._rbiEtalonV18SkipDraftSave) {
+        FD.saveNow(FD.KEYS.ETALON_V18, function () { return EtalonV18Actions._collectNewDraft(); });
+      }
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_V18);
       var view = document.getElementById('etalon-v18-view');
       if (view) view.classList.add('hidden');
       document.body.classList.remove('modal-open');
@@ -357,6 +562,7 @@
     removePhoto: function (idx) {
       _v18.photos.splice(idx, 1);
       _renderPhotoGrid();
+      _draftNowV18();
     },
 
     uploadPhoto: function (event, idx) {
@@ -370,6 +576,7 @@
         _v18.photos[idx]._displayUrl = await PhotoManager.getAsyncUrl(localUrl) || window.getPhotoSrc(localUrl);
         _renderPhotoGrid();
         showToast('📸 Фото сохранено!');
+        _draftNowV18();
       };
       reader.readAsDataURL(file);
     },
@@ -489,11 +696,19 @@
       localStorage.setItem('rbi_cloud_dirty', '1');
       setTimeout(function () { _triggerSync('silent'); }, 800);
 
+      window._rbiEtalonV18SkipDraftSave = true;
+      if (window.RBIFormDraft) {
+        window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_V18);
+        window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.ETALON_V18);
+      }
+
       if (printAfter) {
         setTimeout(function () { if (typeof window.printEtalonActV18 === 'function') window.printEtalonActV18(record.id); }, 500);
       } else {
         EtalonV18Actions.closeConstructor();
       }
+      window._rbiEtalonV18SkipDraftSave = false;
+      if (window.RBIFormDraft) window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_V18);
 
       setTimeout(function () {
         if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab();
@@ -510,6 +725,7 @@
       var record = _etalonActs().find(function (a) { return String(a.id) === String(id); });
       if (!record || !record.details || !record.details.actV18) return showToast('❌ Акт не найден');
 
+      window._rbiEtalonV18SkipDraft = true;
       EtalonV18Actions.openConstructor({
         projectName: record.projectName,
         contractor: record.contractorName,

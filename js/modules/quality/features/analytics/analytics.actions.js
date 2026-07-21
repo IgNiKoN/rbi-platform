@@ -700,6 +700,8 @@ export const AnalyticsActions = {
     // =========================================================================
     createMagicTwi(checklistKey, itemId, photoGood, photoBad, title) {
         if (!window.RBI.services.knowledge.requireEditRight()) return;
+        // Флаг для saveTwiCard: начислить magic_creator (+100 XP), а не обычный create_twi
+        window._rbiMagicTwiPending = true;
         switchTab('tab-reference');
         setTimeout(() => {
             const btns = document.querySelectorAll('#reference-subtabs-block .sub-tab-btn');
@@ -720,7 +722,7 @@ export const AnalyticsActions = {
                 window.RBI.services.knowledge.renderGoodPhoto(photoGood);
                 window.RBI.services.knowledge.renderBadPhoto(photoBad);
 
-                showToast('✨ Магия сработала! Допишите текст и сохраните.');
+                showToast('✨ Магия сработала! Допишите текст и сохраните (+100 XP).');
             }, 300);
         }, 100);
     },

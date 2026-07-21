@@ -804,6 +804,8 @@ async function sk_finalizeImport() {
     window.skRecords = sk_filterRecordsByAccess(freshRecords.filter(function (r) { return !r._deleted && !r.is_deleted; }));
 
     _gameLogAction('sk_import_done', importLog.id);
+    // После импорта — красный ИСД / улучшение ИСД (сравнение со снимком)
+    try { await sk_evaluateIsdXpRewards({ fromImport: true }); } catch (e) { console.warn('[ПК СК] ISD XP eval:', e); }
 
     {
         var skTask = _getTasks().find(function (t) { return t.title === 'Загрузить выгрузку ПК СК' && t.status === 'pending'; });
@@ -811,6 +813,12 @@ async function sk_finalizeImport() {
             skTask.status = 'done'; skTask.done = 1; skTask.resultComment = 'Файл ПК СК загружен';
             skTask.updatedAt = nowIso;
             _storage().put(_storage().stores().TASKS, skTask);
+            if (typeof window.gameLogAction === 'function') {
+                var logs = window.gameActionLogs || [];
+                if (!logs.some(function (l) { return l.action === 'task_completed_on_time' && l.target === skTask.id; })) {
+                    window.gameLogAction('task_completed_on_time', skTask.id);
+                }
+            }
         }
     }
 
@@ -1029,6 +1037,159 @@ async function sk_saveContractorLink() {
         console.error('[ПК СК] Ошибка связывания подрядчика:', e);
         showToast('❌ Не удалось связать подрядчика');
     }
+}
+
+/**
+ * Снимок ИСД по подрядчик×вид работ (та же формула, что в матрице дашборда).
+ * @returns {Object<string,{contractor:string,category:string,isd:number}>}
+ */
+function sk_computeIsdSnapshot() {
+    var records = (window.skRecords || []).filter(function (r) { return !r._deleted && !r.is_deleted; });
+    var volumes = window.skVolumes || {};
+    var _allInspections = _inspections();
+    var rbiContractors = [...new Set(_allInspections.map(function (c) {
+        return c.contractorName ? c.contractorName.toLowerCase().trim() : '';
+    }))];
+    var rateCache = {};
+    var getRate = function (contractor, cleanCategory) {
+        var cacheKey = contractor + '_||_' + cleanCategory;
+        if (rateCache[cacheKey] !== undefined) return rateCache[cacheKey];
+        var relevant = _allInspections.filter(function (c) {
+            return c.contractorName === contractor && c.templateTitle === cleanCategory;
+        });
+        if (relevant.length === 0) { rateCache[cacheKey] = 0.05; return 0.05; }
+        var items = 0, defects = 0;
+        relevant.forEach(function (c) {
+            if (c.metrics) {
+                items += c.metrics.checkedCount || 10;
+                defects += (c.metrics.n_B2_fail || 0) + (c.metrics.n_B3_fail || 0);
+            }
+        });
+        rateCache[cacheKey] = items === 0 ? 0.05 : (defects / items);
+        return rateCache[cacheKey];
+    };
+
+    var matrixMap = {};
+    records.forEach(function (r) {
+        var c = r.contractor;
+        if (!c) return;
+        var effectiveCategory = r.category_corrected && r.ai_category ? r.ai_category : r.category;
+        var rawCats = effectiveCategory
+            ? effectiveCategory.split(',').map(function (s) { return s.trim(); }).filter(Boolean)
+            : ['Без категории'];
+        rawCats.forEach(function (raw) {
+            var strippedRaw = raw.replace(/^\d+[\.,]\s*/, '').trim();
+            var catKey = typeof sk_normalizeCategoryKey === 'function' ? sk_normalizeCategoryKey(raw) : strippedRaw;
+            var cleanCat = (window.skCategoryMap && window.skCategoryMap[catKey]) || strippedRaw;
+            if (!cleanCat || cleanCat.trim() === '') cleanCat = 'Без категории';
+            var matrixKey = c + '_||_' + cleanCat;
+            if (!matrixMap[matrixKey]) {
+                matrixMap[matrixKey] = { contractor: c, category: cleanCat, total: 0 };
+            }
+            matrixMap[matrixKey].total++;
+        });
+    });
+
+    var snapshot = {};
+    Object.keys(matrixMap).forEach(function (key) {
+        var m = matrixMap[key];
+        if (m.category === 'Без категории') return;
+        var isLinked = rbiContractors.includes(String(m.contractor).toLowerCase().trim()) ||
+            Object.values(window.skContractorMap || {}).map(function (v) {
+                return String(v).toLowerCase().trim();
+            }).includes(String(m.contractor).toLowerCase().trim());
+        if (!isLinked) return;
+        var volKey = Object.keys(volumes).find(function (k) {
+            return k.toLowerCase().trim() === m.category.toLowerCase().trim();
+        });
+        if (!volKey) return;
+        var vol = volumes[volKey].amount;
+        var expected = Math.round(vol * getRate(m.contractor, m.category));
+        if (expected < 1) expected = 1;
+        var isd = Math.round((m.total / expected) * 100);
+        snapshot[key] = { contractor: m.contractor, category: m.category, isd: isd, expected: expected, total: m.total };
+    });
+    return snapshot;
+}
+
+function _skGameLogOnce(action, target, opts) {
+    opts = opts || {};
+    var logs = window.gameActionLogs || [];
+    if (opts.oncePerDay) {
+        var today = new Date().toDateString();
+        if (logs.some(function (l) {
+            return l.action === action && l.target === target && new Date(l.date).toDateString() === today;
+        })) return false;
+    } else if (logs.some(function (l) { return l.action === action && l.target === target; })) {
+        return false;
+    }
+    _gameLogAction(action, target);
+    return true;
+}
+
+/**
+ * Сравнивает текущий ИСД с последним снимком: красный ИСД (+15), улучшение (+40).
+ * @param {{fromImport?: boolean}} [options]
+ */
+async function sk_evaluateIsdXpRewards(options) {
+    options = options || {};
+    var snapshot = sk_computeIsdSnapshot();
+    var storeName = _storage().stores().SK_ISD_HISTORY;
+    if (!storeName) return snapshot;
+
+    var prevMap = {};
+    var hasPrevSnapshot = false;
+    try {
+        var all = (await _storage().getAll(storeName)) || [];
+        var latest = all.find(function (x) { return x && x.id === 'latest'; });
+        if (!latest && all.length) {
+            latest = all.slice().sort(function (a, b) {
+                return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+            })[0];
+        }
+        if (latest && latest.data && typeof latest.data === 'object') {
+            prevMap = latest.data;
+            hasPrevSnapshot = Object.keys(prevMap).length > 0;
+        }
+    } catch (e) {
+        console.warn('[ПК СК] Не удалось прочитать историю ИСД', e);
+    }
+
+    var redCount = 0;
+    var improvedCount = 0;
+    Object.keys(snapshot).forEach(function (key) {
+        var cur = snapshot[key];
+        var old = prevMap[key];
+        if (cur.isd < 20) {
+            // Красный: только переход из не-красного, либо первый импорт (не спамим с дашборда)
+            var becameRed = old && typeof old.isd === 'number' && old.isd >= 20;
+            var initialOnImport = options.fromImport && !hasPrevSnapshot;
+            if (becameRed || initialOnImport) {
+                if (_skGameLogOnce('sk_red_isd_found', key, { oncePerDay: true })) redCount++;
+            }
+        }
+        if (old && typeof old.isd === 'number' && (cur.isd - old.isd) >= 15) {
+            if (_skGameLogOnce('sk_isd_improved', key, { oncePerDay: true })) improvedCount++;
+        }
+    });
+
+    try {
+        await _storage().put(storeName, {
+            id: 'latest',
+            data: snapshot,
+            updatedAt: new Date().toISOString(),
+            source: 'local',
+            syncStatus: 'not_synced',
+            sync_status: 'not_synced'
+        });
+    } catch (e) {
+        console.warn('[ПК СК] Не удалось сохранить снимок ИСД', e);
+    }
+
+    if (redCount > 0) showToast('🔴 Найден красный ИСД: +' + (redCount * 15) + ' XP');
+    else if (improvedCount > 0) showToast('📈 ИСД улучшился: +' + (improvedCount * 40) + ' XP');
+
+    return snapshot;
 }
 
 async function sk_generateAnomalyTasks() {
@@ -1312,5 +1473,7 @@ export {
     sk_saveCategoryLink,
     sk_openContractorLinkModal,
     sk_saveContractorLink,
-    sk_generateAnomalyTasks
+    sk_generateAnomalyTasks,
+    sk_computeIsdSnapshot,
+    sk_evaluateIsdXpRewards
 };

@@ -144,7 +144,93 @@
     // ОТКРЫТИЕ КОНСТРУКТОРА АКТА-ЭТАЛОНА
     // Перенесено из etalon.js (было window.openEtalonConstructor, строка 39).
     // =====================================================================
+    _collectNewDraft: function () {
+      if (window.currentEditingEtalonId || window._rbiEtalonSkipDraft) return null;
+      const elements = [];
+      document.querySelectorAll('.etalon-item').forEach(el => {
+        const name = (el.querySelector('.etalon-el-name')?.value || '').trim();
+        const desc = (el.querySelector('.etalon-el-desc')?.value || '').trim();
+        const photos = EtalonActions._readPhotosFromContainer(el.querySelector('.etalon-photo-container'));
+        if (name || desc || photos.length) {
+          elements.push({ name, desc, photos });
+        }
+      });
+      const pdfPreview = document.getElementById('etalon-pdf-preview');
+      const p = {
+        project: document.getElementById('etalon-project')?.value || '',
+        contractor: document.getElementById('etalon-contractor')?.value || '',
+        templateKey: document.getElementById('etalon-template')?.value || '',
+        location: document.getElementById('etalon-location')?.value || '',
+        participants: document.getElementById('etalon-participants')?.value || '',
+        deviations: document.getElementById('etalon-deviations')?.value || '',
+        elements: elements,
+        pdfData: pdfPreview?.dataset?.pdf || '',
+        pdfName: document.getElementById('etalon-pdf-name')?.innerText || '',
+        statusKey: _context.statusKey || ''
+      };
+      const defaultParticipants = document.getElementById('inp-inspector')?.value || '';
+      const meaningful = !!(
+        (p.location || '').trim() ||
+        ((p.participants || '').trim() && (p.participants || '').trim() !== (defaultParticipants || '').trim()) ||
+        (p.deviations || '').trim() ||
+        elements.length > 0 ||
+        p.pdfData ||
+        // пользователь явно сменил объект/подрядчика/вид относительно контекста открытия
+        (p.project && p.project !== (_context.projectName || document.getElementById('inp-project')?.value || '')) ||
+        (p.contractor && p.contractor !== (_context.contractor || '')) ||
+        (p.templateKey && p.templateKey !== (_context.templateKey || ''))
+      );
+      // Если открыли «пустой» эталон и только заполнили project из inp — не считать черновиком
+      // пока нет location/elements. Уже покрыто выше.
+      return meaningful ? p : null;
+    },
+
+    _applyNewDraft: async function (p) {
+      if (!p) return;
+      const tmplSelect = document.getElementById('etalon-template');
+      if (p.project != null) document.getElementById('etalon-project').value = p.project;
+      if (p.contractor != null) document.getElementById('etalon-contractor').value = p.contractor;
+      if (p.templateKey && tmplSelect) tmplSelect.value = p.templateKey;
+      if (p.location != null) document.getElementById('etalon-location').value = p.location;
+      if (p.participants != null) document.getElementById('etalon-participants').value = p.participants;
+      if (p.deviations != null) document.getElementById('etalon-deviations').value = p.deviations;
+
+      document.getElementById('etalon-elements-container').innerHTML = '';
+      _elementCounter = 0;
+      const els = Array.isArray(p.elements) ? p.elements : [];
+      if (els.length === 0) {
+        EtalonActions.addElement();
+      } else {
+        for (let i = 0; i < els.length; i++) {
+          EtalonActions.addElement();
+          const elId = `etalon-el-${_elementCounter}`;
+          const node = document.getElementById(elId);
+          if (!node) continue;
+          node.querySelector('.etalon-el-name').value = els[i].name || '';
+          node.querySelector('.etalon-el-desc').value = els[i].desc || '';
+          const photos = EtalonActions._photosFromElementData(els[i]);
+          if (photos.length) await EtalonActions._renderElementPhotos(elId, photos);
+        }
+      }
+
+      if (p.pdfData) {
+        const cont = document.getElementById('etalon-pdf-preview');
+        if (cont) {
+          cont.dataset.pdf = p.pdfData;
+          const nameEl = document.getElementById('etalon-pdf-name');
+          if (nameEl) nameEl.innerText = p.pdfName || 'doc.pdf';
+          cont.classList.remove('hidden');
+          const uploadBtn = document.getElementById('etalon-pdf-upload-btn');
+          if (uploadBtn) uploadBtn.classList.add('hidden');
+        }
+      }
+    },
+
     openConstructor: function (contractor, templateKey, templateTitle, projectName, statusKey) {
+      const skipDraft = !!window._rbiEtalonSkipDraft;
+      window._rbiEtalonSkipDraft = false;
+      if (!skipDraft) window.currentEditingEtalonId = null;
+
       _context = {
         contractor: contractor,
         templateKey: templateKey,
@@ -155,10 +241,17 @@
       };
       _elementCounter = 0;
 
+      const FD = window.RBIFormDraft;
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_NEW);
+
       document.getElementById('etalon-location').value = '';
       document.getElementById('etalon-participants').value = document.getElementById('inp-inspector')?.value || '';
       document.getElementById('etalon-deviations').value = '';
       document.getElementById('etalon-elements-container').innerHTML = '';
+
+      // Убрать старый PDF-блок при повторном открытии
+      const oldPdf = document.getElementById('etalon-pdf-wrap');
+      if (oldPdf) oldPdf.remove();
 
       document.getElementById('etalon-title-text').innerText = `${projectName} | ${contractor} | ${templateTitle}`;
       // === Заполняем выпадающий список видов работ ===
@@ -226,6 +319,21 @@
       view.classList.remove('hidden');
       document.body.classList.add('modal-open');
       view.scrollTo(0, 0);
+
+      if (!skipDraft && FD) {
+        const decision = FD.askRestore(FD.KEYS.ETALON_NEW, 'Акт-Эталон');
+        if (decision === 'continue') {
+          const d = FD.get(FD.KEYS.ETALON_NEW);
+          if (d && d.payload) {
+            EtalonActions._applyNewDraft(d.payload).catch(function (e) {
+              console.warn('[EtalonActions] restore draft failed', e);
+            });
+          }
+        }
+        FD.bindAutoSave(view, FD.KEYS.ETALON_NEW, function () {
+          return EtalonActions._collectNewDraft();
+        });
+      }
     },
 
     // =====================================================================
@@ -233,6 +341,11 @@
     // Перенесено из etalon.js (было window.closeEtalonConstructor, строка 127).
     // =====================================================================
     closeConstructor: function () {
+      const FD = window.RBIFormDraft;
+      if (FD && !window.currentEditingEtalonId && !window._rbiEtalonSkipDraftSave) {
+        FD.saveNow(FD.KEYS.ETALON_NEW, function () { return EtalonActions._collectNewDraft(); });
+      }
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_NEW);
       document.getElementById('etalon-constructor-view').classList.add('hidden');
       document.body.classList.remove('modal-open');
     },
@@ -356,6 +469,11 @@
 
       showToast("📸 Фото эталона сохранено (" + list.length + ")");
       cancelPhotoEditor();
+      if (window.RBIFormDraft && !window.currentEditingEtalonId) {
+        window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.ETALON_NEW, function () {
+          return EtalonActions._collectNewDraft();
+        });
+      }
     },
 
     // =====================================================================
@@ -490,6 +608,11 @@
       }
       await _storage().put(_storage().stores().ETALON_ACTS, etalonRecord);
       window.currentEditingEtalonId = null; // Сбрасываем ID
+      window._rbiEtalonSkipDraftSave = true;
+      if (window.RBIFormDraft) {
+        window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_NEW);
+        window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.ETALON_NEW);
+      }
 
       if (_context.statusKey && _getWeeklyPlan().tasks) {
         const task = _getWeeklyPlan().tasks.find(t => t.statusKey === _context.statusKey);
@@ -541,6 +664,8 @@
       } else {
         EtalonActions.closeConstructor();
       }
+      window._rbiEtalonSkipDraftSave = false;
+      if (window.RBIFormDraft) window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_NEW);
 
       // Принудительно обновляем все кэши, чтобы Эталон мгновенно появился везде!
       setTimeout(() => {
@@ -752,6 +877,7 @@
       if (!record) return;
 
       window.currentEditingEtalonId = id; // Глобально запоминаем ID
+      window._rbiEtalonSkipDraft = true; // не предлагать локальный черновик нового акта
       EtalonActions.openConstructor(record.contractorName, record.templateKey, record.templateTitle, record.projectName, null);
 
       // Заполняем поля
@@ -798,7 +924,12 @@
         cont.classList.remove('hidden');
         document.getElementById('etalon-pdf-upload-btn').classList.add('hidden');
         event.target.value = '';
-      }
+        if (window.RBIFormDraft && !window.currentEditingEtalonId) {
+          window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.ETALON_NEW, function () {
+            return EtalonActions._collectNewDraft();
+          });
+        }
+      };
       reader.readAsDataURL(file);
     },
 

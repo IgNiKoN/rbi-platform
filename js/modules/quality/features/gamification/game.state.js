@@ -164,6 +164,8 @@ function gameCalculateAllProfiles() {
     }
   });
 
+  let derivedLogsAdded = false;
+
   for (let name in profiles) {
     let p = profiles[name];
     p.rawChecks.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -225,8 +227,33 @@ function gameCalculateAllProfiles() {
     if (p.currentStreak >= 8) p.badgesData['reliable'] = 8;
     if (p.currentStreak >= 16) p.badgesData['iron_will'] = 16;
 
-    // ВЛИЯНИЕ IMPACT SCORE НА РЕЙТИНГ ИНЖЕНЕРА (Бонус и Штраф)
+    // Объективность: независимость (адекватный УрК проверки) и стабильность (низкий разброс)
+    const urkValues = [];
+    let impartialCount = 0;
+    p.rawChecks.forEach(check => {
+      const m = check.metrics;
+      if (!m || m.checkedCount < 3 || typeof m.final !== 'number') return;
+      urkValues.push(m.final);
+      // В пределах нормы: не «всегда 100», не «всегда разгром»
+      if (m.final >= 55 && m.final <= 98) impartialCount++;
+    });
+    p.badgesData['impartial'] = impartialCount;
+    if (urkValues.length >= 5) {
+      const avgUrkLocal = urkValues.reduce((a, b) => a + b, 0) / urkValues.length;
+      const variance = urkValues.reduce((acc, val) => acc + Math.pow(val - avgUrkLocal, 2), 0) / (urkValues.length - 1);
+      const volatility = Math.sqrt(variance);
+      if (volatility < 12) p.badgesData['stable_eng'] = Math.min(p.checksCount, 100);
+      else if (volatility < 20) p.badgesData['stable_eng'] = Math.min(Math.floor(p.checksCount * 0.6), 100);
+      else if (volatility < 28) p.badgesData['stable_eng'] = Math.min(Math.floor(p.checksCount * 0.3), 100);
+      else p.badgesData['stable_eng'] = Math.min(Math.floor(p.checksCount * 0.1), 100);
+    } else {
+      p.badgesData['stable_eng'] = 0;
+    }
+
+    // ВЛИЯНИЕ IMPACT SCORE НА РЕЙТИНГ ИНЖЕНЕРА (Бонус и Штраф) + бейджи партнёрства
     let totalImpact = 0; let impactCount = 0;
+    let improvedContrs = 0; let winWinCount = 0; let reanimatorCount = 0;
+    const derivedZoneLogs = [];
     const contractorsSet = new Set(p.rawChecks.map(c => c.contractorName));
     contractorsSet.forEach(cName => {
       const cChecks = p.rawChecks.filter(c => c.contractorName === cName);
@@ -235,10 +262,51 @@ function gameCalculateAllProfiles() {
       const topTemplate = Object.keys(templatesCount).sort((a, b) => templatesCount[b] - templatesCount[a])[0];
       const impact = calculateImpactScore(p.name, cName, topTemplate);
       if (impact.score !== 0 || impact.trend !== 'Недостаточно данных') { totalImpact += impact.score; impactCount++; }
+      if (impact.score > 0.2) improvedContrs++;
+      if (typeof impact.baseUrk === 'number' && typeof impact.currUrk === 'number') {
+        // Зоны: зелёная ≥85, красная <70 (как в аналитике/AI)
+        if (impact.baseUrk < 85 && impact.currUrk >= 85) winWinCount++;
+        if (impact.baseUrk < 70 && impact.currUrk >= 70) reanimatorCount++;
+
+        // XP за смену зоны подрядчика (один раз на подрядчика)
+        if (impact.baseUrk < 70 && impact.currUrk >= 85) {
+          derivedZoneLogs.push({ action: 'sk_zone_green', target: cName });
+        } else if (impact.baseUrk < 70 && impact.currUrk >= 70 && impact.currUrk < 85) {
+          derivedZoneLogs.push({ action: 'sk_zone_yellow', target: cName });
+        } else if (impact.baseUrk >= 70 && impact.baseUrk < 85 && impact.currUrk >= 85) {
+          derivedZoneLogs.push({ action: 'sk_zone_green', target: cName });
+        }
+      }
     });
     const avgImpact = impactCount > 0 ? (totalImpact / impactCount) : 0;
     if (avgImpact > 0.2) p.pi += 50;
     else if (avgImpact < -0.2) p.pi = Math.max(0, p.pi - 30);
+
+    p.badgesData['impact_maker'] = improvedContrs;
+    p.badgesData['champ_coach'] = improvedContrs;
+    p.badgesData['win_win'] = winWinCount;
+    p.badgesData['reanimator'] = reanimatorCount;
+
+    // Пишем производные логи ДО общего forEach — чтобы XP начислился в этом же проходе
+    const ensureDerivedLog = (action, target) => {
+      const logs = window.gameActionLogs || [];
+      if (logs.some(l => l.action === action && l.target === target && l.inspector === p.name)) return;
+      logs.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        date: new Date().toISOString(),
+        inspector: p.name,
+        action,
+        target
+      });
+      window.gameActionLogs = logs;
+      derivedLogsAdded = true;
+    };
+    derivedZoneLogs.forEach(item => ensureDerivedLog(item.action, item.target));
+    if (improvedContrs >= 10) ensureDerivedLog('impact_bonus_10', 'ten_improved');
+  }
+
+  if (derivedLogsAdded && typeof gameSaveLogs === 'function') {
+    try { gameSaveLogs(); } catch (e) { /* silent */ }
   }
 
   window.gameActionLogs.forEach(log => {
@@ -249,7 +317,6 @@ function gameCalculateAllProfiles() {
 
     // --- БАЗОВЫЕ НАВЫКИ ---
     if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
-    if (log.action === 'ai_generate' || log.action === 'ai_copy') { p.pi += 30; p.monthlyPI[dStr] += 30; p.badgesData['strategist']++; }
 
     // --- МЕТРИКИ ПК СТРОЙКОНТРОЛЬ ---
     if (log.action === 'sk_import_done') { p.pi += 5; p.monthlyPI[dStr] += 5; p.badgesData['discipline']++; } // Загрузка в срок (+5 XP)
@@ -259,7 +326,8 @@ function gameCalculateAllProfiles() {
     if (log.action === 'sk_zone_yellow') { p.pi += 25; p.monthlyPI[dStr] += 25; } // Выход из красной в желтую (+25 XP)
     if (log.action === 'sk_zone_green') { p.pi += 35; p.monthlyPI[dStr] += 35; } // Выход в зеленую (+35 XP)
     if (log.action === 'open_twi') { p.pi += 15; p.monthlyPI[dStr] += 15; p.badgesData['mentor']++; }
-    if (log.action === 'create_twi') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['methodist'] = 1; }
+    if (log.action === 'create_twi') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['methodist']++; }
+    if (log.action === 'magic_creator') { p.pi += 100; p.monthlyPI[dStr] += 100; p.badgesData['magic_creator']++; p.badgesData['methodist']++; }
     if (log.action === 'comment_written') { p.badgesData['communicator']++; }
     if (log.action === 'overfulfill_bonus') { p.pi += 50; p.monthlyPI[dStr] += 50; }
 
@@ -267,10 +335,11 @@ function gameCalculateAllProfiles() {
     if (log.action === 'escalation_bonus') { p.pi += 10; p.monthlyPI[dStr] += 10; }
     if (log.action === 'intervention_logged') { p.pi += 30; p.monthlyPI[dStr] += 30; }
     if (log.action === 'impact_bonus_10') { p.pi += 80; p.monthlyPI[dStr] += 80; p.badgesData['win_win']++; }
-    if (log.action === 'meeting_memo_created') { p.pi += 40; p.monthlyPI[dStr] += 40; }
+    if (log.action === 'meeting_memo_created') { p.pi += 40; p.monthlyPI[dStr] += 40; p.badgesData['meeting_master']++; }
+    if (log.action === 'fmea_master') { p.pi += 40; p.monthlyPI[dStr] += 40; p.badgesData['fmea_master']++; }
     if (log.action === 'practice_created') { p.pi += 120; p.monthlyPI[dStr] += 120; }
-    if (log.action === 'practice_published') { p.pi += 50; p.monthlyPI[dStr] += 50; }
-    if (log.action === 'task_completed_on_time') { p.pi += 15; p.monthlyPI[dStr] += 15; }
+    if (log.action === 'practice_published') { p.pi += 50; p.monthlyPI[dStr] += 50; p.badgesData['initiator']++; }
+    if (log.action === 'task_completed_on_time') { p.pi += 15; p.monthlyPI[dStr] += 15; p.badgesData['discipline']++; }
     if (log.action === 'etalon_accepted') { p.pi += 25; p.monthlyPI[dStr] += 25; }
   });
 

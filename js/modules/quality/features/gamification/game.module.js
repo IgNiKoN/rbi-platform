@@ -27,7 +27,8 @@ import {
 import {
   getBadgeTier, getBadgeSvg, injectAbsenceModal, gameShowLevelsModal, gameRenderDashboard,
   profileNameLockStart, profileNameLockCancel, renderRadarChart, renderStatsCharts, gameShowBadgeInfo,
-  gameInjectManagerModals, gameOpenManagerPanelAuth, switchManagerTab, gameRenderManagerAnalytics,
+  gameInjectManagerModals, gameOpenManagerPanelAuth, closeManagerPanel, openManagerPanelView,
+  switchManagerTab, gameRenderManagerAnalytics,
   gameOpenTaskDetails, gameOpenTopModal, gameOpenImpactModal, rbi_openQualityDaySettings,
   rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_closeFmeaViewModal,
   rbi_openFmeaBindModal, rbi_closeFmeaBindModal, rbi_saveFmeaBind,
@@ -101,6 +102,8 @@ window.renderStatsCharts = renderStatsCharts;
 window.gameShowBadgeInfo = gameShowBadgeInfo;
 window.gameInjectManagerModals = gameInjectManagerModals;
 window.gameOpenManagerPanelAuth = gameOpenManagerPanelAuth;
+window.closeManagerPanel = closeManagerPanel;
+window.openManagerPanelView = openManagerPanelView;
 window.switchManagerTab = switchManagerTab;
 window.gameRenderManagerAnalytics = gameRenderManagerAnalytics;
 window.gameOpenTaskDetails = gameOpenTaskDetails;

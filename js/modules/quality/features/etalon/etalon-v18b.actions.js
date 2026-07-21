@@ -13,7 +13,11 @@
   var _v18b = {
     editingId: null,
     frameReady: false,
-    pendingPrefill: null
+    pendingPrefill: null,
+    pendingDraftPrefill: null,
+    lastBridgeSnapshot: null,
+    draftPollTimer: null,
+    openContext: { project: '', contractor: '', templateKey: '' }
   };
   function _storage() {
     if (window.RBI && window.RBI.services && window.RBI.services.storage) {
@@ -121,7 +125,84 @@
     return result;
   }
 
+  function _bridgeHasContent(bridge) {
+    if (!bridge) return false;
+    var fields = bridge.fields || {};
+    if ((fields.location || '').trim()) return true;
+    if ((fields.object || '').trim()) return true;
+    if ((fields.address || '').trim()) return true;
+    if ((fields.name || '').trim()) return true;
+    if ((fields.inspectionDate || '').trim()) return true;
+    if ((fields.typeOtherText || '').trim()) return true;
+    if ((fields.sampleComposition || '').trim()) return true;
+    if ((fields.applicationZone || '').trim()) return true;
+    if ((fields.sampleSize || '').trim()) return true;
+    if ((fields.notIncluded || '').trim()) return true;
+    if ((fields.storagePlace || '').trim()) return true;
+    if (fields.typeSmr || fields.typeProduct || fields.typeNode || fields.typeFinish || fields.typeOther) return true;
+    if (fields.decisionAccepted || fields.decisionConditional || fields.decisionRejected) return true;
+    if (fields.sampleStored || fields.sampleRemoved || fields.sampleConcealed) return true;
+    if (bridge.onePager && bridge.onePager.hasFile) return true;
+    if (Array.isArray(bridge.photos) && bridge.photos.some(function (p) { return (p.photo || p.desc); })) return true;
+    if (Array.isArray(bridge.participants) && bridge.participants.some(function (p) {
+      return (p.organization || p.position || p.name);
+    })) return true;
+    if (Array.isArray(bridge.controls) && bridge.controls.length) return true;
+    var tables = bridge.tables || {};
+    var tableKeys = Object.keys(tables);
+    for (var i = 0; i < tableKeys.length; i++) {
+      var rows = tables[tableKeys[i]];
+      if (Array.isArray(rows) && rows.length) return true;
+    }
+    return false;
+  }
+
+  function _stopDraftPolling() {
+    if (_v18b.draftPollTimer) {
+      clearInterval(_v18b.draftPollTimer);
+      _v18b.draftPollTimer = null;
+    }
+  }
+
+  function _startDraftPolling() {
+    _stopDraftPolling();
+    if (_v18b.editingId) return;
+    _v18b.draftPollTimer = setInterval(function () {
+      if (_v18b.frameReady && !_v18b.editingId) _postToFrame('collect-draft', null);
+    }, 2000);
+  }
+
   var EtalonV18BActions = {
+
+    _collectShellDraft: function () {
+      if (_v18b.editingId || window._rbiEtalonV18BSkipDraft) return null;
+      var projectEl = document.getElementById('etv18b-project');
+      var contractorEl = document.getElementById('etv18b-contractor');
+      var templateEl = document.getElementById('etv18b-template');
+      var project = projectEl ? projectEl.value : '';
+      var contractor = contractorEl ? contractorEl.value : '';
+      var templateKey = templateEl ? templateEl.value : '';
+      var bridge = _v18b.lastBridgeSnapshot || null;
+      var ctx = _v18b.openContext || {};
+      var shellChanged = !!(
+        (project && project !== (ctx.project || '')) ||
+        (contractor && contractor !== (ctx.contractor || '')) ||
+        (templateKey && templateKey !== (ctx.templateKey || ''))
+      );
+      if (!shellChanged && !_bridgeHasContent(bridge)) return null;
+      return { project: project, contractor: contractor, templateKey: templateKey, bridge: bridge };
+    },
+
+    onDraftSnapshot: function (payload) {
+      _v18b.lastBridgeSnapshot = payload || null;
+      // iframe не в DOM родителя — bindAutoSave shell не ловит правки акта;
+      // пишем черновик по каждому snapshot (debounce внутри FormDraft.scheduleSave).
+      if (!_v18b.editingId && !window._rbiEtalonV18BSkipDraft && window.RBIFormDraft) {
+        window.RBIFormDraft.scheduleSave(window.RBIFormDraft.KEYS.ETALON_V18B, function () {
+          return EtalonV18BActions._collectShellDraft();
+        });
+      }
+    },
 
     /**
      * Открывает полноэкранный просмотр с iframe-конструктором (только ПК).
@@ -133,7 +214,22 @@
         return;
       }
       var p = prefill || {};
-      _v18b = { editingId: null, frameReady: false, pendingPrefill: null };
+      var skipDraft = !!window._rbiEtalonV18BSkipDraft;
+      window._rbiEtalonV18BSkipDraft = false;
+      if (!skipDraft) _v18b.editingId = null;
+      _stopDraftPolling();
+      _v18b = {
+        editingId: _v18b.editingId,
+        frameReady: false,
+        pendingPrefill: null,
+        pendingDraftPrefill: null,
+        lastBridgeSnapshot: null,
+        draftPollTimer: null,
+        openContext: { project: '', contractor: '', templateKey: '' }
+      };
+
+      var FD = window.RBIFormDraft;
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_V18B);
 
       if (window.EtalonV18BRender) window.EtalonV18BRender.mount(FRAME_SRC);
 
@@ -166,17 +262,43 @@
       var titleEl = document.getElementById('etv18b-title-text');
       if (titleEl) titleEl.innerText = 'Акт-Эталон (Бета 2, ПК) — ' + (p.projectName || 'Новый Акт');
 
+      _v18b.openContext = {
+        project: p.projectName || (inpProject ? inpProject.value : '') || '',
+        contractor: p.contractor || '',
+        templateKey: p.templateKey || ''
+      };
+
       var view = document.getElementById('etalon-v18b-view');
       if (view) {
         view.classList.remove('hidden');
         document.body.classList.add('modal-open');
       }
 
-      // Пустой префилл для нового акта — iframe сам инициализирует форму
-      // при загрузке (см. frame-ready ниже), явный prefill не требуется.
+      if (!skipDraft && FD) {
+        var decision = FD.askRestore(FD.KEYS.ETALON_V18B, 'Акт-Эталон (Бета 2, ПК)');
+        if (decision === 'continue') {
+          var d = FD.get(FD.KEYS.ETALON_V18B);
+          if (d && d.payload) {
+            if (d.payload.project != null) document.getElementById('etv18b-project').value = d.payload.project;
+            if (d.payload.contractor != null) document.getElementById('etv18b-contractor').value = d.payload.contractor;
+            if (d.payload.templateKey) tmplSelect.value = d.payload.templateKey;
+            if (d.payload.bridge) _v18b.pendingDraftPrefill = d.payload.bridge;
+          }
+        }
+        FD.bindAutoSave(view, FD.KEYS.ETALON_V18B, function () {
+          return EtalonV18BActions._collectShellDraft();
+        });
+      }
     },
 
     closeConstructor: function () {
+      var FD = window.RBIFormDraft;
+      if (FD) FD.unbindAutoSave(FD.KEYS.ETALON_V18B);
+      _stopDraftPolling();
+      if (!_v18b.editingId && !window._rbiEtalonV18BSkipDraftSave && FD) {
+        _postToFrame('collect-draft', null);
+        FD.saveNow(FD.KEYS.ETALON_V18B, function () { return EtalonV18BActions._collectShellDraft(); });
+      }
       var view = document.getElementById('etalon-v18b-view');
       if (view) view.classList.add('hidden');
       document.body.classList.remove('modal-open');
@@ -196,6 +318,7 @@
       var record = _etalonActs().find(function (a) { return String(a.id) === String(id); });
       if (!record || !record.details || !record.details.actV18b) return showToast('❌ Акт не найден');
 
+      window._rbiEtalonV18BSkipDraft = true;
       EtalonV18BActions.openConstructor({
         projectName: record.projectName,
         contractor: record.contractorName,
@@ -228,7 +351,11 @@
       if (_v18b.pendingPrefill) {
         _postToFrame('prefill', _v18b.pendingPrefill);
         _v18b.pendingPrefill = null;
+      } else if (_v18b.pendingDraftPrefill) {
+        _postToFrame('prefill', _v18b.pendingDraftPrefill);
+        _v18b.pendingDraftPrefill = null;
       }
+      if (!_v18b.editingId) _startDraftPolling();
     },
 
     /**
@@ -346,9 +473,18 @@
       localStorage.setItem('rbi_cloud_dirty', '1');
       setTimeout(function () { _triggerSync('silent'); }, 800);
 
+      window._rbiEtalonV18BSkipDraftSave = true;
+      if (window.RBIFormDraft) {
+        window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_V18B);
+        window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.ETALON_V18B);
+      }
+      _stopDraftPolling();
+
       if (closeAfter) {
         EtalonV18BActions.closeConstructor();
       }
+      window._rbiEtalonV18BSkipDraftSave = false;
+      if (window.RBIFormDraft) window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.ETALON_V18B);
 
       setTimeout(function () {
         if (typeof rbi_renderPracticesTab === 'function') rbi_renderPracticesTab();

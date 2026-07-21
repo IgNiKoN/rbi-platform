@@ -120,8 +120,10 @@ function handleFabDownload() {
     } else if (ctx === 'sub-onepager') {
         contentHtml += createRow('onepager', 'Сводный статус объекта', 'Классический One-Pager (А3)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconChart);
         contentHtml += createRow('onepager_v2', 'One-Pager 2.0', 'Метрики + ПК СК + рейтинги на 1 листе А3', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconPoster);
+        contentHtml += createRow('onepager_v3', 'One-Pager 3.0', 'То же, что 2.0, укрупнённо на A1 альбом', 'bg-fuchsia-50 dark:bg-fuchsia-900/30', 'text-fuchsia-600 dark:text-fuchsia-400', iconPoster);
         contentHtml += createRow('defect_remediation', 'Повторяющиеся дефекты', 'Брак / устранение, ≥3 повтора (А3 альбом)', 'bg-rose-50 dark:bg-rose-900/30', 'text-rose-600 dark:text-rose-400', iconPoster);
         contentHtml += createRow('global_onepager_v2', 'Сводный отчет по компании 2.0', 'Титул с KPI + One-Pager 2.0 по каждому объекту (А3)', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconDoc);
+        contentHtml += createRow('global_onepager_v3', 'Сводный отчет по компании 3.0', 'То же, что 2.0, укрупнённо на A1 альбом', 'bg-fuchsia-50 dark:bg-fuchsia-900/30', 'text-fuchsia-600 dark:text-fuchsia-400', iconDoc);
         contentHtml += createRow('global_onepager', 'Глобальная сводка', 'Все объекты компании (А3)', 'bg-blue-50 dark:bg-blue-900/30', 'text-blue-600 dark:text-blue-400', iconDoc);
 
         // --- НОВОЕ: МАРШРУТИЗАЦИЯ ДЛЯ ОСТАЛЬНЫХ ВКЛАДОК ---

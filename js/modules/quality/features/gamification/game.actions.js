@@ -194,7 +194,16 @@ function emit(eventName, detail) {
 
   // Перенесено из js/game.js (строка 138).
   function gameLogAction(actionType, targetId = null) {
-    const currentInspector = document.getElementById('inp-inspector')?.value.trim() || 'Неизвестный инспектор';
+    const fromInput = document.getElementById('inp-inspector')?.value.trim() || '';
+    const fromPerms = (window.RBI && window.RBI.services && window.RBI.services.permissions &&
+      typeof window.RBI.services.permissions.getCurrentEngineerName === 'function')
+      ? (window.RBI.services.permissions.getCurrentEngineerName() || '')
+      : '';
+    const fromSettings = (window.RBI && window.RBI.services && window.RBI.services.settings &&
+      typeof window.RBI.services.settings.get === 'function')
+      ? (window.RBI.services.settings.get('engineerName') || '')
+      : '';
+    const currentInspector = (fromInput || fromPerms || fromSettings || 'Неизвестный инспектор').trim();
     if (!currentInspector) return;
 
     const gameActionLogs = window.gameActionLogs;
@@ -352,7 +361,7 @@ function emit(eventName, detail) {
           task.status = 'done';
           task.resultComment = `Выполнено (${task.done}/${task.target})`;
           task.updatedAt = new Date().toISOString();
-          newlyClosedTasks.push(task.contractor);
+          newlyClosedTasks.push(task.id);
           _storage().put(_storage().stores().TASKS, task);
         }
 
@@ -383,7 +392,7 @@ function emit(eventName, detail) {
             st.status = 'completed';
             task.status = 'done';
             task.updatedAt = new Date().toISOString();
-            newlyClosedTasks.push(task.contractor);
+            newlyClosedTasks.push(task.id);
             _storage().put(_storage().stores().TASKS, task);
           } else if (task.done < task.target) {
             allTasksDone = false;
@@ -392,13 +401,6 @@ function emit(eventName, detail) {
       }
     });
 
-    // ТИХОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (БЕЗ НАДОЕДЛИВЫХ УВЕДОМЛЕНИЙ)
-    if (newlyClosedTasks.length > 0 && !window._rbiSuppressTasksRefresh) {
-      setTimeout(() => {
-        if (window._rbiSuppressTasksRefresh) return;
-        if (window.RBI && window.RBI.events) window.RBI.events.emit('tasks:refresh', {});
-      }, 300);
-    }
     // --- УМНОЕ АВТОЗАКРЫТИЕ (СВЕРКА С БАЗОЙ ДАННЫХ) ---
     weeklyPlanData.tasks.forEach(task => {
       if (task._deleted || task.is_deleted) return;
@@ -413,7 +415,7 @@ function emit(eventName, detail) {
         const hasMemo = _getMeetings().some(m => new Date(m.date) >= taskCreateDate);
         if (hasMemo) {
           task.status = 'done'; task.resultComment = 'Автозакрытие (найден протокол)'; task.updatedAt = new Date().toISOString();
-          newlyClosedTasks.push(task.title);
+          newlyClosedTasks.push(task.id);
           _storage().put(_storage().stores().TASKS, task);
         }
       }
@@ -423,7 +425,7 @@ function emit(eventName, detail) {
         const hasFmea = _getFmea().some(f => new Date(f.date) >= taskCreateDate);
         if (hasFmea) {
           task.status = 'done'; task.resultComment = 'Автозакрытие (сохранен FMEA)'; task.updatedAt = new Date().toISOString();
-          newlyClosedTasks.push('FMEA Анализ');
+          newlyClosedTasks.push(task.id);
           _storage().put(_storage().stores().TASKS, task);
         }
       }
@@ -441,7 +443,7 @@ function emit(eventName, detail) {
           task.status = 'done';
           task.resultComment = 'Автозакрытие (Акт-Эталон найден в базе)';
           task.updatedAt = new Date().toISOString();
-          newlyClosedTasks.push('Приемка Эталона');
+          newlyClosedTasks.push(task.id);
           _storage().put(_storage().stores().TASKS, task);
         }
       }
@@ -455,11 +457,34 @@ function emit(eventName, detail) {
           task.status = 'done';
           task.resultComment = `Оформлено карт: ${task.done}`;
           task.updatedAt = new Date().toISOString();
-          newlyClosedTasks.push('Создание TWI карт');
+          newlyClosedTasks.push(task.id);
         }
         _storage().put(_storage().stores().TASKS, task);
       }
     });
+
+    // XP за автозакрытие задач плана (один раз на task.id) — после всех веток закрытия
+    if (newlyClosedTasks.length > 0) {
+      newlyClosedTasks.forEach(taskId => {
+        if (!taskId) return;
+        const logs = window.gameActionLogs || [];
+        if (logs.some(l => l.action === 'task_completed_on_time' && l.target === taskId)) return;
+        const task = (weeklyPlanData.tasks || []).find(t => t.id === taskId);
+        const due = task && (task.dueDate || task.deadline || task.planDate);
+        const stamped = (task && task.updatedAt) || new Date().toISOString();
+        const onTime = !due || new Date(stamped) <= new Date(due);
+        if (onTime) gameLogAction('task_completed_on_time', taskId);
+      });
+    }
+
+    // ТИХОЕ ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (БЕЗ НАДОЕДЛИВЫХ УВЕДОМЛЕНИЙ)
+    if (newlyClosedTasks.length > 0 && !window._rbiSuppressTasksRefresh) {
+      setTimeout(() => {
+        if (window._rbiSuppressTasksRefresh) return;
+        if (window.RBI && window.RBI.events) window.RBI.events.emit('tasks:refresh', {});
+      }, 300);
+    }
+
     if (allTasksDone && weeklyPlanData.tasks.length > 0 && !weeklyPlanData.completed) {
       weeklyPlanData.completed = true;
       window.gameActionLogs.push({ id: Date.now().toString(36), date: new Date().toISOString(), inspector: fallbackInspector, action: 'plan_completed', target: weeklyPlanData.weekId });
@@ -558,16 +583,17 @@ function emit(eventName, detail) {
     const pin = document.getElementById('manager-pin-input').value;
     if (hashString(pin) === MANAGER_PIN_HASH) {
       document.getElementById('manager-auth-modal').style.display = 'none';
-
-      const overlay = document.getElementById('manager-panel-overlay');
-      overlay.style.display = 'flex';
-      document.body.classList.add('modal-open');
-
-      // Плавное появление
-      setTimeout(() => {
-        overlay.classList.remove('opacity-0');
-      }, 10);
-
+      if (typeof openManagerPanelView === 'function') {
+        openManagerPanelView();
+      } else if (typeof window.openManagerPanelView === 'function') {
+        window.openManagerPanelView();
+      } else {
+        const view = document.getElementById('manager-panel-overlay');
+        if (view) {
+          view.classList.remove('hidden');
+          document.body.classList.add('modal-open');
+        }
+      }
       gameRenderManagerAnalytics();
     } else {
       showToast('❌ Неверный ПИН-код');
@@ -679,10 +705,10 @@ function emit(eventName, detail) {
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; showHistoryDetail('${c.id}');" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
+                    <button onclick="closeManagerPanel(); showHistoryDetail('${c.id}');" class="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 border border-slate-200">
                         👁️ Открыть Акт
                     </button>
-                    <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open'); startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
+                    <button onclick="closeManagerPanel(); startInspectionWithValues('${c.contractorName.replace(/'/g, "\\'")}', '${c.templateKey}', null, '${c.projectName.replace(/'/g, "\\'")}', ${c.id});" class="flex-1 bg-indigo-600 text-white py-2.5 rounded-lg text-[10px] font-black uppercase active:scale-95 shadow-md">
     ⚖️ Провести аудит
 </button>
                 </div>
@@ -1202,10 +1228,82 @@ function emit(eventName, detail) {
     showToast("Отчет открыт для редактирования");
   };
 
+  function _rbiCollectFmeaNewDraft() {
+    if (currentEditingFmeaId) return null;
+    const rows = document.querySelectorAll('#fmea-workspace .fmea-row');
+    if (!rows.length) return null;
+    const defects = [];
+    let meaningful = false;
+    rows.forEach(row => {
+      const contractor = row.querySelector('.f-contr').value;
+      const workTitle = row.querySelector('.f-work').value;
+      const defectName = row.querySelector('.f-defect').value;
+      const photo = row.querySelector('.f-photo').value;
+      const count = row.querySelector('.f-count').value;
+      const stage = row.querySelector('.f-stage').value;
+      const cause = row.querySelector('.f-cause').value.trim();
+      const effect = row.querySelector('.f-effect').value.trim();
+      const fix = row.querySelector('.f-fix').value.trim();
+      const prevent = row.querySelector('.f-prevent').value.trim();
+      const rpn = row.querySelector('.f-rpn').value;
+      defects.push({
+        contractor, workTitle, defectName, photo, count, stage, cause, effect, fix, prevent, rpn
+      });
+      const hasNonDefault = (contractor && contractor !== 'Ручной ввод')
+        || (workTitle && workTitle !== 'Ручной ввод')
+        || (defectName && defectName !== 'Ручной ввод');
+      const hasText = !!(cause || effect || fix || prevent || photo);
+      const hasRpn = rpn !== '' && rpn !== '0' && rpn != null;
+      if (hasNonDefault || hasText || hasRpn) meaningful = true;
+    });
+    return meaningful ? { defects } : null;
+  }
+
+  function _rbiApplyFmeaNewDraft(payload) {
+    if (!payload || !Array.isArray(payload.defects) || !payload.defects.length) return;
+    const tbody = document.querySelector('#fmea-workspace tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    payload.defects.forEach((def, idx) => {
+      rbi_addManualFmeaRow();
+      const row = tbody.querySelector(`.fmea-row[data-idx="${idx}"]`) || tbody.children[idx];
+      if (!row) return;
+      row.querySelector('.f-contr').value = def.contractor || 'Ручной ввод';
+      row.querySelector('.f-work').value = def.workTitle || 'Ручной ввод';
+      row.querySelector('.f-defect').value = def.defectName || 'Ручной ввод';
+      row.querySelector('.f-photo').value = def.photo || '';
+      row.querySelector('.f-count').value = def.count || '1';
+      const workInput = row.querySelector('.f-work-input');
+      const contrInput = row.querySelector('.f-contr-input');
+      const defectInput = row.querySelector('.f-defect-input');
+      if (workInput) workInput.value = def.workTitle || '';
+      if (contrInput) contrInput.value = def.contractor || '';
+      if (defectInput) defectInput.value = def.defectName || '';
+      const stageEl = row.querySelector('.f-stage');
+      if (stageEl && def.stage) stageEl.value = def.stage;
+      row.querySelector('.f-cause').value = def.cause || '';
+      row.querySelector('.f-effect').value = def.effect || '';
+      row.querySelector('.f-fix').value = def.fix || '';
+      row.querySelector('.f-prevent').value = def.prevent || '';
+      if (def.rpn !== undefined && def.rpn !== '') row.querySelector('.f-rpn').value = def.rpn;
+      if (def.photo) {
+        const photoDiv = row.querySelector('.mt-2.w-16');
+        if (photoDiv) {
+          photoDiv.outerHTML = `
+            <div class="relative w-16 h-16 mt-2 group">
+                <img src="${window.getPhotoSrc(def.photo)}" class="w-full h-full object-cover rounded-lg border border-slate-300 cursor-pointer" onclick="openPhotoViewer('${def.photo}')">
+                <button onclick="rbi_removeFmeaPhoto(this)" class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md">✕</button>
+            </div>`;
+        }
+      }
+    });
+  }
+
   // Перенесено из js/game.js (строка 2918).
   async function rbi_saveFmea(periodName) {
     if (_isDemoMode()) return showToast("В демо-режиме сохранение отключено");
 
+    const wasNewFmea = !currentEditingFmeaId;
     const rows = document.querySelectorAll('.fmea-row');
     const defects = [];
 
@@ -1280,6 +1378,11 @@ function emit(eventName, detail) {
     }
     currentEditingFmeaId = null; // Сбрасываем ID
 
+    if (wasNewFmea && window.RBIFormDraft) {
+      window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.FMEA_NEW);
+      window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.FMEA_NEW);
+    }
+
     localStorage.setItem('rbi_cloud_dirty', '1');
     _triggerSync('silent');
 
@@ -1329,6 +1432,9 @@ function emit(eventName, detail) {
             </div>`;
       }
       event.target.value = '';
+      if (window.RBIFormDraft && !currentEditingFmeaId) {
+        window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.FMEA_NEW, _rbiCollectFmeaNewDraft);
+      }
     });
   };
 
@@ -1350,6 +1456,8 @@ function emit(eventName, detail) {
   // Перенесено из js/game.js (строка 3106). Создание пустого бланка FMEA.
   function rbi_createEmptyFmea() {
     const workspace = document.getElementById('fmea-workspace');
+    const FD = window.RBIFormDraft;
+    if (FD) FD.unbindAutoSave(FD.KEYS.FMEA_NEW);
     currentEditingFmeaId = null; // Сбрасываем ID, чтобы сохранился как новый
 
     workspace.innerHTML = `
@@ -1392,6 +1500,15 @@ function emit(eventName, detail) {
 
     // Сразу добавляем одну пустую строку
     rbi_addManualFmeaRow();
+
+    if (FD) {
+      const decision = FD.askRestore(FD.KEYS.FMEA_NEW, 'FMEA');
+      if (decision === 'continue') {
+        const d = FD.get(FD.KEYS.FMEA_NEW);
+        if (d && d.payload) _rbiApplyFmeaNewDraft(d.payload);
+      }
+      FD.bindAutoSave(workspace, FD.KEYS.FMEA_NEW, _rbiCollectFmeaNewDraft);
+    }
 
     // Скроллим к рабочей области
     workspace.scrollIntoView({ behavior: 'smooth' });

@@ -30,6 +30,65 @@ let _ctx = null;
 let _savedMeetingBaselineMemo = '';
 /** последний черновик для preview/print без save */
 let _meetingPreviewDraft = null;
+/** не пересохранять черновик при закрытии после успешного save */
+let _meetingDraftSkipSave = false;
+
+function _rbiCollectMeetingWsDraft() {
+    const notesEl = document.getElementById('rbi-meeting-notes');
+    if (!notesEl) return null;
+    const notes = notesEl.value.trim();
+    const memo = document.getElementById('rbi-meeting-memo-text')?.value.trim() || '';
+    const photo = document.getElementById('meeting-photo-preview')?.dataset?.photo || '';
+    const agenda = collectAgendaFromDom();
+    const agendaTouched = agenda.some(a => a.isDone || a.date || a.resp || a.comment);
+    if (!notes && !memo && !photo && !agendaTouched) return null;
+    return { notes, memo, photo, agenda };
+}
+
+function _rbiApplyMeetingWsDraft(payload) {
+    if (!payload) return;
+    const notesEl = document.getElementById('rbi-meeting-notes');
+    const memoEl = document.getElementById('rbi-meeting-memo-text');
+    if (notesEl && payload.notes) notesEl.value = payload.notes;
+    if (memoEl && payload.memo) memoEl.value = payload.memo;
+    if (payload.photo) {
+        const box = document.getElementById('meeting-photo-preview');
+        if (box) {
+            box.dataset.photo = payload.photo;
+            box.classList.remove('hidden');
+            const src = window.getPhotoSrc(payload.photo);
+            box.innerHTML = `<img src="${src}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
+            if (typeof PhotoManager !== 'undefined' && PhotoManager.getAsyncUrl) {
+                PhotoManager.getAsyncUrl(payload.photo).then(realSrc => {
+                    const img = box.querySelector('img');
+                    if (img && realSrc) img.src = realSrc;
+                });
+            }
+        }
+    }
+    if (Array.isArray(payload.agenda)) {
+        payload.agenda.forEach(draftItem => {
+            const rows = document.querySelectorAll('.meeting-agenda-row');
+            let row = null;
+            rows.forEach(r => {
+                const sk = r.querySelector('.agenda-meta-source-key')?.value || '';
+                const id = r.querySelector('.agenda-meta-id')?.value || '';
+                if (row) return;
+                if (draftItem.sourceKey && sk === draftItem.sourceKey) row = r;
+                else if (draftItem.id && id === draftItem.id) row = r;
+            });
+            if (!row) return;
+            const cb = row.querySelector('.agenda-done-cb');
+            if (cb) cb.checked = !!draftItem.isDone;
+            const dateEl = row.querySelector('.agenda-date');
+            if (dateEl && draftItem.date) dateEl.value = draftItem.date.split('T')[0];
+            const respEl = row.querySelector('.agenda-resp');
+            if (respEl && draftItem.resp) respEl.value = draftItem.resp;
+            const commentEl = row.querySelector('.agenda-comment');
+            if (commentEl && draftItem.comment) commentEl.value = draftItem.comment;
+        });
+    }
+}
 
 function _meetingsStorage() {
     if (_ctx && _ctx.storage) return _ctx.storage;
@@ -299,6 +358,14 @@ function _contrTypeSummaryHtml(items) {
 /* ── renderMeetingTab ────────────────────────────────────────────────────────── */
 
 export function renderMeetingTab() {
+    const FD = window.RBIFormDraft;
+    const notesEl = document.getElementById('rbi-meeting-notes');
+    if (FD && notesEl && !_meetingDraftSkipSave) {
+        FD.saveNow(FD.KEYS.MEETING_WS, _rbiCollectMeetingWsDraft);
+        FD.unbindAutoSave(FD.KEYS.MEETING_WS);
+    }
+    _meetingDraftSkipSave = false;
+
     const container = document.getElementById('rbi-meeting-container');
     if (!container) return;
 
@@ -1772,6 +1839,17 @@ export function createMeeting(customData = null) {
     </div>`;
 
     container.innerHTML = html;
+
+    const FD = window.RBIFormDraft;
+    if (FD) {
+        FD.unbindAutoSave(FD.KEYS.MEETING_WS);
+        const decision = FD.askRestore(FD.KEYS.MEETING_WS, 'Совещание');
+        if (decision === 'continue') {
+            const d = FD.get(FD.KEYS.MEETING_WS);
+            if (d && d.payload) _rbiApplyMeetingWsDraft(d.payload);
+        }
+        FD.bindAutoSave(container, FD.KEYS.MEETING_WS, _rbiCollectMeetingWsDraft);
+    }
 }
 
 /** Крупное окно только для предпросмотра протокола (общий modal max-width 480px). */
@@ -1871,6 +1949,9 @@ export function handleMeetingPhotoUpload(event) {
 
         box.innerHTML = `<img src="${realSrc}" class="w-full h-full object-cover"><div onclick="event.stopPropagation(); document.getElementById('meeting-photo-preview').dataset.photo=''; document.getElementById('meeting-photo-preview').classList.add('hidden');" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-black shadow-md cursor-pointer">✕</div>`;
         event.target.value = '';
+        if (window.RBIFormDraft) {
+            window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.MEETING_WS, _rbiCollectMeetingWsDraft);
+        }
     });
 }
 
@@ -1960,6 +2041,12 @@ export async function saveMeetingMemo() {
         }
     }
     showToast("💾 Протокол сохранен в архив!");
+    const FD = window.RBIFormDraft;
+    if (FD) {
+        FD.clear(FD.KEYS.MEETING_WS);
+        FD.unbindAutoSave(FD.KEYS.MEETING_WS);
+    }
+    _meetingDraftSkipSave = true;
     rbi_renderMeetingTab();
 }
 

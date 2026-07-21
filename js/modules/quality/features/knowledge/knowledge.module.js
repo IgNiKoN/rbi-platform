@@ -695,11 +695,20 @@ async function saveTwiMarkupPhoto() {
 }
 
 function closeTwiConstructor() {
+    var FD = window.RBIFormDraft;
+    var wasEdit = !!window.currentEditingTwiId;
+    if (FD) {
+        if (!wasEdit) FD.saveNow(FD.KEYS.TWI_NEW, _rbiCollectTwiNewDraft);
+        FD.unbindAutoSave(FD.KEYS.TWI_NEW);
+    }
     document.getElementById('twi-list-view').classList.remove('hidden');
     document.getElementById('twi-constructor-view').classList.add('hidden');
     document.body.classList.remove('modal-open');
     currentEditingTwiId = null;
     window.currentEditingTwiId = currentEditingTwiId;
+    // Сброс только если не успели сохранить «магическую» карту в этом же тике
+    // (saveTwiCard сам снимает флаг до вызова close)
+    if (!window._rbiMagicTwiSaving) window._rbiMagicTwiPending = false;
     window.renderTwiList();
 }
 
@@ -1652,6 +1661,9 @@ window.openNodeConstructor = function (editId = null) {
     document.body.classList.add('modal-open');
     view.scrollTo(0, 0);
 
+    var FD = window.RBIFormDraft;
+    if (FD) FD.unbindAutoSave(FD.KEYS.NODE_NEW);
+
     window.currentEditingNodeId = editId;
 
     const selectDoc = document.getElementById('node-linked-doc');
@@ -1716,10 +1728,25 @@ window.openNodeConstructor = function (editId = null) {
         window.currentNodeAttachments = [];
         if (typeof window.renderNodeAttachmentsUI === 'function') window.renderNodeAttachmentsUI();
         addNodeMaterialRow();
+
+        if (FD) {
+            var decision = FD.askRestore(FD.KEYS.NODE_NEW, 'Узел');
+            if (decision === 'continue') {
+                var d = FD.get(FD.KEYS.NODE_NEW);
+                if (d && d.payload) _rbiApplyNodeNewDraft(d.payload);
+            }
+            FD.bindAutoSave(view, FD.KEYS.NODE_NEW, _rbiCollectNodeNewDraft);
+        }
     }
 };
 
 function closeNodeConstructor() {
+    var FD = window.RBIFormDraft;
+    var wasEdit = !!window.currentEditingNodeId;
+    if (FD) {
+        if (!wasEdit) FD.saveNow(FD.KEYS.NODE_NEW, _rbiCollectNodeNewDraft);
+        FD.unbindAutoSave(FD.KEYS.NODE_NEW);
+    }
     document.getElementById('node-constructor-view').classList.add('hidden');
     document.getElementById('nodes-main-view').classList.remove('hidden');
     document.body.classList.remove('modal-open');
@@ -1871,10 +1898,17 @@ window.saveNodeCard = async function () {
 
     const st = _storage();
     const stores = st.stores ? st.stores() : (typeof STORES !== 'undefined' ? STORES : {});
+    const isNewNode = !window.currentEditingNodeId;
     try {
         await st.put(stores.CUSTOM_NODES, nodeData);
+        if (isNewNode && window.RBIFormDraft) {
+            window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.NODE_NEW);
+            window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.NODE_NEW);
+        }
         showToast('✅ Узел успешно сохранен!');
+        if (isNewNode) window.currentEditingNodeId = nodeData.id;
         closeNodeConstructor();
+        if (isNewNode) window.currentEditingNodeId = null;
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         _sync('silent');
@@ -2344,6 +2378,108 @@ window.renderTwiList = function () {
     container.innerHTML = magicTwiHtml + html;
 };
 
+function _rbiCollectTwiNewDraft() {
+    if (window.currentEditingTwiId) return null;
+    var type = window.currentTwiType || 'INSPECTOR';
+    var selectEl = document.getElementById('twi-checklist-select');
+    var nodeIdEl = document.getElementById('twi-linked-node-id');
+    var nodeNameEl = document.getElementById('twi-linked-node-name');
+    var p = {
+        type: type,
+        title: (document.getElementById('twi-title-input') && document.getElementById('twi-title-input').value) || '',
+        checklistKey: (selectEl && selectEl.value) || '',
+        linkedDocId: (document.getElementById('twi-linked-doc-id') && document.getElementById('twi-linked-doc-id').value) || '',
+        linkedNodeId: (nodeIdEl && nodeIdEl.value) || '',
+        linkedNodeTitle: (nodeNameEl && nodeNameEl.innerText) || 'Не привязан',
+        videoLink: (document.getElementById('twi-video-link-input') && document.getElementById('twi-video-link-input').value) || '',
+        itemId: '',
+        why: '',
+        compliance: '',
+        preparation: '',
+        photoGood: '',
+        photoBad: '',
+        steps: [],
+        pdfData: '',
+        pdfName: '',
+        pdfSize: ''
+    };
+    if (type === 'INSPECTOR') {
+        p.itemId = (document.getElementById('twi-item-select') && document.getElementById('twi-item-select').value) || '';
+        p.why = (document.getElementById('twi-why-input') && document.getElementById('twi-why-input').value) || '';
+        p.compliance = (document.getElementById('twi-compliance-input') && document.getElementById('twi-compliance-input').value) || '';
+        p.preparation = (document.getElementById('twi-preparation-input') && document.getElementById('twi-preparation-input').value) || '';
+        p.photoGood = (document.getElementById('twi-photo-good-container') && document.getElementById('twi-photo-good-container').dataset.photo) || '';
+        p.photoBad = (document.getElementById('twi-photo-bad-container') && document.getElementById('twi-photo-bad-container').dataset.photo) || '';
+    } else if (type === 'WORKER') {
+        var stepEls = document.getElementById('twi-steps-container').querySelectorAll('.twi-step-item');
+        stepEls.forEach(function (el, index) {
+            var text = (el.querySelector('.twi-step-text') && el.querySelector('.twi-step-text').value) || '';
+            var time = parseInt(el.querySelector('.twi-step-time') && el.querySelector('.twi-step-time').value, 10) || 0;
+            var photo = _readTwiStepPhotos(el.querySelector('.twi-photo-container'));
+            p.steps.push({ order: index + 1, text: text, time: time, photo: photo });
+        });
+    } else if (type === 'PDF') {
+        var pdfCont = document.getElementById('twi-pdf-container');
+        p.pdfData = (pdfCont && pdfCont.dataset.pdf) || '';
+        p.pdfName = (document.getElementById('twi-pdf-name') && document.getElementById('twi-pdf-name').innerText) || '';
+        p.pdfSize = (document.getElementById('twi-pdf-size') && document.getElementById('twi-pdf-size').innerText) || '';
+    }
+    var meaningful = !!(
+        (p.title || '').trim() ||
+        p.checklistKey ||
+        p.linkedDocId ||
+        p.linkedNodeId ||
+        (p.videoLink || '').trim() ||
+        p.itemId ||
+        (p.why || '').trim() ||
+        (p.compliance || '').trim() ||
+        (p.preparation || '').trim() ||
+        p.photoGood ||
+        p.photoBad ||
+        p.pdfData ||
+        (p.steps && p.steps.some(function (s) {
+            return (s.text || '').trim() || s.time || (s.photo && s.photo.length);
+        }))
+    );
+    return meaningful ? p : null;
+}
+
+function _rbiApplyTwiNewDraft(p) {
+    if (!p) return;
+    var selectEl = document.getElementById('twi-checklist-select');
+    var selectDoc = document.getElementById('twi-linked-doc-id');
+    document.getElementById('twi-title-input').value = p.title || '';
+    document.getElementById('twi-video-link-input').value = p.videoLink || '';
+    document.getElementById('twi-steps-container').innerHTML = '';
+    window.twiStepCount = 0;
+    removeTwiGoodPhoto(); removeTwiBadPhoto(); removeTwiPdf();
+
+    if (p.checklistKey && selectEl) selectEl.value = p.checklistKey;
+    if (selectDoc) selectDoc.value = p.linkedDocId || '';
+    selectNodeForTwi(p.linkedNodeId || '', p.linkedNodeTitle || (p.linkedNodeId ? 'Узел' : 'Не привязан'));
+
+    var type = p.type || 'INSPECTOR';
+    changeTwiType(type);
+
+    if (type === 'INSPECTOR') {
+        populateTwiItemSelect(p.itemId || null);
+        if (p.itemId && document.getElementById('twi-item-select')) {
+            document.getElementById('twi-item-select').value = String(p.itemId);
+        }
+        document.getElementById('twi-why-input').value = p.why || '';
+        document.getElementById('twi-compliance-input').value = p.compliance || '';
+        document.getElementById('twi-preparation-input').value = p.preparation || '';
+        if (p.photoGood) renderGoodPhoto(p.photoGood);
+        if (p.photoBad) renderBadPhoto(p.photoBad);
+    } else if (type === 'PDF') {
+        if (p.pdfData) renderPdfFile(p.pdfName || 'doc.pdf', p.pdfSize || '', p.pdfData);
+    } else {
+        var steps = Array.isArray(p.steps) ? p.steps : [];
+        if (steps.length === 0) addTwiStep();
+        else steps.forEach(function (step) { addTwiStep(step); });
+    }
+}
+
 /**
  * Открывает конструктор TWI (режим создания или редактирования).
  * Вызывается из index.html: onclick="openTwiConstructor()"
@@ -2356,6 +2492,9 @@ window.openTwiConstructor = function (editId) {
     view.classList.remove('hidden');
     document.body.classList.add('modal-open');
     view.scrollTo(0, 0);
+
+    var FD = window.RBIFormDraft;
+    if (FD) FD.unbindAutoSave(FD.KEYS.TWI_NEW);
 
     var selectEl = document.getElementById('twi-checklist-select');
     var options = '<option value="" disabled selected>Выберите вид работ...</option>';
@@ -2439,6 +2578,14 @@ window.openTwiConstructor = function (editId) {
         }
     } else {
         changeTwiType('INSPECTOR'); addTwiStep(); populateTwiItemSelect();
+        if (FD) {
+            var decision = FD.askRestore(FD.KEYS.TWI_NEW, 'TWI');
+            if (decision === 'continue') {
+                var d = FD.get(FD.KEYS.TWI_NEW);
+                if (d && d.payload) _rbiApplyTwiNewDraft(d.payload);
+            }
+            FD.bindAutoSave(view, FD.KEYS.TWI_NEW, _rbiCollectTwiNewDraft);
+        }
     }
 };
 
@@ -2547,8 +2694,25 @@ window.saveTwiCard = async function () {
 
     try {
         await _storage().put(_storage().stores().TWI_CARDS, cardData);
-        showToast('✅ Инструкция успешно сохранена!');
+        const isNewCard = !window.currentEditingTwiId;
+        const fromMagic = !!window._rbiMagicTwiPending;
+        window._rbiMagicTwiPending = false;
+        window._rbiMagicTwiSaving = true;
+        if (isNewCard) {
+            // magic_creator уже включает +100 XP; обычное создание — create_twi
+            _gameLogAction(fromMagic ? 'magic_creator' : 'create_twi', cardData.id);
+        }
+        if (isNewCard && window.RBIFormDraft) {
+            window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.TWI_NEW);
+            window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.TWI_NEW);
+        }
+        showToast(isNewCard
+            ? (fromMagic ? '✅ TWI создана! Начислено +100 XP (Магия TWI)' : '✅ Инструкция сохранена! Начислено +100 XP')
+            : '✅ Инструкция успешно сохранена!');
+        // Помечаем editing, чтобы close не перезаписал черновик пустым состоянием после clear
+        if (isNewCard) window.currentEditingTwiId = cardData.id;
         closeTwiConstructor();
+        window._rbiMagicTwiSaving = false;
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         _sync('silent');
@@ -2776,19 +2940,159 @@ function filterDocs(type, btnElement) {
     window.renderDocsList();
 }
 
+function _rbiCollectDocNewDraft() {
+    if (window._editingDocId) return null;
+    var type = (document.getElementById('new-doc-type') && document.getElementById('new-doc-type').value) || '';
+    var code = (document.getElementById('new-doc-code') && document.getElementById('new-doc-code').value.trim()) || '';
+    var title = (document.getElementById('new-doc-title') && document.getElementById('new-doc-title').value.trim()) || '';
+    var pdfData = (document.getElementById('doc-pdf-preview') && document.getElementById('doc-pdf-preview').dataset.pdf) || '';
+    var pdfName = (document.getElementById('doc-pdf-name') && document.getElementById('doc-pdf-name').innerText) || '';
+    var pdfSize = (document.getElementById('doc-pdf-size') && document.getElementById('doc-pdf-size').innerText) || '';
+    if (!code && !title && !pdfData) return null;
+    return { type: type, code: code, title: title, pdfData: pdfData, pdfName: pdfName, pdfSize: pdfSize };
+}
+
+function _rbiApplyDocNewDraft(p) {
+    if (!p) return;
+    document.getElementById('new-doc-type').value = p.type || 'СП';
+    document.getElementById('new-doc-code').value = p.code || '';
+    document.getElementById('new-doc-title').value = p.title || '';
+    if (p.pdfData) {
+        var cont = document.getElementById('doc-pdf-preview');
+        cont.dataset.pdf = p.pdfData;
+        document.getElementById('doc-pdf-name').innerText = p.pdfName || 'document.pdf';
+        document.getElementById('doc-pdf-size').innerText = p.pdfSize || '';
+        cont.classList.remove('hidden');
+        document.getElementById('doc-pdf-upload-btn').classList.add('hidden');
+    }
+}
+
+function _rbiCollectNodeNewDraft() {
+    if (window.currentEditingNodeId) return null;
+    var title = (document.getElementById('node-title-input') && document.getElementById('node-title-input').value.trim()) || '';
+    var desc = (document.getElementById('node-desc-input') && document.getElementById('node-desc-input').value.trim()) || '';
+    var category = (document.getElementById('node-category-input') && document.getElementById('node-category-input').value) || '';
+    var linkedDoc = (document.getElementById('node-linked-doc') && document.getElementById('node-linked-doc').value) || '';
+    var linkedTwi = (document.getElementById('node-linked-twi') && document.getElementById('node-linked-twi').value) || '';
+    var linkedChecklist = (document.getElementById('node-linked-checklist') && document.getElementById('node-linked-checklist').value) || '';
+    var materials = [];
+    document.querySelectorAll('.node-material-row').forEach(function (row) {
+        materials.push({
+            name: (row.querySelector('.mat-name') && row.querySelector('.mat-name').value) || '',
+            qty: (row.querySelector('.mat-qty') && row.querySelector('.mat-qty').value) || ''
+        });
+    });
+    var attachments = window.currentNodeAttachments ? window.currentNodeAttachments.slice() : [];
+    var meaningful = !!(title || desc || linkedDoc || linkedTwi || linkedChecklist || attachments.length ||
+        materials.some(function (m) { return (m.name || '').trim(); }));
+    if (!meaningful) return null;
+    return {
+        title: title, desc: desc, category: category,
+        linkedDoc: linkedDoc, linkedTwi: linkedTwi, linkedChecklist: linkedChecklist,
+        materials: materials, attachments: attachments
+    };
+}
+
+function _rbiApplyNodeNewDraft(p) {
+    if (!p) return;
+    document.getElementById('node-title-input').value = p.title || '';
+    document.getElementById('node-desc-input').value = p.desc || '';
+    document.getElementById('node-category-input').value = p.category || 'ФАСАД';
+    document.getElementById('node-linked-doc').value = p.linkedDoc || '';
+    document.getElementById('node-linked-twi').value = p.linkedTwi || '';
+    document.getElementById('node-linked-checklist').value = p.linkedChecklist || '';
+    document.getElementById('node-materials-container').innerHTML = '';
+    var mats = Array.isArray(p.materials) ? p.materials : [];
+    if (mats.length === 0) addNodeMaterialRow();
+    else mats.forEach(function (m) {
+        addNodeMaterialRow();
+        var rows = document.querySelectorAll('.node-material-row');
+        var lastRow = rows[rows.length - 1];
+        lastRow.querySelector('.mat-name').value = m.name || '';
+        lastRow.querySelector('.mat-qty').value = m.qty || '';
+    });
+    window.currentNodeAttachments = Array.isArray(p.attachments) ? p.attachments.slice() : [];
+    if (typeof window.renderNodeAttachmentsUI === 'function') window.renderNodeAttachmentsUI();
+}
+
 // Открытие модалки добавления
 function openAddDocModal() {
     if (!rbi_requireKnowledgeEditRight()) return;
+    window._editingDocId = null;
+    window._editingDocOriginalPdf = '';
+    var FD = window.RBIFormDraft;
+    if (FD) FD.unbindAutoSave(FD.KEYS.DOC_NEW);
+    const heading = document.getElementById('add-doc-modal-heading');
+    if (heading) heading.textContent = 'Добавить Норматив';
     document.getElementById('add-doc-modal-overlay').style.display = 'flex';
     document.body.classList.add('modal-open');
+    document.getElementById('new-doc-type').value = 'СП';
     document.getElementById('new-doc-code').value = '';
     document.getElementById('new-doc-title').value = '';
     removeDocPdf();
+
+    if (FD) {
+        var decision = FD.askRestore(FD.KEYS.DOC_NEW, 'Норматив');
+        if (decision === 'continue') {
+            var d = FD.get(FD.KEYS.DOC_NEW);
+            if (d && d.payload) _rbiApplyDocNewDraft(d.payload);
+        }
+        var overlay = document.getElementById('add-doc-modal-overlay');
+        FD.bindAutoSave(overlay, FD.KEYS.DOC_NEW, _rbiCollectDocNewDraft);
+    }
+}
+
+/** Редактирование пользовательского НД: id не меняется — связи узлов/TWI сохраняются. */
+function openEditCustomDoc(id) {
+    if (!rbi_requireKnowledgeEditRight()) return;
+    const doc = customDocs.find(d => d.id === id);
+    if (!doc) return showToast('Документ не найден');
+    if (String(doc.id).startsWith('sys_')) {
+        return showToast('⚠️ Системные документы нельзя редактировать');
+    }
+    if (!rbi_canDeleteKnowledgeItem(doc.owner)) {
+        return showToast('⚠️ Можно редактировать только свой документ.');
+    }
+
+    window._editingDocId = id;
+    window._editingDocOriginalPdf = doc.pdfData || '';
+    const heading = document.getElementById('add-doc-modal-heading');
+    if (heading) heading.textContent = 'Изменить Норматив';
+
+    document.getElementById('new-doc-type').value = doc.type || 'СП';
+    document.getElementById('new-doc-code').value = doc.code || '';
+    document.getElementById('new-doc-title').value = doc.title || '';
+
+    const cont = document.getElementById('doc-pdf-preview');
+    const uploadBtn = document.getElementById('doc-pdf-upload-btn');
+    if (doc.pdfData && cont) {
+        cont.dataset.pdf = doc.pdfData;
+        document.getElementById('doc-pdf-name').innerText = doc.pdfName || 'document.pdf';
+        document.getElementById('doc-pdf-size').innerText = doc.pdfSize || '';
+        cont.classList.remove('hidden');
+        if (uploadBtn) uploadBtn.classList.add('hidden');
+    } else {
+        removeDocPdf();
+    }
+
+    document.getElementById('add-doc-modal-overlay').style.display = 'flex';
+    document.body.classList.add('modal-open');
 }
 
 function closeAddDocModal() {
+    var FD = window.RBIFormDraft;
+    var wasEdit = !!window._editingDocId;
+    if (FD) {
+        if (!wasEdit && !window._rbiDocNewSkipSave) {
+            FD.saveNow(FD.KEYS.DOC_NEW, _rbiCollectDocNewDraft);
+        }
+        FD.unbindAutoSave(FD.KEYS.DOC_NEW);
+    }
+    window._rbiDocNewSkipSave = false;
     document.getElementById('add-doc-modal-overlay').style.display = 'none';
     document.body.classList.remove('modal-open');
+    window._editingDocId = null;
+    window._editingDocOriginalPdf = '';
 }
 
 // Обработка загрузки PDF для НД
@@ -2811,6 +3115,9 @@ window.handleDocPdfUpload = function (event) {
         cont.classList.remove('hidden');
         document.getElementById('doc-pdf-upload-btn').classList.add('hidden');
         event.target.value = '';
+        if (window.RBIFormDraft && !window._editingDocId) {
+            window.RBIFormDraft.saveNow(window.RBIFormDraft.KEYS.DOC_NEW, _rbiCollectDocNewDraft);
+        }
     }
     reader.readAsDataURL(file);
 };
@@ -2824,15 +3131,109 @@ window.removeDocPdf = function () {
     }
 };
 
-// Сохранение документа
+function _scheduleDocPdfIndex(docId, pdfData) {
+    // ВАЖНО: sync только ПОСЛЕ OCR — иначе документ уходит в облако без extractedText
+    // (повторный sync во время push молча теряется, см. triggerSync).
+    setTimeout(async () => {
+        showToast('📄 Индексация текста документа для ИИ...');
+        const realUrl = await PhotoManager.getAsyncUrl(pdfData) || pdfData;
+        const extracted = await _extractTextFromPdf(realUrl);
+        if (extracted) {
+            const freshDocs = await _storage().getAll(_storage().stores().CUSTOM_DOCS) || customDocs;
+            const idx = freshDocs.findIndex(d => d.id === docId);
+            if (idx !== -1) {
+                freshDocs[idx].extractedText = extracted;
+                freshDocs[idx].updatedAt = new Date().toISOString();
+                freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
+                freshDocs[idx].source = 'local';
+                freshDocs[idx].syncStatus = 'not_synced';
+                freshDocs[idx].sync_status = 'not_synced';
+                await _storage().put(_storage().stores().CUSTOM_DOCS, freshDocs[idx]);
+                customDocs = freshDocs.filter(d => !d._deleted);
+                window.customDocs = customDocs;
+                showToast('✨ Текст документа успешно проиндексирован ИИ!');
+            }
+        } else {
+            showToast('⚠️ Текст из PDF извлечь не удалось.');
+        }
+        localStorage.setItem('rbi_cloud_dirty', '1');
+        _sync('silent');
+    }, 2000);
+}
+
+// Сохранение документа (создание или правка существующего — id не меняется)
 async function saveCustomDoc() {
     if (!rbi_requireKnowledgeEditRight()) return;
     const type = document.getElementById('new-doc-type').value;
     const code = document.getElementById('new-doc-code').value.trim();
     const title = document.getElementById('new-doc-title').value.trim();
-    const pdfData = document.getElementById('doc-pdf-preview').dataset.pdf;
+    const pdfData = document.getElementById('doc-pdf-preview').dataset.pdf || '';
 
     if (!code || !title) return showToast('⚠️ Заполните шифр и название документа');
+
+    const editingId = window._editingDocId || null;
+    const nowIso = new Date().toISOString();
+
+    if (editingId) {
+        const existing = customDocs.find(d => d.id === editingId);
+        if (!existing) return showToast('Документ не найден');
+        if (!rbi_canDeleteKnowledgeItem(existing.owner)) {
+            return showToast('⚠️ Можно редактировать только свой документ.');
+        }
+
+        const originalPdf = window._editingDocOriginalPdf || '';
+        const pdfChanged = pdfData !== originalPdf;
+        const hasPdf = !!pdfData;
+
+        const updated = {
+            ...existing,
+            type,
+            code,
+            title,
+            updatedAt: nowIso,
+            updated_at: nowIso,
+            source: 'local',
+            syncStatus: 'not_synced',
+            sync_status: 'not_synced',
+            syncBlockReason: '',
+            sync_block_reason: '',
+        };
+
+        if (hasPdf) {
+            updated.pdfData = pdfData;
+            updated.pdfName = document.getElementById('doc-pdf-name').innerText;
+            updated.pdfSize = document.getElementById('doc-pdf-size').innerText;
+            if (pdfChanged) {
+                updated.extractedText = '';
+            }
+        } else {
+            delete updated.pdfData;
+            delete updated.pdfName;
+            delete updated.pdfSize;
+            updated.extractedText = '';
+        }
+
+        try {
+            const idx = customDocs.findIndex(d => d.id === editingId);
+            if (idx !== -1) customDocs[idx] = updated;
+            window.customDocs = customDocs;
+            await _storage().put(_storage().stores().CUSTOM_DOCS, updated);
+            showToast('✅ Норматив обновлён!');
+            closeAddDocModal();
+            window.renderDocsList();
+
+            if (hasPdf && pdfChanged) {
+                _scheduleDocPdfIndex(editingId, pdfData);
+            } else {
+                localStorage.setItem('rbi_cloud_dirty', '1');
+                _sync('silent');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Ошибка сохранения (Файл слишком большой)');
+        }
+        return;
+    }
 
     const newDoc = {
         id: 'usr_doc_' + Date.now().toString(36),
@@ -2846,65 +3247,33 @@ async function saveCustomDoc() {
         sync_status: 'not_synced',
         syncBlockReason: '',
         sync_block_reason: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: nowIso,
+        updatedAt: nowIso
     };
 
-    // ВАЖНО: если есть PDF, синхронизацию запускаем только ПОСЛЕ завершения OCR-индексации
-    // (успешной или неуспешной), а не сразу после сохранения — иначе документ уходит в облако
-    // без extractedText, а повторный sync во время уже идущего push молча теряется (см. triggerSync).
     const hasPdf = !!pdfData;
 
     if (hasPdf) {
         newDoc.pdfData = pdfData;
         newDoc.pdfName = document.getElementById('doc-pdf-name').innerText;
         newDoc.pdfSize = document.getElementById('doc-pdf-size').innerText;
-
-        // Фоновая задача: извлечь текст из PDF для умного поиска
-        setTimeout(async () => {
-            showToast("📄 Индексация текста документа для ИИ...");
-            const realUrl = await PhotoManager.getAsyncUrl(pdfData) || pdfData;
-            const extracted = await _extractTextFromPdf(realUrl);
-            if (extracted) {
-                // Достаем свежую базу, чтобы избежать перезаписи
-                const freshDocs = await _storage().getAll(_storage().stores().CUSTOM_DOCS) || customDocs;
-                const idx = freshDocs.findIndex(d => d.id === newDoc.id);
-                if (idx !== -1) {
-                    freshDocs[idx].extractedText = extracted;
-                    freshDocs[idx].updatedAt = new Date().toISOString();
-                    freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
-
-                    // ДОБАВЛЕНО: Говорим системе, что файл нужно снова отправить в облако
-                    freshDocs[idx].source = 'local';
-                    freshDocs[idx].syncStatus = 'not_synced';
-                    freshDocs[idx].sync_status = 'not_synced';
-
-                    await _storage().put(_storage().stores().CUSTOM_DOCS, freshDocs[idx]);
-                    customDocs = freshDocs.filter(d => !d._deleted); // обновляем экран
-                    window.customDocs = customDocs;
-                    showToast("✨ Текст документа успешно проиндексирован ИИ!");
-                }
-            } else {
-                showToast("⚠️ Текст из PDF извлечь не удалось.");
-            }
-            // Синхронизируем только теперь, когда текст (если он есть) уже сохранён в IndexedDB.
-            localStorage.setItem('rbi_cloud_dirty', '1');
-            _sync('silent');
-        }, 2000);
+        _scheduleDocPdfIndex(newDoc.id, pdfData);
     }
 
     customDocs.unshift(newDoc);
     window.customDocs = customDocs;
 
     try {
-        await _storage().put(_storage().stores().CUSTOM_DOCS, newDoc); // <-- НОВОЕ: Сохраняем только 1 запись
+        await _storage().put(_storage().stores().CUSTOM_DOCS, newDoc);
         showToast('✅ Норматив успешно добавлен!');
+        if (window.RBIFormDraft) {
+            window.RBIFormDraft.clear(window.RBIFormDraft.KEYS.DOC_NEW);
+            window.RBIFormDraft.unbindAutoSave(window.RBIFormDraft.KEYS.DOC_NEW);
+        }
+        window._rbiDocNewSkipSave = true;
         closeAddDocModal();
         window.renderDocsList();
 
-        // Если PDF нет — синхронизируем сразу, как раньше. Если PDF есть — sync запустится
-        // после завершения фоновой индексации (см. setTimeout выше), чтобы не отправлять
-        // в облако документ без распознанного текста.
         if (!hasPdf) {
             localStorage.setItem('rbi_cloud_dirty', '1');
             _sync('silent');
@@ -3291,6 +3660,7 @@ window.filterNodes            = filterNodes;
 window.closeNodeViewer        = closeNodeViewer;
 window.filterDocs             = filterDocs;
 window.openAddDocModal        = openAddDocModal;
+window.openEditCustomDoc      = openEditCustomDoc;
 window.closeAddDocModal       = closeAddDocModal;
 window.saveCustomDoc          = saveCustomDoc;
 
@@ -3513,7 +3883,7 @@ function renderAddDocModalOverlayMarkup() {
                         d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
                     </path>
                 </svg>
-                Добавить Норматив
+                <span id="add-doc-modal-heading">Добавить Норматив</span>
             </div>
 
             <div class="space-y-4 mb-6">

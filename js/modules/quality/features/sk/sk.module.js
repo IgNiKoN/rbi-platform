@@ -28,7 +28,9 @@ import {
     sk_saveCategoryLink,
     sk_openContractorLinkModal,
     sk_saveContractorLink,
-    sk_generateAnomalyTasks
+    sk_generateAnomalyTasks,
+    sk_computeIsdSnapshot,
+    sk_evaluateIsdXpRewards
 } from './sk.actions.js';
 import {
     SKRender,
@@ -64,6 +66,8 @@ window.sk_saveCategoryLink = sk_saveCategoryLink;
 window.sk_openContractorLinkModal = sk_openContractorLinkModal;
 window.sk_saveContractorLink = sk_saveContractorLink;
 window.sk_generateAnomalyTasks = sk_generateAnomalyTasks;
+window.sk_computeIsdSnapshot = sk_computeIsdSnapshot;
+window.sk_evaluateIsdXpRewards = sk_evaluateIsdXpRewards;
 window.sk_renderContractorQueueBanner = sk_renderContractorQueueBanner;
 window.sk_renderMainTab = sk_renderMainTab;
 window.sk_renderVolumes = sk_renderVolumes;

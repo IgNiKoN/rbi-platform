@@ -563,6 +563,14 @@ async function handleFabExportAction(actionType, mode = 'script') {
         return;
     }
 
+    // Плакат: сначала выбор формата (A3/A1), тост — внутри exportPdfPoster
+    if (actionType === 'poster') {
+        setTimeout(async () => {
+            await exportPdfPoster(data, mode);
+        }, 100);
+        return;
+    }
+
     // Если шаблонов нет или это старый тип отчета — запускаем классические (встроенные) функции
     showToast(mode === 'script' ? '⏳ Формируем PDF файл...' : '🖨️ Подготовка к выгрузке...');
 
@@ -571,14 +579,16 @@ async function handleFabExportAction(actionType, mode = 'script') {
             await exportPdfCurrentScreen(data, mode);
         } else if (actionType === 'full_report') {
             await exportPdfFullObjectReport(data, mode);
-        } else if (actionType === 'poster') {
-            await exportPdfPoster(data, mode);
         } else if (actionType === 'onepager') {
             await exportPdfOnePager(data, mode); // Старый fallback
         } else if (actionType === 'onepager_v2') {
             await exportPdfOnePagerV2(data, mode);
+        } else if (actionType === 'onepager_v3') {
+            await exportPdfOnePagerV3(data, mode);
         } else if (actionType === 'global_onepager_v2') {
             await exportPdfGlobalOnePagerV2(data, mode);
+        } else if (actionType === 'global_onepager_v3') {
+            await exportPdfGlobalOnePagerV3(data, mode);
         } else if (actionType === 'global_onepager') {
             await exportPdfGlobalOnePager(data, mode); // Старый fallback
         } else if (actionType === 'data') {
@@ -1084,6 +1094,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         'A4_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A3_portrait': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A3_landscape': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A1_portrait': Math.floor(594 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A1_landscape': Math.floor(841 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
     };
     const widthPx = Math.floor(pageWidths[`${formatSize}_${orientation}`] || pageWidths['A4_portrait']);
     // Высота печатной области (мм→px) — клип на постраничной сборке, чтобы лист не растекался во 2-й
@@ -1092,6 +1104,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         'A4_landscape': Math.floor(210 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A3_portrait': Math.floor(420 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
         'A3_landscape': Math.floor(297 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A1_portrait': Math.floor(841 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
+        'A1_landscape': Math.floor(594 * MM_TO_PX) - (MARGIN_MM * 2 * MM_TO_PX),
     };
     const heightPx = Math.floor(pageHeights[`${formatSize}_${orientation}`] || pageHeights['A4_portrait']);
     const HIGH_QUALITY_SCALE = 2.5;
@@ -1132,6 +1146,16 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     // ============================================================================
     // ПАЙПЛАЙН 1: БРАУЗЕРНАЯ ПЕЧАТЬ (window.print)
     // ============================================================================
+    // Плакат и др. с printSameAsPdf: тот же html2pdf-пайплайн, что и «Скачать PDF»,
+    // затем печать blob — иначе window.print() даёт другую вёрстку.
+    if (mode === 'browser' && exportMeta?.printSameAsPdf) {
+        return printPdfShell(title, content, formatSize, orientation, 'script', {
+            ...exportMeta,
+            printSameAsPdf: false,
+            printBlobAfterSave: true,
+            skipDownload: true
+        });
+    }
     if (mode === 'browser') {
         const printContainer = document.getElementById('print-content');
         printContainer.setAttribute('data-no-observe', 'true');
@@ -1140,6 +1164,8 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         // Как в PDF-сохранении: поля 10mm через padding контейнера, @page margin:0.
         // Раньше inline @page 15mm + padding 10mm сжимали лист → пустой хвост.
         // Хвостовые pdf-page-break тоже дают пустую страницу в системной печати.
+        // allowFlowPages: длинные документы (акт осмотра) без клипа в 1 лист.
+        const allowFlowPages = !!(exportMeta && exportMeta.allowFlowPages);
         const printHtml = String(fullHtml || '')
             .replace(/(?:<div class=["']pdf-page-break page-break-before["']><\/div>\s*)+$/gi, '');
 
@@ -1165,10 +1191,10 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                     break-before: auto;
                     display: none;
                 }
-                /* Логический лист не должен вылезать за высоту бумаги (лишний QR/шапка → 2-й лист) */
+                /* Логический лист: клип по высоте A4 (one-pager). allowFlowPages снимает клип. */
                 #print-wrapper .print-logical-page {
-                    max-height: ${(heightPx / MM_TO_PX).toFixed(1)}mm;
-                    overflow: hidden;
+                    max-height: ${allowFlowPages ? 'none' : (heightPx / MM_TO_PX).toFixed(1) + 'mm'};
+                    overflow: ${allowFlowPages ? 'visible' : 'hidden'};
                     box-sizing: border-box;
                 }
             </style>
@@ -1202,11 +1228,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 x: 0, y: 0, scrollX: 0, scrollY: 0, logging: false, allowTaint: true, backgroundColor: '#ffffff'
             },
             jsPDF: { unit: 'mm', format: formatSize.toLowerCase(), orientation: orientation, compress: true },
-            pagebreak: { mode: ['avoid-all'] }
+            pagebreak: { mode: allowFlowPages ? ['css', 'legacy'] : ['avoid-all'] }
         };
         let printPdfBlob;
         try {
-            if (printPagesHtml.length > 1) {
+            if (allowFlowPages) {
+                // Потоковый документ: один проход с css/legacy (клип max-height обрезал хвост).
+                printPdfBlob = await html2pdf().set(printOptBase).from(printWrapperEl).output('blob');
+            } else if (printPagesHtml.length > 1) {
                 const hiddenPrint = document.createElement('div');
                 hiddenPrint.style.cssText = `position:absolute;left:0;top:0;width:${widthPx + 50}px;background:white;z-index:-9999;opacity:0.01;pointer-events:none;`;
                 hiddenPrint.setAttribute('data-no-observe', 'true');
@@ -1514,7 +1543,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 }
             });
             pdfBlob = await worker.output('blob');
-            if (mode !== 'background') {
+            if (mode !== 'background' && !exportMeta?.skipDownload) {
                 worker.save();
             }
         } else {
@@ -1530,14 +1559,14 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
             pdfBlob = await worker.output('blob');
 
             // Если это не фоновый режим - предлагаем скачать на ПК
-            if (mode !== 'background') {
+            if (mode !== 'background' && !exportMeta?.skipDownload) {
                 worker.save();
             }
         }
 
         // === НОВОЕ: Сохраняем полученный Blob (сам файл PDF) в нашу базу истории отчетов ===
         await saveReportToLocal({
-            type: 'pdf',
+            type: exportMeta?.printBlobAfterSave ? 'print' : 'pdf',
             docKind: classifyDocKind(title),
             title: title,
             blob: pdfBlob,
@@ -1551,9 +1580,36 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         // Перерисовываем список отчетов, если вкладка открыта
         if (typeof renderReportsList === 'function') renderReportsList();
 
+        if (exportMeta?.printBlobAfterSave && pdfBlob) {
+            try {
+                const url = URL.createObjectURL(pdfBlob);
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('data-no-observe', 'true');
+                iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none;';
+                document.body.appendChild(iframe);
+                iframe.onload = () => {
+                    try {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    } catch (e) {
+                        console.warn('printBlobAfterSave', e);
+                        window.open(url, '_blank');
+                    }
+                    setTimeout(() => {
+                        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+                        URL.revokeObjectURL(url);
+                    }, 120000);
+                };
+                iframe.src = url;
+            } catch (e) {
+                console.warn('printBlobAfterSave setup', e);
+            }
+        }
+
         cleanup();
         if (typeof showToast === 'function') {
             if (isBackground) showToast("✅ Фоновый отчет успешно создан и сохранен!");
+            else if (exportMeta?.printBlobAfterSave) showToast("✅ Плакат готов — окно печати");
             else showToast("✅ PDF успешно сохранён в Историю!");
         }
     } catch (err) {
@@ -2418,8 +2474,27 @@ async function exportPdfOnePager(data, mode = 'script') {
  * opts.forceProjectName — принудительный заголовок «по объекту …» (сшивка company v2).
  * opts.mode — 'script'|'browser' для getBrandedHeader на вложенных страницах (не обязателен).
  */
+/** Укрупняет inline `Npx` в HTML (для One-Pager 3.0 / A1 ≈ ×2 от A3). */
+function _opScalePxStyles(html, scale) {
+    if (!html || scale === 1) return html;
+    return String(html).replace(/(\d*\.?\d+)px\b/g, (_, n) => {
+        const v = parseFloat(n) * scale;
+        return `${Math.round(v * 100) / 100}px`;
+    });
+}
+
+function _opScaleHeaderOpts(headerOpts, scale) {
+    if (!headerOpts || scale === 1) return headerOpts;
+    const out = { ...headerOpts };
+    ['qrPx', 'logoH', 'logoMaxW', 'marginBottom', 'paddingBottom', 'titlePx'].forEach((k) => {
+        if (typeof out[k] === 'number') out[k] = Math.round(out[k] * scale);
+    });
+    return out;
+}
+
 async function buildOnePagerV2Html(data, opts = {}) {
     if (!data || data.length === 0) return null;
+    const pageScale = opts.pageFormat === 'A1' ? 2 : 1;
     const _allInspections = _getAllInspections();
     const DAY_MS = 86400000;
     const projectKeyOf = (i) => i.project_display_name || i.projectName || i.project_name || 'Без объекта';
@@ -2664,22 +2739,24 @@ async function buildOnePagerV2Html(data, opts = {}) {
     const makeVerticalContractorBars = (rows) => {
         if (!rows.length) return null;
         const n = rows.length;
+        const s = pageScale;
         const values = rows.map(r => (r.isGap ? 0 : r.value));
         const colors = rows.map(r => {
             if (r.isGap) return 'rgba(148,163,184,0.2)';
             return (r.value < 70 ? '#ef4444' : (r.value < 85 ? '#f59e0b' : '#22c55e'));
         });
-        const barMax = Math.max(10, Math.min(36, Math.floor(780 / Math.max(n, 1))));
-        const fontMain = n > 12 ? 9 : 11;
-        const fontDelta = n > 12 ? 10 : 12;
-        const chartW = Math.max(980, n * 92);
+        const barMax = Math.max(10, Math.min(36, Math.floor(780 / Math.max(n, 1)))) * s;
+        const fontMain = (n > 12 ? 9 : 11) * s;
+        const fontDelta = (n > 12 ? 10 : 12) * s;
+        const chartW = Math.max(980, n * 92) * s;
+        const chartH = 300 * s;
         const labelPlugin = {
             id: 'op2BarLabelsFull',
             afterDatasetsDraw(chart) {
                 const { ctx, chartArea } = chart;
                 const meta0 = chart.getDatasetMeta(0);
                 if (!meta0 || !meta0.data) return;
-                const slotW = Math.max(48, (chartArea.right - chartArea.left) / n - 6);
+                const slotW = Math.max(48 * s, (chartArea.right - chartArea.left) / n - 6 * s);
                 meta0.data.forEach((bar, i) => {
                     const r = rows[i];
                     if (!r || !bar) return;
@@ -2691,21 +2768,21 @@ async function buildOnePagerV2Html(data, opts = {}) {
                         const midY = (chartArea.top + chartArea.bottom) / 2;
                         ctx.fillStyle = '#94a3b8';
                         ctx.strokeStyle = '#cbd5e1';
-                        ctx.lineWidth = 1;
+                        ctx.lineWidth = 1 * s;
                         ctx.beginPath();
-                        ctx.moveTo(x, chartArea.top + 8);
-                        ctx.lineTo(x, chartArea.bottom - 4);
+                        ctx.moveTo(x, chartArea.top + 8 * s);
+                        ctx.lineTo(x, chartArea.bottom - 4 * s);
                         ctx.stroke();
-                        ctx.font = 'bold 8px Verdana, sans-serif';
+                        ctx.font = `bold ${8 * s}px Verdana, sans-serif`;
                         ctx.textBaseline = 'middle';
                         ctx.fillStyle = '#64748b';
-                        wrapToWidth(ctx, r.name || '', Math.max(52, slotW + 8), 5).forEach((line, li) => {
-                            ctx.fillText(line, x, midY - 12 + li * 10);
+                        wrapToWidth(ctx, r.name || '', Math.max(52 * s, slotW + 8 * s), 5).forEach((line, li) => {
+                            ctx.fillText(line, x, midY - 12 * s + li * 10 * s);
                         });
                         ctx.textBaseline = 'top';
-                        ctx.font = '7px Verdana, sans-serif';
+                        ctx.font = `${7 * s}px Verdana, sans-serif`;
                         ctx.fillStyle = '#94a3b8';
-                        ctx.fillText(r.workType || '', x, chartArea.bottom + 6);
+                        ctx.fillText(r.workType || '', x, chartArea.bottom + 6 * s);
                         ctx.restore();
                         return;
                     }
@@ -2720,29 +2797,29 @@ async function buildOnePagerV2Html(data, opts = {}) {
                     ctx.textBaseline = 'middle';
                     ctx.font = `bold ${fontMain}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
-                    ctx.fillText(String(r.value) + '%', x, top - 10);
+                    ctx.fillText(String(r.value) + '%', x, top - 10 * s);
                     ctx.font = `bold ${fontDelta}px Verdana, sans-serif`;
-                    if (h >= 24) {
+                    if (h >= 24 * s) {
                         ctx.fillStyle = '#ffffff';
                         ctx.fillText(dTxt, x, top + h * 0.45);
                     } else {
                         ctx.fillStyle = dColor;
-                        ctx.fillText(dTxt, x, top - 20);
+                        ctx.fillText(dTxt, x, top - 20 * s);
                     }
                     // Подписи под столбцом: подрядчик + вид работ с переносом, без «…»
                     ctx.textBaseline = 'top';
-                    let y = chartArea.bottom + 4;
-                    ctx.font = `bold ${n > 10 ? 7.5 : 8.5}px Verdana, sans-serif`;
+                    let y = chartArea.bottom + 4 * s;
+                    ctx.font = `bold ${(n > 10 ? 7.5 : 8.5) * s}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     wrapToWidth(ctx, cleanContrName(r.name), slotW, 4).forEach(line => {
                         ctx.fillText(line, x, y);
-                        y += n > 10 ? 9 : 10;
+                        y += (n > 10 ? 9 : 10) * s;
                     });
-                    ctx.font = `${n > 10 ? 7 : 8}px Verdana, sans-serif`;
+                    ctx.font = `${(n > 10 ? 7 : 8) * s}px Verdana, sans-serif`;
                     ctx.fillStyle = '#64748b';
                     wrapToWidth(ctx, r.workType || '—', slotW, 4).forEach(line => {
                         ctx.fillText(line, x, y);
-                        y += n > 10 ? 8 : 9;
+                        y += (n > 10 ? 8 : 9) * s;
                     });
                     ctx.restore();
                 });
@@ -2755,17 +2832,17 @@ async function buildOnePagerV2Html(data, opts = {}) {
                 datasets: [{
                     data: values,
                     backgroundColor: colors,
-                    borderRadius: 3,
+                    borderRadius: 3 * s,
                     maxBarThickness: barMax
                 }]
             },
             options: {
-                layout: { padding: { top: 26, bottom: 78, left: 4, right: 4 } },
+                layout: { padding: { top: 26 * s, bottom: 78 * s, left: 4 * s, right: 4 * s } },
                 scales: {
                     y: {
                         min: 0,
                         max: 100,
-                        ticks: { font: { size: 8 }, stepSize: 20 },
+                        ticks: { font: { size: 8 * s }, stepSize: 20 },
                         grid: { color: '#e2e8f0' }
                     },
                     x: {
@@ -2791,7 +2868,7 @@ async function buildOnePagerV2Html(data, opts = {}) {
                 }
             },
             plugins: [labelPlugin]
-        }, chartW, 300);
+        }, chartW, chartH);
     };
 
     // Все подрядчики выборки, у которых есть проверки
@@ -2991,9 +3068,17 @@ async function buildOnePagerV2Html(data, opts = {}) {
         const m = getContractorMetrics(items, _templates().getUserTemplates(), false);
         const percCrit = n ? Math.round((checksWithB3 / n) * 100) : 0;
         const rB2 = m ? Math.round(m.maxFailRate) : 0;
+        const cName = cleanContrName(r.name);
+        const pName = (String(r.name || '').match(/\[(.*)\]\s*$/) || [])[1]
+            || (items[0] && (items[0].project_display_name || items[0].projectName))
+            || '';
+        const tk = items[0] && items[0].templateKey;
+        const hasEtalon = typeof matchEtalonActsForContractor === 'function'
+            ? matchEtalonActsForContractor(pName, cName, tk).length > 0
+            : false;
         return {
             key: r.name,
-            name: cleanContrName(r.name),
+            name: cName,
             workType: r.workType || '—',
             n,
             hasRel,
@@ -3005,7 +3090,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
             b2: sumB2,
             b3: sumB3,
             rB2,
-            percCrit
+            percCrit,
+            hasEtalon
         };
     });
 
@@ -3054,13 +3140,14 @@ async function buildOnePagerV2Html(data, opts = {}) {
             <td style="padding:3px 1px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:11px;font-weight:900;color:#b91c1c;">${c.b3}</td>
             <td style="padding:3px 1px;border-bottom:1px solid #e2e8f0;vertical-align:middle;">${numCell(rb2C, c.rB2 + '%')}</td>
             <td style="padding:3px 1px;border-bottom:1px solid #e2e8f0;vertical-align:middle;">${numCell(critC, c.percCrit + '%')}</td>
+            <td style="padding:3px 1px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:900;color:${c.hasEtalon ? '#16a34a' : '#dc2626'};">${c.hasEtalon ? '✓' : '✗'}</td>
         </tr>`;
     };
 
     let rowIdx = 0;
     const contrStatsRows = displaySections.map(sec => {
         const head = sec.title
-            ? `<tr><td colspan="10" style="padding:3px 4px;background:${sec.tone === 'good' ? '#ecfdf5' : '#fef2f2'};border-bottom:1px solid #e2e8f0;font-size:9px;font-weight:900;color:${sec.tone === 'good' ? '#047857' : '#b91c1c'};text-transform:uppercase;">${sec.title}</td></tr>`
+            ? `<tr><td colspan="11" style="padding:3px 4px;background:${sec.tone === 'good' ? '#ecfdf5' : '#fef2f2'};border-bottom:1px solid #e2e8f0;font-size:9px;font-weight:900;color:${sec.tone === 'good' ? '#047857' : '#b91c1c'};text-transform:uppercase;">${sec.title}</td></tr>`
             : '';
         return head + sec.rows.map(c => renderContrRow(c, rowIdx++)).join('');
     }).join('');
@@ -3069,17 +3156,18 @@ async function buildOnePagerV2Html(data, opts = {}) {
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
             <thead><tr style="background:#f1f5f9;">
                 <th style="padding:3px 4px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:left;">Подрядчик / вид работ</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">N</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:9%;">УрК</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:9%;">ИУрК</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:7%;">Деф.</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B1</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B2</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B3</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:9%;">Повт.B2</th>
-                <th style="padding:3px 2px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:9%;">% B3</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">N</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:8%;">УрК</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:8%;">ИУрК</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:6%;">Деф.</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B1</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B2</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:4%;">B3</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:8%;">Повт.B2</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:7%;">% B3</th>
+                <th style="padding:3px 1px;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;text-align:center;width:5%;">Этал.</th>
             </tr></thead>
-            <tbody>${contrStatsRows || `<tr><td colspan="10" style="padding:6px;text-align:center;font-size:12px;color:#94a3b8;">Нет подрядчиков</td></tr>`}</tbody>
+            <tbody>${contrStatsRows || `<tr><td colspan="11" style="padding:6px;text-align:center;font-size:12px;color:#94a3b8;">Нет подрядчиков</td></tr>`}</tbody>
         </table>`;
 
     // Пояснения: прежний текст, приглушённые цвета; блок закреплён у низа левой колонки листа
@@ -3545,11 +3633,16 @@ async function buildOnePagerV2Html(data, opts = {}) {
     }
     const op2Title = escTitle(op2Head.title);
     const op2TitleTip = escTitle(op2Head.tip);
-    const headerOpts = {
+    const headerOpts = _opScaleHeaderOpts({
         qrPx: 68, logoH: 56, logoMaxW: 200, marginBottom: 2, paddingBottom: 2, titlePx: 14, dense: true,
         titleTooltip: op2TitleTip
+    }, pageScale);
+    return {
+        shellTitle: op2Title,
+        content: _opScalePxStyles(content, pageScale),
+        headerOpts,
+        pageFormat: pageScale === 2 ? 'A1' : 'A3'
     };
-    return { shellTitle: op2Title, content, headerOpts };
 }
 
 /**
@@ -3565,11 +3658,26 @@ async function exportPdfOnePagerV2(data, mode = 'script') {
 }
 
 /**
+ * One-Pager 3.0 — то же содержание, что 2.0, на A1 landscape (×2).
+ * Старые onepager / onepager_v2 не трогаем.
+ */
+async function exportPdfOnePagerV3(data, mode = 'script') {
+    const built = await buildOnePagerV2Html(data, { pageFormat: 'A1' });
+    if (!built) return showToast('Нет данных для выгрузки');
+    printPdfShell(built.shellTitle, built.content, 'A1', 'landscape', mode, {
+        headerOpts: built.headerOpts
+    });
+}
+
+/**
  * Сводный отчет по компании 2.0: титул (KPI + оглавление) + One-Pager 2.0 по каждому объекту.
  * Старый `global_onepager` не трогаем.
+ * opts.pageFormat === 'A1' — режим 3.0 (укрупнение ×2).
  */
-async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
+async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
     if (!data || data.length === 0) return showToast('Нет данных для выгрузки');
+    const pageFormat = opts.pageFormat === 'A1' ? 'A1' : 'A3';
+    const pageScale = pageFormat === 'A1' ? 2 : 1;
 
     const projectKey = (i) => i.project_display_name || i.projectName || i.project_name || 'Без объекта';
     const projectsMap = {};
@@ -3989,6 +4097,7 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
             color: good ? '#16a34a' : '#dc2626'
         };
     };
+    const s = pageScale;
     const barValueDeltaPlugin = (getMeta) => ({
         id: 'titleBarValueDelta',
         afterDatasetsDraw(chart) {
@@ -4005,23 +4114,23 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 if (horiz) {
-                    ctx.font = 'bold 10px Verdana, sans-serif';
+                    ctx.font = `bold ${10 * s}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     ctx.textAlign = 'left';
-                    ctx.fillText(valueText, x + 6, y);
+                    ctx.fillText(valueText, x + 6 * s, y);
                     if (delta && delta.text) {
-                        ctx.font = 'bold 9px Verdana, sans-serif';
+                        ctx.font = `bold ${9 * s}px Verdana, sans-serif`;
                         ctx.fillStyle = delta.color;
-                        ctx.fillText(delta.text, x + 6 + ctx.measureText(valueText).width + 5, y);
+                        ctx.fillText(delta.text, x + 6 * s + ctx.measureText(valueText).width + 5 * s, y);
                     }
                 } else {
-                    ctx.font = 'bold 10px Verdana, sans-serif';
+                    ctx.font = `bold ${10 * s}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
-                    ctx.fillText(valueText, x, y - 14);
+                    ctx.fillText(valueText, x, y - 14 * s);
                     if (delta && delta.text) {
-                        ctx.font = 'bold 9px Verdana, sans-serif';
+                        ctx.font = `bold ${9 * s}px Verdana, sans-serif`;
                         ctx.fillStyle = delta.color;
-                        ctx.fillText(delta.text, x, y - 3);
+                        ctx.fillText(delta.text, x, y - 3 * s);
                     }
                 }
                 ctx.restore();
@@ -4030,7 +4139,7 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
     });
 
     const chartProjects = projectsForTitle.slice(0, 15);
-    const barThick = chartProjects.length > 10 ? 20 : 28;
+    const barThick = (chartProjects.length > 10 ? 20 : 28) * s;
     const pctBarChart = (getVal, getColor, yTitle, getMeta) => chartProjects.length
         ? generatePdfChart({
             type: 'bar',
@@ -4039,26 +4148,26 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
                 datasets: [{
                     data: chartProjects.map(getVal),
                     backgroundColor: chartProjects.map(getColor),
-                    borderRadius: 3,
+                    borderRadius: 3 * s,
                     maxBarThickness: barThick
                 }]
             },
             options: {
-                layout: { padding: { top: 22, bottom: 2 } },
+                layout: { padding: { top: 22 * s, bottom: 2 * s } },
                 scales: {
                     y: {
                         min: 0,
                         max: 100,
-                        ticks: { font: { size: 9 }, stepSize: 25 },
+                        ticks: { font: { size: 9 * s }, stepSize: 25 },
                         grid: { color: '#e2e8f0' },
-                        title: { display: true, text: yTitle, font: { size: 9 }, color: '#64748b' }
+                        title: { display: true, text: yTitle, font: { size: 9 * s }, color: '#64748b' }
                     },
-                    x: { ticks: { font: { size: 9 }, maxRotation: 35, minRotation: 0 }, grid: { display: false } }
+                    x: { ticks: { font: { size: 9 * s }, maxRotation: 35, minRotation: 0 }, grid: { display: false } }
                 },
                 plugins: { legend: { display: false } }
             },
             plugins: [barValueDeltaPlugin(getMeta)]
-        }, 720, 280)
+        }, 720 * s, 280 * s)
         : null;
 
     const imgUrkByProject = pctBarChart(
@@ -4233,15 +4342,16 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
         </table>
     </div>`;
 
-    const denseHeaderOpts = {
+    const denseHeaderOpts = _opScaleHeaderOpts({
         qrPx: 60, logoH: 50, logoMaxW: 180, marginBottom: 2, paddingBottom: 2, titlePx: 14, dense: true
-    };
+    }, pageScale);
     const reportAuthor = String(
         _getSetting('engineerName')
         || document.getElementById('inp-inspector')?.value
         || 'Инженер'
     ).trim() || 'Инженер';
     const reportPeriod = resolveExportPeriodLabel(null);
+    const scaledTitleBody = _opScalePxStyles(titleBody, pageScale);
 
     // Один токен на весь PDF (QR на титуле = public_token в архиве).
     // На листах объектов QR не ставим: +60–70px к шапке раздувает A3 и рвёт каждый лист на 2.
@@ -4253,18 +4363,25 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
         }
     } catch (e) { console.warn('QR не сгенерирован (company v2)', e); }
 
+    const companyTitle = pageFormat === 'A1'
+        ? 'Сводный отчет по компании 3.0'
+        : 'Сводный отчет по компании';
     const titleHeader = await getBrandedHeader(
-        'Сводный отчет по компании',
+        companyTitle,
         mode,
         qrDataUrl,
         reportAuthor,
         reportPeriod,
-        { ...denseHeaderOpts, titleTooltip: 'Сводный отчет по компании' }
+        { ...denseHeaderOpts, titleTooltip: companyTitle }
     );
 
-    let content = titleHeader + titleBody;
+    let content = titleHeader + scaledTitleBody;
     for (const proj of projectsArray) {
-        const built = await buildOnePagerV2Html(proj.data, { forceProjectName: proj.name, mode });
+        const built = await buildOnePagerV2Html(proj.data, {
+            forceProjectName: proj.name,
+            mode,
+            pageFormat
+        });
         if (!built) continue;
         const pageHeader = await getBrandedHeader(
             built.shellTitle,
@@ -4277,11 +4394,19 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script') {
         content += '<div class="pdf-page-break page-break-before"></div>' + pageHeader + built.content;
     }
 
-    printPdfShell('Сводный отчет по компании', content, 'A3', 'landscape', mode, {
+    printPdfShell(companyTitle, content, pageFormat, 'landscape', mode, {
         skipShellHeader: true,
         headerOpts: denseHeaderOpts,
         publicToken
     });
+}
+
+/**
+ * Сводный отчет по компании 3.0 — то же, что 2.0, на A1 landscape (×2).
+ * Старые global_onepager / global_onepager_v2 не трогаем.
+ */
+async function exportPdfGlobalOnePagerV3(data, mode = 'script') {
+    return exportPdfGlobalOnePagerV2(data, mode, { pageFormat: 'A1' });
 }
 
 async function exportPdfGlobalOnePager(data, mode = 'script') {
@@ -4790,85 +4915,184 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
 // generatePosterData — перенесена в reports.actions.js (группа G1,
 // физический перенос, подшаг 1). Доступна как window.generatePosterData.
 
+/**
+ * Единый паспорт подрядчика для PDF (персональный отчёт + «текущий экран»).
+ * Без ИИ/PDCA-заключений: шапка, метрики, опционально график, фото B3/B2.
+ */
+async function collectContractorDefectPhotos(checks, includeOk) {
+    const photosB3 = [];
+    const photosB2 = [];
+    const photosOK = [];
+    let b1 = 0;
+    let b2 = 0;
+    let b3 = 0;
+    (checks || []).forEach(function (check) {
+        if (check.metrics) {
+            b1 += Number(check.metrics.n_B1_fail) || 0;
+            b2 += Number(check.metrics.n_B2_fail) || 0;
+            b3 += Number(check.metrics.n_B3_fail) || 0;
+        }
+        if (!check.state || !check.photos) return;
+        const flatList = getFlatList(
+            _templates().getUserTemplates()[String(check.templateKey || '').replace('user_', '')]?.groups
+            || _templates().getSystemTemplates()[String(check.templateKey || '').replace('sys_', '')]?.groups
+            || []
+        );
+        Object.keys(check.state).forEach(function (id) {
+            const s = check.state[id];
+            const idPhotos = getItemPhotos(check, id);
+            if (!idPhotos.length) return;
+            const item = flatList.find(function (x) { return String(x.id) === String(id); });
+            const defName = item ? item.n : 'Дефект';
+            if (s === 'fail' || s === 'fail_escalated') {
+                const isB3 = s === 'fail_escalated' || (item && item.w === 3);
+                idPhotos.forEach(function (src) {
+                    const row = { src: src, name: defName, contr: check.contractorName };
+                    if (isB3) photosB3.push(row);
+                    else photosB2.push(row);
+                });
+            } else if (includeOk && s === 'ok') {
+                idPhotos.forEach(function (src) {
+                    photosOK.push({ src: src, name: defName, contr: check.contractorName });
+                });
+            }
+        });
+    });
+    return { photosB3: photosB3, photosB2: photosB2, photosOK: photosOK, b1: b1, b2: b2, b3: b3 };
+}
+
+async function buildContractorPassportHtml(opts) {
+    const checks = opts.checks || [];
+    const mode = opts.mode || 'script';
+    const includeChart = opts.includeChart !== false;
+    const includeOkPhotos = !!opts.includeOkPhotos;
+    const photoCols = opts.photoCols || 3;
+    const title = opts.title || 'Паспорт подрядчика';
+    const m = opts.metrics || getContractorMetrics(checks, _templates().getUserTemplates());
+    const workType = opts.workType || (checks[0] && checks[0].templateTitle) || '—';
+    const projectLabel = opts.projectLabel || '';
+    const subtitle = opts.subtitle || (
+        'Вид работ: ' + workType
+        + (projectLabel ? (' | Объект: ' + projectLabel) : '')
+        + ' | Проверок: ' + (m.count || checks.length)
+    );
+
+    const colorMain = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
+    const bgMain = m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4');
+    const borderMain = m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0');
+    const fsLabel = mode === 'browser' ? '8pt' : '9px';
+    const fsNum = mode === 'browser' ? '20pt' : '28px';
+
+    let chartHtml = '';
+    if (includeChart && checks.length) {
+        const dates = [];
+        const urkData = [];
+        checks.slice().sort(function (a, b) { return new Date(a.date) - new Date(b.date); }).forEach(function (check, i) {
+            dates.push('#' + (i + 1));
+            urkData.push(check.metrics && check.metrics.final != null ? check.metrics.final : null);
+        });
+        const lineChartUrl = generatePdfChart({
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [{
+                    data: urkData,
+                    borderColor: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    tension: 0.3,
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 2
+                }]
+            },
+            options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+        }, 560, 160);
+        chartHtml = ''
+            + '<div class="no-break" style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;margin-bottom:14px;">'
+            + '<div style="font-size:' + fsLabel + ';font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:6px;text-align:center;">Динамика УрК по проверкам</div>'
+            + '<div style="height:' + (mode === 'browser' ? '42mm' : '120px') + ';text-align:center;">'
+            + '<img src="' + lineChartUrl + '" style="width:100%;height:100%;object-fit:contain;display:block;"></div></div>';
+    }
+
+    const photos = await collectContractorDefectPhotos(checks, includeOkPhotos);
+    const b3Count = (m.n_изделий_с_B3 != null) ? m.n_изделий_с_B3 : photos.b3;
+    const relLabel = m.count < 7
+        ? ('СБОР ' + m.count + '/7')
+        : (m.finalC + '%');
+
+    const gridB3 = await buildPhotoGridHTML(photos.photosB3, 'Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', photoCols, mode);
+    const gridB2 = await buildPhotoGridHTML(photos.photosB2, 'Значимые нарушения (B2)', '#d97706', '#fdba74', '#fff7ed', photoCols, mode);
+    let gridOk = '';
+    if (includeOkPhotos) {
+        gridOk = await buildPhotoGridHTML(photos.photosOK, 'Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', photoCols, mode);
+    }
+
+    return ''
+        + '<div class="no-break" style="border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:14px;">'
+        + '<h1 style="margin:0 0 4px 0;font-size:' + (mode === 'browser' ? '16pt' : '20px') + ';font-weight:900;color:#0f172a;text-transform:uppercase;line-height:1.2;">'
+        + escapeHtml(String(title)) + '</h1>'
+        + '<div style="font-size:' + (mode === 'browser' ? '9pt' : '11px') + ';font-weight:700;color:#4f46e5;text-transform:uppercase;">'
+        + escapeHtml(String(subtitle)) + '</div></div>'
+
+        + '<table class="no-break" style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 0 14px 0;table-layout:fixed;">'
+        + '<tr>'
+        + '<td style="width:28%;padding:0;vertical-align:top;">'
+        + '<div style="background:' + bgMain + ';border:2px solid ' + borderMain + ';border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
+        + '<div style="font-size:' + fsLabel + ';color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:6px;">Надёжность</div>'
+        + '<div style="font-size:' + fsNum + ';font-weight:900;color:' + colorMain + ';line-height:1;">' + escapeHtml(String(relLabel)) + '</div>'
+        + (m.count >= 7 && m.ci95_margin != null
+            ? ('<div style="font-size:' + fsLabel + ';color:#64748b;font-weight:700;margin-top:6px;">±' + Number(m.ci95_margin).toFixed(1) + '%</div>')
+            : '')
+        + '</div></td>'
+        + '<td style="width:24%;padding:0;vertical-align:top;">'
+        + '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
+        + '<div style="font-size:' + fsLabel + ';color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:6px;">Ср. УрК</div>'
+        + '<div style="font-size:' + fsNum + ';font-weight:900;color:#0f172a;line-height:1;">' + escapeHtml(String(m.baseUrkContrPerc != null ? m.baseUrkContrPerc + '%' : '—')) + '</div>'
+        + '</div></td>'
+        + '<td style="width:24%;padding:0;vertical-align:top;">'
+        + '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
+        + '<div style="font-size:' + fsLabel + ';color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:6px;">Стабильность</div>'
+        + '<div style="font-size:' + fsNum + ';font-weight:900;color:' + (m.stabColor || '#0f172a') + ';line-height:1;">'
+        + escapeHtml(String(m.count < 7 ? '—' : (m.stabilityIndex != null ? m.stabilityIndex : '—'))) + '</div>'
+        + '</div></td>'
+        + '<td style="width:24%;padding:0;vertical-align:top;">'
+        + '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
+        + '<div style="font-size:' + fsLabel + ';color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:6px;">B1 / B2 / B3</div>'
+        + '<div style="font-size:' + (mode === 'browser' ? '12pt' : '15px') + ';font-weight:900;line-height:1.35;margin-top:4px;">'
+        + '<span style="color:#3b82f6">' + photos.b1 + '</span> / '
+        + '<span style="color:#d97706">' + photos.b2 + '</span> / '
+        + '<span style="color:#dc2626">' + b3Count + '</span></div>'
+        + '</div></td>'
+        + '</tr></table>'
+
+        + chartHtml
+        + gridB3
+        + gridB2
+        + gridOk;
+}
+
 // ============================================================================
 // 1. ПЕЧАТЬ ТЕКУЩЕГО ЭКРАНА (А4 Портрет)
 // ============================================================================
-// 5. Текущий экран (Детализация Подрядчика или Список А4)
-// 5. Текущий экран (Детализация Подрядчика или Список А4)
 async function exportPdfCurrentScreen(data, mode = 'script') {
     if (typeof currentDetailedContractor !== 'undefined' && currentDetailedContractor) {
         // --- РЕЖИМ 1: ДЕТАЛИЗАЦИЯ ОДНОГО ПОДРЯДЧИКА ---
         const cData = data.filter(c => `${c.contractorName} [${c.projectName || 'Без объекта'}]` === currentDetailedContractor);
         if (cData.length === 0) return showToast('Нет данных по этому подрядчику');
 
-        const m = getContractorMetrics(cData, _templates().getUserTemplates());
-        const workType = cData[0].templateTitle;
-        const expertText = getExpertConclusion(m, currentDetailedContractor, workType, cData.length, 'print', _reports().getExpertConclusions()).pdfHtml;
-
-        let photosB3 = []; let photosB2 = [];
-        cData.forEach(check => {
-            if (check.state && check.photos) {
-                Object.keys(check.state).forEach(id => {
-                    const s = check.state[id];
-                    const idPhotos = getItemPhotos(check, id);
-                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
-                        const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
-                        const itemInfo = flatList.find(x => x.id == id);
-                        const isB3 = s === 'fail_escalated' || (itemInfo && itemInfo.w === 3);
-                        const defName = itemInfo ? itemInfo.n : 'Дефект';
-
-                        idPhotos.forEach(src => {
-                            if (isB3) photosB3.push({ src, name: defName, contr: check.contractorName });
-                            else photosB2.push({ src, name: defName, contr: check.contractorName });
-                        });
-                    }
-                });
-            }
+        const content = await buildContractorPassportHtml({
+            checks: cData,
+            mode: mode,
+            title: currentDetailedContractor.split(' [')[0] || currentDetailedContractor,
+            projectLabel: (currentDetailedContractor.match(/\[(.*)\]$/) || [])[1] || '',
+            workType: cData[0].templateTitle,
+            includeChart: true,
+            includeOkPhotos: false,
+            photoCols: 3
         });
-
-        const fontSizeSmall = mode === 'browser' ? '8pt' : '10px';
-        const fontSizeNum = mode === 'browser' ? '28pt' : '36px';
-
-        let content = `
-            <div style="border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 20px;" class="no-break">
-                <h2 style="margin:0; font-size: ${mode === 'browser' ? '18pt' : '24px'}; color:#0f172a; text-transform:uppercase;">Детализация: ${currentDetailedContractor}</h2>
-                <div style="color:#64748b; font-weight:bold; margin-top:5px; font-size:${mode === 'browser' ? '10pt' : '12px'};">Вид работ: ${workType} | Выборка: ${m.count} проверок</div>
-            </div>
-            
-            <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 20px;" class="no-break">
-                <tr>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#0f172a;">${m.baseUrkContrPerc}%</div>
-                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">До штрафов</div>
-                    </td>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')};">${m.finalC}%</div>
-                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">Погрешность: ±${m.ci95_margin.toFixed(1)}%</div>
-                    </td>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#0f172a;">${m.stabilityIndex}</div>
-                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569; text-transform:uppercase;">${m.stabText}</div>
-                    </td>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:15px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#dc2626;">${m.n_изделий_с_B3} <span style="color:#d97706; font-size:${mode === 'browser' ? '18pt' : '24px'};">/ ${photosB2.length}</span></div>
-                        <div style="font-size:${fontSizeSmall}; font-weight:bold; color:#475569;">Критичность: ${m.kcritC.toFixed(2)}</div>
-                    </td>
-                </tr>
-            </table>
-
-            ${expertText}
-            
-            `;
-
-        const gridB3 = await buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', 'transparent', 5, mode);
-        const gridB2 = await buildPhotoGridHTML(photosB2, '⚠️ Значимые дефекты (B2)', '#d97706', '#fde68a', 'transparent', 5, mode);
-
-        content += gridB3 + gridB2;
-        printPdfShell(`Срез: ${currentDetailedContractor}`, content, "A4", "portrait", mode);
+        await printPdfShell(`Срез: ${currentDetailedContractor}`, content, 'A4', 'portrait', mode, {
+            allowFlowPages: true
+        });
 
     } else {
         // --- РЕЖИМ 2: СПИСОК ВСЕХ ПОДРЯДЧИКОВ (С ВЕРХНЕЙ СВОДКОЙ) ---
@@ -4904,62 +5128,46 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
         cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
         const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
 
-        const globalKey = 'global_main_analysis';
-        let rawSmartText = _reports().getExpertConclusion(globalKey);
-        let aiHtml = '';
-        if (rawSmartText) {
-            const isCustomText = !!_reports().getExpertConclusion(globalKey);
-            const pdfFormattedText = rawSmartText.replace(/^\[(.*?)\]/gm, `<div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; font-weight: 900; color: #854d0e; text-transform: uppercase; margin-top: 8px; margin-bottom: 2px;">$1</div>`).replace(/\n/g, '<br>');
-
-            aiHtml = `
-            <div class="no-break" style="margin-bottom: 20px; border: 1px solid ${isCustomText ? '#fde047' : '#cbd5e1'}; border-radius: 8px; background: ${isCustomText ? '#fefce8' : '#f8fafc'}; padding: 15px;">
-                <h3 style="margin-top: 0; font-size: ${mode === 'browser' ? '11pt' : '14px'}; border-bottom: 2px solid ${isCustomText ? '#fef08a' : '#e2e8f0'}; padding-bottom: 8px; margin-bottom: 15px; color: ${isCustomText ? '#854d0e' : '#0f172a'};">
-                    ${isCustomText ? '⚠️ АНАЛИЗ ЗОН РИСКА (С КОРРЕКТИРОВКАМИ ИНЖЕНЕРА)' : '🧠 АНАЛИЗ ЗОН РИСКА (АВТОМАТИЧЕСКИЙ)'}
-                </h3>
-                <div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; line-height: 1.5; color: #1e293b; white-space: pre-wrap;">${pdfFormattedText}</div>
-            </div>`;
-        }
-
         const renderContractorCard = (c) => {
             if (!c) return '';
             const m = c.metrics;
             const color = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
             const borderColor = m.finalC < 70 ? '#fca5a5' : '#cbd5e1';
-            const bg = m.finalC < 70 ? '#fef2f2' : 'white';
+            const bg = m.finalC < 70 ? '#fef2f2' : '#ffffff';
+            const nameOnly = String(c.name || '').replace(/\s*\[[^\]]*\]\s*$/, '');
+            const projectOnly = (String(c.name || '').match(/\[(.*)\]$/) || [])[1] || '';
 
             return `
-            <div class="no-break" style="border:2px solid ${borderColor}; border-radius:12px; padding:15px; background:${bg}; margin-bottom: 15px;">
-                <table style="width: 100%; border: none;">
+            <div class="no-break" style="border:1px solid ${borderColor};border-radius:10px;padding:12px;background:${bg};box-sizing:border-box;">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:8px;">
+                    <div style="min-width:0;flex:1;">
+                        <div style="font-size:${mode === 'browser' ? '10pt' : '12px'};font-weight:900;color:#0f172a;line-height:1.25;word-break:break-word;">${escapeHtml(nameOnly)}</div>
+                        <div style="font-size:${mode === 'browser' ? '7pt' : '9px'};color:#64748b;text-transform:uppercase;font-weight:700;margin-top:3px;">${escapeHtml(String(c.workType || '—'))}${projectOnly ? (' · ' + escapeHtml(projectOnly)) : ''}</div>
+                    </div>
+                    <div style="text-align:right;flex-shrink:0;">
+                        <div style="font-size:${mode === 'browser' ? '7pt' : '8px'};color:#64748b;text-transform:uppercase;font-weight:800;">Надёжность</div>
+                        <div style="font-size:${mode === 'browser' ? '14pt' : '20px'};font-weight:900;color:${color};line-height:1;">
+                            ${m.count < 7 ? `<span style="font-size:${mode === 'browser' ? '9pt' : '11px'};color:#64748b;">СБОР</span>` : (m.finalC + '%')}
+                        </div>
+                    </div>
+                </div>
+                <table style="width:100%;border-collapse:collapse;border-top:1px solid #e2e8f0;padding-top:8px;margin-top:4px;text-align:center;">
                     <tr>
-                        <td style="width:70%; vertical-align: top;">
-                            <div style="font-size:${mode === 'browser' ? '11pt' : '14px'}; font-weight:900; color:#0f172a; line-height:1.2;">${c.name}</div>
-                            <div style="font-size:${mode === 'browser' ? '7pt' : '9px'}; color:#64748b; text-transform:uppercase; font-weight:bold; margin-top:4px;">${c.workType}</div>
+                        <td style="padding-top:8px;">
+                            <div style="color:#64748b;font-size:${mode === 'browser' ? '6pt' : '8px'};text-transform:uppercase;font-weight:800;">Ср. УрК</div>
+                            <div style="font-weight:900;font-size:${mode === 'browser' ? '9pt' : '12px'};">${m.baseUrkContrPerc}%</div>
                         </td>
-                        <td style="text-align:right; vertical-align: top;">
-                            <div style="font-size:${mode === 'browser' ? '7pt' : '9px'}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность</div>
-                            <div style="font-size:${mode === 'browser' ? '18pt' : '24px'}; font-weight:900; color:${color}; line-height:1;">
-                                ${m.count < 7 ? `<span style="font-size:${mode === 'browser' ? '10pt' : '12px'};color:#64748b;">СБОР</span>` : m.finalC + '%'}
-                            </div>
+                        <td style="padding-top:8px;">
+                            <div style="color:#64748b;font-size:${mode === 'browser' ? '6pt' : '8px'};text-transform:uppercase;font-weight:800;">Пров.</div>
+                            <div style="font-weight:900;font-size:${mode === 'browser' ? '9pt' : '12px'};">${m.count}</div>
                         </td>
-                    </tr>
-                </table>
-                <table style="width: 100%; border-top:1px solid #e2e8f0; padding-top:10px; margin-top:10px; text-align: center;">
-                    <tr>
-                        <td>
-                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Ср. УрК</div>
-                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'};">${m.baseUrkContrPerc}%</div>
+                        <td style="padding-top:8px;">
+                            <div style="color:#64748b;font-size:${mode === 'browser' ? '6pt' : '8px'};text-transform:uppercase;font-weight:800;">Стаб.</div>
+                            <div style="font-weight:900;font-size:${mode === 'browser' ? '9pt' : '12px'};">${m.count < 7 ? '—' : m.stabilityIndex}</div>
                         </td>
-                        <td>
-                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Проверок</div>
-                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'};">${m.count}</div>
-                        </td>
-                        <td>
-                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">Стабильность</div>
-                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'}; color:${m.count < 7 ? '#94a3b8' : '#0f172a'};">${m.count < 7 ? '-' : m.stabilityIndex}</div>
-                        </td>
-                        <td>
-                            <div style="color:#64748b; font-size:${mode === 'browser' ? '6pt' : '8px'}; text-transform:uppercase; font-weight:bold;">B3</div>
-                            <div style="font-weight:900; font-size:${mode === 'browser' ? '10pt' : '14px'}; color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
+                        <td style="padding-top:8px;">
+                            <div style="color:#64748b;font-size:${mode === 'browser' ? '6pt' : '8px'};text-transform:uppercase;font-weight:800;">B3</div>
+                            <div style="font-weight:900;font-size:${mode === 'browser' ? '9pt' : '12px'};color:${m.n_изделий_с_B3 > 0 ? '#dc2626' : '#16a34a'};">${m.n_изделий_с_B3}</div>
                         </td>
                     </tr>
                 </table>
@@ -4972,286 +5180,1258 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
             const right = cList[i + 1];
             tableRows.push(`
                 <tr class="no-break">
-                    <td style="width:50%; vertical-align:top; padding-right:8px;">${renderContractorCard(left)}</td>
-                    <td style="width:50%; vertical-align:top; padding-left:8px;">${right ? renderContractorCard(right) : ''}</td>
+                    <td style="width:50%;vertical-align:top;padding:0 6px 10px 0;">${renderContractorCard(left)}</td>
+                    <td style="width:50%;vertical-align:top;padding:0 0 10px 6px;">${right ? renderContractorCard(right) : ''}</td>
                 </tr>
             `);
         }
 
         const fontSizeSmall = mode === 'browser' ? '7pt' : '9px';
-        const fontSizeNum = mode === 'browser' ? '18pt' : '24px';
+        const fontSizeNum = mode === 'browser' ? '16pt' : '22px';
 
         const content = `
-            <div class="no-break" style="margin-bottom: 20px;">
-                <h2 style="margin:0; font-size: ${mode === 'browser' ? '16pt' : '20px'}; color:#0f172a; text-transform:uppercase;">Отчет: Текущий срез подрядчиков</h2>
-                <div style="font-size: ${mode === 'browser' ? '10pt' : '12px'}; color: #64748b; font-weight:bold; margin-top:5px;">Сформировано на основе активных фильтров (Всего: ${data.length} пров.)</div>
+            <div class="no-break" style="margin-bottom:14px;border-bottom:2px solid #1e293b;padding-bottom:10px;">
+                <h2 style="margin:0;font-size:${mode === 'browser' ? '14pt' : '18px'};color:#0f172a;text-transform:uppercase;font-weight:900;">Срез подрядчиков</h2>
+                <div style="font-size:${mode === 'browser' ? '9pt' : '11px'};color:#64748b;font-weight:700;margin-top:4px;">По активным фильтрам · ${data.length} проверок · ${cList.length} подрядчиков</div>
             </div>
             
-            <table class="no-break" style="width: 100%; border-spacing: 10px 0; border-collapse: separate; table-layout: fixed; margin-left: -10px; margin-bottom: 20px;">
+            <table class="no-break" style="width:100%;border-collapse:separate;border-spacing:8px 0;margin:0 0 14px 0;table-layout:fixed;">
                 <tr>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Ср. УрК Изделий</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
+                    <td style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:${fontSizeSmall};color:#64748b;text-transform:uppercase;font-weight:800;">Ср. УрК изделий</div>
+                        <div style="font-size:${fontSizeNum};font-weight:900;color:${avgUrkProd < 70 ? '#dc2626' : (avgUrkProd < 85 ? '#d97706' : '#16a34a')};">${avgUrkProd}%</div>
                     </td>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Надежность (ИУрК)</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk + '%' : 'СБОР'}</div>
+                    <td style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:${fontSizeSmall};color:#64748b;text-transform:uppercase;font-weight:800;">Надёжность</div>
+                        <div style="font-size:${fontSizeNum};font-weight:900;color:${avgIntegralUrk < 70 ? '#dc2626' : (avgIntegralUrk < 85 ? '#d97706' : '#16a34a')};">${validContrCount > 0 ? avgIntegralUrk + '%' : 'СБОР'}</div>
                     </td>
-                    <td style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px; text-align:center;">
-                        <div style="font-size:${fontSizeSmall}; color:#64748b; text-transform:uppercase; font-weight:bold;">Дефекты B3 / B2</div>
-                        <div style="font-size:${fontSizeNum}; font-weight:900; color:#dc2626;">${sumB3} <span style="color:#d97706; font-size:${mode === 'browser' ? '12pt' : '16px'};">/ ${sumB2}</span></div>
+                    <td style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:${fontSizeSmall};color:#64748b;text-transform:uppercase;font-weight:800;">B3 / B2 / B1</div>
+                        <div style="font-size:${fontSizeNum};font-weight:900;"><span style="color:#dc2626">${sumB3}</span> <span style="color:#d97706;font-size:${mode === 'browser' ? '11pt' : '14px'};">/ ${sumB2}</span> <span style="color:#3b82f6;font-size:${mode === 'browser' ? '11pt' : '14px'};">/ ${sumB1}</span></div>
                     </td>
                 </tr>
             </table>
             
-            ${aiHtml}
-            
-            <table style="width:100%; border-collapse:collapse; border-spacing:0; table-layout: fixed;">
+            <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
                 ${tableRows.join('')}
             </table>
         `;
-        printPdfShell("Список подрядчиков", content, "A4", "portrait", mode);
+        await printPdfShell('Список подрядчиков', content, 'A4', 'portrait', mode, {
+            allowFlowPages: true
+        });
     }
 }
 
 
-// 6. Выгрузка Полного отчета по объекту (Паспорта подрядчиков А3)
-async function exportPdfFullObjectReport(data, mode = 'script') {
-    if (data.length === 0) return showToast('Нет данных для выгрузки');
+// =============================================================================
+// Планерка: A3 landscape deck (отчёт по объекту + отчёт по подрядчику)
+// =============================================================================
 
-    let projName = 'Все объекты';
-    if (_analyticsFilters().project.length > 0) {
-        projName = _analyticsFilters().project.join(', ');
-    }
+function _meetingGetEtalonActs() {
+    try {
+        if (window.RBI && window.RBI.services && window.RBI.services.knowledge
+            && typeof window.RBI.services.knowledge.getEtalonActsSync === 'function') {
+            return window.RBI.services.knowledge.getEtalonActsSync() || [];
+        }
+    } catch (_) { /* ignore */ }
+    return Array.isArray(window.etalonActsArray) ? window.etalonActsArray : [];
+}
 
-    // --- ДАННЫЕ ДЛЯ ТИТУЛЬНОГО ЛИСТА ---
-    let sumUrkProd = 0;
-    data.forEach(i => { if (i.metrics) { sumUrkProd += Number(i.metrics.final) || 0; } });
-    const avgUrkProd = data.length > 0 ? Math.round(sumUrkProd / data.length) : 0;
+function _meetingNormName(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
-    const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, _templates().getUserTemplates()) : null;
-    const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
-    const redZonePerc = currIntMetrics ? currIntMetrics.redZonePerc : 0;
+function matchEtalonActsForContractor(projectName, contractorName, templateKey) {
+    const acts = _meetingGetEtalonActs().filter(function (a) { return a && !a._deleted; });
+    const p = _meetingNormName(projectName);
+    const c = _meetingNormName(contractorName);
+    const tk = String(templateKey || '');
+    // Сначала точный матч подрядчик+объект(+вид работ), иначе подрядчик+объект без вида работ
+    const strict = acts.filter(function (a) {
+        const ap = _meetingNormName(a.projectName || a.project || '');
+        const ac = _meetingNormName(a.contractorName || a.contractor || '');
+        if (c && ac !== c) return false;
+        if (p && ap && ap !== p) return false;
+        if (tk && a.templateKey && String(a.templateKey) !== tk) return false;
+        return !!(c || p);
+    });
+    if (strict.length) return strict;
+    return acts.filter(function (a) {
+        const ap = _meetingNormName(a.projectName || a.project || '');
+        const ac = _meetingNormName(a.contractorName || a.contractor || '');
+        if (c && ac !== c) return false;
+        if (p && ap && ap !== p) return false;
+        return !!(c || p);
+    });
+}
 
-    const grouped = {};
-    data.forEach(item => {
-        const cKey = `${item.contractorName} [${item.projectName || 'Без объекта'}]`;
-        grouped[cKey] = grouped[cKey] || [];
-        grouped[cKey].push(item);
+function _meetingGetSkRecords() {
+    try {
+        if (window.RBI && window.RBI.services && window.RBI.services.sk
+            && typeof window.RBI.services.sk.getRecordsSync === 'function') {
+            return window.RBI.services.sk.getRecordsSync() || [];
+        }
+    } catch (_) { /* ignore */ }
+    return Array.isArray(window.skRecords) ? window.skRecords : [];
+}
+
+function _meetingGetSkContractorMap() {
+    try {
+        if (window.RBI && window.RBI.services && window.RBI.services.sk
+            && typeof window.RBI.services.sk.getContractorMapSync === 'function') {
+            return window.RBI.services.sk.getContractorMapSync() || {};
+        }
+    } catch (_) { /* ignore */ }
+    return window.skContractorMap || {};
+}
+
+/** Ключ как в meetings.protocol: contr|kind|normalizedName — синхрон с повесткой совещания. */
+function _meetingAgendaSourceKey(contr, kind, name) {
+    const n = String(name || '')
+        .replace(/^\[Просрочено в СК\]\s*/i, '')
+        .replace(/^\[Официальное предписание СК\]\s*/i, '')
+        .replace(/^\[Просрочено в ПК СК\]\s*/i, '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    return String(contr || '').trim() + '|' + String(kind || 'B2').trim() + '|' + n;
+}
+
+function _meetingSkProjectKeys(r) {
+    if (!r) return [];
+    return [
+        r.project_display_name,
+        r.project_canonical_key,
+        r.display_name,
+        r.projectName,
+        r.project,
+        r.object
+    ].filter(Boolean).map(String);
+}
+
+function _meetingIsSkOpen(r) {
+    if (!r) return false;
+    return !(r.is_verified_closed === true
+        || r.status_normalized === 'verified'
+        || String(r.status || '').toLowerCase().trim() === 'проверено');
+}
+
+/**
+ * ПК СК для планерки: тот же период (global-filter-period / CUSTOM dates)
+ * и фильтр объектов, что у One-Pager 2.0.
+ * opts.projectNames — явный список объектов; иначе analytics.project / data.
+ * opts.contractorName — опционально сузить до подрядчика.
+ */
+function _meetingFilterSkRecords(opts) {
+    opts = opts || {};
+    const DAY_MS = 86400000;
+    const now = new Date();
+    let selPeriod = 'MONTH';
+    try {
+        const el = document.getElementById('global-filter-period');
+        if (el && el.value) selPeriod = el.value;
+    } catch (_) { /* ignore */ }
+
+    let skRecords = (_getSkRecords() || []).filter(function (r) {
+        return r && !r._deleted && !r.is_deleted;
     });
 
-    const cList = [];
-    for (let cName in grouped) {
-        const m = getContractorMetrics(grouped[cName], _templates().getUserTemplates());
-        if (m && m.count >= 3) {
-            let b1 = 0, b2 = 0, b3 = 0;
-            grouped[cName].forEach(i => { if (i.metrics) { b1 += Number(i.metrics.n_B1_fail) || 0; b2 += Number(i.metrics.n_B2_fail) || 0; b3 += Number(i.metrics.n_B3_fail) || 0; } });
-            cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle, data: grouped[cName], defects: { b1, b2, b3 } });
+    let periodDays = 30;
+    let periodHint = '30 дней';
+    if (selPeriod === 'DAY') {
+        periodDays = 1;
+        periodHint = 'сегодня';
+        skRecords = skRecords.filter(function (r) {
+            return r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString();
+        });
+    } else if (selPeriod === 'WEEK') {
+        periodDays = 7;
+        periodHint = '7 дней';
+        const w = new Date(now); w.setDate(now.getDate() - 7);
+        skRecords = skRecords.filter(function (r) {
+            return r.date_issued && new Date(r.date_issued) >= w;
+        });
+    } else if (selPeriod === 'MONTH') {
+        periodDays = 30;
+        periodHint = '30 дней';
+        const m = new Date(now); m.setDate(now.getDate() - 30);
+        skRecords = skRecords.filter(function (r) {
+            return r.date_issued && new Date(r.date_issued) >= m;
+        });
+    } else if (selPeriod === 'CUSTOM') {
+        periodHint = 'свой период';
+        let dFrom = null;
+        let dTo = null;
+        try {
+            dFrom = document.getElementById('filter-date-from')
+                && document.getElementById('filter-date-from').value;
+            dTo = document.getElementById('filter-date-to')
+                && document.getElementById('filter-date-to').value;
+        } catch (_) { /* ignore */ }
+        const fromD = dFrom ? new Date(dFrom) : null;
+        const toD = dTo ? new Date(dTo) : now;
+        if (dTo) toD.setHours(23, 59, 59, 999);
+        if (fromD && toD) periodDays = Math.max(1, Math.ceil((toD - fromD) / DAY_MS));
+        if (dFrom) {
+            skRecords = skRecords.filter(function (r) {
+                return r.date_issued && new Date(r.date_issued) >= new Date(dFrom);
+            });
+        }
+        if (dTo) {
+            const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
+            skRecords = skRecords.filter(function (r) {
+                return r.date_issued && new Date(r.date_issued) <= tDate;
+            });
+        }
+    } else {
+        periodHint = 'весь период';
+        const dates = skRecords.map(function (r) {
+            return r.date_issued ? new Date(r.date_issued).getTime() : NaN;
+        }).filter(function (n) { return !Number.isNaN(n); });
+        if (dates.length) {
+            periodDays = Math.max(1, Math.ceil((Math.max.apply(null, dates) - Math.min.apply(null, dates)) / DAY_MS) || 1);
         }
     }
-    cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
 
-    if (cList.length === 0) return showToast('Слишком мало данных для отчета по подрядчикам');
+    let projectNames = opts.projectNames;
+    if (!projectNames || !projectNames.length) {
+        try {
+            projectNames = (_analyticsFilters().project || []).slice();
+        } catch (_) {
+            projectNames = [];
+        }
+    }
+    if (projectNames && projectNames.length) {
+        const exact = new Set(projectNames.map(String));
+        const norms = new Set(projectNames.map(_meetingNormName).filter(Boolean));
+        skRecords = skRecords.filter(function (r) {
+            const keys = _meetingSkProjectKeys(r);
+            if (!keys.length) return false;
+            return keys.some(function (k) {
+                return exact.has(k) || norms.has(_meetingNormName(k));
+            });
+        });
+    }
 
-    // Графики для титульника
-    const cLine = document.getElementById('op-line-chart');
-    const imgLineGlobal = cLine ? `<img style="width:100%; height:${mode === 'browser' ? '50mm' : '180px'}; object-fit:contain; display:block;" src="${cLine.toDataURL('image/png')}">` : '';
+    if (opts.contractorName) {
+        const map = _getSkContractorMap() || _meetingGetSkContractorMap();
+        const clean = String(opts.contractorName || '').trim();
+        const cleanN = _meetingNormName(clean);
+        skRecords = skRecords.filter(function (r) {
+            const candidates = [
+                r.contractor,
+                r.contractor_name,
+                r.raw_contractor,
+                r.contractor_canonical_key
+            ].filter(Boolean).map(String);
+            if (r.raw_contractor && map && map[r.raw_contractor]) {
+                candidates.push(String(map[r.raw_contractor]));
+            }
+            return candidates.some(function (c) {
+                return c === clean || _meetingNormName(c) === cleanN;
+            });
+        });
+    }
 
-    const barChartUrlGlobal = generatePdfChart({
-        type: 'bar',
-        data: {
-            labels: cList.map(r => r.name.substring(0, 15) + '...'),
-            datasets: [{
-                data: cList.map(r => r.metrics.finalC),
-                backgroundColor: cList.map(r => r.metrics.finalC < 70 ? '#ef4444' : (r.metrics.finalC < 85 ? '#f59e0b' : '#22c55e')),
-                borderRadius: 4
-            }]
-        },
-        options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
-    }, 800, 250);
+    return {
+        records: skRecords,
+        periodDays: periodDays,
+        periodHint: periodHint,
+        selPeriod: selPeriod
+    };
+}
 
-    const fSizeTitle = mode === 'browser' ? '24pt' : '36px';
-    const fSizeSub = mode === 'browser' ? '12pt' : '18px';
-    const fSizeNum = mode === 'browser' ? '32pt' : '42px';
-    const fSizeLabel = mode === 'browser' ? '9pt' : '12px';
+function _meetingSkSimpleStats(records) {
+    const now = new Date();
+    let open = 0;
+    let overdue = 0;
+    (records || []).forEach(function (r) {
+        const isOpen = _meetingIsSkOpen(r);
+        if (isOpen) open++;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        if (isOpen && deadline && !Number.isNaN(deadline.getTime()) && now > deadline) overdue++;
+    });
+    return { total: (records || []).length, open: open, overdue: overdue };
+}
 
-    // --- СБОРКА ТИТУЛЬНОГО ЛИСТА ---
-    let content = `
-        <div class="no-break" style="text-align:center; margin-bottom: 30px;">
-            <h1 style="margin: 0; font-size: ${fSizeTitle}; color: #0f172a; text-transform: uppercase; font-weight: 900;">СВОДНЫЙ ОТЧЕТ ПО КАЧЕСТВУ</h1>
-            <div style="font-size: ${fSizeSub}; font-weight: bold; color: #4f46e5; text-transform: uppercase; margin-top: 10px;">ОБЪЕКТ: ${projName}</div>
-            <div style="font-size: ${fSizeLabel}; color: #64748b; font-weight: bold; margin-top: 5px;">Сформировано на основе ${data.length} проверок</div>
-        </div>
+function _meetingSkStatsForContractor(contractorName, projectName) {
+    let projectNames = [];
+    if (projectName && projectName !== 'Без объекта') {
+        projectNames = [projectName];
+    } else {
+        try { projectNames = (_analyticsFilters().project || []).slice(); }
+        catch (_) { projectNames = []; }
+    }
+    const filtered = _meetingFilterSkRecords({
+        projectNames: projectNames,
+        contractorName: contractorName
+    });
+    return Object.assign(_meetingSkSimpleStats(filtered.records), {
+        periodHint: filtered.periodHint
+    });
+}
 
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 30px;">
-            <tr>
-                <td style="width: 25%; padding: 0 10px 0 0;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
-                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${avgUrkProd}%</div>
-                    </div>
-                </td>
-                <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f8fafc'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#cbd5e1'}; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
-                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс Риска (ИКО)</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : (parseFloat(IKO) >= 0.3 ? '#d97706' : '#16a34a')}; margin-top: 10px;">${IKO}</div>
-                    </div>
-                </td>
-                <td style="width: 25%; padding: 0 10px;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
-                        <div style="font-size: ${fSizeLabel}; color: #64748b; text-transform: uppercase; font-weight: 900;">Объем проверок</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #0f172a; margin-top: 10px;">${data.length}</div>
-                    </div>
-                </td>
-                <td style="width: 25%; padding: 0 0 0 10px;">
-                    <div style="background: #fef2f2; border: 2px solid #fca5a5; border-radius: 12px; padding: 20px; text-align: center; height: ${mode === 'browser' ? '35mm' : '120px'}; box-sizing: border-box;">
-                        <div style="font-size: ${fSizeLabel}; color: #991b1b; text-transform: uppercase; font-weight: 900;">В красной зоне</div>
-                        <div style="font-size: ${fSizeNum}; font-weight: 900; color: #dc2626; margin-top: 10px;">${redZonePerc}%</div>
-                    </div>
-                </td>
-            </tr>
-        </table>
+function _meetingSkStatsForProjects(projectNames) {
+    const filtered = _meetingFilterSkRecords({ projectNames: projectNames || [] });
+    return Object.assign(_meetingSkSimpleStats(filtered.records), {
+        periodHint: filtered.periodHint,
+        records: filtered.records,
+        periodDays: filtered.periodDays
+    });
+}
 
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
-            <tr>
-                <td style="width: 50%; padding: 0 10px 0 0; vertical-align: top;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: ${mode === 'browser' ? '75mm' : '260px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📈 Динамика (Ср. УрК)</div>
-                        <div style="text-align: center; height: ${mode === 'browser' ? '55mm' : '200px'}; overflow: hidden;">${imgLineGlobal || '<span style="color:#94a3b8;">Нет графика</span>'}</div>
-                    </div>
-                </td>
-                <td style="width: 50%; padding: 0 0 0 10px; vertical-align: top;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 15px; height: ${mode === 'browser' ? '75mm' : '260px'}; box-sizing: border-box;">
-                        <div style="font-size: ${mode === 'browser' ? '11pt' : '14px'}; font-weight: 900; color: #0f172a; text-transform: uppercase; margin-bottom: 10px; text-align: center;">📊 Сравнение Подрядчиков (ИУрК)</div>
-                        <div style="text-align: center; height: ${mode === 'browser' ? '55mm' : '200px'}; overflow: hidden;">
-                            <img src="${barChartUrlGlobal}" style="width:100%; height:100%; object-fit:contain; display:block;">
-                        </div>
-                    </div>
-                </td>
-            </tr>
-        </table>
-    `;
+/** Полный дашборд ПК СК как в One-Pager 2.0 (метрики + HTML). */
+function _meetingBuildSkDashboard(skRecords, periodDays, periodHint) {
+    const DAY_MS = 86400000;
+    const now = new Date();
+    const records = skRecords || [];
+    let lastSkLoad = null;
+    records.forEach(function (r) {
+        const loadTs = r.last_imported_at || r.first_imported_at || r.imported_at || r.synced_at || r.updated_at;
+        if (!loadTs) return;
+        const d = new Date(loadTs);
+        if (!Number.isNaN(d.getTime()) && (!lastSkLoad || d > lastSkLoad)) lastSkLoad = d;
+    });
 
-    // --- ГЕНЕРАЦИЯ ПАСПОРТОВ ПОДРЯДЧИКОВ ---
-    for (let cObj of cList) {
-        const cName = cObj.name;
-        const cData = cObj.data;
-        const m = cObj.metrics;
-        const defs = cObj.defects;
+    let skOpen = 0;
+    let skOverdue = 0;
+    let skOpenOverdue = 0;
+    let skClosedLate = 0;
+    let skOnTimeClosed = 0;
+    let skWithDeadlineClosed = 0;
+    let skNoDeadline = 0;
+    const overdueDepths = [];
+    const closingTimes = [];
+    const overdueContrSet = new Set();
 
-        const colorMain = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
-        const bgMain = m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4');
-        const borderMain = m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0');
+    records.forEach(function (r) {
+        const open = _meetingIsSkOpen(r);
+        if (open) skOpen++;
+        const issued = r.date_issued ? new Date(r.date_issued) : null;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+        if (issued && resolved && !Number.isNaN(issued.getTime()) && !Number.isNaN(resolved.getTime()) && resolved >= issued) {
+            closingTimes.push(Math.max(0, Math.ceil((resolved - issued) / DAY_MS)));
+        }
+        if (!deadline || Number.isNaN(deadline.getTime())) {
+            skNoDeadline++;
+            return;
+        }
+        const contr = r.contractor_name || r.contractor || 'Не указан';
+        if (open && now > deadline) {
+            skOverdue++;
+            skOpenOverdue++;
+            overdueContrSet.add(contr);
+            overdueDepths.push(Math.max(0, Math.ceil((now - deadline) / DAY_MS)));
+        } else if (!open && resolved && resolved > deadline) {
+            skOverdue++;
+            skClosedLate++;
+            overdueContrSet.add(contr);
+            overdueDepths.push(Math.max(0, Math.ceil((resolved - deadline) / DAY_MS)));
+        }
+        if (!open && resolved && !Number.isNaN(resolved.getTime())) {
+            skWithDeadlineClosed++;
+            if (resolved <= deadline) skOnTimeClosed++;
+        }
+    });
 
-        // График для подрядчика
-        const dates = []; const urkData = [];
-        cData.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
-            dates.push(`#${i + 1}`); urkData.push(check.metrics.final);
+    const skTotal = records.length;
+    const skClosed = skTotal - skOpen;
+    const skResolved = records.filter(function (r) { return !!r.date_resolved; }).length;
+    const avgOverdueDepth = overdueDepths.length
+        ? Math.round(overdueDepths.reduce(function (a, b) { return a + b; }, 0) / overdueDepths.length)
+        : 0;
+    const maxOverdueDepth = overdueDepths.length ? Math.max.apply(null, overdueDepths) : 0;
+    const avgResolveDays = closingTimes.length
+        ? Math.round(closingTimes.reduce(function (a, b) { return a + b; }, 0) / closingTimes.length)
+        : null;
+    const skOverduePerc = skTotal ? Math.round((skOverdue / skTotal) * 100) : 0;
+    const skClosePerc = skTotal ? Math.round((skClosed / skTotal) * 100) : 0;
+    const skOnTimePerc = skWithDeadlineClosed
+        ? Math.round((skOnTimeClosed / skWithDeadlineClosed) * 100)
+        : null;
+    const skOverdueContrCount = overdueContrSet.size;
+    const weeksInPeriod = Math.max((periodDays || 30) / 7, 0.14);
+    const skIssuePace = Math.round((skTotal / weeksInPeriod) * 10) / 10;
+    const skClosePace = Math.round((skResolved / weeksInPeriod) * 10) / 10;
+    const skNetPace = Math.round((skIssuePace - skClosePace) * 10) / 10;
+    const tempoBalance = skClosePace >= skIssuePace ? 'закрытие ≥ выдачи' : 'долг растёт';
+    const tempoBalanceColor = skClosePace >= skIssuePace ? '#16a34a' : '#dc2626';
+    const lastSkLoadLabel = lastSkLoad
+        ? lastSkLoad.toLocaleString('ru-RU', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        })
+        : 'не зафиксирована';
+
+    const riskGrad = function (t) {
+        const x = Math.max(0, Math.min(1, Number(t) || 0));
+        const stops = [[22, 163, 74], [217, 119, 6], [220, 38, 38]];
+        const seg = x < 0.5 ? 0 : 1;
+        const u = x < 0.5 ? x * 2 : (x - 0.5) * 2;
+        const a = stops[seg];
+        const b = stops[seg + 1];
+        const rgb = a.map(function (c, i) { return Math.round(c + (b[i] - c) * u); });
+        return 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+    };
+    const riskByPerc = function (p) { return riskGrad(Math.min(1, (Number(p) || 0) / 50)); };
+    const riskByDays = function (d) { return riskGrad(Math.min(1, (Number(d) || 0) / 28)); };
+    const goodByPerc = function (p) { return riskGrad(1 - Math.min(1, (Number(p) || 0) / 100)); };
+
+    const cell = function (label, tip, valueHtml) {
+        return ''
+            + '<td style="width:25%;padding:2px 3px;vertical-align:top;">'
+            + '<div title="' + escapeHtml(tip) + '" style="background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 6px;box-sizing:border-box;min-height:42px;overflow:hidden;">'
+            + '<div style="font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            + label + '</div>'
+            + '<div style="font-size:15px;font-weight:900;color:#0f172a;line-height:1.05;margin-top:2px;text-align:right;white-space:nowrap;overflow:hidden;">'
+            + valueHtml + '</div></div></td>';
+    };
+
+    const hint = periodHint || 'период фильтра';
+    const html = ''
+        + '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:6px 8px;box-sizing:border-box;margin-bottom:8px;">'
+        + '<div style="margin-bottom:4px;">'
+        + '<div style="font-size:11px;font-weight:900;color:#0f172a;text-transform:uppercase;line-height:1.15;">Сводка ПК СК</div>'
+        + '<div style="font-size:8px;color:#64748b;font-weight:600;line-height:1.25;margin-top:1px;">'
+        + 'Ключевые цифры стройконтроля за «' + escapeHtml(hint)
+        + '» (по дате выдачи) · объект(ы) фильтра · загрузка: ' + escapeHtml(lastSkLoadLabel)
+        + (skNoDeadline ? (' · без срока: ' + skNoDeadline) : '')
+        + '</div></div>'
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:2px;"><tr>'
+        + cell('Всего выдано', 'Все замечания за период фильтра', String(skTotal))
+        + cell('Открыто / закрыто', 'Ещё в работе / уже закрыты (% закрытия)',
+            '<span style="color:' + riskByPerc(100 - skClosePerc) + ';">' + skOpen + '</span> / ' + skClosed
+            + ' <span style="font-size:11px;color:#64748b;">(' + skClosePerc + '%)</span>')
+        + cell('Устранено', 'Есть дата устранения у подрядчика',
+            '<span style="color:#16a34a;">' + skResolved + '</span>')
+        + cell('Ср. срок устран.', 'Средние дни от выдачи до устранения',
+            avgResolveDays != null
+                ? ('<span style="color:' + riskByDays(avgResolveDays) + ';">' + avgResolveDays + ' дн.</span>')
+                : '—')
+        + '</tr></table>'
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:2px;"><tr>'
+        + cell('Просрочено', 'Срок прошёл: открытые или закрытые с опозданием',
+            '<span style="color:' + riskByPerc(skOverduePerc) + ';">' + skOverdue + '</span> '
+            + '<span style="font-size:11px;color:' + riskByPerc(skOverduePerc) + ';">(' + skOverduePerc + '%)</span>')
+        + cell('Открытых проср.', 'Горящий долг: ещё не закрыты и уже просрочены',
+            '<span style="color:' + riskByPerc(skTotal ? Math.round((skOpenOverdue / skTotal) * 100) : 0) + ';">'
+            + skOpenOverdue + '</span>')
+        + cell('Закрыто с опозд.', 'Уже закрыли, но позже deadline', String(skClosedLate))
+        + cell('Вовремя закрыто', 'Доля закрытий не позже срока',
+            skOnTimePerc != null
+                ? ('<span style="color:' + goodByPerc(skOnTimePerc) + ';">' + skOnTimePerc + '%</span>')
+                : '—')
+        + '</tr></table>'
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;"><tr>'
+        + cell('Глубина ср. / макс.', 'Среднее и худшее опоздание в днях',
+            '<span style="color:' + riskByDays(avgOverdueDepth) + ';">' + avgOverdueDepth + '</span> / '
+            + '<span style="color:' + riskByDays(maxOverdueDepth) + ';">' + maxOverdueDepth + '</span> дн.')
+        + cell('Подр. с просрочкой', 'Сколько подрядчиков имеют хотя бы одну просрочку',
+            '<span style="color:' + riskByPerc(skOverdueContrCount * 10) + ';">' + skOverdueContrCount + '</span>')
+        + cell('Темп выд. / закр.', 'Среднее за неделю',
+            skIssuePace + ' / ' + skClosePace + ' <span style="font-size:10px;color:#94a3b8;">нед</span>')
+        + cell('Баланс темпа', 'Закрытие успевает за выдачей или долг растёт',
+            '<span style="color:' + tempoBalanceColor + ';font-size:12px;">' + tempoBalance + '</span>'
+            + '<span style="font-size:10px;color:#94a3b8;font-weight:700;"> · Δ '
+            + (skNetPace > 0 ? '+' : '') + skNetPace + '</span>')
+        + '</tr></table></div>';
+
+    return {
+        total: skTotal,
+        open: skOpen,
+        overdue: skOverdue,
+        openOverdue: skOpenOverdue,
+        periodHint: hint,
+        html: html
+    };
+}
+
+/**
+ * Сводная таблица просрочек ПК СК по подрядчикам (как One-Pager):
+ * проср./всего, доля, глубина ср. / макс.
+ */
+function _meetingBuildSkOverdueTableHtml(skRecords, periodHint) {
+    const DAY_MS = 86400000;
+    const now = new Date();
+    const skContrMap = {};
+    (skRecords || []).forEach(function (r) {
+        const c = r.contractor_name || r.contractor || 'Не указан';
+        if (!skContrMap[c]) skContrMap[c] = { total: 0, overdue: 0, depths: [] };
+        skContrMap[c].total++;
+        const deadline = r.deadline ? new Date(r.deadline) : null;
+        if (!deadline || Number.isNaN(deadline.getTime())) return;
+        const open = _meetingIsSkOpen(r);
+        const resolved = r.date_resolved ? new Date(r.date_resolved) : null;
+        if (open && now > deadline) {
+            skContrMap[c].overdue++;
+            skContrMap[c].depths.push(Math.max(0, Math.ceil((now - deadline) / DAY_MS)));
+        } else if (!open && resolved && resolved > deadline) {
+            skContrMap[c].overdue++;
+            skContrMap[c].depths.push(Math.max(0, Math.ceil((resolved - deadline) / DAY_MS)));
+        }
+    });
+    const rating = Object.keys(skContrMap).map(function (name) {
+        const d = skContrMap[name];
+        const avgDepth = d.depths.length
+            ? Math.round(d.depths.reduce(function (a, b) { return a + b; }, 0) / d.depths.length)
+            : 0;
+        const maxDepth = d.depths.length ? Math.max.apply(null, d.depths) : 0;
+        const overduePerc = d.total > 0 ? Math.round((d.overdue / d.total) * 100) : 0;
+        return {
+            name: name,
+            overdue: d.overdue,
+            overduePerc: overduePerc,
+            avgDepth: avgDepth,
+            maxDepth: maxDepth,
+            total: d.total
+        };
+    }).filter(function (x) { return x.overdue > 0; })
+        .sort(function (a, b) {
+            return b.overdue - a.overdue || b.avgDepth - a.avgDepth || b.maxDepth - a.maxDepth;
         });
 
-        const lineChartUrl = generatePdfChart({
-            type: 'line',
-            data: { labels: dates, datasets: [{ data: urkData, borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.1)', tension: 0.3, borderWidth: 2, fill: true, pointRadius: 2 }] },
-            options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
-        }, 500, 160);
+    const riskByPerc = function (p) {
+        const x = Math.min(1, (Number(p) || 0) / 50);
+        if (x < 0.35) return '#16a34a';
+        if (x < 0.7) return '#d97706';
+        return '#dc2626';
+    };
+    const riskByDays = function (d) {
+        const x = Math.min(1, (Number(d) || 0) / 28);
+        if (x < 0.35) return '#16a34a';
+        if (x < 0.7) return '#d97706';
+        return '#dc2626';
+    };
 
-        let photosB3 = []; let photosB2 = []; let photosOK = [];
-        cData.forEach(check => {
-            if (check.state && check.photos) {
-                Object.keys(check.state).forEach(id => {
-                    const s = check.state[id];
-                    let defName = "Дефект";
-                    const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
-                    const item = flatList.find(x => x.id == id);
-                    if (item) defName = item.n;
+    const th = 'padding:3px 5px;border-bottom:1px solid #fecaca;font-size:8px;font-weight:900;color:#9a3412;text-transform:uppercase;background:#fff7ed;';
+    const rows = rating.slice(0, 14).map(function (r, idx) {
+        return '<tr>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:800;color:#94a3b8;">' + (idx + 1) + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:700;color:#334155;">'
+            + escapeHtml(r.name) + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:800;text-align:right;color:'
+            + riskByPerc(r.overduePerc) + ';">' + r.overdue + '<span style="color:#94a3b8;font-weight:600;">/' + r.total + '</span></td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:800;text-align:right;color:'
+            + riskByPerc(r.overduePerc) + ';">' + r.overduePerc + '%</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:800;text-align:right;color:'
+            + riskByDays(r.avgDepth) + ';">' + r.avgDepth + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #fee2e2;font-size:10px;font-weight:800;text-align:right;color:'
+            + riskByDays(r.maxDepth) + ';">' + r.maxDepth + '</td></tr>';
+    }).join('') || '<tr><td colspan="6" style="padding:8px;text-align:center;font-size:12px;color:#16a34a;font-weight:700;">Просрочек нет</td></tr>';
 
-                    const idPhotos = getItemPhotos(check, id);
-                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
-                        idPhotos.forEach(src => {
-                            if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src, name: defName });
-                            else photosB2.push({ src, name: defName });
-                        });
-                    } else if (s === 'ok' && idPhotos.length > 0) {
-                        idPhotos.forEach(src => photosOK.push({ src, name: defName }));
-                    }
+    return ''
+        + '<div style="background:#fff;border:1px solid #fecaca;border-radius:8px;padding:6px 8px;box-sizing:border-box;margin-bottom:8px;">'
+        + '<div style="font-size:11px;font-weight:900;color:#0f172a;text-transform:uppercase;margin-bottom:2px;">Просрочка подрядчиков · ПК СК</div>'
+        + '<div style="font-size:8px;color:#64748b;font-weight:600;margin-bottom:4px;">Срыв сроков за «'
+        + escapeHtml(periodHint || 'период') + '». Ср./макс. — глубина просрочки в днях.</div>'
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;"><thead><tr>'
+        + '<th style="' + th + 'width:28px;">№</th>'
+        + '<th style="' + th + 'text-align:left;">Подрядчик</th>'
+        + '<th style="' + th + 'text-align:right;width:70px;">Проср.</th>'
+        + '<th style="' + th + 'text-align:right;width:48px;">Доля</th>'
+        + '<th style="' + th + 'text-align:right;width:44px;">Ср.</th>'
+        + '<th style="' + th + 'text-align:right;width:44px;">Макс</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function _meetingMetricColor(val) {
+    const n = Number(val);
+    if (isNaN(n)) return '#64748b';
+    if (n < 70) return '#dc2626';
+    if (n < 85) return '#d97706';
+    return '#16a34a';
+}
+
+function _meetingFlatForCheck(check) {
+    const key = String(check.templateKey || '');
+    const groups = _templates().getUserTemplates()[key.replace('user_', '')]?.groups
+        || _templates().getSystemTemplates()[key.replace('sys_', '')]?.groups
+        || [];
+    return typeof getFlatList === 'function' ? getFlatList(groups) : [];
+}
+
+function _meetingDateRangeLabel(checks) {
+    let minT = Infinity;
+    let maxT = -Infinity;
+    (checks || []).forEach(function (c) {
+        const t = new Date(c.date).getTime();
+        if (!isNaN(t)) {
+            if (t < minT) minT = t;
+            if (t > maxT) maxT = t;
+        }
+    });
+    if (!isFinite(minT) || !isFinite(maxT)) return resolveExportPeriodLabel(null) || 'по текущим фильтрам';
+    const a = new Date(minT).toLocaleDateString('ru-RU');
+    const b = new Date(maxT).toLocaleDateString('ru-RU');
+    return a === b ? a : (a + ' — ' + b);
+}
+
+function collectMeetingDefectStats(checks, contractorName) {
+    const byKey = {};
+    let b1 = 0;
+    let b2 = 0;
+    let b3 = 0;
+    const contr = String(contractorName || (checks[0] && checks[0].contractorName) || '').trim();
+    (checks || []).forEach(function (check) {
+        if (check.metrics) {
+            b1 += Number(check.metrics.n_B1_fail) || 0;
+            b2 += Number(check.metrics.n_B2_fail) || 0;
+            b3 += Number(check.metrics.n_B3_fail) || 0;
+        }
+        if (!check.state) return;
+        const flat = _meetingFlatForCheck(check);
+        const dateStr = check.date ? new Date(check.date).toLocaleDateString('ru-RU') : '';
+        Object.keys(check.state).forEach(function (id) {
+            const s = check.state[id];
+            if (s !== 'fail' && s !== 'fail_escalated') return;
+            const item = flat.find(function (x) { return String(x.id) === String(id); });
+            const isB3 = s === 'fail_escalated' || (item && Number(item.w) === 3);
+            const name = item ? item.n : 'Дефект';
+            const normPlain = _defectRemediationPlainText(item && (item.t || item.req || item.norm) || '');
+            const kind = isB3 ? 'B3' : 'B2';
+            const key = String(id);
+            if (!byKey[key]) {
+                byKey[key] = {
+                    id: id,
+                    name: name,
+                    norm: normPlain,
+                    count: 0,
+                    isB3: false,
+                    w: item ? item.w : null,
+                    kind: kind,
+                    sourceKey: _meetingAgendaSourceKey(contr, kind, name),
+                    photos: []
+                };
+            }
+            byKey[key].count += 1;
+            if (isB3) {
+                byKey[key].isB3 = true;
+                byKey[key].kind = 'B3';
+                byKey[key].sourceKey = _meetingAgendaSourceKey(contr, 'B3', name);
+            }
+            if (normPlain && !byKey[key].norm) byKey[key].norm = normPlain;
+            const idPhotos = getItemPhotos(check, id);
+            if (idPhotos.length) {
+                idPhotos.forEach(function (src) {
+                    byKey[key].photos.push({ src: src, date: dateStr, name: name });
                 });
             }
         });
-
-        // Экспертное заключение
-        let expertHtml = getExpertConclusion(m, cName, cObj.workType, cData.length, 'print', _reports().getExpertConclusions()).pdfHtml;
-        if (mode === 'browser') {
-            expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 9pt').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px');
+    });
+    const all = Object.keys(byKey).map(function (k) { return byKey[k]; });
+    // Карточки для обсуждения: B3 всегда; B2 при повторе ≥2; иначе все B2 с фото
+    const discussBase = all.filter(function (d) {
+        return d.isB3 || d.count >= 2 || (d.photos && d.photos.length);
+    }).sort(function (a, b) {
+        if (a.isB3 !== b.isB3) return a.isB3 ? -1 : 1;
+        return b.count - a.count;
+    });
+    // Одно фото = одна карточка (тот же пункт/норматив/sourceKey) — удобно вести совещание
+    const discuss = [];
+    discussBase.forEach(function (d) {
+        if (d.photos && d.photos.length) {
+            d.photos.forEach(function (p, idx) {
+                discuss.push({
+                    id: d.id,
+                    name: d.name,
+                    norm: d.norm,
+                    count: d.count,
+                    isB3: d.isB3,
+                    kind: d.kind,
+                    sourceKey: d.sourceKey,
+                    photos: [p],
+                    photoIndex: idx + 1,
+                    photoTotal: d.photos.length
+                });
+            });
         } else {
-            expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 10px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 6px');
+            discuss.push({
+                id: d.id,
+                name: d.name,
+                norm: d.norm,
+                count: d.count,
+                isB3: d.isB3,
+                kind: d.kind,
+                sourceKey: d.sourceKey,
+                photos: [],
+                photoIndex: 0,
+                photoTotal: 0
+            });
         }
+    });
+    const critical = all.filter(function (d) { return d.isB3; })
+        .sort(function (a, b) { return b.count - a.count; });
+    const repeats = all.filter(function (d) { return d.count >= 2; })
+        .sort(function (a, b) { return b.count - a.count; });
+    return {
+        defects: all,
+        discuss: discuss,
+        critical: critical,
+        repeats: repeats,
+        b1: b1,
+        b2: b2,
+        b3: b3,
+        topRepeat: repeats[0] || null
+    };
+}
 
-        const fsBoxNum = mode === 'browser' ? '22pt' : '36px';
-        const fsBoxLabel = mode === 'browser' ? '7pt' : '10px';
-        const hBox = mode === 'browser' ? '28mm' : '95px';
+/** Компактный KPI-тренд как в One-Pager 2.0 (Δ к прошлому периоду). */
+function _meetingRenderTrend(curr, prev, label, inverse) {
+    if (prev === undefined || prev === null || prev === '' || Number.isNaN(parseFloat(prev))) {
+        return '<div style="text-align:center;line-height:1.1;"><span style="color:#94a3b8;font-size:8px;font-weight:700;">нет базы</span></div>';
+    }
+    const diff = parseFloat(curr) - parseFloat(prev);
+    if (Math.abs(diff) < 0.01) {
+        return '<div style="text-align:center;line-height:1.1;white-space:nowrap;"><span style="color:#94a3b8;font-size:11px;font-weight:900;">▬0</span> <span style="font-size:8px;color:#94a3b8;text-transform:uppercase;">'
+            + escapeHtml(label || '') + '</span></div>';
+    }
+    const good = inverse ? diff < 0 : diff > 0;
+    return '<div style="text-align:center;line-height:1.1;white-space:nowrap;"><span style="color:'
+        + (good ? '#16a34a' : '#dc2626') + ';font-size:11px;font-weight:900;">'
+        + (diff > 0 ? '▲' : '▼') + Math.abs(diff).toFixed(Number.isInteger(diff) ? 0 : 2)
+        + '</span> <span style="font-size:8px;color:#94a3b8;text-transform:uppercase;">'
+        + escapeHtml(label || '') + '</span></div>';
+}
 
-        content += `
-        <div class="pdf-page-break page-break-before"></div>
-        <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 6px; margin-bottom: 12px;">
-            <h1 style="margin: 0 0 4px 0; font-size: ${mode === 'browser' ? '16pt' : '20px'}; color: #0f172a; text-transform: uppercase;">Паспорт: ${cName}</h1>
-            <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; font-weight: bold; color: #64748b; text-transform: uppercase;">Вид работ: ${cObj.workType}</div>
-        </div>
+function _meetingKpiCell(label, valueHtml, trendHtml, extraStyle) {
+    return ''
+        + '<td style="padding:0 3px;vertical-align:top;">'
+        + '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:5px 6px 4px;height:64px;box-sizing:border-box;text-align:center;overflow:hidden;'
+        + (extraStyle || '') + '">'
+        + '<div style="font-size:8px;color:#64748b;text-transform:uppercase;font-weight:900;letter-spacing:0.01em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        + label + '</div>'
+        + '<div style="font-size:20px;font-weight:900;color:#0f172a;line-height:1.05;margin-top:2px;">' + valueHtml + '</div>'
+        + '<div style="margin-top:1px;overflow:hidden;">' + (trendHtml || '') + '</div>'
+        + '</div></td>';
+}
 
-        <!-- БЛОК 1: МЕТРИКИ И ГРАФИК ПАСПОРТА -->
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 12px;">
-            <tr>
-                <td style="width: 25%; padding: 0 6px 0 0;">
-                    <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
-                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: 900; margin-bottom: 6px;">Ср. УрК Изделий</div>
-                        <div style="font-size: ${fsBoxNum}; font-weight: 900; color: #0f172a; line-height: 1;">${m.baseUrkContrPerc}%</div>
-                    </div>
-                </td>
-                <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: ${bgMain}; border: 2px solid ${borderMain}; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
-                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Надежность</div>
-                        <div style="font-size: ${mode === 'browser' ? '18pt' : '26px'}; font-weight: 900; color: ${colorMain}; line-height: 1;">${m.finalC}%</div>
-                    </div>
-                </td>
-                <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
-                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">Проверок</div>
-                        <div style="font-size: ${mode === 'browser' ? '18pt' : '26px'}; font-weight: 900; color: #0f172a; line-height: 1;">${m.count}</div>
-                    </div>
-                </td>
-                <td style="width: 15%; padding: 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; text-align: center; height: ${hBox}; box-sizing: border-box;">
-                        <div style="font-size: ${fsBoxLabel}; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 6px;">B1/B2/B3</div>
-                        <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: 900; color: #0f172a; line-height: 1.5;">
-                            <span style="color:#3b82f6">${defs.b1}</span> / <span style="color:#d97706">${defs.b2}</span> / <span style="color:#dc2626">${defs.b3}</span>
-                        </div>
-                    </div>
-                </td>
-                <td style="width: 30%; padding: 0 0 0 6px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; height: ${hBox}; box-sizing: border-box;">
-                        <div style="font-size: ${fsBoxLabel}; color: #0f172a; text-transform: uppercase; font-weight: bold; text-align:center;">Динамика проверок</div>
-                        <div style="height: ${mode === 'browser' ? '18mm' : '60px'}; text-align: center; margin-top: 4px;"><img src="${lineChartUrl}" style="width: 100%; height: 100%; object-fit: contain;"></div>
-                    </div>
-                </td>
-            </tr>
-        </table>
+function _meetingPanel(title, bodyHtml, borderColor) {
+    return ''
+        + '<div style="background:#fff;border:1px solid ' + (borderColor || '#e2e8f0') + ';border-radius:8px;padding:8px 10px;box-sizing:border-box;height:100%;">'
+        + '<div style="font-size:10px;font-weight:900;text-transform:uppercase;color:#0f172a;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #e2e8f0;">'
+        + title + '</div>'
+        + bodyHtml + '</div>';
+}
 
-        <!-- БЛОК 2: ЗАКЛЮЧЕНИЕ И ФОТО -->
-        <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-            <tr>
-                <td style="width: 25%; vertical-align: top; padding-right: 12px;">
-                    ${expertHtml}
-                </td>
-                <td style="width: 75%; vertical-align: top; padding: 0;">
-                    ${await buildPhotoGridHTML(photosB3, '🚨 Критические дефекты (B3)', '#dc2626', '#fca5a5', '#fef2f2', 5, mode)}
-                    ${await buildPhotoGridHTML(photosB2, '⚠️ Повторяющиеся дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 5, mode)}
-                    ${await buildPhotoGridHTML(photosOK, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 5, mode)}
-                </td>
-            </tr>
-        </table>
-        `;
-    } // Конец цикла for...of
+/** Предыдущий период для Δ — та же логика окна, что у One-Pager (WEEK/MONTH/ALL). */
+function _meetingPrevPeriod(currData) {
+    const all = typeof _getAllInspections === 'function' ? (_getAllInspections() || []) : [];
+    const now = new Date();
+    let selPeriod = 'MONTH';
+    try {
+        const el = document.getElementById('global-filter-period');
+        if (el && el.value) selPeriod = el.value;
+    } catch (_) { /* ignore */ }
+    let prevData = [];
+    let trendLabel = 'к прош. мес.';
+    if (selPeriod === 'WEEK') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
+        prevData = all.filter(function (i) {
+            const d = new Date(i.date);
+            return d >= startPrev && d < startCurr;
+        });
+        trendLabel = 'к прош. нед.';
+    } else if (selPeriod === 'MONTH' || selPeriod === 'DAY') {
+        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
+        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
+        prevData = all.filter(function (i) {
+            const d = new Date(i.date);
+            return d >= startPrev && d < startCurr;
+        });
+        trendLabel = 'к прош. мес.';
+    } else {
+        const sorted = (currData || []).slice().sort(function (a, b) {
+            return new Date(a.date) - new Date(b.date);
+        });
+        prevData = sorted.slice(0, Math.floor(sorted.length / 2));
+        trendLabel = 'к 1-й пол.';
+    }
+    const projSet = new Set((currData || []).map(function (i) {
+        return _meetingNormName(i.project_display_name || i.projectName || '');
+    }).filter(Boolean));
+    if (projSet.size) {
+        prevData = prevData.filter(function (i) {
+            const p = _meetingNormName(i.project_display_name || i.projectName || '');
+            return !p || projSet.has(p);
+        });
+    }
+    return { prevData: prevData, trendLabel: trendLabel };
+}
 
-    printPdfShell("Полный отчет по объекту", content, "A3", "landscape", mode);
+function _meetingAvgUrk(checks) {
+    if (!checks || !checks.length) return null;
+    let s = 0;
+    checks.forEach(function (i) { s += Number(i.metrics && i.metrics.final) || 0; });
+    return Math.round(s / checks.length);
+}
+
+function _meetingAvgRelFromChecks(checks) {
+    if (!checks || !checks.length) return null;
+    const grouped = {};
+    checks.forEach(function (item) {
+        const cKey = String(item.contractorName || '—') + ' [' + (item.projectName || item.project_display_name || 'Без объекта') + ']';
+        if (!grouped[cKey]) grouped[cKey] = [];
+        grouped[cKey].push(item);
+    });
+    let sum = 0;
+    let n = 0;
+    Object.keys(grouped).forEach(function (k) {
+        const m = getContractorMetrics(grouped[k], _templates().getUserTemplates());
+        if (!m) return;
+        sum += m.finalC;
+        n++;
+    });
+    return n > 0 ? Math.round(sum / n) : null;
+}
+
+function _meetingDefectFailCounts(checks) {
+    let b1 = 0;
+    let b2 = 0;
+    let b3 = 0;
+    (checks || []).forEach(function (i) {
+        if (!i.metrics) return;
+        b1 += Number(i.metrics.n_B1_fail) || 0;
+        b2 += Number(i.metrics.n_B2_fail) || 0;
+        b3 += Number(i.metrics.n_B3_fail) || 0;
+    });
+    return { b1: b1, b2: b2, b3: b3 };
+}
+
+/** Компактный Δ в ячейке таблицы (к прошлому периоду). */
+function _meetingDeltaChip(curr, prev, inverse) {
+    if (prev === undefined || prev === null || prev === '' || Number.isNaN(parseFloat(prev))) {
+        return '<span style="color:#94a3b8;font-size:8px;font-weight:700;">—</span>';
+    }
+    const diff = parseFloat(curr) - parseFloat(prev);
+    if (Math.abs(diff) < 0.01) {
+        return '<span style="color:#94a3b8;font-size:8px;font-weight:700;">▬0</span>';
+    }
+    const good = inverse ? diff < 0 : diff > 0;
+    const abs = Math.abs(diff);
+    const shown = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
+    return '<span style="color:' + (good ? '#16a34a' : '#dc2626') + ';font-size:8px;font-weight:800;">'
+        + (diff > 0 ? '▲' : '▼') + shown + '</span>';
+}
+
+/**
+ * Читаемая таблица подрядчиков: проверки, УрК/ИУрК с Δ, B1/B2/B3, СК, эталон.
+ */
+function _meetingContrOverviewRowsHtml(cList, prevData, limit) {
+    const prevGrouped = {};
+    (prevData || []).forEach(function (item) {
+        const cKey = String(item.contractorName || '—') + ' [' + (item.projectName || item.project_display_name || 'Без объекта') + ']';
+        if (!prevGrouped[cKey]) prevGrouped[cKey] = [];
+        prevGrouped[cKey].push(item);
+    });
+    return (cList || []).slice(0, limit || 18).map(function (c, idx) {
+        const prevChecks = prevGrouped[c.key] || [];
+        // fallback: match by contractor name only
+        let prevPool = prevChecks;
+        if (!prevPool.length) {
+            prevPool = (prevData || []).filter(function (i) {
+                return _meetingNormName(i.contractorName) === _meetingNormName(c.contractorName);
+            });
+        }
+        const prevM = prevPool.length
+            ? getContractorMetrics(prevPool, _templates().getUserTemplates())
+            : null;
+        const prevFails = _meetingDefectFailCounts(prevPool);
+        const urk = c.metrics.baseUrkContrPerc;
+        const iurk = c.metrics.finalC;
+        const risk = (iurk < 70 || c.stats.b3 > 0 || (c.sk && c.sk.overdue > 0));
+        const nChecks = (c.checks && c.checks.length) || c.metrics.count || 0;
+        return '<tr' + (risk ? ' style="background:#fff7ed;"' : '') + '>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;color:#94a3b8;font-weight:800;font-size:10px;">' + (idx + 1) + '</td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;font-weight:800;font-size:10px;color:#0f172a;">'
+            + escapeHtml(c.contractorName)
+            + '<div style="font-size:8px;font-weight:600;color:#94a3b8;margin-top:1px;">'
+            + escapeHtml(c.workType || '—') + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:900;font-size:11px;color:#0f172a;">'
+            + nChecks
+            + '<div>' + _meetingDeltaChip(nChecks, prevPool.length) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;">'
+            + '<div style="font-weight:900;font-size:12px;color:' + _meetingMetricColor(urk) + ';">'
+            + (urk != null ? urk + '%' : '—') + '</div>'
+            + '<div>' + _meetingDeltaChip(urk, prevM ? prevM.baseUrkContrPerc : null) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;">'
+            + '<div style="font-weight:900;font-size:12px;color:' + _meetingMetricColor(iurk) + ';">'
+            + iurk + '%</div>'
+            + '<div>' + _meetingDeltaChip(iurk, prevM ? prevM.finalC : null) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:900;color:#3b82f6;font-size:11px;">'
+            + c.stats.b1
+            + '<div>' + _meetingDeltaChip(c.stats.b1, prevFails.b1, true) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:900;color:#d97706;font-size:11px;">'
+            + c.stats.b2
+            + '<div>' + _meetingDeltaChip(c.stats.b2, prevFails.b2, true) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:900;color:#dc2626;font-size:11px;">'
+            + c.stats.b3
+            + '<div>' + _meetingDeltaChip(c.stats.b3, prevFails.b3, true) + '</div></td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:900;font-size:11px;color:'
+            + ((c.sk && c.sk.overdue > 0) ? '#dc2626' : '#16a34a') + ';">'
+            + (c.sk ? c.sk.overdue : 0) + '</td>'
+            + '<td style="padding:4px 5px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:800;font-size:10px;">'
+            + (c.hasEtalon
+                ? '<span style="color:#16a34a;">есть' + (c.etalonCount > 1 ? ' ×' + c.etalonCount : '') + '</span>'
+                : '<span style="color:#b91c1c;">нет</span>')
+            + '</td></tr>';
+    }).join('') || '<tr><td colspan="10" style="padding:12px;text-align:center;color:#94a3b8;">—</td></tr>';
+}
+
+/**
+ * Сетка обсуждения A3 landscape: 3×2 = 6 крупных карточек на лист.
+ * Фиксированные mm — фото заполняют лист (не узкие полоски).
+ */
+async function buildMeetingDefectDiscussSlides(defects, contractorLabel, mode) {
+    if (!defects || !defects.length) {
+        return ''
+            + '<div class="pdf-page-break page-break-before"></div>'
+            + '<div class="no-break" style="padding:20px;border:1px dashed #cbd5e1;border-radius:10px;text-align:center;color:#94a3b8;font-weight:800;">'
+            + 'Нет дефектов B2/B3 для обсуждения · ' + escapeHtml(contractorLabel || '') + '</div>';
+    }
+    const fsBody = mode === 'browser' ? '7.5pt' : '10px';
+    const cols = 3;
+    const rows = 2;
+    const perPage = cols * rows;
+    // 2 ряда × ~118mm + шапка ≈ заполняют A3 landscape
+    const cellH = '118mm';
+    const photoH = '92mm';
+    const capH = '24mm';
+    const colW = '33.33%';
+    let html = '';
+
+    async function cellHtml(d) {
+        if (!d) {
+            return '<td style="width:' + colW + ';padding:3px;vertical-align:top;box-sizing:border-box;">'
+                + '<div style="height:' + cellH + ';border:1px dashed #e2e8f0;border-radius:8px;background:#fafafa;box-sizing:border-box;"></div></td>';
+        }
+        const accent = d.isB3 ? '#dc2626' : '#d97706';
+        const photo = (d.photos && d.photos[0]) || null;
+        let imgSrc = '';
+        if (photo) {
+            imgSrc = await PhotoManager.getAsyncUrl(photo.src) || window.getPhotoSrc(photo.src) || '';
+        }
+        const photoBlock = imgSrc
+            ? ('<img src="' + imgSrc + '" style="width:100%;height:' + photoH
+                + ';object-fit:contain;display:block;background:#f8fafc;">')
+            : ('<div style="width:100%;height:' + photoH
+                + ';display:table;background:#f1f5f9;"><div style="display:table-cell;vertical-align:middle;text-align:center;color:#94a3b8;font-weight:800;font-size:'
+                + fsBody + ';text-transform:uppercase;padding:8px;">Фото не представлено</div></div>');
+        const photoMeta = (d.photoTotal > 1 && d.photoIndex)
+            ? (' · ' + d.photoIndex + '/' + d.photoTotal)
+            : '';
+        const normLine = d.norm
+            ? ('<div style="font-size:7px;font-weight:600;color:#475569;line-height:1.2;max-height:2.2em;overflow:hidden;">'
+                + escapeHtml(d.norm).replace(/\n/g, ' ') + '</div>')
+            : '';
+        return ''
+            + '<td style="width:' + colW + ';padding:3px;vertical-align:top;box-sizing:border-box;">'
+            + '<div style="height:' + cellH + ';border:1.5px solid ' + accent
+            + ';border-radius:8px;background:#fff;overflow:hidden;box-sizing:border-box;">'
+            + '<div style="height:' + photoH + ';overflow:hidden;border-bottom:1px solid ' + accent + ';">'
+            + photoBlock + '</div>'
+            + '<div style="height:' + capH + ';overflow:hidden;padding:4px 6px;box-sizing:border-box;">'
+            + '<div style="font-size:8px;font-weight:900;color:' + accent + ';text-transform:uppercase;line-height:1.1;">'
+            + (d.isB3 ? 'B3' : 'B2') + ' · ×' + d.count + photoMeta + '</div>'
+            + '<div style="font-size:' + fsBody + ';font-weight:900;color:#0f172a;line-height:1.2;max-height:1.4em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'
+            + escapeHtml(d.name || 'Дефект') + '</div>'
+            + normLine
+            + '</div></div></td>';
+    }
+
+    for (let i = 0; i < defects.length; i += perPage) {
+        const chunk = defects.slice(i, i + perPage);
+        while (chunk.length < perPage) chunk.push(null);
+        const rowHtml = [];
+        for (let r = 0; r < rows; r++) {
+            const cells = [];
+            for (let c = 0; c < cols; c++) {
+                cells.push(await cellHtml(chunk[r * cols + c]));
+            }
+            rowHtml.push('<tr>' + cells.join('') + '</tr>');
+        }
+        html += ''
+            + '<div class="pdf-page-break page-break-before"></div>'
+            + '<div class="no-break" style="overflow:hidden;box-sizing:border-box;">'
+            + '<table style="width:100%;border-collapse:collapse;margin-bottom:4px;"><tr>'
+            + '<td style="font-size:11px;font-weight:900;text-transform:uppercase;color:#0f172a;">Разбор по фото</td>'
+            + '<td style="font-size:9px;font-weight:700;color:#64748b;text-align:right;">'
+            + escapeHtml(contractorLabel || '') + ' · ' + (i + 1) + '–' + Math.min(i + perPage, defects.length)
+            + ' / ' + defects.length + ' · 3×2</td></tr></table>'
+            + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+            + rowHtml.join('') + '</table></div>';
+    }
+    return html;
+}
+
+function _meetingGroupContractors(data) {
+    const grouped = {};
+    (data || []).forEach(function (item) {
+        const cKey = String(item.contractorName || '—') + ' [' + (item.projectName || 'Без объекта') + ']';
+        if (!grouped[cKey]) grouped[cKey] = [];
+        grouped[cKey].push(item);
+    });
+    const list = [];
+    Object.keys(grouped).forEach(function (cKey) {
+        const checks = grouped[cKey];
+        const m = getContractorMetrics(checks, _templates().getUserTemplates());
+        if (!m || !m.count) return;
+        const contractorName = cKey.replace(/\s*\[[^\]]*\]\s*$/, '');
+        const projectName = (cKey.match(/\[(.*)\]$/) || [])[1] || '';
+        const stats = collectMeetingDefectStats(checks, contractorName);
+        const templateKey = checks[0] && checks[0].templateKey;
+        const etalonMatches = matchEtalonActsForContractor(projectName, contractorName, templateKey);
+        const workTypes = Array.from(new Set(checks.map(function (c) { return c.templateTitle || ''; }).filter(Boolean)));
+        const inspectors = Array.from(new Set(checks.map(function (c) { return c.inspectorName || ''; }).filter(Boolean)));
+        const sk = _meetingSkStatsForContractor(contractorName, projectName);
+        list.push({
+            key: cKey,
+            contractorName: contractorName,
+            projectName: projectName,
+            workType: workTypes.join(', ') || (checks[0] && checks[0].templateTitle) || '—',
+            templateKey: templateKey,
+            checks: checks,
+            metrics: m,
+            stats: stats,
+            hasEtalon: etalonMatches.length > 0,
+            etalonCount: etalonMatches.length,
+            etalonMatches: etalonMatches,
+            inspectors: inspectors,
+            sk: sk
+        });
+    });
+    list.sort(function (a, b) {
+        const aRisk = (a.metrics.finalC < 70 || a.stats.b3 > 0 || a.sk.overdue > 0) ? 0 : 1;
+        const bRisk = (b.metrics.finalC < 70 || b.stats.b3 > 0 || b.sk.overdue > 0) ? 0 : 1;
+        if (aRisk !== bRisk) return aRisk - bRisk;
+        return (a.metrics.finalC || 0) - (b.metrics.finalC || 0);
+    });
+    return list;
+}
+
+async function buildObjectMeetingTitleSlide(data, cList, mode) {
+    // Титул планерки = полный One-Pager 2.0 (без собственной вёрстки).
+    const built = await buildOnePagerV2Html(data, { mode: mode });
+    return built && built.content ? built.content : '';
+}
+
+async function buildContractorMeetingSlides(cObj, mode, opts) {
+    opts = opts || {};
+    const pageBreakFirst = opts.pageBreakFirst !== false;
+    const m = cObj.metrics;
+    const stats = cObj.stats;
+    const periodLabel = _meetingDateRangeLabel(cObj.checks);
+    const prevBundle = _meetingPrevPeriod(cObj.checks);
+    const trendLabel = prevBundle.trendLabel;
+    const prevChecks = (prevBundle.prevData || []).filter(function (i) {
+        if (_meetingNormName(i.contractorName) !== _meetingNormName(cObj.contractorName)) return false;
+        if (cObj.projectName && cObj.projectName !== 'Без объекта') {
+            const p = _meetingNormName(i.projectName || i.project_display_name || '');
+            if (p && p !== _meetingNormName(cObj.projectName)) return false;
+        }
+        return true;
+    });
+    const prevM = prevChecks.length
+        ? getContractorMetrics(prevChecks, _templates().getUserTemplates())
+        : null;
+    const prevFails = _meetingDefectFailCounts(prevChecks);
+    const prevStats = collectMeetingDefectStats(prevChecks, cObj.contractorName);
+
+    const nChecks = (cObj.checks && cObj.checks.length) || 0;
+    const repeatTypes = (stats.repeats || []).length;
+    const criticalCnt = stats.b3 || 0;
+    const totalDefects = (stats.b1 || 0) + (stats.b2 || 0) + (stats.b3 || 0);
+    // Доля дефектов: среднее число дефектов на проверку × 100 → «на 100 проверок»
+    const defectShare = nChecks > 0 ? Math.round((totalDefects / nChecks) * 100) : 0;
+    let checksWithB3 = 0;
+    (cObj.checks || []).forEach(function (ch) {
+        if (ch.metrics && (ch.metrics.b3_found || (Number(ch.metrics.n_B3_fail) || 0) > 0)) checksWithB3++;
+    });
+    const percB3Checks = nChecks > 0 ? Math.round((checksWithB3 / nChecks) * 100) : 0;
+
+    const prevN = prevChecks.length;
+    const prevRepeatTypes = (prevStats.repeats || []).length;
+    const prevCritical = prevFails.b3 || 0;
+    const prevTotalDef = (prevFails.b1 || 0) + (prevFails.b2 || 0) + (prevFails.b3 || 0);
+    const prevDefectShare = prevN > 0 ? Math.round((prevTotalDef / prevN) * 100) : null;
+    let prevChecksWithB3 = 0;
+    prevChecks.forEach(function (ch) {
+        if (ch.metrics && (ch.metrics.b3_found || (Number(ch.metrics.n_B3_fail) || 0) > 0)) prevChecksWithB3++;
+    });
+    const prevPercB3 = prevN > 0 ? Math.round((prevChecksWithB3 / prevN) * 100) : null;
+
+    // ПК СК дашборд — тот же период, фильтр по подрядчику (+ объект)
+    const projectNames = (cObj.projectName && cObj.projectName !== 'Без объекта')
+        ? [cObj.projectName]
+        : (function () {
+            try { return (_analyticsFilters().project || []).slice(); }
+            catch (_) { return []; }
+        }());
+    const skFiltered = _meetingFilterSkRecords({
+        projectNames: projectNames,
+        contractorName: cObj.contractorName
+    });
+    const skDash = _meetingBuildSkDashboard(
+        skFiltered.records,
+        skFiltered.periodDays,
+        skFiltered.periodHint + ' · ' + cObj.contractorName
+    );
+
+    const defectAll = (stats.defects || []).slice().sort(function (a, b) {
+        if (a.isB3 !== b.isB3) return a.isB3 ? -1 : 1;
+        return b.count - a.count;
+    });
+    const th = 'padding:3px 5px;border-bottom:1px solid #e2e8f0;font-size:8px;font-weight:900;color:#64748b;text-transform:uppercase;';
+    const defectRows = defectAll.slice(0, 16).map(function (d, idx) {
+        return '<tr>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #f1f5f9;color:#94a3b8;font-weight:800;width:22px;">' + (idx + 1) + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:10px;color:#0f172a;">'
+            + escapeHtml(d.name) + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:900;color:'
+            + (d.isB3 ? '#dc2626' : '#d97706') + ';">' + (d.isB3 ? 'B3' : 'B2') + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:900;">' + d.count + '</td>'
+            + '<td style="padding:3px 5px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:9px;color:#64748b;">'
+            + ((d.photos && d.photos.length) ? d.photos.length : '—') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" style="padding:12px;text-align:center;color:#94a3b8;font-weight:700;">Нет дефектов B2/B3</td></tr>';
+
+    const etalonBadge = cObj.hasEtalon
+        ? '<span style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:6px;padding:3px 8px;font-size:9px;font-weight:900;text-transform:uppercase;">Эталон ✓ ×' + cObj.etalonCount + '</span>'
+        : '<span style="background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;border-radius:6px;padding:3px 8px;font-size:9px;font-weight:900;text-transform:uppercase;">Эталон ✗</span>';
+
+    const regRow = function (label, valueHtml, deltaHtml) {
+        return '<tr>'
+            + '<td style="padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:10px;font-weight:700;color:#475569;">'
+            + label + '</td>'
+            + '<td style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;font-size:14px;font-weight:900;color:#0f172a;">'
+            + valueHtml + '</td>'
+            + '<td style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;width:90px;">'
+            + deltaHtml + '</td></tr>';
+    };
+
+    const reasonLine = m.reason
+        ? ('<div style="margin:0 0 8px 0;padding:6px 10px;background:#f8fafc;border-left:3px solid '
+            + _meetingMetricColor(m.finalC) + ';border-radius:0 6px 6px 0;font-size:10px;font-weight:700;color:#334155;">'
+            + 'Оценка: УрК ' + (m.baseUrkContrPerc != null ? m.baseUrkContrPerc + '%' : '—')
+            + ' × Ks ' + (m.ks != null ? Number(m.ks).toFixed(2) : '—')
+            + ' × KB3 ' + (m.kcritC != null ? Number(m.kcritC).toFixed(2) : '—')
+            + ' → <b style="color:' + _meetingMetricColor(m.finalC) + ';">' + m.finalC + '%</b>'
+            + ' · ' + escapeHtml(String(m.reason))
+            + ' · ' + escapeHtml(String(m.confStatus || '')) + ' (N=' + m.count + ')'
+            + ' · эталон: ' + (cObj.hasEtalon ? 'есть' : 'нет') + '</div>')
+        : '';
+
+    let html = (pageBreakFirst ? '<div class="pdf-page-break page-break-before"></div>' : '')
+        + '<div class="no-break" style="font-family:\'Bricolage Grotesque\',Verdana,sans-serif;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:10px;">'
+        + '<div style="min-width:0;flex:1;">'
+        + '<div style="font-size:9px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;">Планерка · карточка подрядчика</div>'
+        + '<h1 style="margin:2px 0 0 0;font-size:20px;font-weight:900;text-transform:uppercase;color:#0f172a;line-height:1.1;">'
+        + escapeHtml(cObj.contractorName) + '</h1>'
+        + '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#4f46e5;">'
+        + escapeHtml(cObj.projectName || '—') + ' · ' + escapeHtml(cObj.workType)
+        + ' · ' + escapeHtml(periodLabel) + ' · Δ ' + escapeHtml(trendLabel)
+        + '</div></div>'
+        + '<div style="flex-shrink:0;">' + etalonBadge + '</div></div>'
+
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px;"><tr>'
+        + _meetingKpiCell('УрК изделий',
+            '<span style="color:' + _meetingMetricColor(m.baseUrkContrPerc) + ';">' + (m.baseUrkContrPerc != null ? m.baseUrkContrPerc + '%' : '—') + '</span>',
+            _meetingRenderTrend(m.baseUrkContrPerc, prevM ? prevM.baseUrkContrPerc : null, trendLabel))
+        + _meetingKpiCell('Надёжность',
+            '<span style="color:' + _meetingMetricColor(m.finalC) + ';">' + m.finalC + '%</span>',
+            _meetingRenderTrend(m.finalC, prevM ? prevM.finalC : null, trendLabel))
+        + _meetingKpiCell('Стабильность',
+            '<span style="color:' + _meetingMetricColor(m.stabilityIndex) + ';">' + (m.stabilityIndex != null ? m.stabilityIndex : '—') + '</span>',
+            _meetingRenderTrend(m.stabilityIndex, prevM ? prevM.stabilityIndex : null, trendLabel))
+        + _meetingKpiCell('Проверки', String(nChecks),
+            _meetingRenderTrend(nChecks, prevN, trendLabel))
+        + _meetingKpiCell('% пр. с B3',
+            '<span style="color:' + (percB3Checks > 0 ? '#dc2626' : '#16a34a') + ';">' + percB3Checks + '%</span>',
+            _meetingRenderTrend(percB3Checks, prevPercB3, trendLabel, true))
+        + _meetingKpiCell('B1 / B2 / B3',
+            '<span style="font-size:14px;"><span style="color:#3b82f6">' + stats.b1 + '</span>/<span style="color:#d97706">' + stats.b2 + '</span>/<span style="color:#dc2626">' + stats.b3 + '</span></span>',
+            _meetingRenderTrend(stats.b3, prevCritical, 'B3', true))
+        + '</tr></table>'
+
+        + reasonLine
+
+        + skDash.html
+
+        + '<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:8px;"><tr>'
+        + '<td style="width:46%;vertical-align:top;padding-right:6px;">'
+        + _meetingPanel('Реестр дефектов · сводка (' + escapeHtml(trendLabel) + ')',
+            '<table style="width:100%;border-collapse:collapse;">'
+            + '<thead><tr style="background:#f8fafc;">'
+            + '<th style="' + th + 'text-align:left;">Показатель</th>'
+            + '<th style="' + th + 'text-align:right;">Значение</th>'
+            + '<th style="' + th + 'text-align:right;">Δ</th></tr></thead><tbody>'
+            + regRow('Проверок', String(nChecks), _meetingDeltaChip(nChecks, prevN))
+            + regRow('Повторяющиеся дефекты (типы)', String(repeatTypes),
+                _meetingDeltaChip(repeatTypes, prevRepeatTypes, true))
+            + regRow('Критические дефекты (B3)',
+                '<span style="color:#dc2626;">' + criticalCnt + '</span>',
+                _meetingDeltaChip(criticalCnt, prevCritical, true))
+            + regRow('Доля дефектов (на 100 пр.)', defectShare + '%',
+                _meetingDeltaChip(defectShare, prevDefectShare, true))
+            + regRow('% проверок с B3',
+                '<span style="color:' + (percB3Checks > 0 ? '#dc2626' : '#16a34a') + ';">' + percB3Checks + '%</span>',
+                _meetingDeltaChip(percB3Checks, prevPercB3, true))
+            + regRow('Всего B1+B2+B3', String(totalDefects),
+                _meetingDeltaChip(totalDefects, prevTotalDef, true))
+            + '</tbody></table>'
+            + '<div style="margin-top:4px;font-size:8px;font-weight:700;color:#94a3b8;">'
+            + 'Инженеры: ' + escapeHtml((cObj.inspectors || []).slice(0, 4).join(', ') || '—')
+            + ' · статус: ' + escapeHtml(String(m.statusTxt || '—')) + '</div>')
+        + '</td>'
+        + '<td style="width:54%;vertical-align:top;padding-left:6px;">'
+        + _meetingPanel('Перечень дефектов',
+            '<table style="width:100%;border-collapse:collapse;"><thead><tr>'
+            + '<th style="' + th + '">№</th><th style="' + th + 'text-align:left;">Пункт чек-листа</th>'
+            + '<th style="' + th + 'text-align:center;">Риск</th>'
+            + '<th style="' + th + 'text-align:center;">Раз</th>'
+            + '<th style="' + th + 'text-align:center;">Фото</th>'
+            + '</tr></thead><tbody>' + defectRows + '</tbody></table>'
+            + '<div style="margin-top:4px;font-size:8px;font-weight:700;color:#64748b;">Далее — разбор по фото (ключи = модуль «Совещания»)</div>')
+        + '</td></tr></table>'
+        + '</div>';
+
+    const label = cObj.contractorName + ' · ' + (cObj.projectName || '');
+    html += await buildMeetingDefectDiscussSlides(stats.discuss || [], label, mode);
+    return html;
+}
+
+async function buildPersonalMeetingTitleSlide(cObj, mode) {
+    return '';
+}
+
+// 6. Полный отчёт по объекту — колода для планерки (A3 landscape)
+// Титул = One-Pager 2.0 один-в-один; далее карточки подрядчиков + фото.
+async function exportPdfFullObjectReport(data, mode = 'script') {
+    if (!data || data.length === 0) return showToast('Нет данных для выгрузки');
+
+    showToast('⚙️ Собираем слайды планерки…');
+    const cList = _meetingGroupContractors(data);
+    if (cList.length === 0) return showToast('Нет подрядчиков в текущей выборке');
+
+    const op2 = await buildOnePagerV2Html(data, { mode: mode });
+    if (!op2 || !op2.content) return showToast('Нет данных для выгрузки');
+
+    let content = op2.content;
+    for (let i = 0; i < cList.length; i++) {
+        content += await buildContractorMeetingSlides(cList[i], mode, { pageBreakFirst: true });
+    }
+
+    const shellTitle = 'Планерка | ' + String(op2.shellTitle || 'отчёт по объекту')
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+
+    await printPdfShell(shellTitle, content, 'A3', 'landscape', mode, {
+        allowFlowPages: true,
+        headerOpts: op2.headerOpts || null
+    });
 }
 
 // 4. Плакат Качества (A3 Альбом)
@@ -6174,178 +7354,672 @@ async function exportPdfDefectRemediation(cards, mode = 'script', meta = {}) {
     });
 }
 
-async function exportPdfPoster(data, mode = 'script') {
-    const _allInspections = _getAllInspections();
-    let weekData = [];
-    let periodStr = '';
+// 4. Плакат Качества v2 — проходная (A3 / A1 альбом)
+function _promptPosterFormat() {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('modal-overlay');
+        if (!modal) {
+            resolve({ size: 'A3', orientation: 'landscape' });
+            return;
+        }
+        const done = (choice) => {
+            try { if (typeof closeModal === 'function') closeModal(); } catch (_) { /* ignore */ }
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+            resolve(choice);
+        };
+        document.getElementById('modal-icon').innerHTML =
+            '<div class="w-14 h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-2 border border-orange-200">📋</div>';
+        document.getElementById('modal-title').innerHTML =
+            '<div class="text-center font-black uppercase text-lg">Плакат качества</div>';
+        document.getElementById('modal-body').innerHTML = `
+            <div class="text-center text-[12px] text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+                Выберите формат печати. Оба — альбом. A3 — частая ротация, A1 — стенд на проходной.
+            </div>
+            <div class="space-y-3 mb-4">
+                <button type="button" id="poster-fmt-a3" class="w-full text-left p-4 bg-white dark:bg-slate-800 border-2 border-indigo-200 dark:border-indigo-700 rounded-xl active:scale-[0.98] transition-transform shadow-sm">
+                    <div class="font-black text-sm text-slate-800 dark:text-white uppercase">A3 альбом</div>
+                    <div class="text-[11px] text-slate-500 mt-1">Оперативная вывеска · удобно печатать часто</div>
+                </button>
+                <button type="button" id="poster-fmt-a1" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.98] transition-transform shadow-sm">
+                    <div class="font-black text-sm text-slate-800 dark:text-white uppercase">A1 альбом</div>
+                    <div class="text-[11px] text-slate-500 mt-1">Стенд на проходной · читается с 3–5 м</div>
+                </button>
+            </div>
+            <button type="button" id="poster-fmt-cancel" class="w-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 py-3 rounded-xl font-bold text-[11px] uppercase border border-slate-200 dark:border-slate-700">Отмена</button>
+        `;
+        document.body.classList.add('modal-open');
+        modal.style.display = 'flex';
+        document.getElementById('poster-fmt-a3').onclick = () => done({ size: 'A3', orientation: 'landscape' });
+        document.getElementById('poster-fmt-a1').onclick = () => done({ size: 'A1', orientation: 'landscape' });
+        document.getElementById('poster-fmt-cancel').onclick = () => done(null);
+    });
+}
 
-    if (_isDemoMode() && _allInspections.length > 0) {
-        weekData = [..._allInspections].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 25);
-        periodStr = 'Демонстрационный период';
-    } else {
-        const now = new Date();
-        const lastWeekEnd = new Date(now);
-        lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7));
-        lastWeekEnd.setHours(23, 59, 59, 999);
-        const lastWeekStart = new Date(lastWeekEnd);
-        lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
-        lastWeekStart.setHours(0, 0, 0, 0);
+/** Период плаката: ALL → 14 дней; иначе фильтр аналитики. prev — такое же окно назад. */
+function _posterResolvePeriod(filteredData) {
+    const fmt = (d) => d.toLocaleDateString('ru-RU');
+    const sel = document.getElementById('global-filter-period')?.value || 'ALL';
+    const now = new Date();
+    const projects = (_analyticsFilters().project || []).filter(Boolean);
+    const contractors = (_analyticsFilters().contractor || []).filter(Boolean);
+    const applyFacet = (arr) => {
+        let out = (arr || []).filter((i) => i && !i._deleted);
+        if (projects.length) {
+            out = out.filter((i) => projects.includes(i.projectName) || projects.includes(i.project_display_name));
+        }
+        if (contractors.length) {
+            out = out.filter((i) => contractors.some((c) => {
+                const name = i.contractorName || '';
+                return name === c || String(c).startsWith(name + ' [') || String(c).includes(name);
+            }));
+        }
+        return out;
+    };
+    const all = applyFacet(_getAllInspections());
+    const inRange = (arr, from, to) => arr.filter((i) => {
+        const d = new Date(i.date);
+        return d >= from && d <= to;
+    });
 
-        weekData = _allInspections.filter(i => {
-            const d = new Date(i.date);
-            return d >= lastWeekStart && d <= lastWeekEnd;
-        });
-        periodStr = `${lastWeekStart.toLocaleDateString('ru-RU')} — ${lastWeekEnd.toLocaleDateString('ru-RU')}`;
+    let from;
+    let to = new Date(now);
+    to.setHours(23, 59, 59, 999);
+    let current;
+    let periodStr;
+    let windowMs;
+
+    if (_isDemoMode() && all.length > 0) {
+        current = [...all].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 25);
+        return { current, previous: [], periodStr: 'Демонстрационный период', windowLabel: 'демо' };
     }
 
-    if (weekData.length === 0) return showToast("За выбранный период нет данных для плаката");
+    if (sel === 'CUSTOM') {
+        const dFrom = document.getElementById('filter-date-from')?.value;
+        const dTo = document.getElementById('filter-date-to')?.value;
+        from = dFrom ? new Date(dFrom) : null;
+        to = dTo ? new Date(dTo) : to;
+        if (from) from.setHours(0, 0, 0, 0);
+        if (to) to.setHours(23, 59, 59, 999);
+        current = (filteredData && filteredData.length) ? filteredData.filter((i) => !i._deleted) : inRange(all, from || new Date(0), to);
+        periodStr = `с ${from ? fmt(from) : '…'} по ${to ? fmt(to) : '…'}`;
+        windowMs = (from && to) ? Math.max(86400000, (to - from)) : (14 * 86400000);
+    } else if (sel === 'WEEK' || sel === 'DAY' || sel === 'MONTH') {
+        const days = sel === 'DAY' ? 1 : (sel === 'WEEK' ? 7 : 30);
+        from = new Date(to);
+        from.setDate(from.getDate() - (days - 1));
+        from.setHours(0, 0, 0, 0);
+        current = (filteredData && filteredData.length) ? filteredData.filter((i) => !i._deleted) : inRange(all, from, to);
+        periodStr = `${fmt(from)} — ${fmt(to)} · ${days} дн.`;
+        windowMs = days * 86400000;
+    } else {
+        // ALL → скользящие 14 дней
+        from = new Date(to);
+        from.setDate(from.getDate() - 13);
+        from.setHours(0, 0, 0, 0);
+        current = inRange(all, from, to);
+        periodStr = `${fmt(from)} — ${fmt(to)} · 14 дн.`;
+        windowMs = 14 * 86400000;
+    }
+
+    const prevTo = new Date(from || to);
+    prevTo.setMilliseconds(-1);
+    const prevFrom = new Date(prevTo.getTime() - windowMs + 1);
+    prevFrom.setHours(0, 0, 0, 0);
+    const previous = inRange(all, prevFrom, prevTo);
+
+    return { current, previous, periodStr, windowLabel: sel === 'ALL' ? '14 дн.' : sel };
+}
+
+function _posterFlatItemName(check, itemId) {
+    try {
+        const key = String(check.templateKey || '');
+        const tType = key.split('_')[0];
+        const tKey = key.replace(tType + '_', '');
+        const groups = tType === 'sys'
+            ? (_templates().getSystemTemplates()[tKey]?.groups || [])
+            : (_templates().getUserTemplates()[tKey]?.groups || []);
+        const found = getFlatList(groups).find((x) => x.id == itemId);
+        return found ? found.n : 'Дефект';
+    } catch (_) {
+        return 'Дефект';
+    }
+}
+
+function _posterCollectSidePhotos(checks, cName, wantOk) {
+    const out = [];
+    (checks || []).forEach((check) => {
+        if (!check.photos || !check.state) return;
+        Object.keys(check.state).forEach((id) => {
+            const st = check.state[id];
+            const isOk = st === 'ok';
+            const isFail = st === 'fail' || st === 'fail_escalated';
+            if (wantOk && !isOk) return;
+            if (!wantOk && !isFail) return;
+            const photos = getItemPhotos(check, id) || [];
+            const name = _posterFlatItemName(check, id);
+            const b3 = !wantOk && (Number(check.metrics?.n_B3_fail) > 0 || /B3|крит/i.test(name));
+            photos.forEach((src) => out.push({ src, contr: cName, name, b3: !!b3 }));
+        });
+    });
+    if (!wantOk) out.sort((a, b) => (b.b3 ? 1 : 0) - (a.b3 ? 1 : 0));
+    return out;
+}
+
+function _posterTopDefects(weekData, limit = 3) {
+    const counts = {};
+    (weekData || []).forEach((check) => {
+        if (!check.state) return;
+        Object.keys(check.state).forEach((id) => {
+            const st = check.state[id];
+            if (st !== 'fail' && st !== 'fail_escalated') return;
+            const name = String(_posterFlatItemName(check, id) || '').trim();
+            if (!name) return;
+            counts[name] = (counts[name] || 0) + 1;
+        });
+    });
+    return Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .filter(([, n]) => n >= 2)
+        .slice(0, limit)
+        .map(([name, n]) => ({ name, n }));
+}
+
+function _posterTopDefectLabel(weekData) {
+    const top = _posterTopDefects(weekData, 1)[0];
+    return top ? `${top.name} — ${top.n}×` : null;
+}
+
+function _posterCollectPeriodPhotos(weekData) {
+    const ok = [];
+    const fail = [];
+    (weekData || []).forEach((check) => {
+        if (!check.photos || !check.state) return;
+        const cName = check.contractorName || '';
+        Object.keys(check.state).forEach((id) => {
+            const st = check.state[id];
+            const photos = getItemPhotos(check, id) || [];
+            const name = _posterFlatItemName(check, id);
+            if (st === 'ok') photos.forEach((src) => ok.push({ src, contr: cName, name }));
+            if (st === 'fail' || st === 'fail_escalated') {
+                const b3 = Number(check.metrics?.n_B3_fail) > 0 || /B3|крит/i.test(name);
+                photos.forEach((src) => fail.push({ src, contr: cName, name, b3: !!b3 }));
+            }
+        });
+    });
+    fail.sort((a, b) => (b.b3 ? 1 : 0) - (a.b3 ? 1 : 0));
+    // лёгкий shuffle OK, чтобы не всегда одни и те же
+    for (let i = ok.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ok[i], ok[j]] = [ok[j], ok[i]];
+    }
+    return { ok, fail };
+}
+
+async function _posterPhotoBlock(photo, accent, label, imgH, captionFs) {
+    if (!photo || !photo.src) return '';
+    const imgSrc = await PhotoManager.getAsyncUrl(photo.src) || window.getPhotoSrc(photo.src);
+    if (!imgSrc) return '';
+    const fs = captionFs || '12px';
+    const labelHtml = label
+        ? `<div style="color:${accent}; font-size:${fs}; font-weight:900; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:2px;">${label}</div>`
+        : '';
+    return `
+    <div style="border:2px solid ${accent}; border-radius:8px; overflow:hidden; background:#fff;">
+        <div style="height:${imgH}; background:#f1f5f9; overflow:hidden;">
+            <img src="${imgSrc}" style="width:100%; height:100%; object-fit:cover; display:block;">
+        </div>
+        <div style="padding:8px 9px; min-height:3.8em; font-weight:800; color:#0f172a; font-size:${fs}; line-height:1.25;">
+            ${labelHtml}
+            <div style="overflow:hidden; max-height:4.8em;">${photo.name || 'Факт'}${photo.contr ? ` · ${photo.contr}` : ''}</div>
+        </div>
+    </div>`;
+}
+
+/** Только реальные фото — пустые плашки не печатаем. */
+async function _posterPhotoStrip(photos, accent, maxCount, imgH, captionFs) {
+    const slice = (photos || []).filter((p) => p && p.src).slice(0, maxCount);
+    if (!slice.length) return '';
+    const n = slice.length;
+    const cells = [];
+    for (let i = 0; i < n; i++) {
+        const html = await _posterPhotoBlock(slice[i], accent, '', imgH, captionFs);
+        if (!html) continue;
+        cells.push(`<td style="width:${(100 / n).toFixed(2)}%; vertical-align:top; padding:0 5px;">${html}</td>`);
+    }
+    if (!cells.length) return '';
+    return `<table style="width:100%; table-layout:fixed; border-collapse:collapse;"><tr>${cells.join('')}</tr></table>`;
+}
+
+function _posterShortName(name, maxLen) {
+    const s = String(name || '').trim();
+    if (s.length <= maxLen) return s;
+    return s.slice(0, maxLen - 1) + '…';
+}
+
+/** Перенос названия подрядчика для подписи столбца Chart.js (массив строк = многострочный label). */
+function _posterWrapChartLabel(name, maxChars, maxLines) {
+    const s = String(name || '').trim();
+    if (!s) return [''];
+    const lines = [];
+    let cur = '';
+    const pushCur = () => {
+        if (cur) { lines.push(cur); cur = ''; }
+    };
+    const words = s.split(/\s+/);
+    for (let wi = 0; wi < words.length; wi++) {
+        const w = words[wi];
+        if (lines.length >= maxLines) break;
+        if (w.length > maxChars) {
+            pushCur();
+            let rest = w;
+            while (rest.length && lines.length < maxLines) {
+                if (rest.length <= maxChars) {
+                    cur = rest;
+                    rest = '';
+                } else {
+                    lines.push(rest.slice(0, maxChars));
+                    rest = rest.slice(maxChars);
+                }
+            }
+            continue;
+        }
+        const next = cur ? `${cur} ${w}` : w;
+        if (next.length <= maxChars) cur = next;
+        else {
+            pushCur();
+            cur = w;
+        }
+    }
+    pushCur();
+    if (lines.length > maxLines) {
+        const clipped = lines.slice(0, maxLines);
+        const last = clipped[maxLines - 1];
+        clipped[maxLines - 1] = last.length >= maxChars ? `${last.slice(0, maxChars - 1)}…` : `${last}…`;
+        return clipped;
+    }
+    return lines.length ? lines : [s];
+}
+
+/** Столбчатая диаграмма УрК по подрядчикам (вниз плаката). */
+function _posterUrkBarChartUrl(candidates, isA1) {
+    const rank = [...(candidates || [])]
+        .sort((a, b) => b.metrics.finalC - a.metrics.finalC)
+        .slice(0, isA1 ? 12 : 10);
+    if (!rank.length) return '';
+    // A1 landscape ≈ 2× A3 landscape — график крупнее, чтобы заполнить высоту
+    const w = isA1 ? 1600 : 1100;
+    const h = isA1 ? 320 : 150;
+    const maxChars = isA1 ? 14 : 10;
+    const maxLines = 5;
+    try {
+        return generatePdfChart({
+            type: 'bar',
+            data: {
+                labels: rank.map((c) => _posterWrapChartLabel(c.name, maxChars, maxLines)),
+                datasets: [{
+                    data: rank.map((c) => c.metrics.finalC),
+                    backgroundColor: rank.map((c) => {
+                        if (c.metrics.finalC >= 85) return '#16a34a';
+                        if (c.metrics.finalC >= 70) return '#f59e0b';
+                        return '#dc2626';
+                    }),
+                    borderRadius: 3,
+                    maxBarThickness: isA1 ? 42 : 24
+                }]
+            },
+            options: {
+                layout: { padding: { top: 12, bottom: isA1 ? 14 : 8, left: 2, right: 2 } },
+                scales: {
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: { font: { size: isA1 ? 11 : 8 }, stepSize: 25 },
+                        grid: { color: '#e2e8f0' }
+                    },
+                    x: {
+                        ticks: {
+                            font: { size: isA1 ? 12 : 7, weight: 'bold' },
+                            color: '#0f172a',
+                            maxRotation: 0,
+                            minRotation: 0,
+                            autoSkip: false
+                        },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        }, w, h);
+    } catch (e) {
+        console.warn('poster urk bar chart', e);
+        return '';
+    }
+}
+
+async function exportPdfPoster(data, mode = 'script') {
+    const formatChoice = (mode === 'background')
+        ? { size: 'A3', orientation: 'landscape' }
+        : await _promptPosterFormat();
+    if (!formatChoice) return;
+
+    showToast(mode === 'script' ? '⏳ Формируем плакат...' : '🖨️ Подготовка плаката...');
+
+    const { current: weekData, previous: prevData, periodStr } = _posterResolvePeriod(data);
+    if (!weekData.length) return showToast('За выбранный период нет данных для плаката');
 
     const grouped = {};
-    weekData.forEach(item => {
-        if (!grouped[item.contractorName]) grouped[item.contractorName] = [];
-        grouped[item.contractorName].push(item);
+    weekData.forEach((item) => {
+        const cName = item.contractorName || 'Неизвестно';
+        if (!grouped[cName]) grouped[cName] = [];
+        grouped[cName].push(item);
+    });
+    const prevGrouped = {};
+    prevData.forEach((item) => {
+        const cName = item.contractorName || 'Неизвестно';
+        if (!prevGrouped[cName]) prevGrouped[cName] = [];
+        prevGrouped[cName].push(item);
     });
 
     const candidates = [];
-    let globalUrkSum = 0; let globalB3Count = 0;
-    let allDefectPhotos = []; let allOkPhotos = [];
+    let globalUrkSum = 0;
+    let globalB3Count = 0;
 
-    for (let cName in grouped) {
+    for (const cName of Object.keys(grouped)) {
         const cData = grouped[cName];
-        if (cData.length >= 3) {
-            const m = getContractorMetrics(cData, _templates().getUserTemplates());
-            if (m) {
-                cData.forEach(check => {
-                    if (check.metrics) {
-                        globalUrkSum += Number(check.metrics.final) || 0;
-                        globalB3Count += Number(check.metrics.n_B3_fail) || 0;
-                    }
-                    if (check.photos && check.state) {
-                        Object.keys(check.state).forEach(id => {
-                            const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
-                            const itemInfo = flatList.find(x => x.id == id);
-                            const defName = itemInfo ? itemInfo.n : 'Дефект';
-                            const idPhotos = getItemPhotos(check, id);
-
-                            if (check.state[id] === 'ok') idPhotos.forEach(src => allOkPhotos.push({ src, contr: cName, name: defName }));
-                            if (check.state[id] === 'fail' || check.state[id] === 'fail_escalated') idPhotos.forEach(src => allDefectPhotos.push({ src, contr: cName, name: defName }));
-                        });
-                    }
-                });
-
-                let growth = 0;
-                if (!_isDemoMode()) {
-                    const now = new Date();
-                    const lastWeekEnd = new Date(now);
-                    lastWeekEnd.setDate(lastWeekEnd.getDate() - (lastWeekEnd.getDay() || 7));
-                    const prevStart = new Date(lastWeekEnd); prevStart.setDate(prevStart.getDate() - 13);
-                    const prevEnd = new Date(lastWeekEnd); prevEnd.setDate(prevEnd.getDate() - 7);
-                    const prevChecks = _allInspections.filter(i => i.contractorName === cName && new Date(i.date) >= prevStart && new Date(i.date) <= prevEnd);
-                    if (prevChecks.length >= 3) {
-                        const mPrev = getContractorMetrics(prevChecks, _templates().getUserTemplates());
-                        if (mPrev) growth = m.finalC - mPrev.finalC;
-                    }
-                } else { growth = Math.floor(Math.random() * 15) + 2; }
-
-                candidates.push({ name: cName, workType: cData[0].templateTitle, metrics: m, growth });
+        if (cData.length < 3) continue;
+        const m = getContractorMetrics(cData, _templates().getUserTemplates());
+        if (!m) continue;
+        cData.forEach((check) => {
+            if (check.metrics) {
+                globalUrkSum += Number(check.metrics.final) || 0;
+                globalB3Count += Number(check.metrics.n_B3_fail) || 0;
+            }
+        });
+        let growth = 0;
+        if (_isDemoMode()) {
+            growth = Math.floor(Math.random() * 15) + 2;
+        } else {
+            const prevChecks = prevGrouped[cName] || [];
+            if (prevChecks.length >= 3) {
+                const mPrev = getContractorMetrics(prevChecks, _templates().getUserTemplates());
+                if (mPrev) growth = m.finalC - mPrev.finalC;
             }
         }
+        candidates.push({
+            name: cName,
+            workType: cData[0].templateTitle || '',
+            metrics: m,
+            growth,
+            checks: cData,
+            n: cData.length
+        });
     }
 
-    if (candidates.length === 0) return showToast("Недостаточно данных для формирования рейтинга");
+    if (!candidates.length) return showToast('Недостаточно данных для плаката (нужно ≥3 проверки у подрядчика)');
+
+    const periodPhotos = _posterCollectPeriodPhotos(weekData);
+    const realOk = (periodPhotos.ok || []).filter((p) => p && p.src);
+    const realFail = (periodPhotos.fail || []).filter((p) => p && p.src);
+    if (!realOk.length && !realFail.length) {
+        return showToast('Защита печати: на плакате нужны фото. За период нет снимков OK/брака.');
+    }
 
     const avgObjectUrk = Math.round(globalUrkSum / weekData.length);
-    const ikoMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekData, _templates().getUserTemplates()) : null;
+    let prevAvgUrk = null;
+    if (prevData.length) {
+        const pSum = prevData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
+        prevAvgUrk = Math.round(pSum / prevData.length);
+    }
+    const urkDelta = (prevAvgUrk != null) ? (avgObjectUrk - prevAvgUrk) : null;
+    const ikoMetrics = typeof getObjectIntegralMetrics === 'function'
+        ? getObjectIntegralMetrics(weekData, _templates().getUserTemplates()) : null;
     const IKO = ikoMetrics ? ikoMetrics.IKO : '0.00';
+    const activeContrCount = Object.keys(grouped).length;
 
     candidates.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
-    const leaders = candidates.filter(c => c.metrics.finalC >= 85).slice(0, 3);
-    let antiLeaders = candidates.filter(c => c.metrics.n_изделий_с_B3 > 0 || c.metrics.finalC < 70).sort((a, b) => {
-        if (b.metrics.n_изделий_с_B3 !== a.metrics.n_изделий_с_B3) return b.metrics.n_изделий_с_B3 - a.metrics.n_изделий_с_B3;
-        return a.metrics.finalC - b.metrics.finalC;
-    }).slice(0, 3);
+    const leaders = candidates.filter((c) => c.metrics.finalC >= 85).slice(0, 2);
+    if (!leaders.length) leaders.push(candidates[0]);
 
-    let breakthrough = null; let maxGrowth = 0;
-    candidates.forEach(c => { if (c.growth > maxGrowth && c.metrics.finalC >= 70) { maxGrowth = c.growth; breakthrough = c; } });
+    let antiLeaders = candidates
+        .filter((c) => c.metrics.n_изделий_с_B3 > 0 || c.metrics.finalC < 70)
+        .sort((a, b) => {
+            const b3a = a.metrics.n_изделий_с_B3 || 0;
+            const b3b = b.metrics.n_изделий_с_B3 || 0;
+            if (b3b !== b3a) return b3b - b3a;
+            return a.metrics.finalC - b.metrics.finalC;
+        })
+        .slice(0, 2);
+    if (!antiLeaders.length && candidates.length > 1) {
+        const worst = [...candidates].sort((a, b) => a.metrics.finalC - b.metrics.finalC)
+            .filter((c) => c.metrics.finalC < 85)
+            .slice(0, 2);
+        antiLeaders = worst;
+    }
 
-    const renderPosterCard = (c, type) => {
+    let breakthrough = null;
+    let maxGrowth = 0;
+    candidates.forEach((c) => {
+        if (c.growth > maxGrowth && c.metrics.finalC >= 70) {
+            maxGrowth = c.growth;
+            breakthrough = c;
+        }
+    });
+
+    const isA1 = formatChoice.size === 'A1';
+    const chartUrl = _posterUrkBarChartUrl(candidates, isA1);
+
+    // A1 альбом ≈ 2× A3 альбом — та же сетка, крупнее масштаб
+    const cardNameFs = isA1 ? '28px' : '16px';
+    const scoreFs = isA1 ? '44px' : '28px';
+    const headFs = isA1 ? '30px' : '18px';
+    const kpiFs = isA1 ? '34px' : '22px';
+    const labelFs = isA1 ? '15px' : '11px';
+    const sectionFs = isA1 ? '17px' : '12px';
+    const captionFs = isA1 ? '20px' : '11px';
+    const pad = isA1 ? '16px' : '9px';
+    const gap = isA1 ? '16px' : '10px';
+    const photoH = isA1 ? '120mm' : '46mm';
+    const photoCols = 3;
+
+    let logoHtml = '';
+    if (_getSetting('brandLogo')) {
+        try {
+            const logoSrc = await PhotoManager.getAsyncUrl(_getSetting('brandLogo')) || _getSetting('brandLogo');
+            if (logoSrc) {
+                // absolute — крупнее без увеличения высоты шапки / сдвига блоков вниз
+                logoHtml = `<img src="${logoSrc}" alt="logo" style="height:${isA1 ? 72 : 46}px;width:auto;max-width:${isA1 ? 220 : 140}px;object-fit:contain;display:block;position:absolute;left:0;top:0;">`;
+            }
+        } catch (_) { /* ignore */ }
+    }
+
+    const projectLabel = (() => {
+        const pf = _analyticsFilters().project || [];
+        if (pf.length === 1) return pf[0];
+        if (pf.length > 1) return pf.slice(0, 2).join(', ') + (pf.length > 2 ? '…' : '');
+        const names = [...new Set(weekData.map((i) => i.projectName || i.project_display_name).filter(Boolean))];
+        if (names.length === 1) return names[0];
+        if (names.length > 1) return 'Несколько объектов';
+        return document.getElementById('inp-project')?.value || 'Объект';
+    })();
+
+    const deltaHtml = (() => {
+        if (urkDelta == null) return `<span style="color:#94a3b8;font-weight:800;">нет базы</span>`;
+        if (urkDelta === 0) return `<span style="color:#64748b;font-weight:900;">→ 0</span>`;
+        const up = urkDelta > 0;
+        return `<span style="color:${up ? '#16a34a' : '#dc2626'};font-weight:900;">${up ? '↑' : '↓'}${up ? '+' : ''}${urkDelta}</span>`;
+    })();
+
+    const renderCard = (c, type) => {
         if (!c) return '';
-        const isLeader = type === 'leader'; const isBreak = type === 'break'; const isBad = type === 'bad';
-        let color = '#0f172a'; let bg = '#f8fafc'; let bd = '#cbd5e1'; let badge = '';
-
-        if (isLeader) { color = '#16a34a'; bg = '#f0fdf4'; bd = '#bbf7d0'; }
-        if (isBreak) { color = '#4f46e5'; bg = '#e0e7ff'; bd = '#bae6fd'; badge = `<div style="background:#4f46e5; color:white; padding:2px 4px; border-radius:4px; font-size:${mode === 'browser' ? '7pt' : '10px'}; font-weight:bold; display:inline-block; margin-bottom:4px;">🚀 +${c.growth}% к прошлой неделе</div>`; }
-        if (isBad) { color = '#dc2626'; bg = '#fef2f2'; bd = '#fecaca'; }
-
+        const isLeader = type === 'leader';
+        const isBreak = type === 'break';
+        const isBad = type === 'bad';
+        let color = '#0f172a';
+        let bg = '#f8fafc';
+        let bd = '#cbd5e1';
+        if (isLeader) { color = '#16a34a'; bg = '#f0fdf4'; bd = '#86efac'; }
+        if (isBreak) { color = '#4f46e5'; bg = '#eef2ff'; bd = '#a5b4fc'; }
+        if (isBad) { color = '#dc2626'; bg = '#fef2f2'; bd = '#fca5a5'; }
+        const b3 = c.metrics.n_изделий_с_B3 || 0;
+        const growthLine = isBreak
+            ? `<div style="margin-top:6px;display:inline-block;background:#4f46e5;color:#fff;font-weight:900;font-size:${labelFs};padding:4px 10px;border-radius:6px;">Выросли на +${c.growth}%</div>`
+            : (c.growth ? `<div style="margin-top:4px;font-size:${labelFs};font-weight:800;color:${c.growth > 0 ? '#16a34a' : '#dc2626'};">${c.growth > 0 ? '↑' : '↓'}${c.growth > 0 ? '+' : ''}${c.growth}%</div>` : '');
+        const b3Line = (isBad && b3 > 0)
+            ? `<div style="margin-top:6px;display:inline-block;background:#991b1b;color:#fff;font-weight:900;font-size:${labelFs};padding:4px 10px;border-radius:6px;">Крит. дефекты: ${b3}</div>`
+            : '';
         return `
-        <div class="no-break" style="background: ${bg}; border: 2px solid ${bd}; padding: 12px; border-radius: 8px; margin-bottom: 10px;">
-            ${badge}
-            <table style="width: 100%; border: none;">
+        <div style="background:${bg}; border:2px solid ${bd}; border-radius:10px; padding:${pad}; margin-bottom:7px;">
+            <table style="width:100%; border:none;">
                 <tr>
-                    <td style="vertical-align: top;">
-                        <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; font-weight: 900; color: #0f172a; margin-bottom:4px; line-height:1.2;">${c.name}</div>
-                        <div style="font-size: ${mode === 'browser' ? '8pt' : '10px'}; color: #64748b; text-transform: uppercase; font-weight:bold;">${c.workType}</div>
-                        ${isBad && c.metrics.n_изделий_с_B3 > 0 ? `<div style="margin-top:6px; font-size:${mode === 'browser' ? '8pt' : '10px'}; font-weight:bold; color:#991b1b; background:#fee2e2; padding:4px 6px; border-radius:4px; display:inline-block;">🚨 Крит. деф. (B3): ${c.metrics.n_изделий_с_B3} шт</div>` : ''}
+                    <td style="vertical-align:top; padding:0;">
+                        <div style="font-size:${cardNameFs}; font-weight:900; color:#0f172a; line-height:1.15;">${c.name}</div>
+                        <div style="font-size:${labelFs}; color:#64748b; font-weight:800; text-transform:uppercase; margin-top:2px;">${c.workType || ''} · ${c.n} пров.</div>
+                        ${growthLine}${b3Line}
                     </td>
-                    <td style="text-align: right; width: ${mode === 'browser' ? '20mm' : '60px'}; vertical-align: top;">
-                        <div style="font-size: ${mode === 'browser' ? '24pt' : '32px'}; font-weight: 900; color: ${color}; line-height:1;">${c.metrics.finalC}%</div>
+                    <td style="vertical-align:top; text-align:right; width:28%; padding:0;">
+                        <div style="font-size:${scoreFs}; font-weight:900; color:${color}; line-height:1;">${c.metrics.finalC}%</div>
+                        <div style="font-size:${labelFs}; color:#64748b; font-weight:800;">УрК</div>
                     </td>
                 </tr>
             </table>
         </div>`;
     };
 
-    allDefectPhotos = allDefectPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
-    allOkPhotos = allOkPhotos.sort(() => 0.5 - Math.random()).slice(0, 4);
+    const emptyCol = (text, okTone) => `
+        <div style="text-align:center; padding:14px 8px; color:${okTone ? '#16a34a' : '#64748b'}; font-size:${labelFs}; font-weight:800; border:2px dashed ${okTone ? '#bbf7d0' : '#cbd5e1'}; border-radius:10px; background:${okTone ? '#f0fdf4' : '#f8fafc'};">
+            ${text}
+        </div>`;
+
+    const colHead = (title, bg) => `
+        <div style="background:${bg}; color:#fff; font-weight:900; letter-spacing:0.04em; font-size:${sectionFs}; padding:8px 10px; border-radius:8px; text-align:center; text-transform:uppercase; margin-bottom:7px;">
+            ${title}
+        </div>`;
+
+    const leadersHtml = leaders.length
+        ? leaders.map((c) => renderCard(c, 'leader')).join('')
+        : emptyCol('Пока некого хвалить — копим результат', false);
+    const breakHtml = breakthrough
+        ? renderCard(breakthrough, 'break')
+        : emptyCol('Прорыва пока нет — следующий период ваш', false);
+    const antiHtml = antiLeaders.length
+        ? antiLeaders.map((c) => renderCard(c, 'bad')).join('')
+        : emptyCol('Срывов нет — так держать!', true);
+
+    const okStrip = await _posterPhotoStrip(realOk, '#16a34a', photoCols, photoH, captionFs);
+    const failStrip = await _posterPhotoStrip(realFail, '#dc2626', photoCols, photoH, captionFs);
+
+    const threeCols = `
+        <table style="width:100%; border-collapse:separate; border-spacing:${gap} 0; table-layout:fixed; margin:0 0 ${gap};">
+            <tr>
+                <td style="width:33.33%; vertical-align:top; padding:0;">
+                    ${colHead('Кого хвалим', '#16a34a')}
+                    ${leadersHtml}
+                </td>
+                <td style="width:33.33%; vertical-align:top; padding:0;">
+                    ${colHead('Кто вырос', '#4f46e5')}
+                    ${breakHtml}
+                </td>
+                <td style="width:33.33%; vertical-align:top; padding:0;">
+                    ${colHead('Кому усилиться', '#dc2626')}
+                    ${antiHtml}
+                </td>
+            </tr>
+        </table>`;
+
+    const photoTitle = (text, color) =>
+        `<div style="font-size:${sectionFs}; font-weight:900; color:${color}; text-transform:uppercase; margin:0 0 5px 2px;">${text}</div>`;
+
+    let photoSection = '';
+    if (okStrip && failStrip) {
+        photoSection = `<table style="width:100%; table-layout:fixed; border-collapse:separate; border-spacing:${gap} 0; margin:0 0 ${gap};">
+                    <tr>
+                        <td style="width:50%; vertical-align:top; padding:0;">
+                            ${photoTitle('За что хвалим!', '#16a34a')}
+                            ${okStrip}
+                        </td>
+                        <td style="width:50%; vertical-align:top; padding:0;">
+                            ${photoTitle('Что поправить', '#dc2626')}
+                            ${failStrip}
+                        </td>
+                    </tr>
+               </table>`;
+    } else if (okStrip) {
+        photoSection = `<div style="margin-bottom:${gap};">${photoTitle('За что хвалим!', '#16a34a')}${okStrip}</div>`;
+    } else if (failStrip) {
+        photoSection = `<div style="margin-bottom:${gap};">${photoTitle('Что поправить', '#dc2626')}${failStrip}</div>`;
+    }
+
+    const chartSection = chartUrl
+        ? `<div style="margin-top:${gap}; background:#f8fafc; border:2px solid #e2e8f0; border-radius:10px; padding:7px 9px;">
+                <div style="font-size:${sectionFs}; font-weight:900; color:#0f172a; text-transform:uppercase; margin-bottom:4px;">
+                    Кто на каком уровне качества
+                    <span style="color:#94a3b8; font-weight:800; margin-left:8px; font-size:${labelFs};">зелёный ≥85 · жёлтый 70–84 · красный &lt;70</span>
+                </div>
+                <img src="${chartUrl}" style="width:100%; height:auto; display:block;">
+           </div>`
+        : '';
 
     const content = `
-        <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="font-size: ${mode === 'browser' ? '24pt' : '32px'}; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing:1px;">БЮЛЛЕТЕНЬ КАЧЕСТВА СТРОИТЕЛЬСТВА</h1>
-            <div style="font-size: ${mode === 'browser' ? '12pt' : '16px'}; color: #4f46e5; font-weight: 900; margin-top: 4px; text-transform:uppercase;">Итоги: ${periodStr}</div>
-        </div>
-
-        <table style="width: 100%; border-spacing: 15px 0; border-collapse: separate; table-layout: fixed; margin-left: -15px; margin-bottom: 10px;">
+        <table style="width:100%; border:none; margin-bottom:${gap};">
             <tr>
-                <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #16a34a; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">🏆 Лидеры (УрК > 85%)</h2>
-                    ${leaders.length > 0 ? leaders.map(c => renderPosterCard(c, 'leader')).join('') : `<div style="text-align:center; padding:20px; color:#64748b; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">В зеленой зоне никого нет</div>`}
-                </td>
-                <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #4f46e5; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">🚀 Прорыв недели</h2>
-                    ${breakthrough ? renderPosterCard(breakthrough, 'break') : `<div style="text-align:center; padding:20px; color:#64748b; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #cbd5e1; border-radius:8px;">Значительного прогресса нет</div>`}
-                    
-                    <div style="margin-top: 20px; background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 8px; padding: 15px; text-align: center;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; color: #64748b; text-transform: uppercase; font-weight: 900;">Ср. УрК Объекта</div>
-                        <div style="font-size: ${mode === 'browser' ? '36pt' : '48px'}; font-weight: 900; color: #0f172a; margin-top:5px;">${avgObjectUrk}%</div>
+                <td style="width:18%; vertical-align:top; padding:0; position:relative; height:1px;">${logoHtml}</td>
+                <td style="width:64%; vertical-align:middle; text-align:center; padding:0 8px;">
+                    <div style="font-size:${headFs}; font-weight:900; color:#0f172a; text-transform:uppercase; letter-spacing:0.04em; line-height:1.15;">
+                        Плакат качества · ${projectLabel}
                     </div>
-                    <div style="margin-top: 15px; background: ${parseFloat(IKO) >= 0.6 ? '#fef2f2' : '#f0fdf4'}; border: 2px solid ${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#bbf7d0'}; border-radius: 8px; padding: 15px; text-align: center;">
-                        <div style="font-size: ${mode === 'browser' ? '9pt' : '11px'}; color: #64748b; text-transform: uppercase; font-weight: 900;">Индекс риска (ИКО)</div>
-                        <div style="font-size: ${mode === 'browser' ? '36pt' : '48px'}; font-weight: 900; color: ${parseFloat(IKO) >= 0.6 ? '#dc2626' : '#16a34a'}; margin-top:5px;">${IKO}</div>
+                    <div style="font-size:${labelFs}; color:#4f46e5; font-weight:900; margin-top:3px; text-transform:uppercase;">
+                        ${periodStr}
                     </div>
                 </td>
-                <td style="vertical-align: top; width:33.3%;">
-                    <h2 style="background: #ef4444; color: white; padding: 10px; border-radius: 8px; text-align: center; text-transform: uppercase; font-size:${mode === 'browser' ? '11pt' : '14px'}; margin-top:0; margin-bottom:12px;">⚠️ Зона внимания</h2>
-                    ${antiLeaders.length > 0 ? antiLeaders.map(c => renderPosterCard(c, 'bad')).join('') : `<div style="text-align:center; padding:20px; color:#16a34a; font-size:${mode === 'browser' ? '9pt' : '12px'}; font-weight:bold; border:1px dashed #bbf7d0; border-radius:8px; background:#f0fdf4;">Отличная работа! Отстающих нет!</div>`}
-                </td>
+                <td style="width:18%; padding:0;"></td>
             </tr>
         </table>
 
-        <div style="border-top: 3px solid #1e293b; padding-top: 20px; margin-top: 10px;">
-            <table style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left:-20px;">
+        <div style="background:#0f172a; color:#fff; border-radius:10px; padding:${isA1 ? '10px 12px' : '8px 10px'}; margin-bottom:${gap};">
+            <table style="width:100%; border:none;">
                 <tr>
-                    <td style="vertical-align:top; width:50%;">
-                        ${await buildPhotoGridHTML(allOkPhotos, '✅ Эталоны качества (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 4, mode)}
+                    <td style="width:22%; text-align:center; vertical-align:middle; padding:2px;">
+                        <div style="font-size:${labelFs}; opacity:0.75; font-weight:800; text-transform:uppercase;">УрК объекта</div>
+                        <div style="font-size:${kpiFs}; font-weight:900; line-height:1.1;">${avgObjectUrk}% ${deltaHtml}</div>
                     </td>
-                    <td style="vertical-align:top; width:50%;">
-                        ${await buildPhotoGridHTML(allDefectPhotos, '❌ Выявленные нарушения (FAIL)', '#dc2626', '#fca5a5', '#fef2f2', 4, mode)}
+                    <td style="width:18%; text-align:center; vertical-align:middle; padding:2px; border-left:1px solid #334155;">
+                        <div style="font-size:${labelFs}; opacity:0.75; font-weight:800; text-transform:uppercase;">Крит. B3</div>
+                        <div style="font-size:${kpiFs}; font-weight:900; line-height:1.1; color:${globalB3Count > 0 ? '#fca5a5' : '#86efac'};">${globalB3Count}</div>
+                    </td>
+                    <td style="width:20%; text-align:center; vertical-align:middle; padding:2px; border-left:1px solid #334155;">
+                        <div style="font-size:${labelFs}; opacity:0.75; font-weight:800; text-transform:uppercase;">Индекс риска</div>
+                        <div style="font-size:${kpiFs}; font-weight:900; line-height:1.1; color:${parseFloat(IKO) >= 0.6 ? '#fca5a5' : '#86efac'};">${IKO}</div>
+                    </td>
+                    <td style="width:20%; text-align:center; vertical-align:middle; padding:2px; border-left:1px solid #334155;">
+                        <div style="font-size:${labelFs}; opacity:0.75; font-weight:800; text-transform:uppercase;">Проверок</div>
+                        <div style="font-size:${kpiFs}; font-weight:900; line-height:1.1;">${weekData.length}</div>
+                    </td>
+                    <td style="width:20%; text-align:center; vertical-align:middle; padding:2px; border-left:1px solid #334155;">
+                        <div style="font-size:${labelFs}; opacity:0.75; font-weight:800; text-transform:uppercase;">Подрядчиков</div>
+                        <div style="font-size:${kpiFs}; font-weight:900; line-height:1.1;">${activeContrCount}</div>
                     </td>
                 </tr>
             </table>
         </div>
+
+        ${threeCols}
+        ${photoSection}
+        ${chartSection}
     `;
 
-    printPdfShell("Плакат Качества", content, "A3", "landscape", mode);
+    await printPdfShell('Плакат Качества', content, formatChoice.size, formatChoice.orientation, mode, {
+        period: periodStr,
+        skipShellHeader: true,
+        forceHideQr: true,
+        // Печать через принтер = тот же PDF-пайплайн (без расхождения вёрстки)
+        printSameAsPdf: mode === 'browser'
+    });
 }
+
 
 // ============================================================================
 // === ИМПОРТ И ЭКСПОРТ ДАННЫХ (ЕДИНЫЙ СУПЕР-БЭКАП, SHARE API, РЕЕСТР) ===
@@ -6977,6 +8651,192 @@ function processDataImport(event) {
     event.target.value = '';
 }
 
+/**
+ * HTML одного «Акта осмотра» (полная детализация проверки) для printPdfShell.
+ */
+async function buildInspectionActHtml(item) {
+    const m = item.metrics || {};
+    const type = String(item.templateKey || '').split('_')[0];
+    const key = String(item.templateKey || '').replace(type + '_', '');
+    const groups = type === 'sys' && _templates().getSystemTemplates()[key]
+        ? (_templates().getSystemTemplates()[key].groups || [])
+        : (type === 'user' && _templates().getUserTemplates()[key]
+            ? (_templates().getUserTemplates()[key].groups || [])
+            : []);
+    const flatFn = typeof getFlatList === 'function' ? getFlatList : (typeof window.getFlatList === 'function' ? window.getFlatList : null);
+    const flat = flatFn ? flatFn(groups).filter(function (i) { return item.state && item.state[i.id]; }) : [];
+
+    let nOk = 0;
+    let nFail = 0;
+    const rows = [];
+    for (let idx = 0; idx < flat.length; idx++) {
+        const it = flat[idx];
+        const st = item.state[it.id];
+        let stTxt = 'Соответствует';
+        let stColor = '#15803d';
+        let stBg = '#f0fdf4';
+        if (st === 'ok') nOk++;
+        if (st === 'fail') {
+            nFail++;
+            stTxt = 'Не соответствует';
+            stColor = '#b91c1c';
+            stBg = '#fef2f2';
+        }
+        if (st === 'fail_escalated') {
+            nFail++;
+            stTxt = 'Критично (>1.5×)';
+            stColor = '#991b1b';
+            stBg = '#fee2e2';
+        }
+
+        let extra = '';
+        const d = item.details && item.details[it.id];
+        if (d) {
+            if (d.fact != null && d.tol != null) {
+                extra += '<div style="font-size:10px;color:#c2410c;font-weight:700;margin-top:4px;">Факт: '
+                    + escapeHtml(String(d.fact)) + escapeHtml(String(d.unit || ''))
+                    + ' при допуске ' + escapeHtml(String(d.tol)) + escapeHtml(String(d.unit || ''))
+                    + (d.tol ? ' (×' + (Number(d.fact) / Number(d.tol)).toFixed(1) + ')' : '')
+                    + '</div>';
+            }
+            if (d.comment) {
+                extra += '<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;">'
+                    + escapeHtml(String(d.comment)) + '</div>';
+            }
+        }
+
+        const photos = getItemPhotos(item, it.id);
+        let photosHtml = '';
+        if (photos.length) {
+            const imgs = [];
+            const cellW = photos.length === 1 ? '100%' : 'calc(50% - 5px)';
+            const cellH = photos.length === 1 ? '260px' : '200px';
+            for (let p = 0; p < photos.length; p++) {
+                const ref = photos[p];
+                const src = await PhotoManager.getAsyncUrl(ref) || window.getPhotoSrc(ref) || ref;
+                if (!src) continue;
+                imgs.push('<div style="width:' + cellW + ';height:' + cellH + ';border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;background:#f8fafc;">'
+                    + '<img src="' + src + '" style="width:100%;height:100%;object-fit:contain;display:block;"></div>');
+            }
+            if (imgs.length) {
+                photosHtml = '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">' + imgs.join('') + '</div>';
+            }
+        }
+
+        const normPlain = _defectRemediationPlainText(it.t || it.req || it.norm || '');
+        const normHtml = normPlain
+            ? ('<div style="font-size:10px;font-weight:600;color:#334155;line-height:1.4;margin-top:4px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">'
+                + '<div style="font-size:8px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;">Допуск / норматив</div>'
+                + escapeHtml(normPlain).replace(/\n/g, '<br>')
+                + '</div>')
+            : '';
+
+        rows.push(
+            '<tr>'
+            + '<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;width:52px;text-align:center;font-size:10px;font-weight:800;color:#64748b;">'
+            + (idx + 1) + '</td>'
+            + '<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;">'
+            + '<div style="font-size:9px;font-weight:800;color:#6366f1;text-transform:uppercase;margin-bottom:2px;">B' + (it.w || '—') + '</div>'
+            + '<div style="font-size:11px;font-weight:700;color:#0f172a;line-height:1.35;">' + escapeHtml(String(it.n || '')) + '</div>'
+            + normHtml
+            + extra + photosHtml
+            + '</td>'
+            + '<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;width:120px;text-align:center;">'
+            + '<span style="display:inline-block;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:900;color:'
+            + stColor + ';background:' + stBg + ';">' + stTxt + '</span></td>'
+            + '</tr>'
+        );
+    }
+
+    const docScore = (m.documentary != null && m.documentary !== '') ? m.documentary : null;
+    const stages = Array.isArray(item.checkedStagesInfo) && item.checkedStagesInfo.length
+        ? item.checkedStagesInfo.map(function (s) { return escapeHtml(String(s)); }).join('<br>')
+        : '—';
+    const formula = (m.baseUrkPerc != null && m.kc != null && m.kcrit != null && m.final != null)
+        ? (Number(m.baseUrkPerc) + '% × ' + Number(m.kc).toFixed(2) + ' × ' + Number(m.kcrit).toFixed(2) + ' = ' + m.final + '%')
+        : (m.final != null ? (m.final + '%') : '—');
+
+    let logoHtml = '';
+    if (_getSetting('brandLogo')) {
+        const logoSrc = await PhotoManager.getAsyncUrl(_getSetting('brandLogo')) || _getSetting('brandLogo');
+        if (logoSrc) {
+            logoHtml = '<img src="' + logoSrc + '" alt="logo" style="height:52px;width:auto;max-width:160px;object-fit:contain;display:block;">';
+        }
+    }
+    const brandColor = _getSetting('brandColor') || '#1e293b';
+
+    return ''
+        + '<div class="no-break" style="margin-bottom:18px;border-bottom:2px solid ' + brandColor + ';padding-bottom:12px;">'
+        + '<table style="width:100%;border-collapse:collapse;border:none;"><tr>'
+        + '<td style="width:22%;vertical-align:middle;border:none;padding:0;">' + logoHtml + '</td>'
+        + '<td style="width:56%;vertical-align:middle;border:none;padding:0;text-align:center;">'
+        + '<div style="font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;margin-bottom:4px;">Документ контроля качества</div>'
+        + '<h1 style="font-size:20px;font-weight:900;text-transform:uppercase;color:' + brandColor + ';margin:0;">Акт осмотра</h1>'
+        + '<div style="font-size:12px;font-weight:700;color:#4f46e5;margin-top:6px;">от '
+        + escapeHtml(new Date(item.date).toLocaleString('ru-RU')) + '</div>'
+        + '</td>'
+        + '<td style="width:22%;border:none;padding:0;"></td>'
+        + '</tr></table>'
+        + '</div>'
+
+        + '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;font-size:11px;">'
+        + '<tr><td style="padding:5px 0;width:34%;color:#64748b;font-weight:700;">Объект</td><td style="padding:5px 0;font-weight:800;color:#0f172a;">'
+        + escapeHtml(String(item.projectName || item.project_display_name || '—')) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#64748b;font-weight:700;">Подрядчик</td><td style="padding:5px 0;font-weight:800;color:#0f172a;">'
+        + escapeHtml(String(item.contractorName || '—')) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#64748b;font-weight:700;">Вид работ</td><td style="padding:5px 0;font-weight:800;color:#0f172a;">'
+        + escapeHtml(String(item.templateTitle || '—')) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#64748b;font-weight:700;">Локация / ось</td><td style="padding:5px 0;font-weight:800;color:#0f172a;">'
+        + escapeHtml(String(item.location || '—')) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#64748b;font-weight:700;">Инженер</td><td style="padding:5px 0;font-weight:800;color:#0f172a;">'
+        + escapeHtml(String(item.inspectorName || '—')) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#64748b;font-weight:700;vertical-align:top;">Проверенные этапы</td><td style="padding:5px 0;font-weight:600;color:#334155;line-height:1.4;">'
+        + stages + '</td></tr>'
+        + '</table>'
+
+        + '<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">'
+        + '<tr>'
+        + '<td style="width:33%;padding:10px;border:1px solid #e2e8f0;background:#f8fafc;text-align:center;">'
+        + '<div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px;">УрК изделия</div>'
+        + '<div style="font-size:22px;font-weight:900;color:#0f172a;">' + escapeHtml(String(m.final != null ? m.final + '%' : '—')) + '</div></td>'
+        + '<td style="width:33%;padding:10px;border:1px solid #e2e8f0;background:#f8fafc;text-align:center;">'
+        + '<div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px;">УрК документации</div>'
+        + '<div style="font-size:22px;font-weight:900;color:#0f172a;">' + (docScore == null ? '—' : escapeHtml(String(docScore)) + '%') + '</div></td>'
+        + '<td style="width:34%;padding:10px;border:1px solid #e2e8f0;background:#f8fafc;text-align:center;">'
+        + '<div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Нарушения</div>'
+        + '<div style="font-size:14px;font-weight:900;color:#0f172a;">OK ' + nOk + ' / FAIL ' + nFail + '</div>'
+        + '<div style="font-size:10px;font-weight:700;color:#64748b;margin-top:4px;">B1: ' + (m.n_B1_fail || 0)
+        + ' · B2: ' + (m.n_B2_fail || 0) + ' · B3: ' + (m.n_B3_fail || 0) + '</div></td>'
+        + '</tr></table>'
+
+        + '<div style="font-size:10px;font-weight:800;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin-bottom:14px;text-align:center;">'
+        + 'Формула УрК: ' + escapeHtml(formula) + '</div>'
+        + (m.reason ? ('<div style="font-size:10px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;margin-bottom:14px;">'
+            + escapeHtml(String(m.reason)) + '</div>') : '')
+
+        + '<div style="font-size:11px;font-weight:900;text-transform:uppercase;color:#0f172a;margin:0 0 8px 0;letter-spacing:0.06em;">Результаты проверки по пунктам</div>'
+        + '<table style="width:100%;border-collapse:collapse;margin-bottom:18px;">'
+        + '<thead><tr style="background:#f1f5f9;">'
+        + '<th style="padding:7px 8px;border:1px solid #e2e8f0;font-size:9px;text-transform:uppercase;color:#64748b;width:52px;">№</th>'
+        + '<th style="padding:7px 8px;border:1px solid #e2e8f0;font-size:9px;text-transform:uppercase;color:#64748b;text-align:left;">Пункт контроля</th>'
+        + '<th style="padding:7px 8px;border:1px solid #e2e8f0;font-size:9px;text-transform:uppercase;color:#64748b;width:120px;">Статус</th>'
+        + '</tr></thead><tbody>'
+        + (rows.length ? rows.join('') : '<tr><td colspan="3" style="padding:12px;border:1px solid #e2e8f0;text-align:center;color:#94a3b8;font-size:11px;">Нет отмеченных пунктов</td></tr>')
+        + '</tbody></table>'
+
+        + '<div style="margin-top:28px;display:flex;justify-content:space-between;gap:24px;">'
+        + '<div style="flex:1;">'
+        + '<div style="font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:28px;">Инженер по качеству</div>'
+        + '<div style="border-bottom:1px solid #94a3b8;height:28px;margin-bottom:6px;"></div>'
+        + '<div style="font-size:11px;font-weight:700;color:#0f172a;">' + escapeHtml(String(item.inspectorName || '—')) + '</div>'
+        + '<div style="font-size:9px;color:#94a3b8;">подпись / расшифровка</div></div>'
+        + '<div style="flex:1;">'
+        + '<div style="font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;margin-bottom:28px;">Представитель подрядчика</div>'
+        + '<div style="border-bottom:1px solid #94a3b8;height:28px;margin-bottom:6px;"></div>'
+        + '<div style="font-size:9px;color:#94a3b8;">подпись / расшифровка</div></div>'
+        + '</div>';
+}
+
 export const ReportsActions = {
 
     _ctx: null,
@@ -7024,116 +8884,19 @@ export const ReportsActions = {
     async exportPersonalReport(contractorName) {
         const data = getFilteredAnalyticsData().filter(c => c.contractorName + ' [' + (c.projectName || 'Без объекта') + ']' === contractorName);
         if (data.length === 0) return showToast('Нет данных для отчета');
-        if (data.length < 7) return showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.');
 
-        showToast("⚙️ Подготовка персонального отчета...");
+        showToast('⚙️ Собираем слайды по подрядчику…');
 
-        const cName = contractorName.split(' [')[0];
-        const workType = data[0].templateTitle;
+        const list = _meetingGroupContractors(data);
+        const cObj = list[0];
+        if (!cObj) return showToast('Нет данных для отчета');
 
-        const m = getContractorMetrics(data, _templates().getUserTemplates());
-        const colorMain = m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a');
-        const bgMain = m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4');
-        const borderMain = m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0');
+        let content = await buildPersonalMeetingTitleSlide(cObj, 'script');
+        content += await buildContractorMeetingSlides(cObj, 'script', { pageBreakFirst: false });
 
-        const dates = []; const urkData = [];
-        data.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach((check, i) => {
-            dates.push(`#${i + 1}`); urkData.push(check.metrics.final);
+        await printPdfShell('Планерка | ' + cObj.contractorName, content, 'A3', 'landscape', 'script', {
+            allowFlowPages: true
         });
-
-        const lineChartUrl = generatePdfChart({
-            type: 'line',
-            data: { labels: dates, datasets: [{ data: urkData, borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.1)', tension: 0.3, borderWidth: 2, fill: true, pointRadius: 2 }] },
-            options: { scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
-        }, 600, 200);
-
-        let photosB3 = []; let photosB2 = []; let photosOK = [];
-        let b1 = 0, b2 = 0, b3 = 0;
-        data.forEach(check => {
-            if (check.metrics) { b1 += Number(check.metrics.n_B1_fail) || 0; b2 += Number(check.metrics.n_B2_fail) || 0; b3 += Number(check.metrics.n_B3_fail) || 0; }
-            if (check.state && check.photos) {
-                Object.keys(check.state).forEach(id => {
-                    const s = check.state[id];
-                    let defName = "Дефект";
-                    const flatList = getFlatList(_templates().getUserTemplates()[check.templateKey.replace('user_', '')]?.groups || _templates().getSystemTemplates()[check.templateKey.replace('sys_', '')]?.groups);
-                    const item = flatList.find(x => x.id == id);
-                    if (item) defName = item.n;
-
-                    const idPhotos = getItemPhotos(check, id);
-                    if ((s === 'fail' || s === 'fail_escalated') && idPhotos.length > 0) {
-                        idPhotos.forEach(src => {
-                            if (s === 'fail_escalated' || (item && item.w === 3)) photosB3.push({ src, name: defName });
-                            else photosB2.push({ src, name: defName });
-                        });
-                    } else if (s === 'ok' && idPhotos.length > 0) {
-                        idPhotos.forEach(src => photosOK.push({ src, name: defName }));
-                    }
-                });
-            }
-        });
-
-        let expertHtml = getExpertConclusion(m, cName, workType, data.length, contractorName.replace(/\W/g, '_'), _reports().getExpertConclusions()).pdfHtml;
-        expertHtml = expertHtml.replace(/font-size:\s*1[234]px/g, 'font-size: 11px').replace(/margin-bottom:\s*1[05]px/g, 'margin-bottom: 8px');
-
-        const content = `
-        <div class="no-break" style="border-bottom: 2px solid #1e293b; padding-bottom: 10px; margin-bottom: 20px;">
-            <h1 style="margin: 0 0 5px 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">Отчет о качестве СМР: ${cName}</h1>
-            <div style="font-size: 14px; font-weight: bold; color: #4f46e5; text-transform: uppercase;">Вид работ: ${workType} | Объект: ${contractorName.split(' [')[1].replace(']', '')}</div>
-        </div>
-
-        <table class="no-break" style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
-            <tr>
-                <td style="width: 25%; padding: 0 8px 0 0;">
-                    <div style="background: ${bgMain}; border: 2px solid ${borderMain}; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
-                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 900; margin-bottom: 8px;">Рейтинг Надежности</div>
-                        <div style="font-size: 32px; font-weight: 900; color: ${colorMain}; line-height: 1;">${m.finalC}%</div>
-                    </div>
-                </td>
-                <td style="width: 20%; padding: 0 8px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
-                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 8px;">Ср. УрК Изделий</div>
-                        <div style="font-size: 24px; font-weight: 900; color: #0f172a; line-height: 1;">${m.baseUrkContrPerc}%</div>
-                    </div>
-                </td>
-                <td style="width: 20%; padding: 0 8px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; text-align: center; height: 110px; box-sizing: border-box;">
-                        <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; margin-bottom: 8px;">Стабильность</div>
-                        <div style="font-size: 24px; font-weight: 900; color: ${m.stabColor}; line-height: 1;">${m.stabilityIndex}</div>
-                    </div>
-                </td>
-                <td style="width: 35%; padding: 0 0 0 8px;">
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px; height: 110px; box-sizing: border-box;">
-                        <div style="font-size: 10px; color: #0f172a; text-transform: uppercase; font-weight: bold; text-align:center;">Динамика проверок</div>
-                        <div style="height: 70px; text-align: center; margin-top: 5px;"><img src="${lineChartUrl}" style="width: 100%; height: 100%; object-fit: contain;"></div>
-                    </div>
-                </td>
-            </tr>
-        </table>
-
-        <table style="width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px;">
-            <tr>
-                <td style="width: 40%; vertical-align: top; padding-right: 15px;">
-                    ${expertHtml}
-                    <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-top: 15px;">
-                        <h3 style="margin: 0 0 10px 0; font-size: 12px; text-transform: uppercase; color: #334155;">Статистика дефектов</h3>
-                        <div style="font-size: 14px; font-weight: bold;">Всего проверок: ${m.count}</div>
-                        <div style="margin-top: 10px; display:flex; justify-content: space-between; font-size:12px; font-weight:bold;">
-                            <span style="color:#3b82f6">B1: ${b1} шт.</span>
-                            <span style="color:#d97706">B2: ${b2} шт.</span>
-                            <span style="color:#dc2626">B3: ${b3} шт.</span>
-                        </div>
-                    </div>
-                </td>
-                <td style="width: 60%; vertical-align: top; padding: 0;">
-                    ${buildPhotoGridHTML(photosB3, '🚨 Критические нарушения (B3)', '#dc2626', '#fca5a5', '#fef2f2', 3, 'script')}
-                    ${buildPhotoGridHTML(photosB2, '⚠️ Системные дефекты (B2)', '#d97706', '#fdba74', '#fff7ed', 3, 'script')}
-                    ${buildPhotoGridHTML(photosOK, '✅ Принятые работы (OK)', '#16a34a', '#bbf7d0', '#f0fdf4', 3, 'script')}
-                </td>
-            </tr>
-        </table>
-        `;
-
-        await printPdfShell(`Отчет для ${cName}`, content, "A4", "landscape", "script");
         _gameLogAction('ai_copy', 'sent_report');
     },
 
@@ -7177,6 +8940,54 @@ export const ReportsActions = {
         const btns = document.querySelectorAll('#engineer-subtabs-block .sub-tab-btn');
         if (btns[2]) rbi_switchEngineerSubTab('eng-sub-meetings', btns[2]);
         setTimeout(() => { rbi_createMeeting(); }, 300);
+    },
+
+    /**
+     * Печать «Акта осмотра» по одной или нескольким проверкам (A4 portrait).
+     * ids — строка id или массив id из истории / карточки проверки.
+     */
+    async printInspectionActs(ids, mode = 'browser') {
+        const idList = Array.isArray(ids) ? ids : (ids != null ? [ids] : []);
+        if (!idList.length) return showToast('⚠️ Нет проверок для печати');
+
+        const all = _getAllInspections() || [];
+        const etalonActs = _getEtalonActs() || [];
+        const records = [];
+        let skippedEtalon = 0;
+        for (let i = 0; i < idList.length; i++) {
+            const id = String(idList[i]);
+            const etalon = etalonActs.find(function (e) { return String(e.id) === id; });
+            if (etalon || (all.find(function (c) { return String(c.id) === id && c.templateKey === 'sys_etalon_act'; }))) {
+                skippedEtalon++;
+                continue;
+            }
+            const rec = all.find(function (c) { return String(c.id) === id; });
+            if (rec && !rec._deleted && !rec.is_deleted) records.push(rec);
+        }
+
+        if (!records.length) {
+            if (skippedEtalon) return showToast('⚠️ Для Акта-Эталона используйте кнопку печати эталона');
+            return showToast('⚠️ Проверки не найдены');
+        }
+        if (skippedEtalon) showToast('ℹ️ Эталоны пропущены — печатайте их отдельно');
+
+        const parts = [];
+        for (let r = 0; r < records.length; r++) {
+            if (r > 0) parts.push('<div class="pdf-page-break page-break-before"></div>');
+            parts.push(await buildInspectionActHtml(records[r]));
+        }
+
+        const author = records[0].inspectorName || _getSetting('engineerName') || 'Инженер';
+        const title = records.length === 1
+            ? ('Акт осмотра от ' + new Date(records[0].date).toLocaleDateString('ru-RU'))
+            : ('Акты осмотра (' + records.length + ' шт.)');
+
+        await printPdfShell(title, parts.join(''), 'A4', 'portrait', mode, {
+            author: author,
+            skipShellHeader: true,
+            forceHideQr: true,
+            allowFlowPages: true
+        });
     },
 
     /**
@@ -8045,89 +9856,200 @@ export const ReportsActions = {
     },
 
     /**
-     * Печать практики (нарушение/наблюдение), формат А3 альбом.
-     * Перенесено из export.js:rbi_printPracticePdf (группа G3).
+     * Печать практики — A3 альбом, умная нарезка на 1–3 слайда-презентации.
      */
     async printPractice(id, mode = 'browser') {
         const p = _getPractices().find(x => x.id === id);
         if (!p) return;
 
-        let imgBeforeHtml = '';
-        let imgAfterHtml = '';
-
-        const block1Title = p.deltaUrk > 0 ? "СУТЬ ПРОБЛЕМЫ (БЫЛО)" : "ОПИСАНИЕ ИСХОДНОЙ СИТУАЦИИ";
-        const block2Title = p.deltaUrk > 0 ? "ПРИНЯТОЕ РЕШЕНИЕ (СТАЛО)" : "ПРИНЯТОЕ РЕШЕНИЕ И РЕЗУЛЬТАТ";
-
-        const renderPracPhotosGrid = async (urls) => {
-            if (!urls || urls.length === 0) {
-                return `<div style="height: 400px; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; line-height: 400px; color: #94a3b8; font-size: 14px;">Нет фото</div>`;
-            }
-            const cellHeight = urls.length > 1 ? '195px' : '400px';
-            const imgs = await Promise.all(urls.map(async (url) => {
-                const real = await PhotoManager.getAsyncUrl(url) || window.getPhotoSrc(url);
-                return `<div style="height: ${cellHeight}; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #cbd5e1; margin-bottom: 8px;"><img src="${real}" style="width: 100%; height: 100%; object-fit: contain;"></div>`;
-            }));
-            return `<div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between;">${imgs.map(html => `<div style="width: ${urls.length > 1 ? '48%' : '100%'};">${html}</div>`).join('')}</div>`;
+        const esc = (s) => escapeHtml(String(s || ''));
+        const clip = (s, max) => {
+            const t = String(s || '').replace(/\s+/g, ' ').trim();
+            if (t.length <= max) return t;
+            return `${t.slice(0, max - 1).trim()}…`;
         };
 
-        const beforeUrls = (p.photosBefore && p.photosBefore.length > 0) ? p.photosBefore : (p.photoBefore ? [p.photoBefore] : []);
-        const processUrls = p.photosProcess || [];
-        const afterUrls = (p.photosAfter && p.photosAfter.length > 0) ? p.photosAfter : (p.photoAfter ? [p.photoAfter] : []);
+        const beforeUrls = (p.photosBefore && p.photosBefore.length) ? p.photosBefore.filter(Boolean) : (p.photoBefore ? [p.photoBefore] : []);
+        const processUrls = (p.photosProcess || []).filter(Boolean);
+        const afterUrls = (p.photosAfter && p.photosAfter.length) ? p.photosAfter.filter(Boolean) : (p.photoAfter ? [p.photoAfter] : []);
+        const docs = Array.isArray(p.docs) ? p.docs : [];
+        const takeaway = String(p.takeaway || '').trim()
+            || clip(p.solution, 220);
 
-        imgBeforeHtml = await renderPracPhotosGrid(beforeUrls);
-        imgAfterHtml = await renderPracPhotosGrid(afterUrls);
-        const imgProcessHtml = processUrls.length > 0 ? await renderPracPhotosGrid(processUrls) : '';
+        const manySidePhotos = beforeUrls.length > 2 || afterUrls.length > 2;
+        const needProcessPage = processUrls.length > 0 || manySidePhotos;
+        const needClosingPage = docs.length > 0 || !!String(p.takeaway || '').trim();
 
-        const efficiencyHtml = p.deltaUrk > 0
-            ? `<div style="font-size: 16px; color: #16a34a; font-weight: bold; margin-top: 10px;">Доказанная эффективность: Качество подрядчика выросло на +${p.deltaUrk}% УрК</div>`
-            : `<div style="font-size: 16px; color: #4f46e5; font-weight: bold; margin-top: 10px;">Практический опыт, подтвержденный на строительной площадке</div>`;
+        const resolveUrl = async (url) => {
+            if (!url) return '';
+            return (await PhotoManager.getAsyncUrl(url)) || window.getPhotoSrc(url) || url;
+        };
 
-        const processBlockHtml = processUrls.length > 0 ? `
-            <div class="no-break" style="background: #eff6ff; border: 2px solid #bfdbfe; border-radius: 12px; padding: 25px; margin-bottom: 20px;">
-                <h2 style="color: #1e40af; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #93c5fd; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">ХОД РАБОТ (ПРОЦЕСС)</h2>
-                ${imgProcessHtml}
-            </div>` : '';
+        const renderPhotoStack = async (urls, opts = {}) => {
+            const max = opts.max || 2;
+            const height = opts.height || (urls.length > 1 ? 220 : 360);
+            const list = (urls || []).slice(0, max);
+            if (!list.length) {
+                return `<div style="height:${Math.min(height, 200)}px;border:1px dashed #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;font-weight:700;">Нет фото</div>`;
+            }
+            const parts = [];
+            for (let i = 0; i < list.length; i++) {
+                const real = await resolveUrl(list[i]);
+                const h = list.length > 1 ? Math.floor(height / list.length) - 4 : height;
+                parts.push(`
+                    <div style="height:${h}px;background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:${i < list.length - 1 ? '8px' : '0'};">
+                        <img src="${esc(real)}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">
+                    </div>`);
+            }
+            return parts.join('');
+        };
 
-        const docsBlockHtml = (p.docs && p.docs.length > 0) ? `
-            <div class="no-break" style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                <h2 style="color: #334155; font-size: 16px; text-transform: uppercase; margin-top: 0; margin-bottom: 12px; font-weight: 900;">📄 Прикрепленные документы</h2>
-                ${p.docs.map(d => `<div style="font-size: 13px; color: #1e293b; padding: 4px 0;">• ${d.name}${d.desc ? ` — ${d.desc}` : ''}</div>`).join('')}
-            </div>` : '';
+        const renderProcessGrid = async (urls) => {
+            const list = (urls || []).slice(0, 6);
+            if (!list.length) return '';
+            const cols = list.length === 1 ? 1 : (list.length <= 4 ? 2 : 3);
+            const cellH = list.length <= 2 ? 320 : (list.length <= 4 ? 240 : 180);
+            const cells = [];
+            for (let i = 0; i < list.length; i++) {
+                const real = await resolveUrl(list[i]);
+                cells.push(`
+                    <td style="width:${Math.floor(100 / cols)}%;padding:4px;vertical-align:top;">
+                        <div style="height:${cellH}px;background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #bfdbfe;">
+                            <img src="${esc(real)}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">
+                        </div>
+                    </td>`);
+            }
+            let rows = '';
+            for (let i = 0; i < cells.length; i += cols) {
+                rows += `<tr>${cells.slice(i, i + cols).join('')}</tr>`;
+            }
+            return `<table style="width:100%;border-collapse:collapse;table-layout:fixed;">${rows}</table>`;
+        };
 
-        const content = `
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="font-size: 32px; text-transform: uppercase; color: #0f172a; margin: 0; font-weight:900; letter-spacing: 1px;">БИБЛИОТЕКА ЛУЧШИХ ПРАКТИК</h1>
-                <div style="font-size: 16px; color: #64748b; font-weight: bold; margin-top: 10px; text-transform: uppercase;">ВИД РАБОТ: ${p.templateTitle} | АВТОР: ${p.author} | ДАТА: ${new Date(p.date).toLocaleDateString('ru-RU')}</div>
-            </div>
+        const dateLabel = p.date ? new Date(p.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
+        const badge = Number(p.deltaUrk) > 0
+            ? `<span style="display:inline-block;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:900;">+${Number(p.deltaUrk)}% УрК</span>`
+            : `<span style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:900;">Опыт с площадки</span>`;
 
-            <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 30px;">
-                <h2 style="margin: 0; font-size: 24px; color: #0f172a; text-transform: uppercase;">${p.title}</h2>
-                ${efficiencyHtml}
-            </div>
+        const pageShell = (inner, pageNo, total) => `
+            <div class="no-break" style="font-family:'Bricolage Grotesque',Verdana,sans-serif;max-height:980px;overflow:hidden;box-sizing:border-box;">
+                ${inner}
+                <div style="font-size:10px;color:#94a3b8;font-weight:700;text-align:right;margin-top:8px;">Слайд ${pageNo}/${total} · Лучшие практики</div>
+            </div>`;
 
-            <table class="no-break" style="width: 100%; border-spacing: 20px 0; border-collapse: separate; table-layout: fixed; margin-left: -20px; margin-bottom: 20px;">
+        const titleBand = `
+            <div style="margin-bottom:12px;">
+                <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">
+                    ${esc(p.templateTitle || 'Практика')} · ${esc(p.projectName || 'Объект')} · ${esc(dateLabel)}
+                </div>
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+                    <div style="font-size:26px;font-weight:900;color:#0f172a;line-height:1.15;text-transform:uppercase;flex:1;">${esc(p.title)}</div>
+                    <div style="shrink:0;">${badge}</div>
+                </div>
+            </div>`;
+
+        // Лист 1: Было | Стало (крупно)
+        const beforeMain = beforeUrls.slice(0, 2);
+        const afterMain = afterUrls.slice(0, 2);
+        const beforeExtra = beforeUrls.slice(2);
+        const afterExtra = afterUrls.slice(2);
+
+        const photoH = needClosingPage || needProcessPage ? 400 : 340;
+        const imgBeforeHtml = await renderPhotoStack(beforeMain, { max: 2, height: photoH });
+        const imgAfterHtml = await renderPhotoStack(afterMain, { max: 2, height: photoH });
+
+        const total = 1 + (needProcessPage ? 1 : 0) + (needClosingPage ? 1 : 0);
+        // На одном листе — полоска вывода внизу; при отдельном закрывающем слайде не дублируем
+        const takeawayOnPage1 = !needClosingPage
+            ? `<div style="margin-top:12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:12px 14px;">
+                    <div style="font-size:11px;font-weight:900;color:#3730a3;text-transform:uppercase;margin-bottom:4px;">Ключевой вывод</div>
+                    <div style="font-size:14px;font-weight:700;color:#0f172a;line-height:1.35;">${esc(clip(takeaway, 280))}</div>
+               </div>`
+            : '';
+
+        let content = pageShell(`
+            ${titleBand}
+            <table style="width:100%;border-collapse:separate;border-spacing:12px 0;table-layout:fixed;">
                 <tr>
-                    <td style="width: 50%; padding: 25px; border-radius: 12px; background: #ffffff; border: 2px solid #e2e8f0; vertical-align: top;">
-                        <h2 style="color: #334155; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #cbd5e1; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block1Title}</h2>
-                        <p style="font-size: 16px; color: #1e293b; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.problem}</p>
+                    <td style="width:50%;vertical-align:top;background:#fff;border:2px solid #e2e8f0;border-radius:14px;padding:14px 16px;">
+                        <div style="font-size:12px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Было · проблема</div>
+                        <div style="font-size:13px;font-weight:600;color:#1e293b;line-height:1.4;margin-bottom:12px;min-height:48px;">${esc(clip(p.problem, 280))}</div>
                         ${imgBeforeHtml}
                     </td>
-                    <td style="width: 50%; padding: 25px; border-radius: 12px; background: #f0fdf4; border: 2px solid #bbf7d0; vertical-align: top;">
-                        <h2 style="color: #166534; font-size: 18px; text-transform: uppercase; margin-top: 0; border-bottom: 2px solid #86efac; padding-bottom: 15px; margin-bottom: 20px; font-weight: 900;">${block2Title}</h2>
-                        <p style="font-size: 16px; color: #14532d; white-space: pre-wrap; line-height: 1.6; margin-bottom: 25px;">${p.solution}</p>
+                    <td style="width:50%;vertical-align:top;background:#f0fdf4;border:2px solid #bbf7d0;border-radius:14px;padding:14px 16px;">
+                        <div style="font-size:12px;font-weight:900;color:#166534;text-transform:uppercase;margin-bottom:8px;">Стало · решение</div>
+                        <div style="font-size:13px;font-weight:600;color:#14532d;line-height:1.4;margin-bottom:12px;min-height:48px;">${esc(clip(p.solution, 280))}</div>
                         ${imgAfterHtml}
                     </td>
                 </tr>
             </table>
-            ${processBlockHtml}
-            ${docsBlockHtml}
-        `;
+            ${takeawayOnPage1}
+        `, 1, total);
+
+        let pageNo = 1;
+
+        if (needProcessPage) {
+            pageNo += 1;
+            const processHtml = processUrls.length
+                ? await renderProcessGrid(processUrls)
+                : '';
+            const extraBefore = beforeExtra.length ? await renderPhotoStack(beforeExtra, { max: 4, height: 200 }) : '';
+            const extraAfter = afterExtra.length ? await renderPhotoStack(afterExtra, { max: 4, height: 200 }) : '';
+            const extraBlock = (beforeExtra.length || afterExtra.length) ? `
+                <table style="width:100%;border-collapse:separate;border-spacing:10px 0;table-layout:fixed;margin-top:10px;">
+                    <tr>
+                        <td style="width:50%;vertical-align:top;">
+                            ${beforeExtra.length ? `<div style="font-size:11px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:6px;">Было · доп. кадры</div>${extraBefore}` : ''}
+                        </td>
+                        <td style="width:50%;vertical-align:top;">
+                            ${afterExtra.length ? `<div style="font-size:11px;font-weight:900;color:#166534;text-transform:uppercase;margin-bottom:6px;">Стало · доп. кадры</div>${extraAfter}` : ''}
+                        </td>
+                    </tr>
+                </table>` : '';
+
+            content += '<div class="pdf-page-break page-break-before"></div>' + pageShell(`
+                ${titleBand}
+                <div style="font-size:14px;font-weight:900;color:#1e40af;text-transform:uppercase;margin-bottom:10px;">
+                    ${processUrls.length ? 'Ход работ · процесс на площадке' : 'Дополнительные кадры'}
+                </div>
+                ${processHtml || '<div style="color:#94a3b8;font-weight:700;">Нет фото процесса — показаны дополнительные кадры Было/Стало</div>'}
+                ${extraBlock}
+                <div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;">
+                    <div style="font-size:11px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:4px;">Суть решения</div>
+                    <div style="font-size:13px;font-weight:600;color:#0f172a;line-height:1.4;">${esc(clip(p.solution, 360))}</div>
+                </div>
+            `, pageNo, total);
+        }
+
+        if (needClosingPage) {
+            pageNo += 1;
+            const docsHtml = docs.length
+                ? docs.map((d) => `<div style="font-size:13px;font-weight:600;color:#1e293b;padding:6px 0;border-bottom:1px solid #f1f5f9;">• ${esc(d.name)}${d.desc ? ` — ${esc(d.desc)}` : ''}</div>`).join('')
+                : `<div style="font-size:12px;color:#94a3b8;font-weight:600;">Документы не прикреплены</div>`;
+            content += '<div class="pdf-page-break page-break-before"></div>' + pageShell(`
+                ${titleBand}
+                <table style="width:100%;border-collapse:separate;border-spacing:12px 0;table-layout:fixed;">
+                    <tr>
+                        <td style="width:55%;vertical-align:top;background:#eef2ff;border:2px solid #c7d2fe;border-radius:14px;padding:18px 20px;">
+                            <div style="font-size:12px;font-weight:900;color:#3730a3;text-transform:uppercase;margin-bottom:10px;">Ключевой вывод</div>
+                            <div style="font-size:18px;font-weight:800;color:#0f172a;line-height:1.35;">${esc(clip(takeaway, 420))}</div>
+                            <div style="margin-top:16px;font-size:12px;font-weight:700;color:#64748b;">
+                                Закрепить на аналогичных работах · ${esc(p.templateTitle || '')}
+                            </div>
+                        </td>
+                        <td style="width:45%;vertical-align:top;background:#fff;border:2px solid #e2e8f0;border-radius:14px;padding:18px 20px;">
+                            <div style="font-size:12px;font-weight:900;color:#64748b;text-transform:uppercase;margin-bottom:10px;">Материалы</div>
+                            ${docsHtml}
+                        </td>
+                    </tr>
+                </table>
+            `, pageNo, total);
+        }
 
         if (typeof printPdfShell === 'function') {
-            const d = p.date ? new Date(p.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
-            printPdfShell(`Практика: ${p.title}`, content, "A3", "landscape", mode, {
+            printPdfShell(`Практика: ${p.title}`, content, 'A3', 'landscape', mode, {
                 author: p.author || _getSetting('engineerName') || 'Инженер',
-                period: `с ${d} по ${d}`
+                period: `с ${dateLabel} по ${dateLabel}`,
             });
         }
     },
@@ -8701,6 +10623,8 @@ if (typeof window !== 'undefined') {
     window.printEtalonAct = ReportsActions.printEtalon;
     window.printEtalonActV18 = ReportsActions.printEtalonV18;
     window.printEtalonActV18B = ReportsActions.printEtalonV18B;
+    window.printInspectionAct = function (id, mode) { return ReportsActions.printInspectionActs(id, mode); };
+    window.printInspectionActs = ReportsActions.printInspectionActs.bind(ReportsActions);
     window.rbi_printFinalAcceptance = ReportsActions.printFinalAcceptance;
     window.exportPdfSchedule = ReportsActions.exportSchedulePdf;
     window.exportPdfSK = ReportsActions.exportSkPdf;
@@ -8762,8 +10686,10 @@ if (typeof window !== 'undefined') {
     // Группа G1 закрыта этим присвоением целиком.
     window.exportPdfOnePager = exportPdfOnePager;
     window.exportPdfOnePagerV2 = exportPdfOnePagerV2;
+    window.exportPdfOnePagerV3 = exportPdfOnePagerV3;
     window.exportPdfGlobalOnePager = exportPdfGlobalOnePager;
     window.exportPdfGlobalOnePagerV2 = exportPdfGlobalOnePagerV2;
+    window.exportPdfGlobalOnePagerV3 = exportPdfGlobalOnePagerV3;
     window.exportPdfCurrentScreen = exportPdfCurrentScreen;
     window.exportPdfFullObjectReport = exportPdfFullObjectReport;
     window.exportPdfPoster = exportPdfPoster;

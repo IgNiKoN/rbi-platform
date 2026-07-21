@@ -1806,6 +1806,8 @@ async function sk_generateContractorAiSummary(cName, safeId) {
             </button>
         `;
         _gameLogAction('ai_generate', 'sk_contractor_analysis');
+        // Письмо прорабу сформировано → +10 XP (sk_message_sent)
+        _gameLogAction('sk_message_sent', cName);
         // === АВТОЗАКРЫТИЕ ЗАДАЧИ ПРИ ФОРМИРОВАНИИ ПИСЬМА ===
         {
             const skTask = _getTasks().find(t => t.title === 'Анализ проблем ПК СК' && t.status === 'pending');
@@ -1815,6 +1817,12 @@ async function sk_generateContractorAiSummary(cName, safeId) {
                 skTask.resultComment = 'Письмо отправлено';
                 skTask.updatedAt = new Date().toISOString();
                 if (typeof dbPut === 'function') _storage().put(_storage().stores().TASKS, skTask);
+                if (typeof window.gameLogAction === 'function') {
+                    const logs = window.gameActionLogs || [];
+                    if (!logs.some(l => l.action === 'task_completed_on_time' && l.target === skTask.id)) {
+                        window.gameLogAction('task_completed_on_time', skTask.id);
+                    }
+                }
                 window.RBI.events.emit('tasks:refresh', {});
             }
         }

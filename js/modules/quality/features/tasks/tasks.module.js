@@ -1145,12 +1145,25 @@ async function _markTaskDone(taskId, silent) {
     if (typeof silent === 'undefined') silent = false;
     var task = window.rbi_tasksData.find(function(t){ return t.id === taskId; });
     if (task) {
+        var wasPending = task.status === 'pending' || task.status === 'paused';
         task.status = 'done';
         task.resultComment = 'Выполнено инженером вручную';
         task.updatedAt = new Date().toISOString();
         await _storage().put(_storage().stores().TASKS, task);
         if (!_isDemoMode()) {
             _syncEnqueue('UPDATE_TASK_STATUS', { taskId: task.id, status: 'done' });
+        }
+        // XP за закрытие задачи (если ещё не логировали по этому id)
+        if (wasPending && typeof window.gameLogAction === 'function') {
+            var logs = window.gameActionLogs || [];
+            var already = logs.some(function (l) {
+                return l.action === 'task_completed_on_time' && l.target === task.id;
+            });
+            if (!already) {
+                var due = task.dueDate || task.deadline || task.planDate;
+                var onTime = !due || new Date(task.updatedAt) <= new Date(due);
+                if (onTime) window.gameLogAction('task_completed_on_time', task.id);
+            }
         }
         document.getElementById('task-details-modal').style.display = 'none';
         document.body.classList.remove('modal-open');

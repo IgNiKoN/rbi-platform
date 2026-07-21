@@ -5129,8 +5129,23 @@ prepareZoomableImages();
         if (msg.type === "prefill") {
             applyPrefill(msg.payload);
             postToParent("ready", null);
+        } else if (msg.type === "collect-draft") {
+            postToParent("draft-snapshot", collectBridgeData());
         }
     });
+
+    // Опционально: debounced draft-snapshot при изменениях в форме (для платформенного черновика).
+    var _draftSnapshotTimer = null;
+    function scheduleDraftSnapshot() {
+        if (window.parent === window) return;
+        if (_draftSnapshotTimer) clearTimeout(_draftSnapshotTimer);
+        _draftSnapshotTimer = setTimeout(function () {
+            _draftSnapshotTimer = null;
+            postToParent("draft-snapshot", collectBridgeData());
+        }, 1000);
+    }
+    document.addEventListener("input", scheduleDraftSnapshot, true);
+    document.addEventListener("change", scheduleDraftSnapshot, true);
 
     // Сообщаем родителю, что конструктор загрузился и готов принять префилл.
     postToParent("frame-ready", null);

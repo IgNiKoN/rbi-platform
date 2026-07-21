@@ -313,13 +313,20 @@ function renderRbiPracticeModalMarkup() {
                     <div>
                         <label class="text-[10px] font-bold text-red-500 uppercase mb-1 block">Проблема (ДО)</label>
                         <textarea id="rbi-prac-problem" class="input-base h-16 resize-none text-[11px]"
-                            readonly></textarea>
+                            placeholder="Что было на площадке — своими словами"></textarea>
                     </div>
                     <div>
                         <label class="text-[10px] font-bold text-green-600 uppercase mb-1 block">Решение (ПОСЛЕ)</label>
                         <textarea id="rbi-prac-solution" class="input-base h-16 resize-none text-[11px]"
-                            readonly></textarea>
+                            placeholder="Что сделали и какой результат"></textarea>
                     </div>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Ключевой вывод (для презентации)</label>
+                    <textarea id="rbi-prac-takeaway" class="input-base h-14 resize-none text-[11px]"
+                        placeholder="1–2 предложения: чему учит эта практика на объекте"></textarea>
+                    <div class="text-[9px] text-slate-400 font-medium mt-1">Попадёт на слайд A3. Фото: лучше 1–2 «Было» и 1–2 «Стало».</div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
@@ -412,6 +419,12 @@ function renderManualPracticeModalMarkup() {
                             Решение</label>
                         <textarea id="man-prac-solution" class="input-base h-20 resize-none text-[11px]"
                             placeholder="Опишите, к какому выводу пришли..."></textarea>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Ключевой вывод (для презентации)</label>
+                        <textarea id="man-prac-takeaway" class="input-base h-14 resize-none text-[11px]"
+                            placeholder="Чему учит практика: что закрепить на других участках"></textarea>
+                        <div class="text-[9px] text-slate-400 font-medium mt-1">Для A3-презентации: 1–2 фото «Было/Стало», процесс — до 4 кадров.</div>
                     </div>
                 </div>
 
@@ -1061,31 +1074,102 @@ window.rbi_openKbCreateChoice = function () {
     modal.style.display = 'flex';
 };
 
+function _rbiCollectIntPracticeDraft() {
+    const p = {
+        intId: document.getElementById('rbi-prac-int-id')?.value || '',
+        title: document.getElementById('rbi-prac-title')?.value || '',
+        problem: document.getElementById('rbi-prac-problem')?.value || '',
+        solution: document.getElementById('rbi-prac-solution')?.value || '',
+        takeaway: document.getElementById('rbi-prac-takeaway')?.value || '',
+        photoBefore: document.getElementById('rbi-prac-btn-before')?.dataset?.base64 || '',
+        photoAfter: document.getElementById('rbi-prac-btn-after')?.dataset?.base64 || ''
+    };
+    // Не писать черновик, если остались только автоподставленные problem/solution
+    const base = window._rbiIntPracBaseline || {};
+    const changed = !!(
+        (p.title || '').trim() ||
+        p.photoBefore ||
+        p.photoAfter ||
+        (p.takeaway || '') !== (base.takeaway || '') ||
+        (p.problem || '') !== (base.problem || '') ||
+        (p.solution || '') !== (base.solution || '')
+    );
+    return changed ? p : null;
+}
+
+function _rbiApplyIntPracticeDraft(p) {
+    if (!p) return;
+    if (p.title != null) document.getElementById('rbi-prac-title').value = p.title;
+    if (p.problem != null) document.getElementById('rbi-prac-problem').value = p.problem;
+    if (p.solution != null) document.getElementById('rbi-prac-solution').value = p.solution;
+    const takeawayEl = document.getElementById('rbi-prac-takeaway');
+    if (takeawayEl && p.takeaway != null) takeawayEl.value = p.takeaway;
+    ['before', 'after'].forEach(function (type) {
+        const url = type === 'before' ? p.photoBefore : p.photoAfter;
+        const btn = document.getElementById('rbi-prac-btn-' + type);
+        if (!btn) return;
+        if (url) {
+            btn.dataset.base64 = url;
+            btn.innerHTML = `<img src="${window.getPhotoSrc(url)}" class="w-full h-full object-cover">`;
+        } else {
+            btn.dataset.base64 = '';
+            btn.innerHTML = '➕ Фото';
+        }
+    });
+}
+
 window.rbi_openCreatePracticeModal = function (intId) {
     const intItem = window.rbi_interventionsData.find(i => i.id === intId);
     if (!intItem) return;
+
+    const FD = window.RBIFormDraft;
+    const draftKey = FD ? FD.practiceIntKey(intId) : null;
 
     document.getElementById('rbi-prac-int-id').value = intId;
     document.getElementById('rbi-prac-delta').innerText = `+${intItem.deltaUrk}%`;
     document.getElementById('rbi-prac-title').value = '';
 
-    // Автогенерация черновика
-    document.getElementById('rbi-prac-problem').value = `Системное снижение качества (УрК = ${intItem.baseUrk}%). Подрядчик: ${intItem.contractor}.`;
-    document.getElementById('rbi-prac-solution').value = `Инструмент: ${intItem.typeText}.\nДействия: ${intItem.comment || 'Проведена работа с персоналом.'}`;
+    // Автогенерация черновика (можно править под реальный опыт с объекта)
+    const autoProblem = `Системное снижение качества (УрК = ${intItem.baseUrk}%). Подрядчик: ${intItem.contractor}.`;
+    const autoSolution = `Инструмент: ${intItem.typeText}.\nДействия: ${intItem.comment || 'Проведена работа с персоналом.'}`;
+    document.getElementById('rbi-prac-problem').value = autoProblem;
+    document.getElementById('rbi-prac-solution').value = autoSolution;
+    const takeawayEl = document.getElementById('rbi-prac-takeaway');
+    if (takeawayEl) takeawayEl.value = '';
+    window._rbiIntPracBaseline = { problem: autoProblem, solution: autoSolution, takeaway: '' };
 
     // Сброс фото
     document.getElementById('rbi-prac-photo-before').value = '';
     document.getElementById('rbi-prac-photo-after').value = '';
-    document.getElementById('rbi-prac-btn-before').innerHTML = '➕ Фото (Опционально)';
-    document.getElementById('rbi-prac-btn-after').innerHTML = '➕ Фото (Опционально)';
+    document.getElementById('rbi-prac-btn-before').innerHTML = '➕ Фото';
+    document.getElementById('rbi-prac-btn-after').innerHTML = '➕ Фото';
     document.getElementById('rbi-prac-btn-before').dataset.base64 = '';
     document.getElementById('rbi-prac-btn-after').dataset.base64 = '';
 
-    document.getElementById('rbi-practice-modal').style.display = 'flex';
+    if (FD && draftKey) {
+        const decision = FD.askRestore(draftKey, 'Практика по вмешательству');
+        if (decision === 'continue') {
+            const d = FD.get(draftKey);
+            if (d && d.payload) _rbiApplyIntPracticeDraft(d.payload);
+        }
+    }
+
+    const modal = document.getElementById('rbi-practice-modal');
+    modal.style.display = 'flex';
     document.body.classList.add('modal-open');
+    if (FD && draftKey) {
+        FD.bindAutoSave(modal, draftKey, _rbiCollectIntPracticeDraft);
+    }
 };
 
 window.rbi_closePracticeModal = function () {
+    const intId = document.getElementById('rbi-prac-int-id')?.value;
+    const FD = window.RBIFormDraft;
+    if (FD && intId) {
+        const draftKey = FD.practiceIntKey(intId);
+        FD.saveNow(draftKey, _rbiCollectIntPracticeDraft);
+        FD.unbindAutoSave(draftKey);
+    }
     document.getElementById('rbi-practice-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
 };
@@ -1098,6 +1182,9 @@ window.rbi_handlePracticePhoto = function (event, type) {
         const btn = document.getElementById(`rbi-prac-btn-${type}`);
         btn.dataset.base64 = localUrl;
         btn.innerHTML = `<img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover">`;
+        const FD = window.RBIFormDraft;
+        const intId = document.getElementById('rbi-prac-int-id')?.value;
+        if (FD && intId) FD.saveNow(FD.practiceIntKey(intId), _rbiCollectIntPracticeDraft);
     });
 };
 
@@ -1121,6 +1208,7 @@ window.rbi_savePractice = async function () {
         deltaUrk: intItem.deltaUrk,
         problem: document.getElementById('rbi-prac-problem').value.trim(),
         solution: document.getElementById('rbi-prac-solution').value.trim(),
+        takeaway: (document.getElementById('rbi-prac-takeaway')?.value || '').trim(),
         photoBefore: document.getElementById('rbi-prac-btn-before').dataset.base64 || null,
         photoAfter: document.getElementById('rbi-prac-btn-after').dataset.base64 || null,
         isPublished: false,
@@ -1134,8 +1222,15 @@ window.rbi_savePractice = async function () {
 
     _gameLogAction('practice_created', practice.id);
 
+    const FD = window.RBIFormDraft;
+    if (FD) {
+        FD.clear(FD.practiceIntKey(intId));
+        FD.unbindAutoSave(FD.practiceIntKey(intId));
+    }
+
     showToast("🏆 Практика кристаллизована! Начислено +120 XP.");
-    rbi_closePracticeModal();
+    document.getElementById('rbi-practice-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
     rbi_renderPracticesTab();
 
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -1201,21 +1296,81 @@ window.rbi_deletePractice = async function (id) {
 // --- ЛОГИКА РУЧНЫХ ПРАКТИК (мульти-фото по этапам + PDF-документы) ---
 window._manPracState = { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
 
+function _rbiCollectManualPracticeDraft() {
+    const st = window._manPracState || { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
+    return {
+        title: document.getElementById('man-prac-title')?.value || '',
+        problem: document.getElementById('man-prac-problem')?.value || '',
+        solution: document.getElementById('man-prac-solution')?.value || '',
+        takeaway: document.getElementById('man-prac-takeaway')?.value || '',
+        photosBefore: (st.photosBefore || []).slice(),
+        photosProcess: (st.photosProcess || []).slice(),
+        photosAfter: (st.photosAfter || []).slice(),
+        docs: (st.docs || []).map(function (d) {
+            return { url: d.url, name: d.name, desc: d.desc || '' };
+        })
+    };
+}
+
+function _rbiApplyManualPracticeDraft(p) {
+    if (!p) return;
+    if (p.title != null) document.getElementById('man-prac-title').value = p.title;
+    if (p.problem != null) document.getElementById('man-prac-problem').value = p.problem;
+    if (p.solution != null) document.getElementById('man-prac-solution').value = p.solution;
+    const manTakeaway = document.getElementById('man-prac-takeaway');
+    if (manTakeaway && p.takeaway != null) manTakeaway.value = p.takeaway;
+    window._manPracState = {
+        photosBefore: Array.isArray(p.photosBefore) ? p.photosBefore.slice() : [],
+        photosProcess: Array.isArray(p.photosProcess) ? p.photosProcess.slice() : [],
+        photosAfter: Array.isArray(p.photosAfter) ? p.photosAfter.slice() : [],
+        docs: Array.isArray(p.docs) ? p.docs.map(function (d) {
+            return { url: d.url, name: d.name, desc: d.desc || '' };
+        }) : []
+    };
+    rbi_renderPracPhotosUI('before');
+    rbi_renderPracPhotosUI('process');
+    rbi_renderPracPhotosUI('after');
+    renderPracticeDocsUI();
+}
+
 window.rbi_openManualPracticeModal = function () {
+    const FD = window.RBIFormDraft;
+    const draftKey = FD ? FD.KEYS.PRACTICE_MANUAL : null;
+
     document.getElementById('man-prac-title').value = '';
     document.getElementById('man-prac-problem').value = '';
     document.getElementById('man-prac-solution').value = '';
+    const manTakeaway = document.getElementById('man-prac-takeaway');
+    if (manTakeaway) manTakeaway.value = '';
     window._manPracState = { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
     rbi_renderPracPhotosUI('before');
     rbi_renderPracPhotosUI('process');
     rbi_renderPracPhotosUI('after');
     renderPracticeDocsUI();
 
-    document.getElementById('manual-practice-modal').style.display = 'flex';
+    if (FD && draftKey) {
+        const decision = FD.askRestore(draftKey, 'Практика');
+        if (decision === 'continue') {
+            const d = FD.get(draftKey);
+            if (d && d.payload) _rbiApplyManualPracticeDraft(d.payload);
+        }
+    }
+
+    const modal = document.getElementById('manual-practice-modal');
+    modal.style.display = 'flex';
     document.body.classList.add('modal-open');
+    if (FD && draftKey) {
+        FD.bindAutoSave(modal, draftKey, _rbiCollectManualPracticeDraft);
+    }
 };
 
 window.rbi_closeManualPracticeModal = function () {
+    const FD = window.RBIFormDraft;
+    if (FD) {
+        const draftKey = FD.KEYS.PRACTICE_MANUAL;
+        FD.saveNow(draftKey, _rbiCollectManualPracticeDraft);
+        FD.unbindAutoSave(draftKey);
+    }
     document.getElementById('manual-practice-modal').style.display = 'none';
     document.body.classList.remove('modal-open');
 };
@@ -1236,6 +1391,8 @@ window.rbi_handlePracPhotoMulti = function (event, stage) {
             const localUrl = await PhotoManager.saveLocal(base64, 'prac');
             window._manPracState[stateKey].push(localUrl);
             rbi_renderPracPhotosUI(stage);
+            const FD = window.RBIFormDraft;
+            if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
         });
     });
     event.target.value = '';
@@ -1258,6 +1415,8 @@ window.rbi_removePracPhoto = function (stage, idx) {
     const stateKey = _manPracStageKeyMap[stage] || 'photosBefore';
     window._manPracState[stateKey].splice(idx, 1);
     rbi_renderPracPhotosUI(stage);
+    const FD = window.RBIFormDraft;
+    if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
 };
 
 window.rbi_handlePracDocMulti = function (event) {
@@ -1269,6 +1428,8 @@ window.rbi_handlePracDocMulti = function (event) {
             const localUrl = await PhotoManager.saveLocal(e.target.result, 'prac_doc');
             window._manPracState.docs.push({ url: localUrl, name: file.name, desc: '' });
             renderPracticeDocsUI();
+            const FD = window.RBIFormDraft;
+            if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
         };
         reader.readAsDataURL(file);
     });
@@ -1292,6 +1453,8 @@ window.renderPracticeDocsUI = function () {
 window.rbi_removePracDoc = function (idx) {
     window._manPracState.docs.splice(idx, 1);
     renderPracticeDocsUI();
+    const FD = window.RBIFormDraft;
+    if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
 };
 
 window.rbi_saveManualPractice = async function () {
@@ -1313,6 +1476,7 @@ window.rbi_saveManualPractice = async function () {
         deltaUrk: 0, // Не высчитываем процент для ручных
         problem: document.getElementById('man-prac-problem').value.trim(),
         solution: document.getElementById('man-prac-solution').value.trim(),
+        takeaway: (document.getElementById('man-prac-takeaway')?.value || '').trim(),
         // Мульти-фото по этапам (новый формат). Первое фото каждого этапа дублируется
         // в photoBefore/photoAfter для обратной совместимости со старыми версиями рендера.
         photosBefore: st.photosBefore.slice(),
@@ -1334,8 +1498,15 @@ window.rbi_saveManualPractice = async function () {
 
     _gameLogAction('practice_published', practice.id);
 
+    const FD = window.RBIFormDraft;
+    if (FD) {
+        FD.clear(FD.KEYS.PRACTICE_MANUAL);
+        FD.unbindAutoSave(FD.KEYS.PRACTICE_MANUAL);
+    }
+
     showToast("📚 Практика сохранена и опубликована!");
-    rbi_closeManualPracticeModal();
+    document.getElementById('manual-practice-modal').style.display = 'none';
+    document.body.classList.remove('modal-open');
     rbi_renderPracticesTab();
 
     localStorage.setItem('rbi_cloud_dirty', '1');
@@ -1538,6 +1709,16 @@ window.openUniversalActionSheet = function (id, type, title, isOwner, extraData)
             <span class="text-[12px] font-bold">Привязать к объекту</span>
         </button>`;
     }
+    // Изменить НД (автор или админ — isOwner уже расширен для админа выше)
+    if (type === 'doc' && isOwner && !String(id).startsWith('sys_')) {
+        btnsHtml += `
+        <button onclick="handleUasAction('${id}', '${type}', 'edit')" class="w-full flex items-center gap-3 p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-700 dark:text-slate-300 active:scale-95">
+            <div class="w-8 h-8 bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-lg flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"></path></svg>
+            </div>
+            <span class="text-[12px] font-bold">Изменить</span>
+        </button>`;
+    }
     // Переиндексировать и отправить (Только НД, только администратор)
     if (type === 'doc' && _permSvc && _permSvc.isAdmin()) {
         btnsHtml += `
@@ -1623,6 +1804,10 @@ window.handleUasAction = function (id, type, action) {
         // --- ДЕЙСТВИЯ НД ---
         if (type === 'doc') {
             if (action === 'view') _knowSvc4.openDocViewer(id);
+            if (action === 'edit') {
+                if (typeof window.openEditCustomDoc === 'function') window.openEditCustomDoc(id);
+                else if (typeof openEditCustomDoc === 'function') openEditCustomDoc(id);
+            }
             if (action === 'delete') _knowSvc4.deleteCustomDoc(id);
             if (action === 'reindex') window.rbi_reindexCustomDoc(id);
         }

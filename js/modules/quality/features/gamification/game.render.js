@@ -585,20 +585,15 @@ let gameChartInstance = null;
         </div>
     </div>
 
-    <div id="manager-panel-overlay" class="fixed inset-0 bg-slate-900/90 z-[3500] hidden flex-col transition-opacity duration-300 opacity-0" onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');">
-        <div class="bg-[var(--bg-main)] w-full h-full max-w-4xl mx-auto flex flex-col shadow-2xl overflow-hidden relative" onclick="event.stopPropagation()">
-            
-            <!-- Шапка (iOS Style) -->
-            <div class="bg-[var(--header-bg)] backdrop-blur-md border-b border-[var(--card-border)] p-4 flex justify-between items-center z-20 shrink-0">
-                <div class="flex flex-col min-w-0 pr-4">
-                    <div class="flex items-center gap-2 mb-0.5">
-                        <span class="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800">Admin</span>
-                        <span class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest truncate">Панель Руководителя</span>
-                    </div>
-                </div>
-                <button onclick="document.getElementById('manager-panel-overlay').style.display='none'; document.body.classList.remove('modal-open');" class="w-8 h-8 bg-[var(--hover-bg)] rounded-full flex items-center justify-center text-slate-500 active:scale-90 border border-[var(--card-border)] shrink-0">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+    <!-- Полноэкранная панель (как TWI-конструктор), не модалка -->
+    <div id="manager-panel-overlay" class="hidden bg-[var(--bg-main)] fixed inset-0 z-[2000] h-screen flex-col overflow-hidden">
+            <!-- Шапка -->
+            <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-4 shadow-sm sticky top-0 z-40 flex justify-between items-center shrink-0">
+                <button type="button" onclick="closeManagerPanel()" class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg> Назад
                 </button>
+                <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest truncate px-2">Панель Руководителя</div>
+                <span class="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800 shrink-0">Admin</span>
             </div>
             
             <!-- Навигация (Тумблеры iOS Style - Адаптивные) -->
@@ -791,12 +786,37 @@ let gameChartInstance = null;
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
     </div>
     `;
     document.body.insertAdjacentHTML('beforeend', html);
   };
+
+  function closeManagerPanel() {
+    const view = document.getElementById('manager-panel-overlay');
+    if (view) {
+      view.classList.add('hidden');
+      view.classList.remove('flex');
+      view.style.display = '';
+    }
+    document.body.classList.remove('modal-open');
+    if (window.GameState && typeof window.GameState.setManagerPanelOpen === 'function') {
+      window.GameState.setManagerPanelOpen(false);
+    }
+  }
+
+  function openManagerPanelView() {
+    const view = document.getElementById('manager-panel-overlay');
+    if (!view) return;
+    view.classList.remove('hidden');
+    view.classList.add('flex');
+    view.style.display = '';
+    document.body.classList.add('modal-open');
+    if (window.GameState && typeof window.GameState.setManagerPanelOpen === 'function') {
+      window.GameState.setManagerPanelOpen(true);
+    }
+    const scroller = view.querySelector('.overflow-y-auto');
+    if (scroller && typeof scroller.scrollTo === 'function') scroller.scrollTo(0, 0);
+  }
 
   // Перенесено из js/game.js (строка 1358).
   function gameOpenManagerPanelAuth() {
@@ -2234,7 +2254,8 @@ let gameChartInstance = null;
 export {
   getBadgeTier, getBadgeSvg, injectAbsenceModal, gameShowLevelsModal, gameRenderDashboard,
   profileNameLockStart, profileNameLockCancel, renderRadarChart, renderStatsCharts, gameShowBadgeInfo,
-  gameInjectManagerModals, gameOpenManagerPanelAuth, switchManagerTab, gameRenderManagerAnalytics,
+  gameInjectManagerModals, gameOpenManagerPanelAuth, closeManagerPanel, openManagerPanelView,
+  switchManagerTab, gameRenderManagerAnalytics,
   gameOpenTaskDetails, gameOpenTopModal, gameOpenImpactModal, rbi_openQualityDaySettings,
   rbi_renderFmeaHistory, rbi_renderFmeaRegistry, rbi_viewFmea, rbi_closeFmeaViewModal,
   rbi_openFmeaBindModal, rbi_closeFmeaBindModal, rbi_saveFmeaBind,

@@ -777,6 +777,13 @@ export const AnalyticsRender = {
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                             d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                                     </svg></button>
+                                <button data-history-action="printSelectedInspectionActs"
+                                    class="text-indigo-600 bg-indigo-50 p-1.5 rounded-md active:scale-90"
+                                    title="Печать актов осмотра (PDF)"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                                        viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
+                                    </svg></button>
                                 <button data-history-action="deleteSelectedHistory"
                                     class="text-red-600 bg-red-50 p-1.5 rounded-md active:scale-90"
                                     title="Удалить выбранные"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor"
@@ -2580,14 +2587,9 @@ export const AnalyticsRender = {
         container.innerHTML = `
         ${skHtmlBlock}
             <!-- КНОПКА ПЕЧАТИ С ЗАЩИТОЙ -->
-            ${m.count < 7
-                ? `<button onclick="showToast('Слишком мало данных для отчета. Проведите минимум 7 проверок.')" class="w-full mb-4 bg-slate-300 text-slate-500 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-none cursor-not-allowed flex justify-center items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Отчет недоступен (Мало данных)
-                   </button>`
-                : `<button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отправить Отчет Подрядчику
-                   </button>`
-            }
+            <button onclick="exportPersonalContractorReport('${safeContractorNameForHtml}')" class="w-full mb-4 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-[0_4px_14px_rgba(79,70,229,0.3)] active:scale-95 transition-transform flex justify-center items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"></path></svg> Отчёт для планерки (A3)
+            </button>
 
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm mb-4">
                 <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">

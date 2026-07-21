@@ -580,7 +580,10 @@ export const HistoryRender = {
                        🖨️ РАСПЕЧАТАТЬ (PDF)
                    </button>
                </div>`
-                : `<button onclick="closeModal(); setTimeout(() => window.RBI.services.ai.generatePrescriptionAi('${item.id}'), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                : `<button onclick="closeModal(); setTimeout(() => window.printInspectionAct('${item.id}', 'browser'), 300)" class="w-full mb-2 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
+                   🖨️ Печать акта осмотра (PDF)
+               </button>
+               <button onclick="closeModal(); setTimeout(() => window.RBI.services.ai.generatePrescriptionAi('${item.id}'), 300)" class="w-full mb-4 bg-slate-800 text-white dark:bg-white dark:text-slate-800 py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest active:scale-95 shadow-md flex items-center justify-center gap-2">
                    📄 Создать предписание (ИИ)
                </button>`
             }

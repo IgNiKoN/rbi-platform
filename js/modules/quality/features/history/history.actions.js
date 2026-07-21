@@ -188,6 +188,18 @@ export const HistoryActions = {
     },
 
     /**
+     * Печать PDF «Акт осмотра» по выбранным проверкам.
+     */
+    printSelectedInspectionActs() {
+        var ids = HistoryActions.getSelectedHistoryIds();
+        if (ids.length === 0) return showToast('Выберите проверки для печати акта');
+        if (typeof window.printInspectionActs === 'function') {
+            return window.printInspectionActs(ids, 'browser');
+        }
+        return showToast('⚠️ Модуль печати недоступен');
+    },
+
+    /**
      * Soft delete выбранных проверок.
      * Перенесено из history.legacy.js (бывший app.js, строка 2488).
      * Вызывается из inline handler: onclick="deleteSelectedHistory()"
@@ -287,6 +299,7 @@ if (typeof window !== 'undefined') {
     window.getSelectedHistoryIds = HistoryActions.getSelectedHistoryIds;
     window.toggleAllHistory = HistoryActions.toggleAllHistory;
     window.exportSelectedCsv = HistoryActions.exportSelectedCsv;
+    window.printSelectedInspectionActs = HistoryActions.printSelectedInspectionActs;
     window.deleteSelectedHistory = HistoryActions.deleteSelectedHistory;
     window.loadHistoryData = HistoryActions.loadHistoryData;
 }

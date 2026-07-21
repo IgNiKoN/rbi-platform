@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.130';
+const SW_VERSION = '18.57.170';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -11,6 +11,11 @@ const urlsToCache = [
   './index.html',
   './report.html',
   './css/style.css',
+  // PWA / сплэш / push (иначе офлайн без иконок и «Добавить на экран»)
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-512-2.png',
+  './icons/icon-maskable-512.png',
   './data/system_docs.js',
   './data/system_nodes.js',
   './data/system_twi.js',
@@ -51,6 +56,7 @@ const urlsToCache = [
   './js/services/storage/storage-file-queue.actions.js',
   './js/shared/math.utils.js',
   './js/shared/toast.utils.js',
+  './js/shared/form-draft.utils.js',
   './js/shared/smart-input.utils.js',
   './js/shared/photo-editor.utils.js',
   './js/shared/photo-viewer-zoom.utils.js',

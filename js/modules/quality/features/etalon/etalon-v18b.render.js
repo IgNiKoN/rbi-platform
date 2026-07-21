@@ -41,6 +41,8 @@
         if (window.EtalonV18BActions) window.EtalonV18BActions.onFrameReady();
       } else if (msg.type === 'act-save-request') {
         if (window.EtalonV18BActions) window.EtalonV18BActions.onSaveRequest(msg.payload.data, msg.payload.closeAfter);
+      } else if (msg.type === 'draft-snapshot') {
+        if (window.EtalonV18BActions) window.EtalonV18BActions.onDraftSnapshot(msg.payload);
       }
       // 'act-saved' (браузерный localStorage внутри iframe) — информационный,
       // платформа не обязана на него реагировать: реальное сохранение в RBI

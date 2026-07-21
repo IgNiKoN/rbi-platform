@@ -804,6 +804,14 @@ function sk_renderDashboard() {
             });
         }
     }, 100);
+
+    // Периодическая сверка ИСД для XP (не чаще раза в минуту)
+    var nowTs = Date.now();
+    if (typeof window.sk_evaluateIsdXpRewards === 'function' &&
+        (!window._skIsdXpEvalAt || (nowTs - window._skIsdXpEvalAt) > 60000)) {
+        window._skIsdXpEvalAt = nowTs;
+        window.sk_evaluateIsdXpRewards().catch(function () { /* silent */ });
+    }
 }
 
 function sk_renderHrTab() {
