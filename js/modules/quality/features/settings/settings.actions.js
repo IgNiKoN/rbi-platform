@@ -242,6 +242,35 @@
             if (typeof window.showToast === 'function') window.showToast('❌ Не удалось проверить кэш');
             return;
         }
+
+        var usagePct = Number(result.usagePercent || 0).toFixed(1);
+        var freeMb = Number(result.freeMB || 0).toFixed(1);
+        var usedMb = Number(result.usedMB || 0).toFixed(1);
+        var autoMb = Number(result.totalMB || 0).toFixed(1);
+        var manualMb = Number(result.manualRecoverableMB || 0).toFixed(1);
+
+        var msg =
+            'Предпросмотр очистки файлового кэша:\n\n' +
+            'Занято (как в браузере): ' + usedMb + ' МБ (' + usagePct + '%)\n' +
+            'Свободно по квоте: ' + freeMb + ' МБ\n' +
+            'Режим автоочистки: ' + (result.mode || '—') + '\n\n' +
+            'Автоочистка сейчас сняла бы:\n' +
+            (result.candidatesCount || 0) + ' файлов / ' + autoMb + ' МБ\n' +
+            '• фото проверок: ' + (result.inspectionPhotos || 0) + '\n' +
+            '• PDF-отчёты: ' + (result.reports || 0) + '\n' +
+            '• документы / БЗ: ' + (result.docs || 0) + '\n' +
+            '• TWI: ' + (result.twi || 0) + '\n' +
+            '• узлы: ' + (result.nodes || 0) + '\n' +
+            '• практики: ' + (result.practices || 0) + '\n' +
+            '• эталоны: ' + (result.etalons || 0) + '\n' +
+            '• прочее: ' + (result.other || 0) + '\n\n' +
+            'Кнопка «Очистить кэш» снимет все облачные копии:\n' +
+            (result.manualRecoverableFiles || 0) + ' файлов / ' + manualMb + ' МБ\n' +
+            'Несинхронизированные локальные не трогаем: ' +
+            (result.localOnlyFiles || 0) + ' / ' + Number(result.localOnlyMB || 0).toFixed(1) + ' МБ\n\n' +
+            'Файлы сейчас НЕ удалены — только проверка.';
+
+        alert(msg);
     }
 
     // === ОКНО "О ПРИЛОЖЕНИИ" (перенесено 1:1 из settings.legacy.js) ===

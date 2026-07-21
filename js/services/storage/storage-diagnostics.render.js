@@ -2,6 +2,27 @@
 /**
  * ОТОБРАЖЕНИЕ СТАТИСТИКИ ХРАНИЛИЩА (Для вкладки Настройки)
  */
+
+/** Размер payload файла: ArrayBuffer / Blob / base64-строка / meta.size. */
+function _rbiPayloadBytes(data, meta) {
+    if (meta) {
+        const metaSize = Number(meta.sizeBytes || meta.size_bytes || 0);
+        if (metaSize > 0) return metaSize;
+    }
+    if (!data) return 0;
+    if (typeof data.byteLength === 'number') return data.byteLength;
+    if (typeof data.size === 'number') return data.size; // Blob / File
+    if (typeof data === 'string') {
+        // dataURL / base64 — грубая оценка полезной нагрузки
+        if (data.startsWith('data:')) {
+            const b64 = data.split(',')[1] || '';
+            return Math.floor(b64.length * 0.75);
+        }
+        return data.length;
+    }
+    return 0;
+}
+
 /**
  * ОТОБРАЖЕНИЕ СТАТИСТИКИ ХРАНИЛИЩА (Для вкладки Настройки)
  */
@@ -15,41 +36,22 @@ async function updateStorageInfo() {
 
     try {
         const estimate = await navigator.storage.estimate();
+        // Как в DevTools / console: весь origin (IndexedDB + Cache API + SW + …)
+        const usageBytes = estimate.usage || 0;
+        const quotaBytes = estimate.quota || 0;
+        const actualUsedMB = usageBytes / 1024 / 1024;
+        const quotaMB = quotaBytes / 1024 / 1024;
+        const freeMBNum = Math.max(0, quotaMB - actualUsedMB);
+        const percentUsed = quotaBytes > 0 ? ((usageBytes / quotaBytes) * 100) : 0;
 
-        // Считаем РЕАЛЬНЫЙ физический вес фотографий в базе данных (в байтах)
-        let realBytes = 0;
-        try {
-            const photos = await dbGetAll(STORES.PHOTOS);
-            if (photos) {
-                photos.forEach(p => {
-                    if (p.data && p.data.byteLength) realBytes += p.data.byteLength;
-                });
-            }
-        } catch (e) { }
-
-        // Базовая квота диска, выделенная браузером
-        const quotaMB = estimate.quota / 1024 / 1024;
-
-        // Оценка браузера (Включает кэш приложения, шрифты, системный мусор SQLite)
-        const browserUsedMB = estimate.usage / 1024 / 1024;
-
-        // Используем реальный вес фоток (так как они занимают 99% базы)
-        let actualUsedMB = realBytes / 1024 / 1024;
-        // Если фотки весят меньше мегабайта (пусто), берем вес каркаса приложения из кэша
-        if (actualUsedMB < 1) actualUsedMB = browserUsedMB;
-
-        const usedStr = actualUsedMB.toFixed(1);
-        const freeMB = (quotaMB - actualUsedMB).toFixed(1);
-        const percentUsed = ((actualUsedMB / quotaMB) * 100).toFixed(1);
-
-        sUsed.innerText = usedStr;
-        sFree.innerText = freeMB;
-        sPercent.innerText = `${percentUsed}%`;
-        sBar.style.width = `${percentUsed}%`;
+        sUsed.innerText = actualUsedMB.toFixed(1);
+        sFree.innerText = freeMBNum.toFixed(1);
+        sPercent.innerText = `${percentUsed.toFixed(1)}%`;
+        sBar.style.width = `${Math.min(100, percentUsed).toFixed(1)}%`;
 
         // Меняем цвет полоски, если места мало
-        if (parseFloat(percentUsed) > 80) sBar.className = 'h-full bg-red-500 transition-all';
-        else if (parseFloat(percentUsed) > 50) sBar.className = 'h-full bg-yellow-500 transition-all';
+        if (percentUsed > 80) sBar.className = 'h-full bg-red-500 transition-all';
+        else if (percentUsed > 50) sBar.className = 'h-full bg-yellow-500 transition-all';
         else sBar.className = 'h-full bg-indigo-500 transition-all';
         // --- ПАНЕЛЬ ДИАГНОСТИКИ ---
         let diagBlock = document.getElementById('rbi-diagnostics-block');
@@ -75,10 +77,26 @@ async function updateStorageInfo() {
             const dbVersion = window.RBI_DB_VERSION || '—';
             const buildDate = versionInfo.buildDate || '—';
 
+            const details = estimate.usageDetails || {};
+            const detailLine = (label, key) => {
+                if (details[key] == null) return '';
+                return `${label}: ${(details[key] / 1024 / 1024).toFixed(1)} МБ<br>`;
+            };
+            const usageBreakdownHtml = `
+            <br><b>Занято по данным браузера (как в консоли):</b><br>
+            Всего origin: ${actualUsedMB.toFixed(1)} МБ / квота ${quotaMB.toFixed(1)} МБ<br>
+            ${detailLine('IndexedDB', 'indexedDB')}
+            ${detailLine('Cache API (SW)', 'caches')}
+            ${detailLine('Service Worker', 'serviceWorkerRegistrations')}
+        `;
+
             let cacheStatsHtml = '';
 
             try {
                 const localFiles = await dbGetAll(STORES.PHOTOS) || [];
+                const reports = (STORES.REPORTS && typeof dbGetAll === 'function')
+                    ? (await dbGetAll(STORES.REPORTS) || [])
+                    : [];
 
                 let totalFiles = 0;
                 let totalBytes = 0;
@@ -88,6 +106,8 @@ async function updateStorageInfo() {
                 let recoverableBytes = 0;
                 let localOnlyFiles = 0;
                 let localOnlyBytes = 0;
+                let reportPdfBytes = 0;
+                let reportPdfCount = 0;
 
                 for (const f of localFiles) {
                     if (!f || !f.id || !f.data) continue;
@@ -95,11 +115,7 @@ async function updateStorageInfo() {
                     totalFiles++;
 
                     const id = String(f.id || '');
-                    const sizeBytes =
-                        f.sizeBytes ||
-                        f.size_bytes ||
-                        f.data.byteLength ||
-                        0;
+                    const sizeBytes = _rbiPayloadBytes(f.data, f);
 
                     const mime =
                         f.mimeType ||
@@ -135,12 +151,23 @@ async function updateStorageInfo() {
                     }
                 }
 
+                for (const rep of reports) {
+                    if (!rep || !rep.file_blob) continue;
+                    const reportSize = _rbiPayloadBytes(rep.file_blob, rep);
+                    reportPdfCount++;
+                    reportPdfBytes += reportSize;
+                    totalFiles++;
+                    totalBytes += reportSize;
+                    pdfFiles++;
+                }
+
                 cacheStatsHtml = `
-            <br><b>Файловый кэш:</b><br>
+            <br><b>Файловый кэш (полезная нагрузка в IDB):</b><br>
             Всего локальных файлов: ${totalFiles} шт. / ${(totalBytes / 1024 / 1024).toFixed(1)} МБ<br>
-            Фото: ${imageFiles} шт.; PDF: ${pdfFiles} шт.<br>
+            Фото: ${imageFiles} шт.; PDF в photos: ${pdfFiles - reportPdfCount} шт.; PDF-отчёты: ${reportPdfCount} шт. / ${(reportPdfBytes / 1024 / 1024).toFixed(1)} МБ<br>
             Можно безопасно очистить: ${recoverableFiles} шт. / ${(recoverableBytes / 1024 / 1024).toFixed(1)} МБ<br>
             Только локальные, не удаляются: ${localOnlyFiles} шт. / ${(localOnlyBytes / 1024 / 1024).toFixed(1)} МБ<br>
+            <span style="opacity:0.85">Разница «браузер − файлы» ≈ оверхед IDB, записи проверок и кэш SW.</span><br>
         `;
             } catch (e) {
                 cacheStatsHtml = '<br><b>Файловый кэш:</b><br>Статистика временно недоступна<br>';
@@ -160,6 +187,7 @@ async function updateStorageInfo() {
         База проверок: ${histCount} шт.<br>
         Ожидают отправки: ${notSyncedCount} шт.<br>
         Последний контакт с облаком:<br>${syncText}
+        ${usageBreakdownHtml}
         ${cacheStatsHtml}
     `;
         }

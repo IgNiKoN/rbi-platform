@@ -8,6 +8,25 @@
 window.RbiStorageManager = {
     cleanupLock: false,
 
+    /** Размер payload: ArrayBuffer / Blob / meta. */
+    payloadBytes(data, meta) {
+        if (meta) {
+            const metaSize = Number(meta.sizeBytes || meta.size_bytes || meta.file_size || 0);
+            if (metaSize > 0) return metaSize;
+        }
+        if (!data) return 0;
+        if (typeof data.byteLength === 'number') return data.byteLength;
+        if (typeof data.size === 'number') return data.size;
+        if (typeof data === 'string') {
+            if (data.startsWith('data:')) {
+                const b64 = data.split(',')[1] || '';
+                return Math.floor(b64.length * 0.75);
+            }
+            return data.length;
+        }
+        return 0;
+    },
+
     async logEvent(type, payload = {}) {
         try {
             if (!STORES.STORAGE_EVENTS || typeof dbPut !== 'function') return;
@@ -43,16 +62,22 @@ window.RbiStorageManager = {
 
         const estimate = await navigator.storage.estimate();
 
+        // estimate.usage — полный объём origin (как в DevTools). realBytes — только
+        // полезная нагрузка файлов; нужен как нижняя граница, если estimate занижен.
         let realBytes = 0;
         try {
             const files = await dbGetAll(STORES.PHOTOS);
             if (files) {
                 files.forEach(f => {
-                    if (f && f.data && f.data.byteLength) {
-                        realBytes += f.data.byteLength;
-                    }
+                    if (!f || !f.data) return;
+                    realBytes += this.payloadBytes(f.data, f);
                 });
             }
+            const reports = STORES.REPORTS ? (await dbGetAll(STORES.REPORTS) || []) : [];
+            reports.forEach(rep => {
+                if (!rep || !rep.file_blob) return;
+                realBytes += this.payloadBytes(rep.file_blob, rep);
+            });
         } catch (e) { }
 
         const usageBytes = Math.max(realBytes, estimate.usage || 0);
@@ -67,8 +92,12 @@ window.RbiStorageManager = {
         let mode = 'keep_all';
 
         const settings = typeof appSettings !== 'undefined' ? appSettings : {};
+        const keepAllFree = settings.storageKeepAllIfFreeMB || 2048;
 
-        if (
+        // Достаточно свободно — не трогаем кэш (настройка keep-all)
+        if (freeMB >= keepAllFree && usagePercent < (settings.storageSoftThresholdPercent || 60)) {
+            mode = 'keep_all';
+        } else if (
             usagePercent >= (settings.storageCriticalThresholdPercent || 90) ||
             freeMB <= (settings.storageCriticalCleanupFreeMB || 250)
         ) {
@@ -137,11 +166,7 @@ window.RbiStorageManager = {
 
                 const id = String(file.id || '');
 
-                const sizeBytes =
-                    file.sizeBytes ||
-                    file.size_bytes ||
-                    file.data.byteLength ||
-                    0;
+                const sizeBytes = this.payloadBytes(file.data, file);
 
                 totalBytes += sizeBytes;
 
@@ -194,16 +219,7 @@ window.RbiStorageManager = {
             for (const rep of reports) {
                 if (!rep || !rep.file_blob) continue;
 
-                let reportSize = 0;
-
-                try {
-                    reportSize =
-                        rep.file_blob.size ||
-                        rep.file_size ||
-                        rep.sizeBytes ||
-                        rep.size_bytes ||
-                        0;
-                } catch (e) { }
+                const reportSize = this.payloadBytes(rep.file_blob, rep);
 
                 totalFiles++;
                 totalBytes += reportSize;
@@ -786,11 +802,10 @@ window.RbiStorageManager = {
             if (!file || !file.id || !file.data) continue;
 
             const isHttp = String(file.id).startsWith('http');
-            const isLocalOnly = String(file.id).startsWith('local://') && !file.sourceUrl && !file.public_url;
-
-            if (isLocalOnly) continue;
-
-            const reg = registryByUrl.get(file.id) || null;
+            const reg = registryByUrl.get(file.id)
+                || registryByUrl.get(file.sourceUrl || file.source_url || '')
+                || registryByUrl.get(file.public_url || file.publicUrl || '')
+                || null;
 
             const publicUrl =
                 file.sourceUrl ||
@@ -801,7 +816,10 @@ window.RbiStorageManager = {
                 reg?.publicUrl ||
                 (isHttp ? file.id : '');
 
-            if (!publicUrl || !String(publicUrl).startsWith('http')) continue;
+            const hasCloud = publicUrl && String(publicUrl).startsWith('http');
+            const isLocalOnly = String(file.id).startsWith('local://') && !hasCloud;
+
+            if (isLocalOnly || !hasCloud) continue;
 
             const entityType =
                 file.entityType ||
@@ -816,13 +834,14 @@ window.RbiStorageManager = {
                 reg?.last_accessed_at ||
                 reg?.lastAccessedAt ||
                 file.cachedAt ||
+                file.cached_at ||
                 file.createdAt ||
                 file.created_at ||
                 '';
 
             const lastAccessTime = lastAccessRaw ? new Date(lastAccessRaw).getTime() : 0;
             const ageDays = lastAccessTime ? (now - lastAccessTime) / 86400000 : 9999;
-            const sizeBytes = file.sizeBytes || file.size_bytes || file.data.byteLength || 0;
+            const sizeBytes = this.payloadBytes(file.data, file);
 
             let ttl = 60;
 
@@ -863,7 +882,10 @@ window.RbiStorageManager = {
                 continue;
             }
 
-            if (mode === 'soft_lifecycle' && !oldEnough) continue;
+            // soft + normal — уважаем TTL из настроек; critical / quota — можно раньше
+            if ((mode === 'soft_lifecycle' || mode === 'normal_cleanup') && !oldEnough) {
+                continue;
+            }
 
             result.push({
                 id: file.id,
@@ -935,37 +957,52 @@ window.RbiStorageManager = {
                 }
             });
 
-            // RBI NEW: отдельно учитываем PDF-отчеты из app_reports.file_blob
+            // PDF-отчёты из app_reports — с тем же TTL, что и автоочистка
+            let reportCandidates = 0;
             try {
                 const reportRows = await dbGetAll(STORES.REPORTS) || [];
+                const settings = typeof appSettings !== 'undefined' ? appSettings : {};
+                const ttlDays = settings.storageReportTtlDays || 30;
+                const now = Date.now();
 
                 reportRows.forEach(rep => {
                     if (!rep || !rep.file_blob || !rep.file_url || !String(rep.file_url).startsWith('http')) return;
 
-                    let reportSize = 0;
+                    const lastAccessRaw =
+                        rep.lastAccessedAt ||
+                        rep.last_accessed_at ||
+                        rep.cachedAt ||
+                        rep.cached_at ||
+                        rep.updatedAt ||
+                        rep.updated_at ||
+                        rep.createdAt ||
+                        rep.created_at ||
+                        '';
+                    const lastAccessTime = lastAccessRaw ? new Date(lastAccessRaw).getTime() : 0;
+                    const ageDays = lastAccessTime ? (now - lastAccessTime) / 86400000 : 9999;
 
-                    try {
-                        reportSize =
-                            rep.file_blob.size ||
-                            rep.file_size ||
-                            rep.sizeBytes ||
-                            rep.size_bytes ||
-                            0;
-                    } catch (e) { }
+                    if (ageDays < 1 && mode !== 'critical_cleanup') return;
+                    if ((mode === 'soft_lifecycle' || mode === 'normal_cleanup') && ageDays < ttlDays) return;
 
+                    const reportSize = this.payloadBytes(rep.file_blob, rep);
                     totalBytes += reportSize;
                     reports++;
+                    reportCandidates++;
                 });
             } catch (e) {
                 console.warn('[StorageManager] Не удалось учесть PDF-отчеты в предпросмотре:', e);
             }
 
+            // Что снимет кнопка «Очистить кэш» (все облачные копии, без TTL)
+            const recoverable = await this.getRecoverableCacheStats();
+
             return {
                 reason,
                 mode,
                 usagePercent: snapshot.usagePercent || 0,
+                usedMB: snapshot.usedMB || 0,
                 freeMB: snapshot.freeMB || 0,
-                candidatesCount: candidates.length,
+                candidatesCount: candidates.length + reportCandidates,
                 totalBytes,
                 totalMB: totalBytes / 1024 / 1024,
                 inspectionPhotos,
@@ -975,7 +1012,11 @@ window.RbiStorageManager = {
                 nodes,
                 practices,
                 etalons,
-                other
+                other,
+                manualRecoverableFiles: recoverable?.recoverableFiles || 0,
+                manualRecoverableMB: recoverable?.recoverableMB || 0,
+                localOnlyFiles: recoverable?.localOnlyFiles || 0,
+                localOnlyMB: recoverable?.localOnlyMB || 0
             };
 
         } catch (e) {
@@ -989,7 +1030,7 @@ window.RbiStorageManager = {
         if (!candidate || !candidate.id) return 0;
 
         const rec = await dbGet(STORES.PHOTOS, candidate.id);
-        const freed = rec?.data?.byteLength || candidate.sizeBytes || 0;
+        const freed = this.payloadBytes(rec?.data, rec) || candidate.sizeBytes || 0;
 
         await dbDelete(STORES.PHOTOS, candidate.id);
 
@@ -1090,11 +1131,7 @@ window.RbiStorageManager = {
                 // Удаляем только восстановимые локальные копии.
                 if (!cloudUrl) continue;
 
-                const sizeBytes =
-                    file.sizeBytes ||
-                    file.size_bytes ||
-                    file.data.byteLength ||
-                    0;
+                const sizeBytes = this.payloadBytes(file.data, file);
 
                 await dbDelete(STORES.PHOTOS, file.id);
 
@@ -1278,16 +1315,7 @@ window.RbiStorageManager = {
                     continue;
                 }
 
-                let reportSize = 0;
-
-                try {
-                    reportSize =
-                        rep.file_blob.size ||
-                        rep.file_size ||
-                        rep.sizeBytes ||
-                        rep.size_bytes ||
-                        0;
-                } catch (e) { }
+                const reportSize = this.payloadBytes(rep.file_blob, rep);
 
                 rep.file_blob = null;
                 rep.cache_status = 'cloud_only';
@@ -1418,12 +1446,16 @@ window.RbiStorageManager = {
                 }
             }
 
-            if (typeof appSettings !== 'undefined') {
-                appSettings.storageLastCleanupAt = new Date().toISOString();
+            // Не ставим «последнюю очистку», если ничего не удалили — иначе 6ч пауза
+            // блокирует следующую попытку при нехватке места.
+            if (deletedCount > 0 || reason === 'quota_exceeded') {
+                if (typeof appSettings !== 'undefined') {
+                    appSettings.storageLastCleanupAt = new Date().toISOString();
 
-                try {
-                    await dbPut(STORES.SETTINGS, { key: 'app_settings', data: appSettings });
-                } catch (e) { }
+                    try {
+                        await dbPut(STORES.SETTINGS, { key: 'app_settings', data: appSettings });
+                    } catch (e) { }
+                }
             }
 
             await this.logEvent('cleanup_completed', {
@@ -1440,7 +1472,8 @@ window.RbiStorageManager = {
             if (typeof updateStorageInfo === 'function') updateStorageInfo();
 
             return {
-                skipped: false,
+                skipped: deletedCount === 0,
+                reason: deletedCount === 0 ? 'no_candidates' : undefined,
                 deletedCount,
                 freedBytes,
                 snapshot
