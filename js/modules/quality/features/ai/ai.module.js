@@ -9,7 +9,7 @@ import {
   generateTwiDraftAi, generatePrescriptionAi, generateTaskRiskAi, generateAiRoutePlan,
   generateAiTutorAdvice, generateAiHintForDefect, extractTextFromPdf, rbi_normalizeFeedbackAi,
   openAiDocChat, closeAiDocChat, askAiDocQuestion, rbi_generateMeetingMemo,
-  rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi, rbi_fillFmeaWithAi, rbi_generateWorkshop,
+  rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi, rbi_fillFmeaWithAi, generateDefectRemediationTexts, rbi_generateWorkshop,
   rbi_generateIntroBriefing, rbi_generateFinalAcceptance, sk_aiMapColumns, sk_autoMapCategories,
   sk_generateContractorAiSummary, sk_predictRisksAi, rbi_generateGlobalAi, runSelfLearningAi,
   sk_auditTemplatesAi, gameAddContractorAliasInline, gameGenerateContractorSynonymsAI
@@ -42,6 +42,7 @@ window.rbi_generateMeetingMemo = rbi_generateMeetingMemo;
 window.rbi_generatePracticeTitleAi = rbi_generatePracticeTitleAi;
 window.rbi_beautifyPracticeAi = rbi_beautifyPracticeAi;
 window.rbi_fillFmeaWithAi = rbi_fillFmeaWithAi;
+window.generateDefectRemediationTexts = generateDefectRemediationTexts;
 window.rbi_generateWorkshop = rbi_generateWorkshop;
 window.rbi_generateIntroBriefing = rbi_generateIntroBriefing;
 window.rbi_generateFinalAcceptance = rbi_generateFinalAcceptance;

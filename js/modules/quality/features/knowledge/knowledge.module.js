@@ -703,37 +703,7 @@ function closeTwiConstructor() {
     window.renderTwiList();
 }
 
-function compressImageToBase64(file, oldMaxWidth, oldQuality, callback) {
-    const maxWidth = 1200;
-    const quality = 0.6;
-
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        const img = new Image();
-        img.onload = function () {
-            const canvas = document.createElement('canvas');
-            let width = img.width; let height = img.height;
-
-            if (width > height && width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
-            else if (height > maxWidth) { width *= maxWidth / height; height = maxWidth; }
-
-            canvas.width = width; canvas.height = height;
-            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-
-            let mimeType = 'image/webp';
-            let dataUrl = canvas.toDataURL(mimeType, quality);
-
-            if (dataUrl.startsWith('data:image/png')) {
-                mimeType = 'image/jpeg';
-                dataUrl = canvas.toDataURL(mimeType, quality);
-            }
-
-            callback(dataUrl);
-        }
-        img.src = e.target.result;
-    }
-    reader.readAsDataURL(file);
-}
+// compressImageToBase64 — общий хелпер в js/shared/photo-editor.utils.js (window.*)
 
 function renderGoodPhoto(localUrl) {
     const cont = document.getElementById('twi-photo-good-container');
@@ -1827,7 +1797,7 @@ window.handleNodeFileUpload = function (event) {
         };
         reader.readAsDataURL(file);
     } else {
-        compressImageToBase64(file, 1000, 0.8, async (base64) => {
+        window.compressImageToBase64(file, 1000, 0.8, async (base64) => {
             const localUrl = await PhotoManager.saveLocal(base64, 'node_img');
             window.currentNodeAttachments.push({ type: 'image', url: localUrl, name: file.name || 'Фото' });
             window.renderNodeAttachmentsUI();
@@ -2626,8 +2596,8 @@ window.renderDocsList = function () {
             </label>
             <div class="flex items-center gap-2">
                 <div id="docs-view-mode-toggle" class="shrink-0"></div>
-                <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
+                <button type="button" onclick="downloadMissingCloudFiles()" class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-500 active:scale-95 shadow-sm" title="Скачать всё для офлайна" aria-label="Скачать всё для офлайна">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 </button>
             </div>
         </div>
@@ -3088,8 +3058,8 @@ window.renderNodesList = function () {
                 </label>
                 <div class="flex items-center gap-2">
                     <div id="nodes-view-mode-toggle" class="shrink-0"></div>
-                    <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
+                    <button type="button" onclick="downloadMissingCloudFiles()" class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-500 active:scale-95 shadow-sm" title="Скачать всё для офлайна" aria-label="Скачать всё для офлайна">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                     </button>
                 </div>
             </div>

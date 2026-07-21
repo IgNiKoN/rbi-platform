@@ -29,6 +29,50 @@ window.rbiEscapeAttr = function (value) {
         .replace(/>/g, '&gt;');
 };
 
+/**
+ * Сжатие файла изображения → dataURL (webp/jpeg).
+ * Общий хелпер для ES-модулей (практики, TWI, задачи, FMEA, совещания):
+ * в module-scope bare `compressImageToBase64` не резолвится в window.
+ */
+window.compressImageToBase64 = function compressImageToBase64(file, oldMaxWidth, oldQuality, callback) {
+    const maxWidth = 1200;
+    const quality = 0.6;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const img = new Image();
+        img.onload = function () {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height && width > maxWidth) {
+                height *= maxWidth / width;
+                width = maxWidth;
+            } else if (height > maxWidth) {
+                width *= maxWidth / height;
+                height = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+            let mimeType = 'image/webp';
+            let dataUrl = canvas.toDataURL(mimeType, quality);
+
+            if (dataUrl.startsWith('data:image/png')) {
+                mimeType = 'image/jpeg';
+                dataUrl = canvas.toDataURL(mimeType, quality);
+            }
+
+            callback(dataUrl);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
 // =========================================================================
 // РАЗМЕТКА «photo-editor-overlay» + «photo-source-modal» (перенос из
 // index.html:650-680/975-996, перенос 30 modal/overlay-блоков #app-modals в

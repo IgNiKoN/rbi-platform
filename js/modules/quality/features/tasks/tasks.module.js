@@ -1320,7 +1320,7 @@ function _handleTaskCompletionPhoto(event) {
     var file = event.target.files[0];
     if (!file) return;
     showToast("⚙️ Прикрепляю фото факта проведения...");
-    compressImageToBase64(file, 1000, 0.8, async function(base64) {
+    window.compressImageToBase64(file, 1000, 0.8, async function(base64) {
         var localUrl = await PhotoManager.saveLocal(base64, 'task');
         var taskId = window.currentTaskPhotoId;
         var task = window.rbi_tasksData.find(function(t){ return t.id === taskId; });

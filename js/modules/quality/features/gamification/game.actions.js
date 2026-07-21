@@ -1311,7 +1311,7 @@ function emit(eventName, detail) {
     if (!file || window.currentFmeaRowIdx === undefined) return;
 
     showToast("⚙️ Загрузка фото FMEA...");
-    compressImageToBase64(file, 1000, 0.8, async (base64) => {
+    window.compressImageToBase64(file, 1000, 0.8, async (base64) => {
       // Сохраняем в кэш IndexedDB
       const localUrl = await PhotoManager.saveLocal(base64, 'fmea');
 

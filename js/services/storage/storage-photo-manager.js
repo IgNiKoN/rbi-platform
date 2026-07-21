@@ -55,6 +55,9 @@ const PhotoManager = {
 
     getSrc(url) {
         if (!url) return '';
+        // photos[itemId] может быть массивом — берём первый ref.
+        if (Array.isArray(url)) url = url[0];
+        if (!url) return '';
 
         if (this.cache[url]) return this.cache[url];
 
@@ -68,6 +71,9 @@ const PhotoManager = {
     },
 
     async getAsyncUrl(localIdOrHttp) {
+        if (!localIdOrHttp) return null;
+        // photos[itemId] может быть массивом — String([u1,u2]) даёт "u1,u2" → Storage 400.
+        if (Array.isArray(localIdOrHttp)) localIdOrHttp = localIdOrHttp[0];
         if (!localIdOrHttp) return null;
 
         if (this.cache[localIdOrHttp]) {

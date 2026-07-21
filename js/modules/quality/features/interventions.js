@@ -789,8 +789,8 @@ window.rbi_renderPracticesTab = async function () {
                     </label>
                     <div class="flex items-center gap-2 shrink-0">
                         <div id="practices-view-mode-toggle" class="shrink-0"></div>
-                        <button onclick="downloadMissingCloudFiles()" class="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg active:scale-95 shadow-sm flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M12 11v6m0 0l-3-3m3 3l3-3"></path></svg> Скачать
+                        <button type="button" onclick="downloadMissingCloudFiles()" class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-500 active:scale-95 shadow-sm" title="Скачать всё для офлайна" aria-label="Скачать всё для офлайна">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                         </button>
                     </div>
                 </div>
@@ -1093,7 +1093,7 @@ window.rbi_closePracticeModal = function () {
 window.rbi_handlePracticePhoto = function (event, type) {
     const file = event.target.files[0];
     if (!file) return;
-    compressImageToBase64(file, 800, 0.8, async (base64) => {
+    window.compressImageToBase64(file, 800, 0.8, async (base64) => {
         const localUrl = await PhotoManager.saveLocal(base64, 'prac');
         const btn = document.getElementById(`rbi-prac-btn-${type}`);
         btn.dataset.base64 = localUrl;
@@ -1232,7 +1232,7 @@ window.rbi_handlePracPhotoMulti = function (event, stage) {
     if (files.length === 0) return;
     const stateKey = _manPracStageKeyMap[stage] || 'photosBefore';
     files.forEach((file) => {
-        compressImageToBase64(file, 1000, 0.8, async (base64) => {
+        window.compressImageToBase64(file, 1000, 0.8, async (base64) => {
             const localUrl = await PhotoManager.saveLocal(base64, 'prac');
             window._manPracState[stateKey].push(localUrl);
             rbi_renderPracPhotosUI(stage);

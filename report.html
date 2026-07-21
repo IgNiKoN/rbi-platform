@@ -71,8 +71,37 @@
             cursor: zoom-in;
         }
 
+        .report-viewer img.report-qr,
+        .report-viewer img[alt="qr"] {
+            cursor: default;
+        }
+
         .report-viewer table {
             max-width: 100%;
+        }
+
+        /* Снимки PDF часто с max-height/overflow:hidden под 1 лист — в HTML показываем целиком */
+        .report-viewer .no-break,
+        .report-viewer [style*="overflow:hidden"],
+        .report-viewer [style*="overflow: hidden"],
+        .qr-public-report .no-break,
+        .qr-public-report [style*="overflow:hidden"],
+        .qr-public-report [style*="overflow: hidden"] {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+        }
+
+        .report-viewer .pdf-page-break,
+        .report-viewer .page-break-before,
+        .qr-public-report .pdf-page-break,
+        .qr-public-report .page-break-before {
+            display: block !important;
+            height: 0 !important;
+            margin: 28px 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            border-top: 2px dashed #cbd5e1 !important;
         }
 
         @media (max-width: 768px) {
@@ -81,37 +110,183 @@
                 overflow-x: hidden;
             }
 
-            .report-viewer {
+            .report-viewer,
+            .qr-public-report {
                 width: 100%;
                 max-width: 100%;
                 overflow-x: hidden;
-            }
-
-            .report-viewer table,
-            .report-viewer tbody,
-            .report-viewer tr,
-            .report-viewer td,
-            .report-viewer th {
-                display: block !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-            }
-
-            .report-viewer td,
-            .report-viewer th {
                 padding-left: 0 !important;
                 padding-right: 0 !important;
-                margin-bottom: 10px !important;
             }
 
-            .report-viewer div {
+            /* PDF A3 → мобильный поток: не оставляем 4–6 колонок на 360px */
+            .report-viewer table,
+            .qr-public-report table,
+            .report-viewer thead,
+            .qr-public-report thead,
+            .report-viewer tbody,
+            .qr-public-report tbody {
+                display: block !important;
+                width: 100% !important;
                 max-width: 100% !important;
                 box-sizing: border-box !important;
             }
 
-            .report-viewer img {
+            .report-viewer tr,
+            .qr-public-report tr {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                width: 100% !important;
+                gap: 8px;
+                margin: 0 0 8px 0 !important;
+                box-sizing: border-box !important;
+            }
+
+            .report-viewer td,
+            .qr-public-report td,
+            .report-viewer th,
+            .qr-public-report th {
+                display: block !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                box-sizing: border-box !important;
+                vertical-align: top !important;
+            }
+
+            /* KPI/SK-плитки (16–33%) — по 2 в ряд; крупные колонки (50%+) — на всю ширину */
+            .report-viewer td[style*="width:16"],
+            .qr-public-report td[style*="width:16"],
+            .report-viewer td[style*="width:20"],
+            .qr-public-report td[style*="width:20"],
+            .report-viewer td[style*="width:25"],
+            .qr-public-report td[style*="width:25"],
+            .report-viewer td[style*="width:33"],
+            .qr-public-report td[style*="width:33"] {
+                width: calc(50% - 4px) !important;
+                flex: 0 0 calc(50% - 4px) !important;
+            }
+
+            .report-viewer td[style*="width:32"],
+            .qr-public-report td[style*="width:32"],
+            .report-viewer td[style*="width:35"],
+            .qr-public-report td[style*="width:35"],
+            .report-viewer td[style*="width:46"],
+            .qr-public-report td[style*="width:46"],
+            .report-viewer td[style*="width:50"],
+            .qr-public-report td[style*="width:50"],
+            .report-viewer td[style*="width: 50"],
+            .qr-public-report td[style*="width: 50"],
+            .report-viewer td[style*="width:60"],
+            .qr-public-report td[style*="width:60"],
+            .report-viewer td[style*="width:65"],
+            .qr-public-report td[style*="width:65"],
+            .report-viewer td[style*="width:68"],
+            .qr-public-report td[style*="width:68"] {
+                width: 100% !important;
+                flex: 0 0 100% !important;
+            }
+
+            /* Плитки растут по контенту — без наезда из‑за PDF height:58px */
+            .report-viewer td > div,
+            .qr-public-report td > div {
+                height: auto !important;
+                max-height: none !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                white-space: normal !important;
+            }
+
+            .report-viewer [style*="columns:"],
+            .qr-public-report [style*="columns:"] {
+                columns: 1 !important;
+                -webkit-columns: 1 !important;
+            }
+
+            .report-viewer [style*="display: grid"],
+            .report-viewer [style*="display:grid"],
+            .qr-public-report [style*="display: grid"],
+            .qr-public-report [style*="display:grid"] {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 10px !important;
+            }
+
+            .report-viewer [style*="position:absolute"],
+            .report-viewer [style*="position: absolute"],
+            .qr-public-report [style*="position:absolute"],
+            .qr-public-report [style*="position: absolute"] {
+                position: relative !important;
+                inset: auto !important;
+                height: auto !important;
+            }
+
+            /* Таблицы с заголовками (сводка аудитов и т.п.) — горизонтальный скролл, не каша из ячеек */
+            .report-viewer table:has(th),
+            .qr-public-report table:has(th) {
+                display: block !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+                margin-bottom: 12px !important;
+            }
+
+            .report-viewer table:has(th) thead,
+            .qr-public-report table:has(th) thead,
+            .report-viewer table:has(th) tbody,
+            .qr-public-report table:has(th) tbody {
+                display: table !important;
+                width: 100% !important;
+                min-width: 560px;
+            }
+
+            .report-viewer table:has(th) tr,
+            .qr-public-report table:has(th) tr {
+                display: table-row !important;
+                flex-wrap: nowrap !important;
+                gap: 0 !important;
+                margin: 0 !important;
+            }
+
+            .report-viewer table:has(th) th,
+            .qr-public-report table:has(th) th,
+            .report-viewer table:has(th) td,
+            .qr-public-report table:has(th) td {
+                display: table-cell !important;
+                width: auto !important;
+                flex: none !important;
+                padding: 4px 3px !important;
+                white-space: nowrap !important;
+            }
+
+            .report-viewer h1,
+            .qr-public-report h1 { font-size: 18px !important; line-height: 1.25 !important; }
+            .report-viewer h2,
+            .qr-public-report h2 { font-size: 15px !important; }
+            .report-viewer h3,
+            .qr-public-report h3 { font-size: 13px !important; }
+
+            .report-viewer div,
+            .qr-public-report div {
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            .report-viewer img,
+            .qr-public-report img {
                 max-width: 100% !important;
                 cursor: zoom-in;
+            }
+
+            .report-viewer img.report-qr,
+            .qr-public-report img.report-qr,
+            .report-viewer img[alt="qr"],
+            .qr-public-report img[alt="qr"] {
+                width: 72px !important;
+                max-width: 72px !important;
+                height: auto !important;
+                cursor: default !important;
             }
 
             .report-viewer img.report-photo-fixed {
@@ -139,13 +314,7 @@
                 background: #f8fafc !important;
             }
 
-            .report-viewer .report-photo-fixed-card {
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: none !important;
-                overflow: visible !important;
-            }
-
+            .report-viewer .report-photo-fixed-card,
             .report-viewer .report-photo-fixed-caption {
                 height: auto !important;
                 min-height: 0 !important;
@@ -243,7 +412,9 @@
                 const style = String(img.getAttribute('style') || '').toLowerCase();
                 const src = String(img.getAttribute('src') || '').toLowerCase();
                 const alt = String(img.getAttribute('alt') || '').toLowerCase();
+                const cls = String(img.className || '').toLowerCase();
 
+                if (cls.includes('report-qr')) return true;
                 if (alt.includes('logo') || alt.includes('qr')) return true;
                 if (src.includes('logo') || src.includes('favicon') || src.includes('icon-')) return true;
 

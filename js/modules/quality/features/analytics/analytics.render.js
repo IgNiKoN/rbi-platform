@@ -280,6 +280,8 @@ function _restoreExpandedReports(listDiv, expandedProjects) {
 // оставались белыми плейсхолдерами, хотя открытие оригинала в просмотрщике
 // через обычный <img src> работало, т.к. там CORS не требуется).
 async function _resolvePhotoRealSrc(photoRef) {
+    // photos[itemId] после B1 — массив; String([u1,u2]) → "u1,u2" → Storage 400.
+    if (Array.isArray(photoRef)) photoRef = photoRef[0];
     const ref = String(photoRef || '');
     if (!ref) return null;
     if (ref.startsWith('data:')) return ref;
@@ -1073,8 +1075,10 @@ export const AnalyticsRender = {
                         causesCount[code] = (causesCount[code] || 0) + 1;
                     }
 
-                    const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
-                    if (photo) {
+                    const photosArr = (i.photos && i.photos[id])
+                        ? (window.normalizeItemPhotos ? window.normalizeItemPhotos(i.photos[id]) : [].concat(i.photos[id]))
+                        : [];
+                    if (photosArr.length) {
                         let defName = "Дефект";
                         const tType = i.templateKey ? i.templateKey.split('_')[0] : '';
                         const tKey = i.templateKey ? i.templateKey.replace(tType + '_', '') : '';
@@ -1082,15 +1086,18 @@ export const AnalyticsRender = {
                         const foundItem = getFlatList(cl).find(x => String(x.id) === String(id));
                         if (foundItem) defName = foundItem.n;
 
-                        const photoObj = { photo: photo, name: defName, contr: i.contractorName, date: new Date(i.date).toLocaleDateString('ru-RU') };
+                        photosArr.forEach((photo) => {
+                            if (!photo) return;
+                            const photoObj = { photo: photo, name: defName, contr: i.contractorName, date: new Date(i.date).toLocaleDateString('ru-RU') };
 
-                        if (s === 'fail' || s === 'fail_escalated') {
-                            let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
-                            if (isB3) allPhotosB3.push(photoObj);
-                            else allPhotosB2.push(photoObj);
-                        } else if (s === 'ok') {
-                            allPhotosOK.push(photoObj);
-                        }
+                            if (s === 'fail' || s === 'fail_escalated') {
+                                let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
+                                if (isB3) allPhotosB3.push(photoObj);
+                                else allPhotosB2.push(photoObj);
+                            } else if (s === 'ok') {
+                                allPhotosOK.push(photoObj);
+                            }
+                        });
                     }
                 });
             }
@@ -1478,6 +1485,18 @@ export const AnalyticsRender = {
         }
         ratingData.sort((a, b) => b.val - a.val);
 
+        // Подрядчики с ИУрК < 70% — среди тех, у кого уже есть надёжность (N≥7)
+        const withRel = ratingData.filter(r => r.count >= 7);
+        const relN = withRel.length;
+        const redContrCount = withRel.filter(r => r.val < 70).length;
+        const redContrPerc = relN > 0 ? Math.round((redContrCount / relN) * 100) : null;
+        const redContrColorCls = redContrCount >= 3 || (redContrPerc != null && redContrPerc >= 20)
+            ? 'text-red-600 dark:text-red-400'
+            : (redContrCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400');
+        const redContrBorderCls = redContrCount > 0
+            ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50'
+            : 'bg-[var(--card-bg)] border-[var(--card-border)]';
+
         const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
         let prevData = [];
         const now = new Date();
@@ -1575,7 +1594,9 @@ export const AnalyticsRender = {
                     const foundItem = getFlatList(cl).find(x => x.id == id);
                     if (foundItem) defName = foundItem.n;
 
-                    const photo = (i.photos && i.photos[id]) ? i.photos[id] : null;
+                    const photo = (i.photos && i.photos[id])
+                        ? (window.normalizeItemPhotos ? window.normalizeItemPhotos(i.photos[id])[0] : [].concat(i.photos[id])[0])
+                        : null;
 
                     if (s === 'fail' || s === 'fail_escalated') {
                         let isB3 = (s === 'fail_escalated') || (foundItem && foundItem.w === 3);
@@ -1646,7 +1667,7 @@ export const AnalyticsRender = {
         };
         let rawPdcaText = _reports().getExpertConclusion(pdcaKey) || "";
         if (!_reports().getExpertConclusion(pdcaKey)) {
-            rawPdcaText = `[АНАЛИТИКА]\nИКО: ${mData.IKO}. Красная зона: ${mData.redZonePerc}%. Проверок: ${data.length}.\n\n`;
+            rawPdcaText = `[АНАЛИТИКА]\nИКО: ${mData.IKO}. Подрядчики с ИУрК<70%: ${relN > 0 ? `${redContrCount} из ${relN} (${redContrPerc}%)` : 'СБОР'}. Проверок: ${data.length}.\n\n`;
 
             const topDefectsForPdca = [...topB3, ...topB2].sort((a, b) => b.count - a.count).slice(0, 2);
             if (topDefectsForPdca.length > 0) {
@@ -1727,7 +1748,7 @@ export const AnalyticsRender = {
         }
 
         // --- ИНДЕКС ЗДОРОВЬЯ (ПУЛЬС) ---
-        const healthIndex = Math.max(0, Math.min(100, Math.round(100 - (parseFloat(mData.IKO) * 50) - (mData.redZonePerc * 0.5) - (sumB3 * 2))));
+        const healthIndex = Math.max(0, Math.min(100, Math.round(100 - (parseFloat(mData.IKO) * 50) - ((redContrPerc || 0) * 0.5) - (sumB3 * 2))));
         let healthColor = healthIndex > 80 ? 'text-green-500' : (healthIndex > 50 ? 'text-orange-500' : 'text-red-500');
 
         // ==========================================
@@ -1790,11 +1811,14 @@ export const AnalyticsRender = {
                                     ${renderTrend(currContractorsCount, prevContrsCount, trendLabel)}
                                 </div>
                             </div>
-                            <div class="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
-                                <div class="text-[9px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest mb-1">В красной зоне</div>
-                                <div class="flex justify-between items-end">
-                                    <span class="text-2xl font-black text-red-600 dark:text-red-400 leading-none">${mData.redZonePerc}%</span>
-                                    <span class="text-[9px] font-bold text-red-700/70">от объема</span>
+                            <div class="${redContrBorderCls} border rounded-xl p-2.5 shadow-sm flex flex-col justify-between">
+                                <div class="text-[9px] font-bold ${redContrCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-500'} uppercase tracking-widest mb-1">Подрядчики с ИУрК&nbsp;&lt;&nbsp;70%</div>
+                                <div class="flex justify-between items-end gap-2">
+                                    <span class="flex items-baseline gap-1.5 min-w-0">
+                                        <span class="text-2xl font-black ${redContrColorCls} leading-none">${relN > 0 ? redContrCount : '—'}</span>
+                                        ${relN > 0 ? `<span class="text-[13px] font-black ${redContrColorCls} leading-none">${redContrPerc}%</span>` : `<span class="text-[11px] font-bold text-slate-400">СБОР</span>`}
+                                    </span>
+                                    <span class="text-[8px] font-bold text-slate-500 dark:text-slate-400 text-right leading-tight shrink-0">${relN > 0 ? `${redContrCount} из ${relN}<br>с надёжностью` : 'нужен N≥7'}</span>
                                 </div>
                             </div>
                             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm flex flex-col justify-between relative overflow-hidden">
@@ -1859,7 +1883,7 @@ export const AnalyticsRender = {
                         <span class="flex items-center gap-2">
                             <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg> 
                             Пульс объекта (AI) 
-                            <button onclick="event.preventDefault(); showToast('Индекс Здоровья рассчитывается на основе Индекса Риска (ИКО), процента красной зоны и аварий B3. ИИ анализирует эти данные и дает краткое заключение.')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-colors ml-1" title="Справка">
+                            <button onclick="event.preventDefault(); showToast('Индекс Здоровья рассчитывается на основе Индекса Риска (ИКО), доли подрядчиков с ИУрК ниже 70% и аварий B3. ИИ анализирует эти данные и дает краткое заключение.')" class="text-indigo-400 hover:text-indigo-600 active:scale-95 transition-colors ml-1" title="Справка">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             </button>
                         </span>
@@ -2417,11 +2441,15 @@ export const AnalyticsRender = {
                         cStageData[parentStage].sumUrk += (unit.metrics ? (Number(unit.metrics.final) || 0) : 0);
                     }
 
-                    const photo = (unit.photos && unit.photos[id]) ? unit.photos[id] : null;
+                    const photosArr = (unit.photos && unit.photos[id])
+                        ? (window.normalizeItemPhotos ? window.normalizeItemPhotos(unit.photos[id]) : [].concat(unit.photos[id]))
+                        : [];
 
                     if (s === 'ok') {
                         cStageData[parentStage].ok++;
-                        if (photo) allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                        photosArr.forEach((photo) => {
+                            if (photo) allPhotosOK.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                        });
                     }
 
                     if (s === 'fail' || s === 'fail_escalated') {
@@ -2434,12 +2462,16 @@ export const AnalyticsRender = {
                             cStageData[parentStage].b3++;
                             if (!cB3Counts[defName]) cB3Counts[defName] = { count: 0, photo: null, name: defName };
                             cB3Counts[defName].count++;
-                            if (photo) allPhotosB3.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                            photosArr.forEach((photo) => {
+                                if (photo) allPhotosB3.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                            });
                         } else {
                             cStageData[parentStage].b2++;
                             if (!cFailCounts[defName]) cFailCounts[defName] = { count: 0, photo: null, name: defName };
                             cFailCounts[defName].count++;
-                            if (photo) allPhotosB2.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                            photosArr.forEach((photo) => {
+                                if (photo) allPhotosB2.push({ photo: photo, name: defName, contr: contractorName, date: new Date(unit.date).toLocaleDateString('ru-RU') });
+                            });
                         }
                     }
                 });

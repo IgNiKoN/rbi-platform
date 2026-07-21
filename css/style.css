@@ -1847,9 +1847,22 @@ select optgroup {
     }
 
     /* Управление разрывами для браузера */
-    .page-break-before {
+    .page-break-before,
+    .pdf-page-break.page-break-before {
         page-break-before: always;
         break-before: page;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+    }
+
+    /* Хвостовой/одиночный разрыв не должен давать пустой лист */
+    .page-break-before:last-child,
+    .pdf-page-break.page-break-before:last-child {
+        page-break-before: auto !important;
+        break-before: auto !important;
+        display: none !important;
     }
 
     .no-break {

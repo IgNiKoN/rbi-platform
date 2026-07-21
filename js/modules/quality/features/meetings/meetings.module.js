@@ -1861,7 +1861,7 @@ export function handleMeetingPhotoUpload(event) {
     if (!file) return;
 
     showToast("⚙️ Обработка фото...");
-    compressImageToBase64(file, 1000, 0.8, async (base64) => {
+    window.compressImageToBase64(file, 1000, 0.8, async (base64) => {
         const localUrl = await PhotoManager.saveLocal(base64, 'meet');
         const box = document.getElementById('meeting-photo-preview');
         box.dataset.photo = localUrl;

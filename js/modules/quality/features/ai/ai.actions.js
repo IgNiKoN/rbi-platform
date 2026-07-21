@@ -163,13 +163,34 @@ async function callAI(messages, options = {}) {
 
         const data = await response.json();
         let aiText = data.choices[0].message.content;
-        aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        // raw:true — для JSON-ответов (FMEA / отчёты): не превращать ** в <b>, иначе парсер ломается
+        if (!options.raw) {
+            aiText = aiText.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        }
         return aiText;
     } catch (e) {
         console.error("[AI Error]:", e);
         throw e;
     }
 };
+
+/** Снять HTML-теги и лишние сущности из текста ИИ / пункта чек-листа. */
+function stripAiHtml(str) {
+    return String(str || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+}
 // === 1. ГЕНЕРАТОР УМНЫХ КОММЕНТАРИЕВ ИИ ===
 async function generateSmartComment(scenario) {
     const _allInspections = _getAllInspections();
@@ -1186,6 +1207,172 @@ async function rbi_beautifyPracticeAi() {
     } catch (e) { showToast("Ошибка AI: " + e.message); }
 };
 
+/**
+ * Тексты для отчёта «Повторяющиеся дефекты».
+ * opts.mode: 'draft' | 'improve'
+ * opts.onProgress?: (batchNum, totalBatches) => void
+ * Батчи по 3 карточки (как ПК СК — пакеты + пауза), иначе один большой JSON «захлёбывается».
+ */
+async function generateDefectRemediationTexts(cards, opts = {}) {
+    const list = Array.isArray(cards) ? cards : [];
+    if (!list.length) return {};
+
+    if (!_getSetting('aiEnabled')) {
+        throw new Error('Включите AI-ассистента в Настройках');
+    }
+
+    const mode = opts.mode === 'improve' ? 'improve' : 'draft';
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    // 3 карточки × ~6 полей — безопасный объём ответа; 200 как в SK здесь нельзя
+    const BATCH_SIZE = 3;
+    const FIELD_MAX = 280;
+    const clip = (s) => {
+        const t = stripAiHtml(s || '');
+        return t.length > FIELD_MAX ? `${t.slice(0, FIELD_MAX)}…` : t;
+    };
+
+    const promptRules = `Правила содержания (обязательно):
+- Опирайся на «Дефект (пункт)», «Норма/текст пункта», вид работ и комментарии — не выдумывай другие виды работ.
+- ЗАПРЕЩЕНЫ пустые общие фразы: «усилить контроль», «усилить надзор», «повысить культуру качества», «провести обучение» без темы, «обратить внимание», «не допускать», «строго соблюдать технологию» без деталей.
+- description: что именно не так на объекте (по пункту + комментарию), 1–2 предложения.
+- causeRisk: типовая корневая причина ДЛЯ ЭТОГО пункта (материал/операция/оборудование/последовательность) + конкретный риск (переделка, протечка, отказ приёмки, безопасность) — не «снижение качества».
+- fix: конкретные действия устранения (что переделать/демонтировать/заменить, чем проверить, критерий «готово»).
+- prevention: конкретная профилактика (входной контроль чего, контрольная точка на каком этапе, шаблон/чек до закрытия, ответственный пост) — без «усилить контроль».
+- deadline: реалистичный срок (напр. «3 дня», «до следующей приёмки»).
+- responsible: роль/должность (прораб подрядчика, инженер качества РБИ…), без выдуманных ФИО.
+- Поля короткие: description/causeRisk/fix/prevention до 2 предложений каждое.
+Пиши по-русски, деловым языком отчёта.`;
+
+    const promptSystem = mode === 'improve'
+        ? `Ты — главный инженер качества. Улучши текст инженера по повторяющимся дефектам: сохрани смысл, сделай яснее и конкретнее для отчёта руководству.
+${promptRules}
+Верни ТОЛЬКО валидный JSON-массив (без markdown, без \`\`\`, без HTML-тегов).
+Каждый объект: "index" (число из INDEX), "id" (строка ID), "description", "causeRisk", "fix", "prevention", "deadline", "responsible".`
+        : `Ты — главный инженер качества на стройке. По списку повторяющихся дефектов заполни черновик отчёта.
+${promptRules}
+Верни ТОЛЬКО валидный JSON-массив (без markdown, без \`\`\`, без HTML-тегов).
+Каждый объект: "index" (число из INDEX), "id" (строка ID), "description", "causeRisk", "fix", "prevention", "deadline", "responsible".`;
+
+    const buildContextLine = (c, localIdx, globalIdx) => {
+        const id = c.id || `idx_${globalIdx}`;
+        const f = c.fields || {};
+        return [
+            `INDEX ${localIdx}`,
+            `ID ${id}`,
+            `Подрядчик: ${clip(c.contractor || '—')}`,
+            `Вид работ: ${clip(c.workType || '—')}`,
+            `Дефект (пункт): ${clip(c.defectName || '—')}`,
+            `Норма/текст пункта: ${clip(c.itemText || '—')}`,
+            `Повторов: ${c.count || 0}`,
+            `Комментарий: ${clip(c.commentHint || '—')}`,
+            `Текущее описание: ${clip(f.description || '—')}`,
+            `Текущие причины/риски: ${clip(f.causeRisk || '—')}`,
+            `Текущие меры устранения: ${clip(f.fix || '—')}`,
+            `Текущие меры предотвращения: ${clip(f.prevention || '—')}`,
+            `Срок: ${clip(f.deadline || '—')}`,
+            `Ответственный: ${clip(f.responsible || '—')}`,
+        ].join(' | ');
+    };
+
+    const mergeBatchRows = (map, aiData, batch, globalOffset) => {
+        aiData.forEach((row, rowIdx) => {
+            if (!row) return;
+            const clean = {
+                description: stripAiHtml(row.description),
+                causeRisk: stripAiHtml(row.causeRisk || row.impact),
+                impact: stripAiHtml(row.causeRisk || row.impact),
+                fix: stripAiHtml(row.fix),
+                prevention: stripAiHtml(row.prevention),
+                deadline: stripAiHtml(row.deadline),
+                responsible: stripAiHtml(row.responsible),
+            };
+            let globalIdx = globalOffset + rowIdx;
+            if (row.id != null) {
+                map[String(row.id)] = clean;
+                const byIdPos = batch.findIndex((c) => String(c.id) === String(row.id));
+                if (byIdPos >= 0) globalIdx = globalOffset + byIdPos;
+            }
+            const localIdx = row.index != null ? Number(row.index) : rowIdx;
+            if (!Number.isNaN(localIdx) && localIdx >= 0 && localIdx < batch.length) {
+                globalIdx = globalOffset + localIdx;
+                const card = batch[localIdx];
+                if (card && card.id != null) map[String(card.id)] = clean;
+            }
+            map[`idx_${globalIdx}`] = clean;
+        });
+        // fallback по порядку в пакете
+        batch.forEach((c, localIdx) => {
+            const gIdx = globalOffset + localIdx;
+            const byId = c.id != null ? map[String(c.id)] : null;
+            const byLocal = map[`idx_${gIdx}`];
+            const picked = byId || byLocal;
+            if (!picked) return;
+            if (c.id != null) map[String(c.id)] = picked;
+            map[`idx_${gIdx}`] = picked;
+        });
+    };
+
+    const totalBatches = Math.ceil(list.length / BATCH_SIZE);
+    const map = {};
+    let okBatches = 0;
+    let lastError = null;
+
+    for (let batchNum = 1; batchNum <= totalBatches; batchNum++) {
+        const start = (batchNum - 1) * BATCH_SIZE;
+        const batch = list.slice(start, start + BATCH_SIZE);
+        if (onProgress) onProgress(batchNum, totalBatches);
+        else if (typeof showToast === 'function' && totalBatches > 1) {
+            showToast(`🤖 ИИ: пакет ${batchNum} из ${totalBatches}…`);
+        }
+
+        const contextLines = batch
+            .map((c, localIdx) => buildContextLine(c, localIdx, start + localIdx))
+            .join('\n');
+
+        try {
+            const responseText = await callAI([
+                { role: 'system', content: promptSystem },
+                {
+                    role: 'user',
+                    content: `${mode === 'improve' ? 'Улучши записи инженера' : 'Сформируй черновик'} (пакет ${batchNum}/${totalBatches}, ${batch.length} шт.; по каждому INDEX отдельно, без копипаста общих мер):\n${contextLines}`,
+                },
+            ], {
+                temperature: 0.35,
+                max_tokens: Math.min(3500, 700 + batch.length * 450),
+                raw: true,
+            });
+
+            let raw = String(responseText || '').trim();
+            raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+            const jsonMatch = raw.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) {
+                console.warn('[generateDefectRemediationTexts] no JSON in batch', batchNum, raw.slice(0, 300));
+                throw new Error(`Пакет ${batchNum}: ИИ не вернул JSON-массив`);
+            }
+            const aiData = JSON.parse(jsonMatch[0]);
+            if (!Array.isArray(aiData)) throw new Error(`Пакет ${batchNum}: ответ не массив`);
+            mergeBatchRows(map, aiData, batch, start);
+            okBatches += 1;
+        } catch (e) {
+            lastError = e;
+            console.warn('[generateDefectRemediationTexts] batch', batchNum, e);
+            if (typeof showToast === 'function' && totalBatches > 1) {
+                showToast(`⚠️ Ошибка ИИ на пакете ${batchNum}. Продолжаем…`);
+            }
+        }
+
+        // Пауза между пакетами — как в sk_autoMapCategories, чтобы не упереться в rate limit
+        if (batchNum < totalBatches) {
+            await new Promise((r) => setTimeout(r, 2500));
+        }
+    }
+
+    if (!okBatches) {
+        throw lastError || new Error('ИИ не вернул данные ни по одному пакету');
+    }
+    return map;
+}
+
 // 3. АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
 async function rbi_fillFmeaWithAi() {
     if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в Настройках!");
@@ -2197,7 +2384,7 @@ export {
   generateTwiDraftAi, generatePrescriptionAi, generateTaskRiskAi, generateAiRoutePlan,
   generateAiTutorAdvice, generateAiHintForDefect, extractTextFromPdf, rbi_normalizeFeedbackAi,
   openAiDocChat, closeAiDocChat, askAiDocQuestion, rbi_generateMeetingMemo,
-  rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi, rbi_fillFmeaWithAi, rbi_generateWorkshop,
+  rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi,   rbi_fillFmeaWithAi, generateDefectRemediationTexts, rbi_generateWorkshop,
   rbi_generateIntroBriefing, rbi_generateFinalAcceptance, sk_aiMapColumns, sk_autoMapCategories,
   sk_generateContractorAiSummary, sk_predictRisksAi, rbi_generateGlobalAi, runSelfLearningAi,
   sk_auditTemplatesAi, gameAddContractorAliasInline, gameGenerateContractorSynonymsAI,
