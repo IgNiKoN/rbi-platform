@@ -8,23 +8,61 @@
 window.RbiStorageManager = {
     cleanupLock: false,
 
-    /** Размер payload: ArrayBuffer / Blob / meta. */
+    /** Размер payload: ArrayBuffer / Blob / meta (берём максимум — meta часто устаревшая). */
     payloadBytes(data, meta) {
-        if (meta) {
-            const metaSize = Number(meta.sizeBytes || meta.size_bytes || meta.file_size || 0);
-            if (metaSize > 0) return metaSize;
-        }
-        if (!data) return 0;
-        if (typeof data.byteLength === 'number') return data.byteLength;
-        if (typeof data.size === 'number') return data.size;
-        if (typeof data === 'string') {
-            if (data.startsWith('data:')) {
-                const b64 = data.split(',')[1] || '';
-                return Math.floor(b64.length * 0.75);
+        let fromData = 0;
+        if (data) {
+            if (typeof data.byteLength === 'number') fromData = data.byteLength;
+            else if (typeof data.size === 'number') fromData = data.size;
+            else if (typeof data === 'string') {
+                if (data.startsWith('data:')) {
+                    const b64 = data.split(',')[1] || '';
+                    fromData = Math.floor(b64.length * 0.75);
+                } else {
+                    fromData = data.length;
+                }
             }
-            return data.length;
         }
-        return 0;
+        const metaSize = meta
+            ? Number(meta.sizeBytes || meta.size_bytes || meta.file_size || 0) || 0
+            : 0;
+        return Math.max(fromData, metaSize > 0 ? metaSize : 0);
+    },
+
+    /**
+     * Возраст файла для TTL/очистки.
+     * last_accessed — только реальное использование; не путать с датой кэша
+     * (markCloudFileCached/backfill раньше ставили access=now и ломали автоочистку).
+     */
+    fileIdleAgeDays(file, reg, now = Date.now()) {
+        const accessRaw =
+            file?.lastAccessedAt ||
+            file?.last_accessed_at ||
+            null;
+        const regAccessRaw = reg?.last_accessed_at || reg?.lastAccessedAt || null;
+        const cacheRaw =
+            file?.cachedAt ||
+            file?.cached_at ||
+            reg?.last_local_cached_at ||
+            reg?.lastLocalCachedAt ||
+            file?.createdAt ||
+            file?.created_at ||
+            reg?.uploaded_at ||
+            reg?.uploadedAt ||
+            null;
+
+        const accessTime = accessRaw ? new Date(accessRaw).getTime() : 0;
+        let regAccessTime = regAccessRaw ? new Date(regAccessRaw).getTime() : 0;
+        const cacheTime = cacheRaw ? new Date(cacheRaw).getTime() : 0;
+
+        // Backfill часто пишет last_accessed_at === last_local_cached_at === now — это не доступ
+        if (regAccessTime && cacheTime && Math.abs(regAccessTime - cacheTime) < 120000) {
+            regAccessTime = 0;
+        }
+
+        const idleTime = accessTime || regAccessTime || cacheTime || 0;
+        if (!idleTime || Number.isNaN(idleTime)) return 9999;
+        return Math.max(0, (now - idleTime) / 86400000);
     },
 
     async logEvent(type, payload = {}) {
@@ -506,11 +544,12 @@ window.RbiStorageManager = {
                     is_deleted: false,
                     isDeleted: false,
 
-                    last_accessed_at: file.last_accessed_at || file.lastAccessedAt || now,
-                    lastAccessedAt: file.last_accessed_at || file.lastAccessedAt || now,
+                    last_local_cached_at: file.cached_at || file.cachedAt || file.created_at || file.createdAt || now,
+                    lastLocalCachedAt: file.cached_at || file.cachedAt || file.created_at || file.createdAt || now,
 
-                    last_local_cached_at: file.cached_at || file.cachedAt || now,
-                    lastLocalCachedAt: file.cached_at || file.cachedAt || now,
+                    // access ≠ cache: не подставляем now, иначе файл «вечно свежий» для TTL
+                    last_accessed_at: file.last_accessed_at || file.lastAccessedAt || file.cached_at || file.cachedAt || file.created_at || file.createdAt || now,
+                    lastAccessedAt: file.last_accessed_at || file.lastAccessedAt || file.cached_at || file.cachedAt || file.created_at || file.createdAt || now,
 
                     last_local_cleanup_at: null,
                     lastLocalCleanupAt: null,
@@ -664,9 +703,7 @@ window.RbiStorageManager = {
             found.cache_status = 'cached_cloud';
             found.cacheStatus = 'cached_cloud';
 
-            found.last_accessed_at = now;
-            found.lastAccessedAt = now;
-
+            // Не трогаем last_accessed — иначе автоочистка по TTL никогда не сработает
             found.last_local_cached_at = now;
             found.lastLocalCachedAt = now;
 
@@ -828,19 +865,7 @@ window.RbiStorageManager = {
                 reg?.entityType ||
                 this.guessEntityTypeByUrl(publicUrl);
 
-            const lastAccessRaw =
-                file.lastAccessedAt ||
-                file.last_accessed_at ||
-                reg?.last_accessed_at ||
-                reg?.lastAccessedAt ||
-                file.cachedAt ||
-                file.cached_at ||
-                file.createdAt ||
-                file.created_at ||
-                '';
-
-            const lastAccessTime = lastAccessRaw ? new Date(lastAccessRaw).getTime() : 0;
-            const ageDays = lastAccessTime ? (now - lastAccessTime) / 86400000 : 9999;
+            const ageDays = this.fileIdleAgeDays(file, reg, now);
             const sizeBytes = this.payloadBytes(file.data, file);
 
             let ttl = 60;
@@ -968,18 +993,7 @@ window.RbiStorageManager = {
                 reportRows.forEach(rep => {
                     if (!rep || !rep.file_blob || !rep.file_url || !String(rep.file_url).startsWith('http')) return;
 
-                    const lastAccessRaw =
-                        rep.lastAccessedAt ||
-                        rep.last_accessed_at ||
-                        rep.cachedAt ||
-                        rep.cached_at ||
-                        rep.updatedAt ||
-                        rep.updated_at ||
-                        rep.createdAt ||
-                        rep.created_at ||
-                        '';
-                    const lastAccessTime = lastAccessRaw ? new Date(lastAccessRaw).getTime() : 0;
-                    const ageDays = lastAccessTime ? (now - lastAccessTime) / 86400000 : 9999;
+                    const ageDays = this.fileIdleAgeDays(rep, null, now);
 
                     if (ageDays < 1 && mode !== 'critical_cleanup') return;
                     if ((mode === 'soft_lifecycle' || mode === 'normal_cleanup') && ageDays < ttlDays) return;
@@ -1291,19 +1305,7 @@ window.RbiStorageManager = {
             for (const rep of reports) {
                 if (!rep || !rep.file_blob || !rep.file_url || !String(rep.file_url).startsWith('http')) continue;
 
-                const lastAccessRaw =
-                    rep.lastAccessedAt ||
-                    rep.last_accessed_at ||
-                    rep.cachedAt ||
-                    rep.cached_at ||
-                    rep.updatedAt ||
-                    rep.updated_at ||
-                    rep.createdAt ||
-                    rep.created_at ||
-                    '';
-
-                const lastAccessTime = lastAccessRaw ? new Date(lastAccessRaw).getTime() : 0;
-                const ageDays = lastAccessTime ? (now - lastAccessTime) / 86400000 : 9999;
+                const ageDays = this.fileIdleAgeDays(rep, null, now);
 
                 // Не удаляем свежие отчеты в первые 24 часа, кроме аварийного режима
                 if (ageDays < 1 && mode !== 'critical_cleanup') {
