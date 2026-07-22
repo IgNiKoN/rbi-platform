@@ -277,6 +277,10 @@ function toggleFaqAnswer(element) {
 
 function renderFaqList(searchTerm = '') {
     const container = document.getElementById('faq-list-container');
+    if (!container) return;
+    const expanded = (typeof window._kbCaptureExpandedGroups === 'function')
+        ? window._kbCaptureExpandedGroups(container)
+        : new Set();
     let html = '';
 
     FAQ_DATA.forEach((section, sIdx) => {
@@ -317,6 +321,10 @@ function renderFaqList(searchTerm = '') {
 
     if (!html) html = `<div class="text-center py-10 text-slate-400 font-bold text-[11px] uppercase tracking-widest">Ничего не найдено</div>`;
     container.innerHTML = html;
+    // При поиске секции уже open; иначе восстанавливаем ручные раскрытия
+    if (!searchTerm && typeof window._kbRestoreExpandedGroups === 'function') {
+        window._kbRestoreExpandedGroups(container, expanded);
+    }
 }
 
 // ==========================================

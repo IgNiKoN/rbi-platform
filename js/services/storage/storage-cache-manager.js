@@ -1048,12 +1048,17 @@ window.RbiStorageManager = {
 
         await dbDelete(STORES.PHOTOS, candidate.id);
 
-        if (typeof PhotoManager !== 'undefined' && PhotoManager.cache && PhotoManager.cache[candidate.id]) {
-            try {
-                URL.revokeObjectURL(PhotoManager.cache[candidate.id]);
-            } catch (e) { }
-
-            delete PhotoManager.cache[candidate.id];
+        if (typeof PhotoManager !== 'undefined') {
+            if (typeof PhotoManager.releaseCachedUrl === 'function') {
+                PhotoManager.releaseCachedUrl(candidate.id);
+            } else if (PhotoManager.cache && PhotoManager.cache[candidate.id]) {
+                const cachedUrl = PhotoManager.cache[candidate.id];
+                try {
+                    URL.revokeObjectURL(cachedUrl);
+                } catch (e) { }
+                if (PhotoManager.activeUrls) PhotoManager.activeUrls.delete(cachedUrl);
+                delete PhotoManager.cache[candidate.id];
+            }
         }
 
         if (candidate.registry) {

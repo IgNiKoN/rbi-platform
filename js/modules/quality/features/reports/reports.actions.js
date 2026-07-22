@@ -1053,6 +1053,35 @@ function resolveDocPeriodLabel(dateIso, periodName) {
     return label;
 }
 
+/**
+ * Однолистовый PDF (OP2): как раньше — css/legacy (контент на 1-й странице).
+ * html2pdf часто дописывает пустой хвост → удаляем только страницы С КОНЦА.
+ *
+ * Нельзя: pagebreak avoid-all + deletePage — контент уезжает на 2-ю,
+ * deletePage(2) оставляет пустую 1-ю. Нельзя: html2canvas.height=лист —
+ * часто даёт белый canvas на offscreen-элементе.
+ */
+async function _elementToSinglePagePdf(element, baseOpt) {
+    element.classList.add('op-fit-one-page');
+    const worker = html2pdf()
+        .set({
+            ...baseOpt,
+            // как в рабочем пути до правок: контент остаётся на 1-й странице
+            pagebreak: { mode: ['css', 'legacy'] }
+        })
+        .from(element);
+    await worker.toPdf();
+    const pdf = await worker.get('pdf');
+    if (!pdf || !pdf.internal) {
+        throw new Error('jsPDF instance missing after toPdf()');
+    }
+    // Хвостовые пустые листы (типичный артефакт css/legacy на полном A3)
+    while (pdf.internal.getNumberOfPages() > 1) {
+        pdf.deletePage(pdf.internal.getNumberOfPages());
+    }
+    return pdf;
+}
+
 async function printPdfShell(title, content, formatSize = 'A4', orientation = 'portrait', mode = 'script', meta = null) {
     window._pdfGenerating = true;
     const isBackground = (mode === 'background');
@@ -1253,15 +1282,23 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                     else worker = worker.get('pdf').then((pdf) => { pdf.addPage(); return pdf; }).from(pageDiv).toContainer().toCanvas().toPdf();
                     await worker;
                 }
+                let pdfDoc = null;
                 await worker.get('pdf').then((pdf) => {
                     while (pdf.internal.getNumberOfPages() > printPagesHtml.length) {
                         pdf.deletePage(pdf.internal.getNumberOfPages());
                     }
+                    pdfDoc = pdf;
                 });
-                printPdfBlob = await worker.output('blob');
+                printPdfBlob = pdfDoc.output('blob');
                 if (document.body.contains(hiddenPrint)) document.body.removeChild(hiddenPrint);
             } else {
-                printPdfBlob = await html2pdf().set(printOptBase).from(printWrapperEl).output('blob');
+                // Архивный PDF для системной печати: тот же css/legacy + обрезка хвоста.
+                // window.print() ниже идёт из #print-wrapper (клип CSS) — не трогаем его DOM.
+                const pdfDoc = await _elementToSinglePagePdf(printWrapperEl, {
+                    ...printOptBase,
+                    pagebreak: { mode: ['css', 'legacy'] }
+                });
+                printPdfBlob = pdfDoc.output('blob');
             }
         } catch (e) {
             console.error('[PDF Error] printPdfShell (browser mode) blob generation failed', e);
@@ -1451,6 +1488,15 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
         page-break-inside: avoid !important;
         break-inside: avoid !important;
     }
+    /* Однолистовые отчёты: avoid на полном A3 → html2pdf уводит блок на 2-ю страницу */
+    .pdf-print-root.op-fit-one-page,
+    .pdf-print-root.op-fit-one-page .no-break,
+    .pdf-print-root.op-fit-one-page tr,
+    .pdf-print-root.op-fit-one-page td,
+    .pdf-print-root.op-fit-one-page img {
+        page-break-inside: auto !important;
+        break-inside: auto !important;
+    }
 `;
     hiddenDiv.appendChild(styleElem);
 
@@ -1536,31 +1582,38 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
                 if (isWeakDevice) await new Promise(r => setTimeout(r, 300));
             }
             // Страховка: html2pdf иногда всё же дописывает пустой хвост.
+            // Важно: blob/save брать из jsPDF после deletePage — worker.output/save
+            // пересобирают документ и снова добавляют пустую страницу.
+            let pdfDoc = null;
             await worker.get('pdf').then((pdf) => {
                 const expected = pagesHtml.length;
                 while (pdf.internal.getNumberOfPages() > expected) {
                     pdf.deletePage(pdf.internal.getNumberOfPages());
                 }
+                pdfDoc = pdf;
             });
-            pdfBlob = await worker.output('blob');
+            pdfBlob = pdfDoc.output('blob');
             if (mode !== 'background' && !exportMeta?.skipDownload) {
-                worker.save();
+                pdfDoc.save(filename);
             }
         } else {
+            // Один лист (OP2): рабочий opt (css/legacy) + обрезка пустого хвоста у jsPDF.
+            Array.from(hiddenDiv.children).forEach((c) => {
+                if (c.className === 'pdf-print-root') hiddenDiv.removeChild(c);
+            });
             const rootDiv = document.createElement('div');
             rootDiv.className = 'pdf-print-root';
+            rootDiv.style.cssText = `width:${widthPx}px;max-width:${widthPx}px;box-sizing:border-box;`;
             rootDiv.innerHTML = resolvedHtml;
             hiddenDiv.appendChild(rootDiv);
 
             await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-            // Получаем сам файл (Blob)
-            const worker = html2pdf().set(opt).from(rootDiv);
-            pdfBlob = await worker.output('blob');
-
-            // Если это не фоновый режим - предлагаем скачать на ПК
+            const pdfDoc = await _elementToSinglePagePdf(rootDiv, opt);
+            pdfBlob = pdfDoc.output('blob');
             if (mode !== 'background' && !exportMeta?.skipDownload) {
-                worker.save();
+                // pdf.save, не worker.save — иначе html2pdf пересоберёт с хвостом
+                pdfDoc.save(filename);
             }
         }
 
@@ -1615,7 +1668,12 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     } catch (err) {
         console.error('[PDF Error]', err);
         cleanup();
-        if (typeof showToast === 'function') showToast("❌ Ошибка генерации. Попробуйте режим Печати.");
+        const hint = (err && err.message) ? String(err.message).slice(0, 80) : '';
+        if (typeof showToast === 'function') {
+            showToast(hint
+                ? `❌ Ошибка генерации: ${hint}`
+                : '❌ Ошибка генерации. Попробуйте режим Печати.');
+        }
     }
 }
 
@@ -2740,14 +2798,17 @@ async function buildOnePagerV2Html(data, opts = {}) {
         if (!rows.length) return null;
         const n = rows.length;
         const s = pageScale;
+        // Шрифты крупнее блока A3 (×1.4), геометрия столбцов/холста без изменений.
+        // На A1 (pageScale=2) уже ×2 — дополнительный boost не нужен.
+        const ft = s * (pageScale > 1 ? 1 : 1.4);
         const values = rows.map(r => (r.isGap ? 0 : r.value));
         const colors = rows.map(r => {
             if (r.isGap) return 'rgba(148,163,184,0.2)';
             return (r.value < 70 ? '#ef4444' : (r.value < 85 ? '#f59e0b' : '#22c55e'));
         });
         const barMax = Math.max(10, Math.min(36, Math.floor(780 / Math.max(n, 1)))) * s;
-        const fontMain = (n > 12 ? 9 : 11) * s;
-        const fontDelta = (n > 12 ? 10 : 12) * s;
+        const fontMain = (n > 12 ? 9 : 11) * ft;
+        const fontDelta = (n > 12 ? 10 : 12) * ft;
         const chartW = Math.max(980, n * 92) * s;
         const chartH = 300 * s;
         const labelPlugin = {
@@ -2773,14 +2834,14 @@ async function buildOnePagerV2Html(data, opts = {}) {
                         ctx.moveTo(x, chartArea.top + 8 * s);
                         ctx.lineTo(x, chartArea.bottom - 4 * s);
                         ctx.stroke();
-                        ctx.font = `bold ${8 * s}px Verdana, sans-serif`;
+                        ctx.font = `bold ${8 * ft}px Verdana, sans-serif`;
                         ctx.textBaseline = 'middle';
                         ctx.fillStyle = '#64748b';
                         wrapToWidth(ctx, r.name || '', Math.max(52 * s, slotW + 8 * s), 5).forEach((line, li) => {
-                            ctx.fillText(line, x, midY - 12 * s + li * 10 * s);
+                            ctx.fillText(line, x, midY - 12 * ft + li * 10 * ft);
                         });
                         ctx.textBaseline = 'top';
-                        ctx.font = `${7 * s}px Verdana, sans-serif`;
+                        ctx.font = `${7 * ft}px Verdana, sans-serif`;
                         ctx.fillStyle = '#94a3b8';
                         ctx.fillText(r.workType || '', x, chartArea.bottom + 6 * s);
                         ctx.restore();
@@ -2789,37 +2850,34 @@ async function buildOnePagerV2Html(data, opts = {}) {
                     const top = bar.y;
                     const h = Math.abs(bar.base - top);
                     const dTxt = (r.delta == null || Number.isNaN(r.delta))
-                        ? 'н/д'
+                        ? '—'
                         : ((r.delta > 0 ? '+' : '') + r.delta);
-                    const dColor = (r.delta == null || Number.isNaN(r.delta))
-                        ? '#94a3b8'
-                        : (r.delta > 0 ? '#15803d' : (r.delta < 0 ? '#b91c1c' : '#64748b'));
                     ctx.textBaseline = 'middle';
                     ctx.font = `bold ${fontMain}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     ctx.fillText(String(r.value) + '%', x, top - 10 * s);
+                    // Δ всегда чёрным (раньше внутри столбца был белый — плохо читается)
                     ctx.font = `bold ${fontDelta}px Verdana, sans-serif`;
+                    ctx.fillStyle = '#0f172a';
                     if (h >= 24 * s) {
-                        ctx.fillStyle = '#ffffff';
                         ctx.fillText(dTxt, x, top + h * 0.45);
                     } else {
-                        ctx.fillStyle = dColor;
                         ctx.fillText(dTxt, x, top - 20 * s);
                     }
                     // Подписи под столбцом: подрядчик + вид работ с переносом, без «…»
                     ctx.textBaseline = 'top';
                     let y = chartArea.bottom + 4 * s;
-                    ctx.font = `bold ${(n > 10 ? 7.5 : 8.5) * s}px Verdana, sans-serif`;
+                    ctx.font = `bold ${(n > 10 ? 7.5 : 8.5) * ft}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     wrapToWidth(ctx, cleanContrName(r.name), slotW, 4).forEach(line => {
                         ctx.fillText(line, x, y);
-                        y += (n > 10 ? 9 : 10) * s;
+                        y += (n > 10 ? 9 : 10) * ft;
                     });
-                    ctx.font = `${(n > 10 ? 7 : 8) * s}px Verdana, sans-serif`;
+                    ctx.font = `${(n > 10 ? 7 : 8) * ft}px Verdana, sans-serif`;
                     ctx.fillStyle = '#64748b';
                     wrapToWidth(ctx, r.workType || '—', slotW, 4).forEach(line => {
                         ctx.fillText(line, x, y);
-                        y += (n > 10 ? 8 : 9) * s;
+                        y += (n > 10 ? 8 : 9) * ft;
                     });
                     ctx.restore();
                 });
@@ -2842,7 +2900,7 @@ async function buildOnePagerV2Html(data, opts = {}) {
                     y: {
                         min: 0,
                         max: 100,
-                        ticks: { font: { size: 8 * s }, stepSize: 20 },
+                        ticks: { font: { size: 8 * ft }, stepSize: 20 },
                         grid: { color: '#e2e8f0' }
                     },
                     x: {
@@ -2860,7 +2918,7 @@ async function buildOnePagerV2Html(data, opts = {}) {
                             },
                             label: (ctx) => {
                                 const r = rows[ctx.dataIndex];
-                                const d = (r.delta == null) ? 'н/д' : ((r.delta > 0 ? '+' : '') + r.delta + ' п.п.');
+                                const d = (r.delta == null) ? '—' : ((r.delta > 0 ? '+' : '') + r.delta + ' п.п.');
                                 return `${r.value}% · Δ ${d}`;
                             }
                         }
@@ -3176,17 +3234,17 @@ async function buildOnePagerV2Html(data, opts = {}) {
     const A3_PAGE_H = Math.floor(297 * 3.7795);       // ~1122
     const A3_MARGIN_H = Math.floor(20 * 3.7795);      // 10+10 mm
     const A3_ROOT_PAD_H = 28;                         // padding top+bottom pdf-print-root
-    const A3_HEADER_BUDGET = 88;                      // dense header + QR
-    const OP2_BODY_MAX = Math.max(860, A3_PAGE_H - A3_MARGIN_H - A3_ROOT_PAD_H - A3_HEADER_BUDGET); // ~931
+    const A3_HEADER_BUDGET = 112;                     // dense header+QR; запас, чтобы тело не вылезало за лист
+    const OP2_BODY_MAX = Math.max(840, A3_PAGE_H - A3_MARGIN_H - A3_ROOT_PAD_H - A3_HEADER_BUDGET); // ~907
     const OP2_KPI_H = 62;                             // KPI row + margin
     const OP2_COLS_H = OP2_BODY_MAX - OP2_KPI_H;
     const OP2_CHART_H = 200;
     const OP2_SK_MINI_H = 148;
     // Справка и списки СК — по контенту (не height:100%), иначе рамки тянутся в пустоту и низ обрезается
-    // Списки ПК СК (читаемый шрифт): до 18; иначе топ-8 + низ-8
-    const LIST_CAP = 18;
-    const LIST_HEAD = 8;
-    const LIST_TAIL = 8;
+    // Списки ПК СК: до 20; иначе топ-10 + низ-10
+    const LIST_CAP = 20;
+    const LIST_HEAD = 10;
+    const LIST_TAIL = 10;
     const helpFormula = (txt) => `
         <div style="font-family:Consolas,'Courier New',monospace;font-size:7px;font-weight:700;color:#475569;background:#f1f5f9;border:1px solid #dbe3f0;border-radius:2px;padding:1px 3px;margin:1px 0;text-align:center;line-height:1.15;">${txt}</div>`;
     const helpNote = (txt) => `
@@ -4098,6 +4156,8 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
         };
     };
     const s = pageScale;
+    // Как в OP2: на A3 крупнее подписи, размер блока/холста без изменений.
+    const ft = s * (pageScale > 1 ? 1 : 1.4);
     const barValueDeltaPlugin = (getMeta) => ({
         id: 'titleBarValueDelta',
         afterDatasetsDraw(chart) {
@@ -4114,21 +4174,21 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 if (horiz) {
-                    ctx.font = `bold ${10 * s}px Verdana, sans-serif`;
+                    ctx.font = `bold ${10 * ft}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     ctx.textAlign = 'left';
                     ctx.fillText(valueText, x + 6 * s, y);
                     if (delta && delta.text) {
-                        ctx.font = `bold ${9 * s}px Verdana, sans-serif`;
+                        ctx.font = `bold ${9 * ft}px Verdana, sans-serif`;
                         ctx.fillStyle = delta.color;
                         ctx.fillText(delta.text, x + 6 * s + ctx.measureText(valueText).width + 5 * s, y);
                     }
                 } else {
-                    ctx.font = `bold ${10 * s}px Verdana, sans-serif`;
+                    ctx.font = `bold ${10 * ft}px Verdana, sans-serif`;
                     ctx.fillStyle = '#0f172a';
                     ctx.fillText(valueText, x, y - 14 * s);
                     if (delta && delta.text) {
-                        ctx.font = `bold ${9 * s}px Verdana, sans-serif`;
+                        ctx.font = `bold ${9 * ft}px Verdana, sans-serif`;
                         ctx.fillStyle = delta.color;
                         ctx.fillText(delta.text, x, y - 3 * s);
                     }
@@ -4158,11 +4218,11 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
                     y: {
                         min: 0,
                         max: 100,
-                        ticks: { font: { size: 9 * s }, stepSize: 25 },
+                        ticks: { font: { size: 9 * ft }, stepSize: 25 },
                         grid: { color: '#e2e8f0' },
-                        title: { display: true, text: yTitle, font: { size: 9 * s }, color: '#64748b' }
+                        title: { display: true, text: yTitle, font: { size: 9 * ft }, color: '#64748b' }
                     },
-                    x: { ticks: { font: { size: 9 * s }, maxRotation: 35, minRotation: 0 }, grid: { display: false } }
+                    x: { ticks: { font: { size: 9 * ft }, maxRotation: 35, minRotation: 0 }, grid: { display: false } }
                 },
                 plugins: { legend: { display: false } }
             },

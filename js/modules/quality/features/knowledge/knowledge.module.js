@@ -44,6 +44,52 @@ window.askAppAssistant = askAppAssistant;
 // ПРИВАТНЫЕ ХЕЛПЕРЫ (изоляция от прямых dbPut/STORES/triggerSync)
 // =========================================================================
 
+// Preserve open accordions across list re-render (same idea as History).
+// Keys = group titles (without "(N)" counters). Supports <details> and
+// practices-style bodies (#practices-group-*).
+window._kbDetailsGroupKey = function (detailsEl) {
+    if (!detailsEl) return '';
+    var label = detailsEl.querySelector('summary .truncate')
+        || detailsEl.querySelector('summary > span')
+        || detailsEl.querySelector('summary');
+    if (!label) return '';
+    var clone = label.cloneNode(true);
+    clone.querySelectorAll('span').forEach(function (s) { s.remove(); });
+    return String(clone.textContent || '').replace(/\s+/g, ' ').trim();
+};
+window._kbCaptureExpandedGroups = function (container) {
+    var keys = new Set();
+    if (!container) return keys;
+    container.querySelectorAll('details[open]').forEach(function (d) {
+        var key = window._kbDetailsGroupKey(d);
+        if (key) keys.add(key);
+    });
+    container.querySelectorAll('[id^="practices-group-"]').forEach(function (body) {
+        if (body.classList.contains('hidden')) return;
+        var pName = body.previousElementSibling
+            && body.previousElementSibling.querySelector('.font-black.truncate, .truncate');
+        pName = pName && pName.textContent ? pName.textContent.trim() : '';
+        if (pName) keys.add(pName);
+    });
+    return keys;
+};
+window._kbRestoreExpandedGroups = function (container, keys) {
+    if (!container || !keys || keys.size === 0) return;
+    container.querySelectorAll('details').forEach(function (d) {
+        var key = window._kbDetailsGroupKey(d);
+        if (key && keys.has(key)) d.setAttribute('open', '');
+    });
+    container.querySelectorAll('[id^="practices-group-"]').forEach(function (body) {
+        var labelEl = body.previousElementSibling
+            && body.previousElementSibling.querySelector('.font-black.truncate, .truncate');
+        var pName = labelEl && labelEl.textContent ? labelEl.textContent.trim() : '';
+        if (!pName || !keys.has(pName)) return;
+        body.classList.remove('hidden');
+        var icon = body.previousElementSibling && body.previousElementSibling.querySelector('.chevron-icon');
+        if (icon) icon.style.transform = 'rotate(180deg)';
+    });
+};
+
 let _ctx = null;
 
 function _getSetting(key) {
@@ -1280,6 +1326,16 @@ window.openTwiViewer = async function (twiId) {
 };
 // === RBI UNIVERSAL PDF VIEWER FIX v17.8.206 ===
 // === RBI UNIVERSAL PDF VIEWER FIX v17.8.207 ===
+window._rbiDestroyActivePdfDoc = async function () {
+    if (!window._rbiActivePdfDoc) return;
+    try {
+        if (typeof window._rbiActivePdfDoc.destroy === 'function') {
+            await window._rbiActivePdfDoc.destroy();
+        }
+    } catch (e) { /* ignore */ }
+    window._rbiActivePdfDoc = null;
+};
+
 window.rbiOpenPdfInTwiViewer = async function (pdfData, title, subtitle, fileName, fileSize) {
     const overlay = document.getElementById('twi-viewer-overlay');
     const content = document.getElementById('viewer-twi-content');
@@ -1289,6 +1345,8 @@ window.rbiOpenPdfInTwiViewer = async function (pdfData, title, subtitle, fileNam
     const footer = document.getElementById('viewer-twi-footer');
 
     if (!overlay || !content) return showToast('Окно PDF не найдено');
+
+    await window._rbiDestroyActivePdfDoc();
 
     if (content.dataset.blobUrl && content.dataset.blobUrl.startsWith('blob:')) {
         URL.revokeObjectURL(content.dataset.blobUrl);
@@ -1356,6 +1414,7 @@ window.rbiOpenPdfInTwiViewer = async function (pdfData, title, subtitle, fileNam
 
         const pagesRoot = document.getElementById('rbi-pdf-pages');
         const pdf = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
+        window._rbiActivePdfDoc = pdf;
 
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
             const page = await pdf.getPage(pageNum);
@@ -1397,6 +1456,8 @@ window.closeTwiViewer = function () {
     const content = document.getElementById('viewer-twi-content');
 
     overlay.classList.add('opacity-0');
+    // PDF.js document — сразу, не ждать анимации закрытия
+    Promise.resolve(window._rbiDestroyActivePdfDoc && window._rbiDestroyActivePdfDoc()).catch(function () { });
     setTimeout(() => {
         overlay.style.display = 'none';
         document.body.classList.remove('modal-open');
@@ -2183,6 +2244,7 @@ window.renderTwiList = function () {
     var container = document.getElementById('twi-cards-container');
     var searchInput = (document.getElementById('twi-search-input') && document.getElementById('twi-search-input').value.toLowerCase()) || '';
     if (!container) return;
+    var expanded = window._kbCaptureExpandedGroups(container);
 
     var twiToggleHost = document.getElementById('twi-view-mode-toggle');
     if (twiToggleHost && typeof window.kbViewModeToggleHtml === 'function') {
@@ -2376,6 +2438,7 @@ window.renderTwiList = function () {
     }
 
     container.innerHTML = magicTwiHtml + html;
+    window._kbRestoreExpandedGroups(container, expanded);
 };
 
 function _rbiCollectTwiNewDraft() {
@@ -2745,6 +2808,7 @@ window.renderDocsList = function () {
     var container = document.getElementById('docs-list-container');
     var searchInput = (document.getElementById('doc-search-input') && document.getElementById('doc-search-input').value.toLowerCase()) || '';
     if (!container) return;
+    var expanded = window._kbCaptureExpandedGroups(container);
 
     var filtersBlock = document.getElementById('ref-docs-filters');
     if (filtersBlock && !filtersBlock.dataset.initialized) {
@@ -2901,6 +2965,7 @@ window.renderDocsList = function () {
     });
 
     container.innerHTML = html;
+    window._kbRestoreExpandedGroups(container, expanded);
 };
 
 // ЭКСПОРТ НД В КОД (ДЛЯ system_docs.js)
@@ -3131,31 +3196,63 @@ window.removeDocPdf = function () {
     }
 };
 
+function _applyPdfExtractToDoc(doc, extracted) {
+    // extractTextFromPdf возвращает { text, pageCount, ... } (или legacy-строку)
+    const meta = (extracted && typeof extracted === 'object' && extracted.text != null)
+        ? extracted
+        : (typeof extracted === 'string' ? { text: extracted, pageCount: 0, totalPages: 0, charCount: extracted.length, avgCharsPerPage: 0 } : null);
+    if (!meta || !meta.text) return null;
+    doc.extractedText = meta.text;
+    doc.indexMeta = {
+        pageCount: meta.pageCount || 0,
+        totalPages: meta.totalPages || 0,
+        charCount: meta.charCount || meta.text.length,
+        avgCharsPerPage: meta.avgCharsPerPage || 0,
+        indexedAt: new Date().toISOString()
+    };
+    return meta;
+}
+
+function _toastPdfIndexResult(meta) {
+    if (!meta) return showToast('⚠️ Текст из PDF извлечь не удалось.');
+    const kb = Math.round((meta.charCount || 0) / 1000);
+    const pages = meta.pageCount || '?';
+    const total = meta.totalPages && meta.totalPages !== meta.pageCount
+        ? `${pages}/${meta.totalPages}`
+        : String(pages);
+    if ((meta.avgCharsPerPage || 0) < 40 && (meta.pageCount || 0) > 3) {
+        showToast(`⚠️ Индекс слабый: ~${kb}k симв., ${total} стр. Похоже на скан без текстового слоя (нужен OCR/текстовый PDF).`);
+        return;
+    }
+    showToast(`✨ Проиндексировано: ~${kb}k симв., ${total} стр. текстового слоя`);
+}
+
 function _scheduleDocPdfIndex(docId, pdfData) {
-    // ВАЖНО: sync только ПОСЛЕ OCR — иначе документ уходит в облако без extractedText
+    // ВАЖНО: sync только ПОСЛЕ извлечения текста — иначе документ уходит в облако без extractedText
     // (повторный sync во время push молча теряется, см. triggerSync).
+    // Это текстовый слой PDF, не OCR сканов.
     setTimeout(async () => {
-        showToast('📄 Индексация текста документа для ИИ...');
+        showToast('📄 Индексация текста документа для ИИ (все страницы, до 300)…');
         const realUrl = await PhotoManager.getAsyncUrl(pdfData) || pdfData;
         const extracted = await _extractTextFromPdf(realUrl);
-        if (extracted) {
-            const freshDocs = await _storage().getAll(_storage().stores().CUSTOM_DOCS) || customDocs;
-            const idx = freshDocs.findIndex(d => d.id === docId);
-            if (idx !== -1) {
-                freshDocs[idx].extractedText = extracted;
-                freshDocs[idx].updatedAt = new Date().toISOString();
-                freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
-                freshDocs[idx].source = 'local';
-                freshDocs[idx].syncStatus = 'not_synced';
-                freshDocs[idx].sync_status = 'not_synced';
-                await _storage().put(_storage().stores().CUSTOM_DOCS, freshDocs[idx]);
-                customDocs = freshDocs.filter(d => !d._deleted);
-                window.customDocs = customDocs;
-                showToast('✨ Текст документа успешно проиндексирован ИИ!');
-            }
-        } else {
-            showToast('⚠️ Текст из PDF извлечь не удалось.');
+        const freshDocs = await _storage().getAll(_storage().stores().CUSTOM_DOCS) || customDocs;
+        const idx = freshDocs.findIndex(d => d.id === docId);
+        if (idx === -1) {
+            showToast('⚠️ Документ не найден после индексации.');
+            return;
         }
+        const meta = _applyPdfExtractToDoc(freshDocs[idx], extracted);
+        if (meta) {
+            freshDocs[idx].updatedAt = new Date().toISOString();
+            freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
+            freshDocs[idx].source = 'local';
+            freshDocs[idx].syncStatus = 'not_synced';
+            freshDocs[idx].sync_status = 'not_synced';
+            await _storage().put(_storage().stores().CUSTOM_DOCS, freshDocs[idx]);
+            customDocs = freshDocs.filter(d => !d._deleted);
+            window.customDocs = customDocs;
+        }
+        _toastPdfIndexResult(meta);
         localStorage.setItem('rbi_cloud_dirty', '1');
         _sync('silent');
     }, 2000);
@@ -3328,7 +3425,7 @@ window.rbi_reindexCustomDoc = async function (docId) {
     if (!doc) return showToast('Документ не найден');
     if (!doc.pdfData) return showToast('⚠️ У документа нет PDF-файла для распознавания');
 
-    showToast('📄 Повторная индексация текста документа...');
+    showToast('📄 Повторная индексация текста документа (все страницы, до 300)…');
     try {
         const realUrl = await PhotoManager.getAsyncUrl(doc.pdfData) || doc.pdfData;
         const extracted = await _extractTextFromPdf(realUrl);
@@ -3337,9 +3434,7 @@ window.rbi_reindexCustomDoc = async function (docId) {
         const idx = freshDocs.findIndex(d => d.id === docId);
         if (idx === -1) return showToast('Документ не найден в базе');
 
-        if (extracted) {
-            freshDocs[idx].extractedText = extracted;
-        }
+        const meta = _applyPdfExtractToDoc(freshDocs[idx], extracted);
         freshDocs[idx].updatedAt = new Date().toISOString();
         freshDocs[idx].updated_at = freshDocs[idx].updatedAt;
         freshDocs[idx].source = 'local';
@@ -3350,7 +3445,8 @@ window.rbi_reindexCustomDoc = async function (docId) {
         customDocs = freshDocs.filter(d => !d._deleted);
         window.customDocs = customDocs;
 
-        showToast(extracted ? '✨ Текст переиндексирован, отправляем в облако...' : '⚠️ Текст извлечь не удалось, но переотправляем документ');
+        if (meta) _toastPdfIndexResult(meta);
+        else showToast('⚠️ Текст извлечь не удалось, но переотправляем документ');
 
         localStorage.setItem('rbi_cloud_dirty', '1');
         _sync('silent');
@@ -3383,9 +3479,8 @@ window.openDocViewer = async function (docId) {
             try {
                 const realUrl = await PhotoManager.getAsyncUrl(doc.pdfData) || doc.pdfData;
                 const extracted = await _extractTextFromPdf(realUrl);
-
-                if (extracted) {
-                    doc.extractedText = extracted;
+                const meta = _applyPdfExtractToDoc(doc, extracted);
+                if (meta) {
                     doc.updatedAt = new Date().toISOString();
                     doc.updated_at = doc.updatedAt;
                     doc.source = 'local';
@@ -3412,6 +3507,7 @@ window.renderNodesList = function () {
     var container = document.getElementById('nodes-list-container');
     var searchInput = (document.getElementById('node-search-input') && document.getElementById('node-search-input').value.toLowerCase()) || '';
     if (!container) return;
+    var expanded = window._kbCaptureExpandedGroups(container);
 
     var filtersBlock = document.getElementById('node-filters-block');
     if (filtersBlock && !filtersBlock.innerHTML.includes('nodeOwnerFilter')) {
@@ -3571,6 +3667,7 @@ window.renderNodesList = function () {
     }
 
     container.innerHTML = html;
+    window._kbRestoreExpandedGroups(container, expanded);
 };
 
 // =========================================================================

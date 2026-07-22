@@ -197,6 +197,22 @@ const _galleryFullData = new Map();
 // (data:/local://.../cloud://.../http...). Переживает только текущую сессию —
 // по тому же принципу, что уже применён в contractor-metrics.service.js.
 const _photoThumbCache = new Map();
+const PHOTO_THUMB_CACHE_MAX = 60;
+
+function _setPhotoThumbCache(photoRef, thumb) {
+    if (!photoRef || !thumb) return;
+    // delete+set → ключ уходит в конец Map (LRU)
+    if (_photoThumbCache.has(photoRef)) _photoThumbCache.delete(photoRef);
+    _photoThumbCache.set(photoRef, thumb);
+    while (_photoThumbCache.size > PHOTO_THUMB_CACHE_MAX) {
+        const oldest = _photoThumbCache.keys().next().value;
+        _photoThumbCache.delete(oldest);
+    }
+}
+
+// Поколение рендера аналитики: при смене фильтра старые async-превью
+// (_hydratePhotoThumbnails) не должны трогать DOM / грузить фото.
+let _analyticsRenderGen = 0;
 
 // =========================================================================
 // UI вкладки «Отчёты» (группировка по объекту + чипсы doc_kind + клиентская
@@ -313,7 +329,12 @@ function _downscalePhotoToDataUrl(imgEl, maxSide = 300, quality = 0.6) {
 // в img.src по завершении, изначально показывая placeholder/уже готовый кэш.
 async function _getPhotoThumbnail(photoRef) {
     if (!photoRef) return null;
-    if (_photoThumbCache.has(photoRef)) return _photoThumbCache.get(photoRef);
+    if (_photoThumbCache.has(photoRef)) {
+        const cached = _photoThumbCache.get(photoRef);
+        _photoThumbCache.delete(photoRef);
+        _photoThumbCache.set(photoRef, cached);
+        return cached;
+    }
 
     let realSrc;
     try {
@@ -331,7 +352,7 @@ async function _getPhotoThumbnail(photoRef) {
             el.src = realSrc;
         });
         const thumb = _downscalePhotoToDataUrl(imgEl, 300, 0.6);
-        if (thumb) _photoThumbCache.set(photoRef, thumb);
+        if (thumb) _setPhotoThumbCache(photoRef, thumb);
         return thumb;
     } catch (e) {
         return null;
@@ -364,11 +385,15 @@ function _renderPhotoCardHtml(d, i, galleryId, badgeColor, badgeText) {
 // Запускает генерацию превью для набора карточек уже вставленной (в DOM)
 // порции галереи, без блокировки самого insert — по завершении каждого
 // превью точечно обновляет img.src через data-photo-idx.
-function _hydratePhotoThumbnails(galleryId, entries) {
+function _hydratePhotoThumbnails(galleryId, entries, renderGen) {
+    const gen = (renderGen === undefined) ? _analyticsRenderGen : renderGen;
     entries.forEach(({ photoRef, idx }) => {
         if (_photoThumbCache.has(photoRef)) return; // уже подставлено синхронно при рендере карточки
         _getPhotoThumbnail(photoRef).then((thumb) => {
             if (!thumb) return;
+            // Фильтр уже сменился — этот рендер устарел, не трогаем DOM и не
+            // тратим время на подстановку (мобильный freeze при быстрых тапах).
+            if (gen !== _analyticsRenderGen) return;
             const img = document.querySelector(`#gallery-wrap-${galleryId} img[data-photo-idx="${idx}"]`);
             if (img) img.src = thumb;
         });
@@ -408,7 +433,7 @@ function _loadMorePhotosImpl(galleryId) {
         btn.remove();
     }
 
-    _hydratePhotoThumbnails(galleryId, nextPage.map((d, i) => ({ photoRef: d.photo, idx: shown + i })));
+    _hydratePhotoThumbnails(galleryId, nextPage.map((d, i) => ({ photoRef: d.photo, idx: shown + i })), _analyticsRenderGen);
 }
 
 // Перенесено из app.js 1:1 (текстуально идентична приватной копии в
@@ -480,16 +505,16 @@ export const AnalyticsRender = {
                 <div
                     class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)] mx-1">
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-contractors" data-analytics-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
                             </path>
                         </svg>
-                        Подрядчики
+                        <span class="sm:hidden">Подр.</span><span class="hidden sm:inline">Подрядчики</span>
                     </button>
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-onepager" data-analytics-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
@@ -498,7 +523,7 @@ export const AnalyticsRender = {
                         Сводка
                     </button>
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-schedule" data-analytics-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
@@ -507,16 +532,16 @@ export const AnalyticsRender = {
                         График
                     </button>
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-sk" data-analytics-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
                             </path>
                         </svg>
-                        ПК СК
+                        <span class="sm:hidden">СК</span><span class="hidden sm:inline">ПК СК</span>
                     </button>
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-history" data-analytics-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[80px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -866,6 +891,8 @@ export const AnalyticsRender = {
     // Перенесено из analytics.legacy.js: главный рендер текущей вкладки.
     // =========================================================================
     renderCurrentAnalyticsTab() {
+        // Инвалидируем in-flight canvas-превью предыдущего фильтра.
+        _analyticsRenderGen += 1;
         for (const key in _chartInstances()) { if (_chartInstances()[key]) _chartInstances()[key].destroy(); }
         AnalyticsState.setChartInstances({});
         AnalyticsRender.renderAnalyticsModeSwitcher();
@@ -1727,14 +1754,21 @@ export const AnalyticsRender = {
             .sort((a, b) => contrCheckCounts[b] - contrCheckCounts[a]);
 
         if (stageNames.length > 0 && topMatrixContrs.length > 0) {
-            heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2 -mx-1 px-1"><table class="text-left border-collapse text-[10px] w-full" style="min-width: ${Math.max(320, 140 + topMatrixContrs.length * 96)}px;">
-                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr><th class="p-2 border border-[var(--card-border)] font-black sticky left-0 z-10 bg-[var(--hover-bg)] min-w-[120px]">Вид работ / Подрядчик</th>`;
+            heatmapHtml = `<div class="overflow-x-auto custom-scrollbar pb-2 -mx-1 px-1"><table class="text-left border-collapse text-[10px] w-full" style="min-width: ${Math.max(400, 140 + 72 + topMatrixContrs.length * 96)}px;">
+                <thead class="bg-[var(--hover-bg)] text-[var(--text-muted)] uppercase"><tr>
+                    <th class="p-2 border border-[var(--card-border)] font-black sticky left-0 z-10 bg-[var(--hover-bg)] min-w-[120px]">Вид работ / Подрядчик</th>
+                    <th class="p-2 border border-[var(--card-border)] text-center font-black sticky z-10 bg-[var(--hover-bg)] min-w-[72px] max-w-[88px] whitespace-normal leading-tight" style="left:120px" title="Сумма дефектов B2+B3 по этапу">Всего дефектов</th>`;
 
             topMatrixContrs.forEach(c => heatmapHtml += `<th class="p-2 border border-[var(--card-border)] text-center font-bold min-w-[96px] max-w-[140px] whitespace-normal leading-tight" title="${c}">${c}</th>`);
             heatmapHtml += `</tr></thead><tbody>`;
 
             stageNames.forEach(stage => {
+                const stageTotal = topMatrixContrs.reduce((sum, contr) => {
+                    const cell = heatmapStages[stage][contr];
+                    return sum + (cell ? (Number(cell.defects) || 0) : 0);
+                }, 0);
                 heatmapHtml += `<tr><td class="p-2 border border-[var(--card-border)] font-bold text-slate-700 dark:text-slate-300 sticky left-0 z-10 bg-[var(--card-bg)] min-w-[120px] max-w-[160px] whitespace-normal leading-tight" title="${stage}">${stage}</td>`;
+                heatmapHtml += `<td class="p-2 border border-[var(--card-border)] text-center font-black sticky z-10 bg-[var(--card-bg)] text-slate-800 dark:text-slate-100 tabular-nums" style="left:120px">${stageTotal}</td>`;
                 topMatrixContrs.forEach(contr => {
                     const cell = heatmapStages[stage][contr];
                     if (!cell) {
@@ -1765,7 +1799,7 @@ export const AnalyticsRender = {
             <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 flex justify-between items-center">
                 <div>
                     <h2 class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                         Сводный статус объекта
                     </h2>
                     <div class="text-[9px] font-bold text-[var(--text-muted)] mt-1">Охват: ${data.length} проверок &bull; Период: <span class="text-indigo-500">${periodText}</span></div>
@@ -1919,12 +1953,12 @@ export const AnalyticsRender = {
                         </span>
                         <span class="transition-transform group-open:rotate-180">▼</span>
                     </summary>
-                    <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-2xl">
+                    <div class="p-4 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-2xl overflow-visible">
                         ${heatmapHtml}
                         <button onclick="window.RBI.services.ai.generateHeatmapAi()" class="mt-3 w-full bg-slate-50 text-slate-600 dark:bg-slate-700 dark:text-slate-300 py-3 rounded-xl font-bold text-[10px] uppercase active:scale-95 shadow-sm flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-600 transition-transform">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Анализ Рисков (ИИ)
                         </button>
-                        <div id="heatmap-ai-text" class="hidden mt-3 text-[11px] leading-relaxed text-red-800 dark:text-red-400 bg-red-50 dark:bg-red-900/10 p-3 rounded-lg border border-red-200 dark:border-red-800 font-medium"></div>
+                        <div id="heatmap-ai-text" class="mt-3 text-[13px] leading-relaxed text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900/70 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-600 font-medium shadow-sm custom-scrollbar" aria-live="polite"></div>
                     </div>
                 </details>
 
@@ -2733,6 +2767,10 @@ export const AnalyticsRender = {
         setTimeout(() => {
             const ctxL = document.getElementById('chart_detail_line')?.getContext('2d');
             if (ctxL) {
+                const prev = _chartInstances()['chart_detail_line'];
+                if (prev && typeof prev.destroy === 'function') {
+                    try { prev.destroy(); } catch (e) { /* ignore */ }
+                }
                 _chartInstances()['chart_detail_line'] = new Chart(ctxL, {
                     type: 'line',
                     data: { labels: data.map((_, i) => `#${i + 1}`), datasets: [{ data: data.map(item => item.metrics.final), borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3, borderWidth: 2, pointRadius: 3 }] },
@@ -2753,6 +2791,11 @@ export const AnalyticsRender = {
     },
 
     hideContractorDetailView() {
+        const detailChart = _chartInstances()['chart_detail_line'];
+        if (detailChart && typeof detailChart.destroy === 'function') {
+            try { detailChart.destroy(); } catch (e) { /* ignore */ }
+        }
+        try { delete _chartInstances()['chart_detail_line']; } catch (e) { /* ignore */ }
         window.currentDetailedContractor = null;
         document.getElementById('contractors-main-view').classList.remove('hidden');
         document.getElementById('contractor-detail-view').classList.add('hidden');
@@ -2851,7 +2894,11 @@ export const AnalyticsRender = {
             </button>`
             : '';
 
-        setTimeout(() => _hydratePhotoThumbnails(galleryId, page.map((d, i) => ({ photoRef: d.photo, idx: i }))), 0);
+        const renderGen = _analyticsRenderGen;
+        setTimeout(() => {
+            if (renderGen !== _analyticsRenderGen) return;
+            _hydratePhotoThumbnails(galleryId, page.map((d, i) => ({ photoRef: d.photo, idx: i })), renderGen);
+        }, 0);
 
         return `
             <div id="gallery-wrap-${galleryId}" class="w-full relative">

@@ -767,6 +767,9 @@ window.rbi_renderPracticesTab = async function () {
     const detectorContainer = document.getElementById('practices-auto-detector');
     const listContainer = document.getElementById('practices-list-container');
     if (!detectorContainer || !listContainer) return;
+    const expanded = (typeof window._kbCaptureExpandedGroups === 'function')
+        ? window._kbCaptureExpandedGroups(listContainer)
+        : new Set();
 
     const titleContainer = listContainer.previousElementSibling;
     if (titleContainer) {
@@ -1031,6 +1034,9 @@ window.rbi_renderPracticesTab = async function () {
                 </div>
             </div>`;
     }).join('');
+    if (typeof window._kbRestoreExpandedGroups === 'function') {
+        window._kbRestoreExpandedGroups(listContainer, expanded);
+    }
 };
 
 // Вспомогательная модалка выбора "Что создать?"

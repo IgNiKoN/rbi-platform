@@ -969,7 +969,7 @@ function sk_renderHrTab() {
                 </div>
                 <button onclick="window.sk_auditTemplatesAi()" class="bg-indigo-600 text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase shadow-md active:scale-95 transition-transform shrink-0">Разобрать</button>
             </div>
-            <div id="sk-ai-templates-res" class="hidden mt-3 p-4 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium max-h-[300px] overflow-y-auto custom-scrollbar"></div>
+            <div id="sk-ai-templates-res" class="hidden mt-3 p-3 bg-white dark:bg-slate-800 border border-indigo-100 dark:border-indigo-700 rounded-xl text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 shadow-inner font-medium"></div>
         </div>`;
 }
 

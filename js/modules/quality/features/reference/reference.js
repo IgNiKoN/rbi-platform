@@ -19,7 +19,7 @@ function renderReferenceMarkup() {
                 <div
                     class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)] mx-1">
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-checklists" data-reference-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
@@ -27,7 +27,7 @@ function renderReferenceMarkup() {
                         </svg>Ч/л
                     </button>
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-docs" data-reference-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253">
@@ -35,7 +35,7 @@ function renderReferenceMarkup() {
                         </svg>НД
                     </button>
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-twi" data-reference-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z">
@@ -43,7 +43,7 @@ function renderReferenceMarkup() {
                         </svg>TWI
                     </button>
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-nodes" data-reference-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
@@ -51,7 +51,7 @@ function renderReferenceMarkup() {
                         </svg>Узлы
                     </button>
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-practices" data-reference-action-arg2-type="element"
-                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
+                        class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z">
@@ -1014,6 +1014,9 @@ function renderReferenceTab() {
     const root = document.getElementById('reference-items');
     const refSelect = document.getElementById('ref-checklist-selector');
     if (!root || !refSelect) return;
+    const expanded = (typeof window._kbCaptureExpandedGroups === 'function')
+        ? window._kbCaptureExpandedGroups(root)
+        : new Set();
 
     const selectedKey = refSelect.value;
     if (!selectedKey) return;
@@ -1132,6 +1135,9 @@ function renderReferenceTab() {
     });
 
     root.innerHTML = html || `<div class="text-center py-10 text-slate-500 text-xs font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">Ничего не найдено</div>`;
+    if (typeof window._kbRestoreExpandedGroups === 'function') {
+        window._kbRestoreExpandedGroups(root, expanded);
+    }
 }
 window.renderReferenceTab = renderReferenceTab;
 

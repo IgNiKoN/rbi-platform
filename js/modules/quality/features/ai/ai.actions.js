@@ -46,6 +46,103 @@ function _gameLogAction(actionType, targetId) {
     if (typeof gameLogAction === 'function') return gameLogAction(actionType, targetId);
 }
 
+/**
+ * Рендер ответа ИИ в безопасный HTML.
+ * Важно: callAI по умолчанию уже меняет ** на <b> — нельзя просто экранировать весь HTML,
+ * иначе на экране остаются буквальные теги <b>...</b>.
+ */
+function _formatAiRichText(raw) {
+    let text = String(raw || '').replace(/\r\n/g, '\n').trim();
+    text = text.replace(/^```[\w]*\n?/i, '').replace(/\n?```$/i, '').trim();
+
+    // Нормализация разметки → маркеры (и от callAI <b>, и от сырого markdown)
+    text = text.replace(/<\s*br\s*\/?\s*>/gi, '\n');
+    text = text.replace(/<\s*\/\s*p\s*>/gi, '\n').replace(/<\s*p[^>]*>/gi, '');
+    text = text.replace(/<\s*\/\s*li\s*>/gi, '\n').replace(/<\s*li[^>]*>/gi, '- ');
+    text = text.replace(/<\s*\/\s*(ul|ol)\s*>/gi, '\n').replace(/<\s*(ul|ol)[^>]*>/gi, '\n');
+    text = text.replace(/<\s*\/?\s*(div|span|h[1-6])[^>]*>/gi, '\n');
+    text = text.replace(/<\s*\/?\s*(b|strong)\s*>/gi, (m) => (/^\<\s*\//i.test(m) ? '§/B§' : '§B§'));
+    text = text.replace(/<[^>]+>/g, '');
+    text = text
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+
+    text = text.replace(/\*\*\*(.+?)\*\*\*/g, '§B§$1§/B§');
+    text = text.replace(/\*\*(.+?)\*\*/g, '§B§$1§/B§');
+    text = text.replace(/__(.+?)__/g, '§B§$1§/B§');
+    text = text.replace(/^#{1,4}\s+(.+)$/gm, '§H§$1§/H§');
+
+    // Экранирование остатка
+    text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const applyInline = (s) => s
+        .replace(/§B§([\s\S]+?)§\/B§/g, '<b class="font-bold text-slate-900 dark:text-white">$1</b>')
+        .replace(/§B§|§\/B§/g, '');
+
+    const lines = text.split('\n');
+    const out = [];
+    let listType = null;
+
+    const closeList = () => {
+        if (!listType) return;
+        out.push(listType === 'ul' ? '</ul>' : '</ol>');
+        listType = null;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (!trimmed) {
+            closeList();
+            continue;
+        }
+
+        const hMatch = trimmed.match(/^§H§(.+)§\/H§$/);
+        if (hMatch) {
+            closeList();
+            out.push(`<p class="font-black text-[13px] mt-3 mb-1.5 text-slate-900 dark:text-white">${applyInline(hMatch[1])}</p>`);
+            continue;
+        }
+
+        const ul = trimmed.match(/^[-•–]\s+(.+)$/);
+        if (ul) {
+            if (listType !== 'ul') {
+                closeList();
+                out.push('<ul class="list-disc pl-4 my-1.5 space-y-1">');
+                listType = 'ul';
+            }
+            out.push(`<li class="mb-0.5">${applyInline(ul[1])}</li>`);
+            continue;
+        }
+
+        const sec = trimmed.match(/^(\d+)[.)]\s+(.+)$/);
+        if (sec) {
+            const body = sec[2];
+            const looksLikeSection = /:$/.test(body) || body.length <= 90;
+            if (looksLikeSection) {
+                closeList();
+                out.push(`<p class="font-black text-[13px] mt-3 mb-1.5 text-slate-900 dark:text-white">${sec[1]}. ${applyInline(body.replace(/:$/, ''))}</p>`);
+                continue;
+            }
+            if (listType !== 'ol') {
+                closeList();
+                out.push('<ol class="list-decimal pl-4 my-1.5 space-y-1">');
+                listType = 'ol';
+            }
+            out.push(`<li class="mb-0.5">${applyInline(body)}</li>`);
+            continue;
+        }
+
+        closeList();
+        out.push(`<p class="mb-2">${applyInline(trimmed)}</p>`);
+    }
+    closeList();
+    return out.join('') || '<p class="mb-0">—</p>';
+}
+
 function _reports() {
     if (AIActions._ctx && AIActions._ctx.reports) {
         return AIActions._ctx.reports;
@@ -330,56 +427,302 @@ async function generatePulseAi() {
     } catch (e) { container.innerHTML = "Ошибка AI"; }
 };
 
+// === AI: АНАЛИЗ ТЕПЛОВОЙ КАРТЫ — модалка (полный текст + копирование) ===
+let _heatmapAiLast = { html: '', plain: '' };
+
+function _heatmapAiPlainText(raw) {
+    return String(raw || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\*\*/g, '')
+        .replace(/^#{1,4}\s+/gm, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function closeHeatmapAiModal() {
+    const modal = document.getElementById('heatmap-ai-modal');
+    if (modal) modal.remove();
+}
+
+function copyHeatmapAiText() {
+    const plain = _heatmapAiLast.plain || '';
+    if (!plain) return showToast('Нечего копировать');
+    const done = () => {
+        showToast('Анализ скопирован');
+        _gameLogAction('ai_copy', 'heatmap');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(plain).then(done).catch(() => {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = plain;
+                ta.style.cssText = 'position:fixed;left:-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                done();
+            } catch (e) {
+                showToast('Не удалось скопировать');
+            }
+        });
+        return;
+    }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = plain;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        done();
+    } catch (e) {
+        showToast('Не удалось скопировать');
+    }
+}
+
+function reopenHeatmapAiModal() {
+    if (!_heatmapAiLast.html) return showToast('Сначала сгенерируйте анализ');
+    openHeatmapAiModal({ html: _heatmapAiLast.html, plain: _heatmapAiLast.plain });
+}
+
+function openHeatmapAiModal(opts) {
+    const options = opts || {};
+    const loading = !!options.loading;
+    if (options.plain != null) _heatmapAiLast.plain = options.plain;
+    if (options.html != null && !loading) _heatmapAiLast.html = options.html;
+
+    let modal = document.getElementById('heatmap-ai-modal');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', `
+<div id="heatmap-ai-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm" onclick="if(event.target===this)closeHeatmapAiModal()">
+  <div class="bg-[var(--card-bg)] w-full max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[94vh] sm:max-h-[90vh]" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="heatmap-ai-modal-title">
+    <div class="flex items-center justify-between gap-2 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--card-border)] shrink-0">
+      <h3 id="heatmap-ai-modal-title" class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">Анализ матрицы рисков</h3>
+      <button type="button" onclick="closeHeatmapAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="heatmap-ai-modal-body" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-4 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 dark:text-slate-100"></div>
+    <div class="flex gap-2 p-4 pt-3 border-t border-[var(--card-border)] shrink-0 bg-[var(--card-bg)]">
+      <button type="button" id="heatmap-ai-modal-copy" onclick="copyHeatmapAiText()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+        Копировать
+      </button>
+      <button type="button" onclick="closeHeatmapAiModal()" class="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95">Закрыть</button>
+    </div>
+  </div>
+</div>`);
+        modal = document.getElementById('heatmap-ai-modal');
+    } else {
+        // Подтянуть ширину, если модалка осталась от старой версии в DOM
+        const panel = modal.querySelector('[role="dialog"]');
+        if (panel) {
+            panel.classList.remove('max-w-lg', 'max-w-xl', 'max-w-2xl');
+            panel.classList.add('max-w-3xl');
+        }
+    }
+
+    const body = document.getElementById('heatmap-ai-modal-body');
+    const copyBtn = document.getElementById('heatmap-ai-modal-copy');
+    if (body) {
+        if (loading) {
+            body.innerHTML = `<span class="animate-pulse text-indigo-500 dark:text-indigo-300 font-bold">⏳ AI разбирает матрицу этап × подрядчик...</span>`;
+        } else {
+            body.innerHTML = options.html || _heatmapAiLast.html || '—';
+            body.scrollTop = 0;
+        }
+    }
+    if (copyBtn) copyBtn.disabled = loading || !_heatmapAiLast.plain;
+    modal.style.display = 'flex';
+}
+
+function _setHeatmapAiTeaser(state) {
+    const teaser = document.getElementById('heatmap-ai-text');
+    if (!teaser) return;
+    teaser.classList.add('is-open');
+    teaser.classList.remove('hidden');
+    if (state === 'loading') {
+        teaser.innerHTML = `<span class="text-indigo-500 dark:text-indigo-300 font-bold animate-pulse">⏳ Анализ формируется в окне…</span>`;
+        return;
+    }
+    if (state === 'empty') {
+        teaser.innerHTML = `<span class="text-slate-500">Нет данных для анализа.</span>`;
+        return;
+    }
+    if (state === 'error') {
+        teaser.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
+        return;
+    }
+    teaser.innerHTML = `
+        <div class="flex flex-col gap-2">
+            <p class="text-[12px] font-bold text-slate-700 dark:text-slate-200">Анализ готов — полный текст в отдельном окне.</p>
+            <button type="button" onclick="reopenHeatmapAiModal()" class="w-full bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 py-2.5 rounded-xl font-bold text-[10px] uppercase active:scale-95">Открыть анализ</button>
+        </div>`;
+}
+
 // === AI: АНАЛИЗ ТЕПЛОВОЙ КАРТЫ (МАТРИЦА РИСКОВ) ===
 async function generateHeatmapAi() {
     if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента!");
-    const container = document.getElementById('heatmap-ai-text');
-    container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold">⏳ AI анализирует реальную матрицу дефектов...</span>`;
+    _setHeatmapAiTeaser('loading');
+    openHeatmapAiModal({ loading: true });
 
-    // 1. Получаем РЕАЛЬНЫЕ данные с учетом фильтров
     const data = typeof getFilteredAnalyticsData === 'function' ? getFilteredAnalyticsData() : [];
     if (data.length === 0) {
-        container.innerHTML = `<span class="text-slate-500">Нет данных для анализа.</span>`;
+        _setHeatmapAiTeaser('empty');
+        openHeatmapAiModal({
+            html: `<span class="text-slate-500">Нет данных для анализа.</span>`,
+            plain: 'Нет данных для анализа.'
+        });
         return;
     }
 
-    // 2. Считаем реальные дефекты по видам работ
-    const stagesDefects = {};
-    data.forEach(check => {
-        if (check.metrics && (check.metrics.n_B2_fail > 0 || check.metrics.n_B3_fail > 0)) {
-            const stage = check.templateTitle || check.templateKey || 'Неизвестный этап';
-            stagesDefects[stage] = (stagesDefects[stage] || 0) + check.metrics.n_B2_fail + check.metrics.n_B3_fail;
-        }
-    });
+    // Та же логика, что у тепловой карты: B2+B3 на ячейку этап×подрядчик
+    const byStage = {};
+    const byContr = {};
+    const byCell = {};
+    let totalChecks = 0;
+    let totalDefects = 0;
+    let totalB3 = 0;
 
-    // 3. Выбираем ТОП-3 самых проблемных видов работ
-    const topStages = Object.keys(stagesDefects)
-        .sort((a, b) => stagesDefects[b] - stagesDefects[a])
+    data.forEach(check => {
+        if (!check.metrics) return;
+        const stage = check.templateTitle || check.templateKey || 'Неизвестный этап';
+        const contr = check.contractorName || 'Неизвестно';
+        const b2 = Number(check.metrics.n_B2_fail) || 0;
+        const b3 = Number(check.metrics.n_B3_fail) || 0;
+        const defects = b2 + b3;
+        const cellKey = stage + '\0' + contr;
+
+        totalChecks++;
+        totalDefects += defects;
+        totalB3 += b3;
+
+        if (!byStage[stage]) byStage[stage] = { defects: 0, checks: 0, b3: 0 };
+        byStage[stage].defects += defects;
+        byStage[stage].checks++;
+        byStage[stage].b3 += b3;
+
+        if (!byContr[contr]) byContr[contr] = { defects: 0, checks: 0, b3: 0 };
+        byContr[contr].defects += defects;
+        byContr[contr].checks++;
+        byContr[contr].b3 += b3;
+
+        if (!byCell[cellKey]) byCell[cellKey] = { stage, contr, defects: 0, checks: 0, b3: 0 };
+        byCell[cellKey].defects += defects;
+        byCell[cellKey].checks++;
+        byCell[cellKey].b3 += b3;
+    });
+    const cells = Object.values(byCell);
+
+    const rate = (d, c) => (c > 0 ? (d / c) : 0);
+    const fmtRate = (d, c) => rate(d, c).toFixed(2);
+
+    const topStages = Object.keys(byStage)
+        .map(name => ({ name, ...byStage[name], intensity: rate(byStage[name].defects, byStage[name].checks) }))
+        .sort((a, b) => b.defects - a.defects || b.intensity - a.intensity)
+        .slice(0, 5);
+
+    const topContrs = Object.keys(byContr)
+        .map(name => ({ name, ...byContr[name], intensity: rate(byContr[name].defects, byContr[name].checks) }))
+        .sort((a, b) => b.defects - a.defects || b.intensity - a.intensity)
+        .slice(0, 5);
+
+    // Пики матрицы: есть дефекты; приоритет объёму, затем интенсивности
+    const topCells = cells
+        .filter(c => c.defects > 0)
+        .map(c => ({ ...c, intensity: rate(c.defects, c.checks) }))
+        .sort((a, b) => b.defects - a.defects || b.intensity - a.intensity)
+        .slice(0, 6);
+
+    const stagesByIntensity = Object.keys(byStage)
+        .map(name => ({ name, ...byStage[name], intensity: rate(byStage[name].defects, byStage[name].checks) }))
+        .filter(s => s.checks >= 2 && s.defects > 0)
+        .sort((a, b) => b.intensity - a.intensity)
         .slice(0, 3);
 
-    let promptUser = "";
-    if (topStages.length > 0) {
-        const listStr = topStages.map(s => `"${s}" (${stagesDefects[s]} дефектов)`).join(', ');
-        promptUser = `Реальная статистика (Топ проблемных этапов): ${listStr}.`;
+    const contrsByIntensity = Object.keys(byContr)
+        .map(name => ({ name, ...byContr[name], intensity: rate(byContr[name].defects, byContr[name].checks) }))
+        .filter(c => c.checks >= 2 && c.defects > 0)
+        .sort((a, b) => b.intensity - a.intensity)
+        .slice(0, 3);
+
+    const lineStage = s => `• ${s.name}: ${s.defects} деф. (B3=${s.b3}) / ${s.checks} пр. → ${fmtRate(s.defects, s.checks)} деф/пр`;
+    const lineContr = c => `• ${c.name}: ${c.defects} деф. (B3=${c.b3}) / ${c.checks} пр. → ${fmtRate(c.defects, c.checks)} деф/пр`;
+    const lineCell = c => `• ${c.stage} × ${c.contr}: ${c.defects} деф. (B3=${c.b3}) / ${c.checks} пр. → ${fmtRate(c.defects, c.checks)} деф/пр`;
+
+    let promptUser = `Матрица рисков качества (фильтрованная выборка сводки).
+Метрика дефекта: B2+B3 (как в тепловой карте). «деф/пр» = дефектов на одну проверку (интенсивность).
+
+Сводка: проверок=${totalChecks}, дефектов B2+B3=${totalDefects}, из них B3=${totalB3}, средняя интенсивность=${fmtRate(totalDefects, totalChecks)} деф/пр.
+`;
+
+    if (totalDefects === 0) {
+        promptUser += `\nЗначимых дефектов B2/B3 в выборке нет.`;
     } else {
-        promptUser = `Значимых дефектов B2 и B3 не зафиксировано. Все этапы в норме.`;
+        promptUser += `
+Топ видов работ по объёму дефектов:
+${topStages.map(lineStage).join('\n') || '—'}
+
+Топ видов работ по интенсивности (при ≥2 проверках):
+${stagesByIntensity.map(lineStage).join('\n') || '—'}
+
+Топ подрядчиков по объёму дефектов:
+${topContrs.map(lineContr).join('\n') || '—'}
+
+Топ подрядчиков по интенсивности (при ≥2 проверках):
+${contrsByIntensity.map(lineContr).join('\n') || '—'}
+
+Пиковые ячейки матрицы (этап × подрядчик):
+${topCells.map(lineCell).join('\n') || '—'}
+`;
     }
 
-    const promptSystem = `Ты — риск-менеджер строительного контроля. Посмотри на переданную статистику дефектов и ответь 1-2 короткими предложениями: 
-    Где главная просадка по качеству и какой обучающий TWI-тренинг (мастер-класс) стоит провести для рабочих? 
-    Если дефектов нет, просто похвали команду за идеальное качество.`;
+    const promptSystem = `Ты — старший аналитик строительного контроля. Пишешь развёрнутый разбор матрицы «вид работ × подрядчик» для инженера.
+
+Правила содержания:
+— опирайся ТОЛЬКО на переданные цифры; не выдумывай этапы, подрядчиков, причины и проценты;
+— разделяй объём дефектов и интенсивность (деф/пр) — это разные риски, объясни разницу словами;
+— B3 важнее B2: если B3 > 0, подчеркни явно;
+— это АНАЛИЗ, а не перечень: в каждом блоке сначала 2–4 предложения связного текста (что происходит и почему это важно), затем при необходимости 2–3 коротких пункта с фактами;
+— запрещено отвечать одним только списком названий без пояснений;
+— без воды и лозунгов «усилить контроль»; без TWI как единственного вывода;
+— НЕ пиши HTML-теги и код-блоки.
+
+Оформление (интерфейс сам отрисует):
+— заголовок блока отдельной строкой: «1) Виды работ»;
+— поясняющий абзац обычным текстом;
+— факты строками «- ...»;
+— имена и ключевые цифры выделяй **двойными звёздочками**.
+
+Структура (строго 4 блока):
+1) Виды работ — где главный вклад в дефектность и за счёт чего (объём / интенсивность / B3).
+2) Подрядчики в зоне риска — кого держать на радаре и почему (не путать «много проверок» с «плохое качество»).
+3) Опасные пересечения — какие связки этап×подрядчик выделяются; если пиков нет — так и скажи и почему.
+4) Фокус на неделю — 1–2 конкретных шага: кого/что проверить первым и какой эффект ожидаем.
+
+Объём: 180–280 слов. Обязательно допиши все 4 блока до конца — не обрывай последнюю фразу.
+Если дефектов нет — 3–5 предложений: что означает нулевая дефектность при данном объёме выборки и на что смотреть дальше.`;
 
     try {
+        // raw:true — иначе callAI сам вставит <b>, а форматтер их экранирует в видимые теги
+        // 1600 токенов: иначе развёрнутый RU-анализ часто обрывается на последнем блоке
         const res = await callAI([
             { role: 'system', content: promptSystem },
             { role: 'user', content: promptUser }
-        ], { temperature: 0.3, max_tokens: 150 });
+        ], { temperature: 0.4, max_tokens: 1600, raw: true });
 
-        container.innerHTML = `<b>💡 Рекомендация:</b> ${res}`;
+        const html = _formatAiRichText(res);
+        const plain = _heatmapAiPlainText(res);
+        openHeatmapAiModal({ html, plain });
+        _setHeatmapAiTeaser('ready');
         _gameLogAction('ai_generate', 'heatmap');
     } catch (e) {
-        container.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
+        _setHeatmapAiTeaser('error');
+        openHeatmapAiModal({
+            html: `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`,
+            plain: 'Ошибка связи с нейросетью'
+        });
     }
 };
 
@@ -749,10 +1092,12 @@ async function generateAiHintForDefect() {
     }
 };
 
-// === УТИЛИТА: ИЗВЛЕЧЕНИЕ ТЕКСТА ИЗ PDF (С УМНОЙ ПОРЦИОННОЙ ЗАГРУЗКОЙ И ЗАЩИТОЙ ВОРКЕРА) ===
+/**
+ * Извлечение текстового слоя PDF (не OCR сканов).
+ * @returns {Promise<{text:string,pageCount:number,totalPages:number,charCount:number,avgCharsPerPage:number}|null>}
+ */
 async function extractTextFromPdf(pdfDataUrl) {
     try {
-        // Принудительно задаем путь к воркеру, чтобы он не терялся
         if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
             pdfjsLib.GlobalWorkerOptions.workerSrc = './libs/pdfjs/pdf.worker.min.js';
         }
@@ -779,25 +1124,44 @@ async function extractTextFromPdf(pdfDataUrl) {
         for (let i = 1; i <= maxPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
+            // Сохраняем пробелы между glyph-runs — иначе слова слипаются и поиск ломается
             const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + ' \n';
+            fullText += pageText + '\n';
 
             if (i % 10 === 0) {
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
 
-        // ДОБАВЛЕНО: Очищаем текст от невидимого мусора, который ломает базу
         fullText = fullText.replace(/[\0\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+        const charCount = fullText.replace(/\s+/g, ' ').trim().length;
+        const avgCharsPerPage = maxPages > 0 ? Math.round(charCount / maxPages) : 0;
 
-        return fullText;
+        return {
+            text: fullText,
+            pageCount: maxPages,
+            totalPages: pdf.numPages,
+            charCount,
+            avgCharsPerPage
+        };
     } catch (err) {
         console.error("Ошибка парсинга PDF:", err);
-        // Теперь мы увидим красную плашку, если парсер упадет
         if (typeof showToast === 'function') showToast("❌ Ошибка парсинга PDF: " + err.message);
         return null;
     }
-};
+}
+
+/** Нормализация ответа extractTextFromPdf (строка legacy → объект). */
+function _normalizePdfExtract(extracted) {
+    if (!extracted) return null;
+    if (typeof extracted === 'string') {
+        const text = extracted;
+        const charCount = text.replace(/\s+/g, ' ').trim().length;
+        return { text, pageCount: 0, totalPages: 0, charCount, avgCharsPerPage: 0 };
+    }
+    if (extracted.text != null) return extracted;
+    return null;
+}
 
 // === ГЕНЕРАТОР ТЗ ИЗ ОБРАТНОЙ СВЯЗИ ===
 async function rbi_normalizeFeedbackAi(rawText) {
@@ -822,262 +1186,1645 @@ async function rbi_normalizeFeedbackAi(rawText) {
 };
 
 // ============================================================================
-// === AI ЧАТ ПО НОРМАТИВАМ (RAG: Поиск контекста + DeepSeek) ===
+// === AI ЧАТ ПО НОРМАТИВАМ (RAG v1.5 + full-screen view) ===
 // ============================================================================
+
+const _AI_DOC_STOP = new Set(['этот', 'этой', 'какие', 'какой', 'какая', 'какое', 'можно', 'нужно', 'если', 'также', 'или', 'для', 'при', 'что', 'как', 'где', 'когда', 'есть', 'нет', 'по', 'из', 'на', 'от', 'до', 'со', 'во']);
+const _AI_DOC_SYNONYMS = {
+    арматур: ['армирован', 'армированн', 'стержн'],
+    бетон: ['бетонн', 'железобетон'],
+    монолитн: ['монолит', 'железобетон', 'жбк'],
+    отклонен: ['допуск', 'допустим', 'неровност'],
+    допу: ['отклонен', 'допуск', 'допустим', 'неровност'],
+    стен: ['стены', 'стенов', 'колонн'],
+    газобетон: ['газобетонн', 'ячеист'],
+    кладк: ['кирпичн', 'каменн'],
+    гидроизоляц: ['гидроизол', 'обмазочн'],
+    сварк: ['сварн', 'шов'],
+    опалубк: ['опалубочн'],
+    фундамент: ['основан'],
+    перекрыт: ['плит'],
+    кровл: ['кровля', 'кровельн', 'крыш']
+};
+/** Домены работ: чтобы вопрос про монолит не «прилипал» к СП по НФС из‑за слова «стена». */
+const _AI_DOC_DOMAIN = {
+    mono: ['монолит', 'железобетон', 'жбк', 'опалуб', 'арматур', 'бетонн'],
+    facade: ['фасад', 'навесн', 'кронштейн', 'облицов', 'вентфасад', 'нфс', 'утеплител', 'направляющ'],
+    roof: ['кровл', 'крыш', 'кровельн', 'пароизоляц', 'инверсионн'],
+    masonry: ['газобетон', 'пеноблок', 'ячеист', 'кладк', 'кирпич']
+};
+
+/**
+ * Словарь площадки: простой язык → термины чек-листа/СП.
+ * Паттерны без флага g (иначе lastIndex ломает повторные .test).
+ */
+const _AI_DOC_PHRASE_MAP = [
+    { re: /крив|завалил|завал|уш[её]л\s+от\s+вертикал|не\s+по\s+отвесу/, add: 'отклонение вертикали плоскости стен' },
+    { re: /пузыр|раковин|каверн|дырк\w*\s+в\s+бетон/, add: 'раковины сколы бетона' },
+    { re: /защитн\w*\s+сло|слой\s+защит|оголен\w*\s+арматур|торчит\s+арматур/, add: 'защитный слой бетона арматура обнажение' },
+    { re: /скольк\w*\s*мм|сколько\s+можно|какая\s+норма|по\s+норме|в\s+допуск|влезает\s+ли/, add: 'допуск мм табл отклонение' },
+    { re: /неровн|волн\w*\s+стен|горбы|ямы\s+на\s+бетон/, add: 'неровности поверхности бетона рейкой' },
+    { re: /соосн|не\s+по\s+оси|съехал\w*\s+оси/, add: 'отклонение соосности вертикальных конструкций' },
+    { re: /толщин\w*\s+стен|сечени[ея]\s+стен|размер\s+сечен/, add: 'размер поперечного сечения допуск' },
+    { re: /про[её]м|оконн|дверн/, add: 'размеры проёмов оконных дверных' },
+    { re: /опалубк|щит\w*\s+опалуб/, add: 'опалубка монолит' },
+    { re: /наплыв|цементн\w*\s+молоко/, add: 'наплывы поверхность бетона' },
+    { re: /трещин/, add: 'трещины бетон конструкции' },
+    { re: /влажност|мокр\w*\s+основан/, add: 'влажность основания' },
+    { re: /ровност\w*\s+основан|основание\s+крив/, add: 'ровность основания неровности' },
+    { re: /перевязк|разбежк/, add: 'перевязка швов кладки' },
+    { re: /вертикал\w*\s+кладк|кладк\w*\s+крив/, add: 'отклонение плоскости стен кладки вертикали' },
+    { re: /газобетон|пеноблок|ячеист/, add: 'газобетон кладка стен' },
+    { re: /кровл|крыш|кровельн/, add: 'кровля пароизоляция гидроизоляция стяжка утеплитель' },
+    { re: /принят\w*\s+кров|при[её]мк\w*\s+кров|сдат\w*\s+кров/, add: 'кровля контроль приемка' },
+    { re: /принят|при[её]мк|приемк|сдат\w*\s+работ|принять\s+у\s+подрядчик/, add: 'контроль приемка проверка' },
+    { re: /нфс|вентфасад|вентилируем\w*\s+фасад/, add: 'навесной вентилируемый фасад' },
+    { re: /кронштейн/, add: 'кронштейны анкер фасад' },
+    { re: /утеплител|минват|мин\s*плит/, add: 'утеплитель плиты фасад' },
+    { re: /сварн\w*\s+шов|сварк/, add: 'сварка шов' },
+    { re: /напуск|нахлест|анкеровк/, add: 'нахлестка анкеровка арматуры' },
+    { re: /защитн\w*\s+слой/, add: 'защитный слой бетона' },
+    { re: /журнал\s+входн|входной\s+контроль/, add: 'журнал входного контроля' },
+    { re: /\bппр\b|проект\s+производств/, add: 'ППР согласованный' },
+    { re: /исполнительн\w*\s+схем/, add: 'исполнительные схемы' }
+];
+
+const _AI_DOC_INTENT_EXTRA = {
+    допуск: ['допуск', 'мм', 'отклонен', 'табл', 'не более'],
+    как_проверить: ['проверк', 'контроль', 'рейк', 'измерен', 'методик'],
+    документы: ['журнал', 'акт', 'исполнительн', 'ппр', 'паспорт'],
+    общее: []
+};
+
+function _detectAiDocIntent(question) {
+    const t = String(question || '').toLowerCase();
+    if (/журнал|акт\b|исполнительн|ппр|паспорт|протокол|документац/.test(t)) return 'документы';
+    if (/как\s+провер|чем\s+мер|как\s+измер|рейк|нивелир|методик|порядок\s+контрол/.test(t)) return 'как_проверить';
+    if (/допу|мм\b|отклонен|крив|ровност|вертикал|сколько|норма|неровн|соосн/.test(t)) return 'допуск';
+    return 'общее';
+}
+
+/** Простой язык → расширенный поисковый текст + intent. */
+function _expandAiDocQuery(question) {
+    const original = String(question || '').trim();
+    const low = original.toLowerCase();
+    const chunks = [];
+    _AI_DOC_PHRASE_MAP.forEach(row => {
+        if (row.re.test(low)) chunks.push(row.add);
+    });
+    const intent = _detectAiDocIntent(original);
+    (_AI_DOC_INTENT_EXTRA[intent] || []).forEach(w => chunks.push(w));
+    const expandedKeywords = [...new Set(
+        chunks.join(' ').split(/\s+/).map(w => w.trim()).filter(w => w.length > 1)
+    )];
+    const searchText = expandedKeywords.length
+        ? (original + ' ' + expandedKeywords.join(' ')).replace(/\s+/g, ' ').trim()
+        : original;
+    return { searchText, intent, expandedKeywords, original };
+}
+
+/**
+ * Вид работ по названию чек-листа: «кровлю» → krovlya, не газобетон.
+ * @returns {{ key: string, title: string, score: number }[]}
+ */
+function _detectWorkTemplateKeys(question) {
+    const q = String(question || '').toLowerCase();
+    if (!q.trim()) return [];
+    const hits = [];
+    const pushHit = (key, title, score) => {
+        if (score < 16) return;
+        hits.push({ key: String(key), title: title || key, score });
+    };
+    try {
+        const sys = (_templates().getSystemTemplates && _templates().getSystemTemplates()) || {};
+        const user = (_templates().getUserTemplates && _templates().getUserTemplates()) || {};
+        const scan = (map) => {
+            Object.keys(map || {}).forEach(key => {
+                const title = String((map[key] && map[key].title) || key);
+                const titleLow = title.toLowerCase();
+                let score = 0;
+                titleLow.replace(/[().,«»"']/g, ' ').split(/\s+/).forEach(tok => {
+                    if (tok.length < 4) return;
+                    const stem = tok.length > 5 ? tok.substring(0, tok.length - 2) : tok;
+                    if (stem.length >= 4 && q.includes(stem)) score += stem.length >= 5 ? 28 : 16;
+                    if (q.includes(tok)) score += 22;
+                });
+                // Явные алиасы ключей / тем
+                if ((key === 'krovlya' || /кровл/.test(titleLow)) && /кровл|крыш|кровель/.test(q)) score += 55;
+                if (/газобетон|пеноблок|ячеист/.test(titleLow) && /газобетон|пеноблок|ячеист/.test(q)) score += 55;
+                if (/монолит/.test(titleLow) && /монолит|жбк|железобетон/.test(q)) score += 50;
+                if (/фасад|нфс|навесн/.test(titleLow) && /фасад|нфс|вентфасад/.test(q)) score += 50;
+                if (/кладк|кирпич/.test(titleLow) && /кладк|кирпич/.test(q) && !/газобетон/.test(q)) score += 40;
+                pushHit(key, title, score);
+            });
+        };
+        scan(sys);
+        scan(user);
+    } catch (e) { /* templates optional */ }
+    hits.sort((a, b) => b.score - a.score);
+    // Один явный лидер — остальные отстающие отсекаем
+    if (hits.length && hits[0].score >= 40) {
+        const top = hits[0].score;
+        return hits.filter(h => h.score >= top * 0.75).slice(0, 3);
+    }
+    return hits.slice(0, 3);
+}
+
+/** Условный rewrite: бытовой вопрос → термины ТК/СП (одна строка). */
+async function _rewriteAiDocQueryForSearch(question) {
+    const promptSystem = `Перефразируй вопрос инженера стройплощадки в одну строку поисковых терминов контроля качества (чек-лист, СП, ГОСТ).
+ОБЯЗАТЕЛЬНО сохрани вид работ из вопроса (кровля / монолит / газобетон / фасад и т.д.) — не подменяй другим видом работ.
+Включи: вид работ, конструкцию, что проверяем, слова «допуск»/«мм»/«приемка» если уместно.
+Не отвечай по сути нормы. Без пояснений и кавычек. Только одна строка на русском.`;
+    const response = await _withTimeout(
+        callAI([
+            { role: 'system', content: promptSystem },
+            { role: 'user', content: String(question || '') }
+        ], { temperature: 0.1, max_tokens: 80, raw: true }),
+        10000,
+        'Уточнение формулировки не удалось'
+    );
+    return String(response || '')
+        .replace(/\*\*/g, '')
+        .replace(/^[«"]|[»"]$/g, '')
+        .replace(/\n+/g, ' ')
+        .trim()
+        .slice(0, 220);
+}
+
+function _aiDocDomainFlags(text) {
+    const t = String(text || '').toLowerCase();
+    return {
+        mono: _AI_DOC_DOMAIN.mono.some(d => t.includes(d)),
+        facade: _AI_DOC_DOMAIN.facade.some(d => t.includes(d)),
+        roof: _AI_DOC_DOMAIN.roof.some(d => t.includes(d)),
+        masonry: _AI_DOC_DOMAIN.masonry.some(d => t.includes(d))
+    };
+}
+
+/** Вес термина: длинные/редкие важнее коротких вроде «стены». */
+function _aiDocKwWeight(kw) {
+    const len = String(kw || '').length;
+    if (len >= 7) return 28;
+    if (len >= 5) return 14;
+    return 8;
+}
+
+/**
+ * Совпадение термина в тексте. Короткие основы (≤4) — с границей слова,
+ * чтобы «допу» не цепляло «не допускается», а «стен» — не середину длинных слов без основы.
+ */
+function _aiDocIncludesKw(hay, kw) {
+    const h = String(hay || '');
+    const k = String(kw || '');
+    if (!h || !k) return false;
+    if (k.length <= 4) {
+        try {
+            const re = new RegExp(
+                '(?:^|[^а-яёa-z0-9])' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[а-яё]{0,4}(?:[^а-яёa-z0-9]|$)',
+                'i'
+            );
+            return re.test(h);
+        } catch (e) {
+            return h.includes(k);
+        }
+    }
+    return h.includes(k);
+}
+
+/** Бонус/штраф «похоже на норматив» vs «предисловие/обложка». */
+function _aiDocNormativeDensity(chunkLow) {
+    let n = 0;
+    const preface = /предислови|введен[ао]\s+в\s+действие|сведения\s+о\s+стандарт|разработан\s+.*обществ|область\s+применения|настоящий\s+свод\s+правил\s+разработан/;
+    const body = /табл\.|таблиц|не\s+более|не\s+менее|допуск|±|\d+\s*мм|пункт\s*\d|раздел\s*\d|должно\s+быть|не\s+допуска/;
+    if (preface.test(chunkLow) && !body.test(chunkLow)) n -= 420;
+    else if (preface.test(chunkLow)) n -= 120;
+    const hits = chunkLow.match(/табл\.|таблиц|не\s+более|не\s+менее|допуск|\d+\s*мм|пункт\s*\d|раздел\s*\d/g);
+    if (hits) n += Math.min(320, hits.length * 40);
+    return n;
+}
+
+function _escAiDoc(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function _stripNormHtml(t) {
+    return String(t || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?[^>]+(>|$)/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function _extractCodesFromText(t) {
+    const codeRe = /(?:гост|сп|снип)\s*[\d]+(?:\.[\d]+)*/gi;
+    const raw = String(t || '').match(codeRe) || [];
+    return [...new Set(raw.map(c => c.toLowerCase().replace(/\s+/g, ' ').trim()))];
+}
+
+/** Нормализация шифра для сопоставления «СП 70.13330.2012» ↔ «СП70.13330». */
+function _normalizeNormCodeKey(code) {
+    let s = String(code || '').toLowerCase().replace(/\s+/g, '');
+    s = s.replace(/[^a-zа-яё0-9.]/g, '');
+    s = s.replace(/\.(19|20)\d{2}$/g, '');
+    return s;
+}
+
+function _normCodesMatch(a, b) {
+    const ka = _normalizeNormCodeKey(a);
+    const kb = _normalizeNormCodeKey(b);
+    if (!ka || !kb) return false;
+    if (ka === kb || ka.includes(kb) || kb.includes(ka)) return true;
+    const typeRe = /^(гост|сп|снип)/;
+    const ta = (ka.match(typeRe) || [])[1];
+    const tb = (kb.match(typeRe) || [])[1];
+    if (!ta || ta !== tb) return false;
+    const na = ka.replace(typeRe, '');
+    const nb = kb.replace(typeRe, '');
+    return !!(na && nb && (na.startsWith(nb) || nb.startsWith(na)));
+}
+
+function _extractClauseHints(normText) {
+    const t = String(normText || '');
+    const hints = [];
+    const tables = t.match(/табл\.?\s*[\d]+(?:\.[\d]+)*/gi) || [];
+    tables.forEach(x => {
+        const num = x.replace(/табл\.?\s*/i, '').replace(/\s+/g, '').trim();
+        if (!num) return;
+        hints.push('табл. ' + num);
+        hints.push('табл.' + num);
+        hints.push('таблица ' + num);
+        hints.push('таблице ' + num);
+        hints.push('таблицы ' + num);
+    });
+    // Приложения СП: «Л.8», «Л.10», «Л.2.3.5» (кириллица Л / латиница L)
+    const apps = t.match(/(?:^|[^а-яёa-z0-9])([лl])\.?\s*(\d+(?:\.\d+)*)/gi) || [];
+    apps.forEach(x => {
+        const m = String(x).match(/([лl])\.?\s*(\d+(?:\.\d+)*)/i);
+        if (!m) return;
+        const num = m[2];
+        hints.push('л.' + num);
+        hints.push('л. ' + num);
+        hints.push('l.' + num);
+        hints.push('l. ' + num);
+        hints.push('приложение л.' + num);
+        hints.push('приложении л ' + num);
+        hints.push('таблица л.' + num);
+    });
+    const points = t.match(/(?:^|[^а-яёa-z])п\.?\s*[\d]+(?:\.[\d]+)*/gi) || [];
+    points.forEach(x => {
+        const num = String(x).replace(/^[^\d]*п\.?\s*/i, '').replace(/\s+/g, '').trim();
+        if (!num || num.length < 2) return;
+        hints.push('п. ' + num);
+        hints.push('п.' + num);
+        hints.push('пункт ' + num);
+    });
+    return [...new Set(hints.filter(h => h && h.length >= 3))];
+}
+
+function _extractMmHints(normText) {
+    const t = String(normText || '');
+    const raw = t.match(/\d+\s*мм|\d+мм|±\s*\d+\s*мм/gi) || [];
+    return [...new Set(raw.map(x => x
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/(\d+)мм/g, '$1 мм')
+        .replace(/±\s*/g, '±')
+        .trim()
+    ))];
+}
+
+/** Штраф за предисловие / КонсультантПлюс / оглавление / пожарный раздел без допусков. */
+function _aiDocPrefacePenalty(chunkLow) {
+    const low = String(chunkLow || '');
+    let p = 0;
+    if (/консультантплюс|гарант\.ru|техэксперт|система\s+гарант/.test(low)) p += 550;
+    if (/предислови|сведения\s+о\s+стандарт|введен[ао]\s+в\s+действие|официальное\s+издание|дата\s+введения/.test(low)) p += 480;
+    if (/настоящий\s+свод\s+правил\s+разработан|область\s+применения/.test(low) && !/\d+\s*мм/.test(low)) p += 280;
+    if (/(содержание|перечень\s+таблиц)/.test(low) && !/\d+\s*мм/.test(low)) p += 320;
+    if (/табл/.test(low) && /\.{3,}|…/.test(low) && !/\d+\s*мм/.test(low)) p += 250;
+    if (/пожар|гост\s*31251|класс\s+пожарной|пожарной\s+безопасн/.test(low) && !/\d+\s*мм/.test(low)) p += 700;
+    return p;
+}
+
+function _aiDocFindAllIndexes(hay, needle) {
+    const out = [];
+    const h = String(hay || '');
+    const n = String(needle || '');
+    if (!h || !n) return out;
+    let from = 0;
+    while (from < h.length) {
+        const i = h.indexOf(n, from);
+        if (i < 0) break;
+        out.push(i);
+        from = i + Math.max(1, n.length);
+        if (out.length > 40) break;
+    }
+    return out;
+}
+
+function _tableNumsFromHints(hints) {
+    const nums = [];
+    (hints || []).forEach(h => {
+        const m = String(h).match(/табл(?:ица|ице|ицы)?\.?\s*([\d]+(?:\.[\d]+)*)/i);
+        if (m && m[1]) nums.push(m[1]);
+    });
+    return [...new Set(nums)];
+}
+
+function _quoteHasExactTable(low, tableNum) {
+    if (!tableNum) return true;
+    const esc = String(tableNum).replace(/\./g, '\\.');
+    // 5.12 не должно матчить 5.11 или 5.120
+    try {
+        return new RegExp('табл(?:ица|ице|ицы)?\\.?\\s*' + esc + '(?!\\d)', 'i').test(low);
+    } catch (e) {
+        return low.includes(String(tableNum));
+    }
+}
+
+function _quoteHasAppendixRef(low, ref) {
+    const r = String(ref || '').toLowerCase().replace(/\s+/g, '');
+    const m = r.match(/^[лl]\.?(\d+(?:\.\d+)*)$/);
+    if (!m) return low.replace(/\s+/g, '').includes(r);
+    const num = m[1].replace(/\./g, '\\.');
+    try {
+        return new RegExp('(?:^|[^а-яёa-z0-9])[лl]\\.\\s*' + num + '(?!\\d)', 'i').test(low);
+    } catch (e) {
+        return low.includes('л.' + m[1]) || low.includes('l.' + m[1]);
+    }
+}
+
+function _scoreNormQuoteWindow(chunk, keywords, mmHints, tableNums, appendixRefs) {
+    const low = String(chunk || '').toLowerCase();
+    let score = _aiDocNormativeDensity(low);
+    score -= _aiDocPrefacePenalty(low);
+    const requiredTables = tableNums || [];
+    const apps = appendixRefs || [];
+    if (requiredTables.length) {
+        const ok = requiredTables.some(n => _quoteHasExactTable(low, n));
+        if (!ok) return -9999;
+        score += 220;
+    }
+    if (apps.length) {
+        const okApp = apps.some(a => _quoteHasAppendixRef(low, a));
+        if (okApp) score += 240;
+        else if (!(mmHints || []).length) return -9999;
+        else score -= 60; // запасной путь: есть мм из CL, в PDF нет явного «Л.8»
+    }
+    (keywords || []).forEach(kw => {
+        if (_aiDocIncludesKw(low, kw)) score += _aiDocKwWeight(kw);
+    });
+    let mmHit = false;
+    (mmHints || []).forEach(mm => {
+        const mmNorm = String(mm).toLowerCase().replace(/\s+/g, ' ');
+        if (mmNorm && low.includes(mmNorm)) {
+            score += 160;
+            mmHit = true;
+        }
+        const digits = String(mm).replace(/[^\d]/g, '');
+        if (digits && new RegExp('(?:^|[^\\d])' + digits + '\\s*мм').test(low)) {
+            score += 120;
+            mmHit = true;
+        }
+    });
+    if (/\d+\s*мм|±\s*\d/.test(low)) score += 80;
+    if (/отклонен|вертикал|плоскост|неровн|допуск/.test(low)) score += 50;
+    if (/утеплител|направляющ|облицов/.test(low)) score += 25;
+    if (/консультантплюс|гарант\.ru/.test(low) && !/\d+\s*мм/.test(low)) score -= 900;
+    // Без мм при известных допусках из CL — почти всегда мусор (пожарка и т.п.)
+    if ((mmHints || []).length && !mmHit) score -= 500;
+    return score;
+}
+
+function _allNormDocs() {
+    return [
+        ...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []),
+        ..._getCustomDocs()
+    ].filter(d => d && !d._deleted);
+}
+
+function _findDocsForNormCode(code) {
+    return _allNormDocs().filter(doc => {
+        if (!doc.extractedText || String(doc.extractedText).trim().length < 80) return false;
+        return _normCodesMatch(doc.code, code) || _normCodesMatch(doc.title, code);
+    });
+}
+
+/** Нормализация текста для сопоставления формулировки CL ↔ PDF. */
+function _normalizeQuoteMatchText(s) {
+    return String(s || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/[«»"'„“]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/**
+ * Формулировка пункта чек-листа без шифров/якорей — её ищем в PDF.
+ */
+function _checklistFormulationForPdfMatch(itemName, normText) {
+    const name = _normalizeQuoteMatchText(itemName);
+    let body = _normalizeQuoteMatchText(normText);
+    body = body
+        .replace(/(?:гост|сп|снип)\s*[\d]+(?:\.[\d]+)*/gi, ' ')
+        // без \b — для кириллицы «Л.8» границы слова ненадёжны
+        .replace(/[лl]\.?\s*[\d]+(?:\.[\d]+)*/gi, ' ')
+        .replace(/табл\.?\s*[\d]+(?:\.[\d]+)*/gi, ' ')
+        .replace(/(?:^|[^а-яёa-z])п\.?\s*[\d]+(?:\.[\d]+)*/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return {
+        name,
+        body,
+        combined: [name, body].filter(Boolean).join('. ').trim()
+    };
+}
+
+/** Фразы из формулировки: сначала длинные (точное совпадение), потом n-граммы. */
+function _formulationPhrases(combined) {
+    const t = _normalizeQuoteMatchText(combined);
+    if (!t) return [];
+    const phrases = [];
+    t.split(/[.;!?]+/).forEach(line => {
+        const L = line.trim();
+        if (L.length >= 16) phrases.push(L);
+    });
+    const words = t.split(' ').filter(w => {
+        if (w.length < 3) return false;
+        if (_AI_DOC_STOP.has(w)) return false;
+        if (/^(гост|сп|снип|мм|табл)$/.test(w)) return false;
+        return true;
+    });
+    for (let n = 7; n >= 3; n--) {
+        for (let i = 0; i + n <= words.length; i++) {
+            const ph = words.slice(i, i + n).join(' ');
+            if (ph.length >= 16) phrases.push(ph);
+        }
+    }
+    return [...new Set(phrases)].sort((a, b) => b.length - a.length).slice(0, 48);
+}
+
+function _findPhraseIndexInHay(hay, phrase) {
+    if (!hay || !phrase) return -1;
+    const direct = hay.indexOf(phrase);
+    if (direct >= 0) return direct;
+    try {
+        const parts = phrase.split(/\s+/).filter(Boolean).map(w =>
+            w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        );
+        if (parts.length < 2) return -1;
+        const re = new RegExp(parts.join('\\s+'), 'i');
+        const m = re.exec(hay);
+        return m ? m.index : -1;
+    } catch (e) {
+        return -1;
+    }
+}
+
+/**
+ * Цитата из PDF: максимальное совпадение с полной формулировкой пункта чек-листа
+ * (название + текст нормы), а не поиск «табл./Л.N».
+ * @returns {{ quote: string, anchor: string, score: number }|null}
+ */
+function _extractNormQuoteFromPdf(doc, opts) {
+    const options = opts || {};
+    const full = String(doc.extractedText || '');
+    if (full.length < 80) return null;
+    const QUOTE_LEN = 1200;
+    const form = _checklistFormulationForPdfMatch(
+        options.itemName || '',
+        options.checklistText || options.normText || ''
+    );
+    if (!form.combined || form.combined.length < 12) return null;
+
+    const hay = full.toLowerCase();
+    const phrases = _formulationPhrases(form.combined);
+    const tokens = [...new Set(
+        form.combined.split(' ')
+            .map(w => w.replace(/[^а-яёa-z0-9±%]/gi, ''))
+            .filter(w => w.length > 3 && !_AI_DOC_STOP.has(w))
+    )];
+    const mmHints = _extractMmHints(form.body || options.checklistText || '');
+    let best = null;
+
+    const considerSlice = (idx, score, anchor) => {
+        if (idx < 0) return;
+        const start = Math.max(0, idx - 60);
+        const quote = full.slice(start, start + QUOTE_LEN).replace(/\s+/g, ' ').trim();
+        if (quote.length < 50) return;
+        let s = score - _aiDocPrefacePenalty(quote.toLowerCase());
+        if (!best || s > best.score) {
+            best = { quote, anchor: anchor || 'формулировка чек-листа', score: s };
+        }
+    };
+
+    // 1) Максимально длинная фраза из формулировки — точное/гибкое вхождение
+    for (let pi = 0; pi < phrases.length; pi++) {
+        const ph = phrases[pi];
+        const idx = _findPhraseIndexInHay(hay, ph);
+        if (idx < 0) continue;
+        considerSlice(idx, 800 + ph.length * 3 - pi * 2, 'фраза CL');
+        if (ph.length >= 28) break; // достаточно сильное попадание
+    }
+
+    // 2) Окна с макс. пересечением токенов формулировки
+    if (tokens.length >= 2) {
+        const needHits = Math.max(2, Math.ceil(tokens.length * 0.4));
+        const step = 320;
+        for (let i = 0; i < full.length; i += step) {
+            const chunk = full.slice(i, i + QUOTE_LEN);
+            const low = chunk.toLowerCase();
+            let hits = 0;
+            let weight = 0;
+            tokens.forEach(tok => {
+                if (low.includes(tok)) {
+                    hits++;
+                    weight += tok.length >= 7 ? 14 : (tok.length >= 5 ? 9 : 5);
+                }
+            });
+            if (hits < needHits) continue;
+            let score = weight + hits * 18;
+            // бонус за название пункта
+            form.name.split(' ').filter(w => w.length > 4).forEach(w => {
+                if (low.includes(w.slice(0, Math.min(6, w.length)))) score += 35;
+            });
+            mmHints.forEach(mm => {
+                const d = String(mm).replace(/[^\d]/g, '');
+                if (d && new RegExp('(?:^|[^\\d])' + d + '\\s*мм').test(low)) score += 90;
+            });
+            score -= _aiDocPrefacePenalty(low);
+            if (!best || score > best.score) {
+                best = {
+                    quote: chunk.replace(/\s+/g, ' ').trim(),
+                    anchor: 'совпадение формулировки',
+                    score
+                };
+            }
+        }
+    }
+
+    if (!best || best.score < 90) return null;
+
+    const low = best.quote.toLowerCase();
+    // Должно быть хоть какое-то пересечение с формулировкой (не пожарка «про НФС»)
+    const overlap = tokens.filter(t => low.includes(t)).length;
+    if (overlap < Math.min(2, tokens.length)) return null;
+    if (/пожар|гост\s*31251|консультантплюс|предислови|сведения\s+о\s+стандарт/.test(low)) {
+        const nameHit = form.name.split(' ').filter(w => w.length > 4)
+            .some(w => low.includes(w.slice(0, Math.min(6, w.length))));
+        if (!nameHit && overlap < 3) return null;
+    }
+    return best;
+}
+
+/** Укоротить выдачу: топ CL + 1 цитата; без чужих PDF/TWI при сильном CL. */
+function _finalizeAiDocSources(enriched) {
+    const list = enriched || [];
+    const clAll = list.filter(c => c.type === 'Чек-лист').sort((a, b) => (b.score || 0) - (a.score || 0));
+    const quotes = list.filter(c => c.isNormQuote || c.type === 'Цитата СП/ГОСТ')
+        .sort((a, b) => (b.score || 0) - (a.score || 0));
+    const docs = list.filter(c => c.type === 'Документ');
+    const twi = list.filter(c => c.type === 'TWI-карта');
+
+    const seen = new Set();
+    const clTop = [];
+    clAll.forEach(c => {
+        const k = String(c.itemName || c.title || '').replace(/\s+/g, ' ').trim().slice(0, 96);
+        if (!k || seen.has(k)) return;
+        seen.add(k);
+        clTop.push(c);
+    });
+    const clKeep = clTop.slice(0, 3);
+    const out = clKeep.slice();
+    if (quotes.length) out.push(quotes[0]);
+
+    if (clKeep.length < 2) {
+        docs.slice(0, 2).forEach(d => out.push(d));
+        if (!clKeep.length) twi.slice(0, 1).forEach(t => out.push(t));
+    }
+    return out;
+}
+
+/** После выбора CL — подтянуть цитаты из PDF по шифрам пунктов. */
+function _enrichPickedWithNormQuotes(picked, keywords) {
+    if (!picked || !picked.length) return picked || [];
+    const quotes = [];
+    const seenDoc = new Set();
+    const MAX_QUOTES = 1;
+    const clItems = picked.filter(c => c.type === 'Чек-лист');
+
+    for (let ci = 0; ci < clItems.length && quotes.length < MAX_QUOTES; ci++) {
+        const cl = clItems[ci];
+        const codeList = (cl.codes && cl.codes.length)
+            ? cl.codes
+            : (cl.code ? [cl.code] : []);
+        if (!codeList.length) continue;
+        const normBlob = cl.normText || cl.snippet || '';
+        for (let bi = 0; bi < codeList.length && quotes.length < MAX_QUOTES; bi++) {
+            const code = codeList[bi];
+            const docs = _findDocsForNormCode(code);
+            for (let di = 0; di < docs.length && quotes.length < MAX_QUOTES; di++) {
+                const doc = docs[di];
+                const dk = String(doc.id);
+                if (seenDoc.has(dk)) continue;
+                // Ищем в PDF полную формулировку пункта CL (макс. совпадение), не «Л.8/табл.»
+                const extracted = _extractNormQuoteFromPdf(doc, {
+                    itemName: cl.itemName || '',
+                    checklistText: normBlob
+                });
+                if (!extracted || !extracted.quote) continue;
+                seenDoc.add(dk);
+                const docCode = doc.code || code;
+                quotes.push({
+                    type: 'Цитата СП/ГОСТ',
+                    title: `${docCode} ← ${cl.itemName || cl.title || 'пункт'}`,
+                    code: docCode,
+                    docId: doc.id,
+                    templateTitle: cl.templateTitle || '',
+                    itemName: cl.itemName || '',
+                    score: (cl.score || 0) + 80,
+                    snippet: extracted.quote.slice(0, 520),
+                    text: `Перепроверка по ${docCode}`
+                        + ` — кусок PDF с макс. совпадением формулировки пункта «${cl.itemName || cl.title || ''}»`
+                        + (extracted.anchor ? ` (${extracted.anchor})` : '')
+                        + `.\nЦитата из документа:\n«${extracted.quote}»`,
+                    matchesCount: 1,
+                    isNormQuote: true,
+                    codes: [String(code).toLowerCase()]
+                });
+            }
+        }
+    }
+
+    if (!quotes.length) return picked;
+
+    const out = [];
+    const used = new Set();
+    picked.forEach(c => {
+        out.push(c);
+        if (c.type !== 'Чек-лист') return;
+        quotes.forEach((q, qi) => {
+            if (used.has(qi)) return;
+            const sameItem = q.itemName && q.itemName === c.itemName;
+            const sameCode = (c.codes || []).some(code => _normCodesMatch(code, q.code))
+                || (c.code && _normCodesMatch(c.code, q.code));
+            if (sameItem || sameCode) {
+                out.push(q);
+                used.add(qi);
+            }
+        });
+    });
+    quotes.forEach((q, qi) => {
+        if (!used.has(qi)) out.push(q);
+    });
+    return out;
+}
+
+/** Индекс пунктов всех чек-листов (system + user) для RAG. */
+let _checklistNormIndexCache = null;
+function _invalidateChecklistNormIndex() {
+    _checklistNormIndexCache = null;
+}
+function _getChecklistNormIndex() {
+    if (_checklistNormIndexCache) return _checklistNormIndexCache;
+    const items = [];
+    const addTmpl = (key, tmpl, source) => {
+        if (!tmpl || !Array.isArray(tmpl.groups)) return;
+        const templateTitle = tmpl.title || key;
+        tmpl.groups.forEach(g => {
+            (g.items || []).forEach(item => {
+                if (!item) return;
+                const normText = _stripNormHtml(item.t);
+                const itemName = String(item.n || '').trim();
+                if (!itemName && !normText) return;
+                const hay = (itemName + ' ' + normText).toLowerCase();
+                items.push({
+                    templateKey: String(key),
+                    templateTitle,
+                    source,
+                    group: String(g.group || ''),
+                    itemId: item.id,
+                    itemName,
+                    normText,
+                    hay,
+                    codes: _extractCodesFromText(normText + ' ' + itemName)
+                });
+            });
+        });
+    };
+    try {
+        const sys = (_templates().getSystemTemplates && _templates().getSystemTemplates()) || {};
+        Object.keys(sys).forEach(k => addTmpl(k, sys[k], 'sys'));
+        const user = (_templates().getUserTemplates && _templates().getUserTemplates()) || {};
+        Object.keys(user).forEach(k => addTmpl(k, user[k], 'user'));
+    } catch (e) { /* templates optional at boot */ }
+    _checklistNormIndexCache = items;
+    return items;
+}
+
+function _fillAiDocFilter() {
+    const sel = document.getElementById('ai-doc-filter');
+    if (!sel) return;
+    const prev = sel.value;
+    const allDocs = [
+        ...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []),
+        ..._getCustomDocs()
+    ].slice().sort((a, b) => String(a.code || '').localeCompare(String(b.code || ''), 'ru'));
+    let opts = '<option value="">Все документы</option>';
+    allDocs.forEach(doc => {
+        if (!doc || doc.id == null) return;
+        const title = String(doc.title || '').length > 48 ? String(doc.title).slice(0, 48) + '…' : (doc.title || '');
+        opts += `<option value="${_escAiDoc(String(doc.id))}">${_escAiDoc(doc.code || '—')} — ${_escAiDoc(title)}</option>`;
+    });
+    sel.innerHTML = opts;
+    if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+function _fillAiDocTemplateFilter() {
+    const sel = document.getElementById('ai-doc-template-filter');
+    if (!sel) return;
+    const prev = sel.value;
+    let opts = '<option value="">Все виды работ</option>';
+    const safeKey = (k) => String(k || '').replace(/"/g, '');
+    try {
+        const sys = (_templates().getSystemTemplates && _templates().getSystemTemplates()) || {};
+        Object.keys(sys).sort((a, b) => String(sys[a].title || a).localeCompare(String(sys[b].title || b), 'ru'))
+            .forEach(k => {
+                const title = sys[k].title || k;
+                opts += `<option value="sys:${safeKey(k)}">${_escAiDoc(title)}</option>`;
+            });
+        const user = (_templates().getUserTemplates && _templates().getUserTemplates()) || {};
+        Object.keys(user).sort((a, b) => String(user[a].title || a).localeCompare(String(user[b].title || b), 'ru'))
+            .forEach(k => {
+                const title = user[k].title || k;
+                opts += `<option value="user:${safeKey(k)}">★ ${_escAiDoc(title)}</option>`;
+            });
+    } catch (e) { /* ignore */ }
+    sel.innerHTML = opts;
+    if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+const _AI_DOC_DEFAULT_CHIPS = [
+    'допуск монолитных стен',
+    'ровность бетонного основания',
+    'отклонение вертикали стен'
+];
+
+function _renderAiDocChips(suggestions) {
+    const el = document.getElementById('ai-doc-chips');
+    if (!el) return;
+    const list = (suggestions && suggestions.length) ? suggestions.slice(0, 5) : _AI_DOC_DEFAULT_CHIPS;
+    el.classList.remove('hidden');
+    el.innerHTML = list.map(s => {
+        const label = String(s || '').trim();
+        if (!label) return '';
+        const short = label.length > 42 ? label.slice(0, 40) + '…' : label;
+        return `<button type="button" data-action="applyAiDocChip" data-action-arg="${_escAiDoc(label)}"
+            class="text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 active:scale-95 max-w-full truncate">${_escAiDoc(short)}</button>`;
+    }).join('');
+}
+
+function applyAiDocChip(text) {
+    const input = document.getElementById('ai-chat-input');
+    if (!input) return;
+    input.value = String(text || '');
+    askAiDocQuestion();
+}
+
+function _setAiDocStatus(text) {
+    const el = document.getElementById('ai-doc-chat-status');
+    if (el) el.textContent = text || 'Чек-листы + загруженные нормативы';
+}
+
+/** Вопрос про состав базы (список НД) — отвечаем локально, без RAG/DeepSeek. */
+function _isAiDocCatalogQuestion(question) {
+    const t = String(question || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!t) return false;
+    return /(какие|список|что есть|что загружен|покажи).{0,48}(норматив|документ|гост|баз[еаыу]|нд\b|файл)/i.test(t)
+        || /(норматив|документ|гост|нд).{0,24}(в базе|загружен|есть у нас|в приложении)/i.test(t);
+}
+
+function _buildAiDocCatalogAnswer() {
+    const allDocs = [
+        ...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []),
+        ..._getCustomDocs()
+    ].filter(d => d && !d._deleted);
+
+    if (!allDocs.length) {
+        return {
+            plain: 'В базе сейчас нет загруженных нормативных документов.',
+            html: '<p class="mb-0">В базе сейчас нет загруженных нормативных документов.</p>'
+        };
+    }
+
+    const sorted = allDocs.slice().sort((a, b) =>
+        String(a.code || '').localeCompare(String(b.code || ''), 'ru')
+        || String(a.title || '').localeCompare(String(b.title || ''), 'ru')
+    );
+
+    const lines = sorted.map((d, i) => {
+        const code = d.code || '—';
+        const title = d.title || 'Без названия';
+        const indexed = d.extractedText && String(d.extractedText).trim().length > 80;
+        const chars = indexed ? String(d.extractedText).replace(/\s+/g, ' ').trim().length : 0;
+        const idxLabel = indexed
+            ? `индекс ~${Math.round(chars / 1000)}k симв.`
+            : 'текст для ИИ не проиндексирован';
+        return `${i + 1}. ${code} — ${title} (${idxLabel})`;
+    });
+
+    const plain = `В базе ${sorted.length} документ(ов):\n` + lines.join('\n')
+        + '\n\nЧтобы ответить по содержанию — укажите шифр или тему (например: допуски монолитных стен по СП 70).';
+
+    const htmlItems = sorted.map(d => {
+        const indexed = d.extractedText && String(d.extractedText).trim().length > 80;
+        const chars = indexed ? String(d.extractedText).replace(/\s+/g, ' ').trim().length : 0;
+        const badge = indexed
+            ? `<span class="text-green-700 dark:text-green-400">~${Math.round(chars / 1000)}k</span>`
+            : `<span class="text-amber-600 dark:text-amber-400">нет индекса</span>`;
+        return `<li class="mb-1"><b>${_escAiDoc(d.code || '—')}</b> — ${_escAiDoc(d.title || 'Без названия')} · ${badge}</li>`;
+    }).join('');
+
+    const html = `<p class="mb-2"><b>В базе ${sorted.length} документ(ов)</b> (системные + загруженные):</p>`
+        + `<ul class="list-disc pl-4 mb-2">${htmlItems}</ul>`
+        + `<p class="mb-0 text-[12px] text-slate-600 dark:text-slate-300">Для ответа по содержанию укажите шифр или тему — например: «допуски монолитных стен по СП 70».</p>`;
+
+    return { plain, html };
+}
+
+function _withTimeout(promise, ms, label) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label || `Таймаут ${ms} мс`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 function openAiDocChat() {
     if (!_getSetting('aiEnabled')) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
-    document.getElementById('ai-chat-modal').style.display = 'flex';
+    const view = document.getElementById('ai-doc-chat-view');
+    if (!view) return showToast('Экран чата не найден');
+    _invalidateChecklistNormIndex();
+    _fillAiDocFilter();
+    _fillAiDocTemplateFilter();
+    _renderAiDocChips(_AI_DOC_DEFAULT_CHIPS);
+    _setAiDocStatus('Чек-листы + загруженные нормативы');
+    view.classList.remove('hidden');
     document.body.classList.add('modal-open');
-};
+    const legacy = document.getElementById('ai-chat-modal');
+    if (legacy) legacy.style.display = 'none';
+    const input = document.getElementById('ai-chat-input');
+    if (input && !input._aiDocEnterBound) {
+        input._aiDocEnterBound = true;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                askAiDocQuestion();
+            }
+        });
+    }
+    setTimeout(() => input && input.focus(), 50);
+}
+
+const _aiDocPlainById = Object.create(null);
 
 function closeAiDocChat() {
-    document.getElementById('ai-chat-modal').style.display = 'none';
+    const view = document.getElementById('ai-doc-chat-view');
+    if (view) view.classList.add('hidden');
+    const legacy = document.getElementById('ai-chat-modal');
+    if (legacy) legacy.style.display = 'none';
     document.body.classList.remove('modal-open');
-};
+    // Не держим историю чата и plain-тексты в RAM после закрытия
+    Object.keys(_aiDocPlainById).forEach(function (k) { delete _aiDocPlainById[k]; });
+    const chatHistory = document.getElementById('ai-chat-history');
+    if (chatHistory) chatHistory.innerHTML = '';
+}
+
+function copyAiDocAnswer(btn) {
+    const wrap = btn && btn.closest ? btn.closest('[data-ai-doc-id]') : null;
+    const id = wrap ? wrap.getAttribute('data-ai-doc-id') : '';
+    const plain = id ? (_aiDocPlainById[id] || '') : '';
+    if (!plain) return showToast('Нечего копировать');
+    const done = () => showToast('Ответ скопирован');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(plain).then(done).catch(() => {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = plain;
+                ta.style.cssText = 'position:fixed;left:-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                done();
+            } catch (e) { showToast('Не удалось скопировать'); }
+        });
+        return;
+    }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = plain;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        done();
+    } catch (e) { showToast('Не удалось скопировать'); }
+}
+
+/** Локальный keyword-RAG v1.5: коды норм, синонимы, дедуп по документу, фильтр docId. */
+function _retrieveNormContext(question, opts) {
+    const options = opts || {};
+    const filterDocId = options.docId ? String(options.docId) : '';
+    const filterTemplateRaw = options.templateKey ? String(options.templateKey) : '';
+    let filterTemplateSource = '';
+    let filterTemplateKey = '';
+    if (filterTemplateRaw) {
+        const m = filterTemplateRaw.match(/^(sys|user):(.+)$/);
+        if (m) {
+            filterTemplateSource = m[1];
+            filterTemplateKey = m[2];
+        } else {
+            filterTemplateKey = filterTemplateRaw;
+        }
+    }
+    const CHUNK_SIZE = 1500;
+    const CHUNK_OVERLAP = 300;
+
+    const cleanQuestion = String(question || '').toLowerCase()
+        .replace(/[.,?!;:()«»"']/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const codeRe = /(?:гост|сп|снип)\s*[\d]+(?:\.[\d]+)*/gi;
+    const codesRaw = String(question || '').match(codeRe) || [];
+    const codes = codesRaw.map(c => c.toLowerCase().replace(/\s+/g, ' ').trim());
+
+    // Если в вопросе явный шифр — берём больше кусков и глубже по документу (не только предисловие)
+    const codeQuery = codes.length > 0;
+    const TOP_K = codeQuery ? 8 : 6;
+    const MAX_PER_DOC = codeQuery ? 5 : 2;
+    const toleranceBoost = /допу|отклонен|неровност|мм\b|вертикал|плоскост|ровност/.test(cleanQuestion);
+
+    let keywords = cleanQuestion.split(' ')
+        .map(w => w.trim())
+        .filter(w => w.length > 3 && !_AI_DOC_STOP.has(w))
+        .map(w => (w.length > 5 ? w.substring(0, w.length - 2) : w));
+
+    Object.keys(_AI_DOC_SYNONYMS).forEach(root => {
+        if (keywords.some(k => k.startsWith(root) || root.startsWith(k))) {
+            _AI_DOC_SYNONYMS[root].forEach(syn => {
+                if (!keywords.includes(syn)) keywords.push(syn);
+            });
+        }
+    });
+    const extraKw = Array.isArray(options.extraKeywords) ? options.extraKeywords : [];
+    extraKw.forEach(w => {
+        const raw = String(w || '').toLowerCase().trim();
+        if (!raw || raw.length < 3 || _AI_DOC_STOP.has(raw)) return;
+        const stem = raw.length > 5 ? raw.substring(0, raw.length - 2) : raw;
+        if (!keywords.includes(stem)) keywords.push(stem);
+        if (!keywords.includes(raw)) keywords.push(raw);
+    });
+    keywords = [...new Set(keywords)];
+    const qDomain = _aiDocDomainFlags(cleanQuestion + ' ' + keywords.join(' '));
+    const workHits = _detectWorkTemplateKeys(
+        [cleanQuestion, options.originalQuestion || ''].join(' ')
+    );
+    const workLocked = !!(workHits.length && workHits[0].score >= 40);
+    const lockedKeySet = workLocked ? new Set(workHits.map(h => h.key)) : null;
+
+    const allDocs = [
+        ...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []),
+        ..._getCustomDocs()
+    ].filter(doc => {
+        if (!doc) return false;
+        if (filterDocId && String(doc.id) !== filterDocId) return false;
+        return true;
+    });
+
+    let contextArr = [];
+
+    allDocs.forEach(doc => {
+        const codeLow = String(doc.code || '').toLowerCase();
+        const titleLow = String(doc.title || '').toLowerCase();
+        const docMeta = (doc.code || '') + ' ' + (doc.title || '');
+        const docDomain = _aiDocDomainFlags(docMeta);
+
+        // Конфликт доменов: монолит≠фасад, кровля≠кладка/газобетон
+        let domainFactor = 1;
+        if (qDomain.mono && !qDomain.facade && docDomain.facade && !docDomain.mono) {
+            domainFactor = 0.12;
+        } else if (qDomain.facade && !qDomain.mono && docDomain.mono && !docDomain.facade) {
+            domainFactor = 0.25;
+        } else if (qDomain.mono && docDomain.mono) {
+            domainFactor = 1.35;
+        } else if (qDomain.roof && !qDomain.masonry && docDomain.masonry && !docDomain.roof) {
+            domainFactor = 0.08;
+        } else if (qDomain.roof && docDomain.roof) {
+            domainFactor = 1.4;
+        } else if (qDomain.masonry && !qDomain.roof && docDomain.roof && !docDomain.masonry) {
+            domainFactor = 0.12;
+        }
+
+        let titleScore = 0;
+        keywords.forEach(kw => {
+            if (titleLow.includes(kw) || codeLow.includes(kw)) titleScore += _aiDocKwWeight(kw) * 3;
+        });
+        let codeBonus = 0;
+        codes.forEach(code => {
+            const compact = code.replace(/\s+/g, '');
+            if (codeLow.replace(/\s+/g, '').includes(compact) || titleLow.replace(/\s+/g, '').includes(compact)) {
+                codeBonus += 400;
+            }
+        });
+
+        if (doc.extractedText) {
+            const fullText = String(doc.extractedText);
+            let chunkIdx = 0;
+            const step = CHUNK_SIZE - CHUNK_OVERLAP;
+            // Не раздувать память/CPU: на документ оставляем только лучшие куски
+            const perDocBest = [];
+            const keepPerDoc = codeBonus > 0 ? 14 : 8;
+            const pushBest = (row) => {
+                perDocBest.push(row);
+                if (perDocBest.length > keepPerDoc * 2) {
+                    perDocBest.sort((a, b) => b.score - a.score);
+                    perDocBest.length = keepPerDoc;
+                }
+            };
+            for (let i = 0; i < fullText.length; i += step, chunkIdx++) {
+                const chunk = fullText.substring(i, i + CHUNK_SIZE);
+                const chunkLow = chunk.toLowerCase();
+                const chunkDomain = _aiDocDomainFlags(chunkLow);
+                let score = titleScore + codeBonus + _aiDocNormativeDensity(chunkLow);
+                let matchesCount = 0;
+                let weightedHits = 0;
+                keywords.forEach(kw => {
+                    if (_aiDocIncludesKw(chunkLow, kw)) {
+                        matchesCount++;
+                        weightedHits += _aiDocKwWeight(kw);
+                        score += _aiDocKwWeight(kw);
+                    }
+                });
+                if (keywords.length >= 2 && matchesCount >= 2) score += 220;
+                if (cleanQuestion && chunkLow.includes(cleanQuestion)) {
+                    score += 500;
+                    matchesCount = Math.max(matchesCount, keywords.length);
+                }
+                codes.forEach(code => {
+                    if (chunkLow.replace(/\s+/g, ' ').includes(code)) score += 80;
+                });
+                // При запросе только по шифру: лёгкий разброс по документу (середина/хвост не проигрывают голове)
+                if (codeBonus > 0 && matchesCount === 0 && keywords.length <= 2) {
+                    const progress = fullText.length > 0 ? i / fullText.length : 0;
+                    if (progress > 0.08 && progress < 0.92) score += 60;
+                }
+                let chunkFactor = domainFactor;
+                if (qDomain.mono && !qDomain.facade && chunkDomain.facade && !chunkDomain.mono) {
+                    chunkFactor = Math.min(chunkFactor, 0.1);
+                }
+                if (qDomain.mono && chunkDomain.mono) chunkFactor = Math.max(chunkFactor, 1.25);
+
+                if (matchesCount > 0 || codeBonus > 0) {
+                    const snippet = chunk.replace(/\s+/g, ' ').trim();
+                    pushBest({
+                        type: 'Документ',
+                        title: doc.code || doc.title || 'Документ',
+                        code: doc.code || '',
+                        docId: doc.id,
+                        score: Math.round((score + weightedHits) * chunkFactor),
+                        snippet,
+                        text: snippet,
+                        matchesCount,
+                        chunkIdx,
+                        codeHit: codeBonus > 0
+                    });
+                }
+            }
+            perDocBest.sort((a, b) => b.score - a.score);
+            contextArr.push(...perDocBest.slice(0, keepPerDoc));
+        } else if (titleScore > 0 || codeBonus > 0) {
+            contextArr.push({
+                type: 'Документ',
+                title: doc.code || doc.title || 'Документ',
+                code: doc.code || '',
+                docId: doc.id,
+                score: Math.round((titleScore + codeBonus) * domainFactor),
+                snippet: doc.title || '',
+                text: doc.title || '',
+                matchesCount: 0
+            });
+        }
+    });
+
+    // Чек-листы first: все system + user шаблоны (не только текущий аудит)
+    if (!filterDocId) {
+        try {
+            const index = _getChecklistNormIndex();
+            index.forEach(row => {
+                if (filterTemplateKey) {
+                    if (row.templateKey !== filterTemplateKey) return;
+                    if (filterTemplateSource && row.source !== filterTemplateSource) return;
+                }
+                // Жёсткий lock вида работ: вопрос про кровлю → только чек-лист кровли
+                if (lockedKeySet && !lockedKeySet.has(row.templateKey)) return;
+
+                let score = 0;
+                let matches = 0;
+                const titleLow = String(row.templateTitle || '').toLowerCase();
+                keywords.forEach(kw => {
+                    if (_aiDocIncludesKw(row.hay, kw)) {
+                        matches++;
+                        score += _aiDocKwWeight(kw);
+                    }
+                    if (_aiDocIncludesKw(titleLow, kw)) {
+                        score += _aiDocKwWeight(kw) * 3;
+                    }
+                });
+                codes.forEach(code => {
+                    const compact = code.replace(/\s+/g, '');
+                    if (row.codes.some(c => c.replace(/\s+/g, '').includes(compact))) {
+                        score += 220;
+                        matches = Math.max(matches, 1);
+                    }
+                });
+                if (workLocked && lockedKeySet && lockedKeySet.has(row.templateKey)) {
+                    score += 420;
+                    if (matches === 0) matches = 1; // обзор приёмки по виду работ
+                }
+                // Только заголовок шаблона без совпадения в пункте — шум (кроме lock вида работ)
+                if (matches === 0) return;
+
+                if (keywords.length >= 2 && matches >= 2) score += 120;
+                // Реальный допуск/мм/таблица — не «не допускается»
+                if (toleranceBoost && /(?:^|[^а-яё])допуск(?:[^а-яё]|$)|отклонен|\d+\s*мм|не более|не менее|табл/i.test(row.hay)) {
+                    score += 160;
+                }
+                if (toleranceBoost && /стен|колонн|вертикал|плоскост|неровн/i.test(row.hay)
+                    && /\d+\s*мм|табл/i.test(row.hay)) {
+                    score += 100;
+                }
+                const tmplDomain = _aiDocDomainFlags(row.templateTitle + ' ' + row.hay);
+                let factor = toleranceBoost ? 1.45 : 1.2;
+                if (qDomain.mono && !qDomain.facade && tmplDomain.facade && !tmplDomain.mono) factor = 0.1;
+                else if (qDomain.mono && tmplDomain.mono) factor = Math.max(factor, 1.65);
+                else if (qDomain.facade && tmplDomain.facade) factor = Math.max(factor, 1.4);
+                else if (qDomain.roof && !qDomain.masonry && tmplDomain.masonry && !tmplDomain.roof) factor = 0.08;
+                else if (qDomain.roof && tmplDomain.roof) factor = Math.max(factor, 1.7);
+                else if (qDomain.masonry && tmplDomain.masonry) factor = Math.max(factor, 1.55);
+                if (workLocked) factor = Math.max(factor, 1.5);
+
+                const pathTitle = `${row.templateTitle} → ${row.itemName}`;
+                const body = row.normText || 'Нет текста нормы в пункте';
+                const text = `Чек-лист «${row.templateTitle}» / ${row.group || '—'}\nПункт: ${row.itemName}\nНорма: ${body}`;
+                contextArr.push({
+                    type: 'Чек-лист',
+                    title: pathTitle,
+                    templateTitle: row.templateTitle,
+                    itemName: row.itemName,
+                    templateKey: row.templateKey,
+                    code: row.codes[0] || '',
+                    codes: row.codes || [],
+                    normText: body,
+                    docId: null,
+                    score: Math.round(score * factor),
+                    snippet: body.slice(0, 400),
+                    text,
+                    matchesCount: matches
+                });
+            });
+        } catch (e) { /* checklist index optional */ }
+    }
+
+    // TWI при lock вида работ часто уводит в чужую тему — пропускаем
+    if (!filterDocId && !workLocked) {
+        _getTwiCards().forEach(twi => {
+            const text = `${twi.title} ${twi.whyImportant || ''} ${twi.howToCheck || ''}`.toLowerCase();
+            let score = 0;
+            let matches = 0;
+            keywords.forEach(kw => {
+                if (text.includes(kw)) {
+                    matches++;
+                    score += _aiDocKwWeight(kw);
+                }
+            });
+            if (matches > 0) {
+                let twiContent = `Название: ${twi.title}. `;
+                if (twi.whyImportant) twiContent += `Риски: ${twi.whyImportant}. `;
+                if (twi.howToCheck) twiContent += `Методика проверки: ${twi.howToCheck}.`;
+                contextArr.push({
+                    type: 'TWI-карта',
+                    title: twi.title,
+                    code: '',
+                    docId: twi.id || null,
+                    score: Math.round(score * 0.7),
+                    snippet: twiContent.slice(0, 400),
+                    text: twiContent,
+                    matchesCount: matches
+                });
+            }
+        });
+    }
+
+    // При монолитном вопросе сначала отсекаем совсем слабые фасадные хиты
+    if (qDomain.mono && !qDomain.facade) {
+        const strong = contextArr.filter(c => c.score >= 40 || (c.matchesCount || 0) >= 2);
+        if (strong.length >= 2) contextArr = strong;
+    }
+
+    // Чек-листы выше PDF при равном/близком score (особенно допуски)
+    contextArr.sort((a, b) => {
+        const boost = (x) => {
+            if (x.type === 'Чек-лист') return toleranceBoost ? 1.28 : 1.15;
+            if (x.type === 'Документ') return 1;
+            return 0.92;
+        };
+        return (b.score * boost(b)) - (a.score * boost(a));
+    });
+
+    const strongClCount = contextArr.filter(c => c.type === 'Чек-лист' && c.score >= 80).length;
+    // При сильном CL / lock вида работ чужие PDF не берём — цитату подтянет enrich
+    const maxPdfChunks = (workLocked || strongClCount >= 2) ? 0 : (strongClCount >= 1 ? 1 : TOP_K);
+    const MAX_CHECKLIST = 4;
+
+    // Для документов с попаданием по шифру — берём куски из разных зон (не 2× предисловие подряд)
+    const picked = [];
+    const perDoc = {};
+    const perDocZones = {};
+    let pdfPicked = 0;
+    let clPicked = 0;
+    for (let i = 0; i < contextArr.length && picked.length < TOP_K; i++) {
+        const c = contextArr[i];
+        if (c.type === 'Документ' && pdfPicked >= maxPdfChunks) continue;
+        if (c.type === 'Чек-лист' && clPicked >= MAX_CHECKLIST) continue;
+        const key = c.type === 'Документ' ? ('doc:' + String(c.docId)) : (c.type + ':' + String(c.title));
+        const n = perDoc[key] || 0;
+        if (c.type === 'Документ' && n >= MAX_PER_DOC) continue;
+        if (c.type === 'Документ' && c.codeHit && typeof c.chunkIdx === 'number') {
+            const zone = c.chunkIdx < 2 ? 'head' : (c.chunkIdx < 8 ? 'early' : 'body');
+            perDocZones[key] = perDocZones[key] || { head: 0, early: 0, body: 0 };
+            if (zone === 'head' && perDocZones[key].head >= 1 && perDocZones[key].body + perDocZones[key].early === 0) {
+                const alt = contextArr.slice(i + 1).find(x =>
+                    x.type === 'Документ' && String(x.docId) === String(c.docId) && x.chunkIdx >= 2
+                );
+                if (alt) continue;
+            }
+            if (zone === 'head' && perDocZones[key].head >= 1) continue;
+            perDocZones[key][zone]++;
+        }
+        perDoc[key] = n + 1;
+        if (c.type === 'Документ') pdfPicked++;
+        if (c.type === 'Чек-лист') clPicked++;
+        picked.push(c);
+    }
+
+    const enriched = _finalizeAiDocSources(_enrichPickedWithNormQuotes(picked, keywords));
+    const quoteN = enriched.filter(c => c.isNormQuote || c.type === 'Цитата СП/ГОСТ').length;
+
+    const sources = enriched.map(c => ({
+        type: c.type,
+        title: c.title,
+        templateTitle: c.templateTitle || '',
+        itemName: c.itemName || '',
+        code: c.code || '',
+        docId: c.docId,
+        score: c.score,
+        isNormQuote: !!(c.isNormQuote || c.type === 'Цитата СП/ГОСТ'),
+        snippet: (c.snippet || c.text || '').slice(0, (c.isNormQuote || c.type === 'Цитата СП/ГОСТ') ? 520 : 280)
+    }));
+
+    const contextText = enriched
+        .map(c => {
+            if (c.type === 'Чек-лист') {
+                return `[ИСТОЧНИК: Чек-лист — ${c.templateTitle || ''} → ${c.itemName || c.title}]\n${c.text}`;
+            }
+            if (c.isNormQuote || c.type === 'Цитата СП/ГОСТ') {
+                return `[ИСТОЧНИК: Цитата СП/ГОСТ — ${c.code || c.title}]\n${c.text}`;
+            }
+            return `[ИСТОЧНИК: ${c.type} - ${c.title}]\n${c.text}`;
+        })
+        .join('\n\n');
+
+    return {
+        sources,
+        contextText,
+        empty: sources.length === 0,
+        cleanQuestion,
+        strongClCount,
+        quoteN,
+        workLocked,
+        workTitle: workLocked && workHits[0] ? workHits[0].title : ''
+    };
+}
+
+function _renderAiDocSourcesHtml(sources) {
+    if (!sources || !sources.length) return '';
+    const items = sources.map((s, i) => {
+        let typeLabel = s.type;
+        let label = s.title || '';
+        const snipLimit = s.isNormQuote || s.type === 'Цитата СП/ГОСТ' ? 520 : 220;
+        if (s.type === 'Чек-лист' && (s.templateTitle || s.itemName)) {
+            typeLabel = 'Чек-лист';
+            label = `${s.templateTitle || '—'} → ${s.itemName || s.title || ''}`;
+            if (s.code) label += ` · ${s.code}`;
+        } else if (s.isNormQuote || s.type === 'Цитата СП/ГОСТ') {
+            typeLabel = 'Цитата из PDF';
+            label = s.code || s.title || 'СП/ГОСТ';
+            if (s.itemName) {
+                const shortItem = s.itemName.length > 48 ? s.itemName.slice(0, 46) + '…' : s.itemName;
+                label += ` · ${shortItem}`;
+            }
+        } else if (s.code) {
+            label = s.code;
+        }
+        const snip = String(s.snippet || '');
+        return `<div class="py-2 ${i ? 'border-t border-slate-200 dark:border-slate-700' : ''}">
+            <div class="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400">${_escAiDoc(typeLabel)}</div>
+            <div class="text-[11px] font-bold text-slate-700 dark:text-slate-200 mt-0.5 leading-snug">${_escAiDoc(label)}</div>
+            <div class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">${_escAiDoc(snip)}${snip.length >= snipLimit ? '…' : ''}</div>
+        </div>`;
+    }).join('');
+    return `<details class="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 px-3 py-2">
+        <summary class="cursor-pointer text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 select-none">Источники (${sources.length})</summary>
+        <div class="mt-1">${items}</div>
+    </details>`;
+}
+
+function _relatedMaterialsAppendix(cleanQuestion) {
+    const strongKeywords = String(cleanQuestion || '').split(' ')
+        .filter(w => w.length > 4)
+        .map(w => (w.length > 6 ? w.substring(0, w.length - 2) : w));
+    if (!strongKeywords.length) return { html: '', plain: '' };
+
+    let tmplScores = [];
+    const allTmpls = { ..._templates().getSystemTemplates(), ..._templates().getUserTemplates() };
+    Object.values(allTmpls).forEach(tmpl => {
+        let score = 0;
+        const titleStr = String(tmpl.title || '').toLowerCase();
+        strongKeywords.forEach(kw => { if (titleStr.includes(kw)) score += 10; });
+        if (tmpl.groups) {
+            tmpl.groups.forEach(g => {
+                (g.items || []).forEach(item => {
+                    const textToSearch = `${item.n} ${item.t}`.toLowerCase();
+                    strongKeywords.forEach(kw => { if (textToSearch.includes(kw)) score += 1; });
+                });
+            });
+        }
+        if (score >= 2) tmplScores.push({ title: tmpl.title, score });
+    });
+
+    let twiScores = [];
+    _getTwiCards().forEach(twi => {
+        let score = 0;
+        const textToSearch = `${twi.title} ${twi.whyImportant || ''} ${twi.howToCheck || ''}`.toLowerCase();
+        strongKeywords.forEach(kw => { if (textToSearch.includes(kw)) score += 2; });
+        if (score >= 2) twiScores.push({ title: twi.title, score });
+    });
+
+    tmplScores.sort((a, b) => b.score - a.score);
+    twiScores.sort((a, b) => b.score - a.score);
+    const topChecklists = tmplScores.slice(0, 2).map(t => t.title);
+    const topTwis = twiScores.slice(0, 2).map(t => t.title);
+    if (!topChecklists.length && !topTwis.length) return { html: '', plain: '' };
+
+    let html = `<div class="mt-2 p-3 bg-indigo-100/50 dark:bg-indigo-900/40 rounded-xl border border-indigo-200 dark:border-indigo-800 text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">`;
+    html += `<b>Связанные материалы в приложении</b>`;
+    if (topChecklists.length) html += `<span class="mt-1 block">• Чек-листы: <b>${_escAiDoc(topChecklists.join(', '))}</b></span>`;
+    if (topTwis.length) html += `<span class="mt-1 block">• TWI-карты: <b>${_escAiDoc(topTwis.join(', '))}</b></span>`;
+    html += `</div>`;
+    let plain = '\n\nСвязанные материалы:';
+    if (topChecklists.length) plain += `\nЧек-листы: ${topChecklists.join(', ')}`;
+    if (topTwis.length) plain += `\nTWI: ${topTwis.join(', ')}`;
+    return { html, plain };
+}
 
 async function askAiDocQuestion() {
     const inputEl = document.getElementById('ai-chat-input');
     const chatHistory = document.getElementById('ai-chat-history');
     const btn = document.getElementById('ai-chat-send-btn');
+    if (!inputEl || !chatHistory || !btn) return;
 
     const question = inputEl.value.trim();
     if (!question) return;
 
-    // 1. Отображаем вопрос пользователя в чате
-    const userMsgHtml = `
-        <div class="flex gap-2 w-full max-w-[85%] ml-auto justify-end">
-            <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-[12px] shadow-sm">${escapeHtml(question)}</div>
-        </div>`;
-    chatHistory.insertAdjacentHTML('beforeend', userMsgHtml);
-    inputFieldReset();
+    const filterEl = document.getElementById('ai-doc-filter');
+    const docId = filterEl ? filterEl.value : '';
+    const tmplEl = document.getElementById('ai-doc-template-filter');
+    const templateKey = tmplEl ? tmplEl.value : '';
 
-    // 2. Отображаем индикатор "Печатает..."
+    chatHistory.insertAdjacentHTML('beforeend', `
+        <div class="flex gap-2 w-full max-w-[92%] ml-auto justify-end">
+            <div class="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-[13px] shadow-sm">${_escAiDoc(question)}</div>
+        </div>`);
+    inputEl.value = '';
+    inputEl.focus();
+
     const loaderId = 'loader_' + Date.now();
-    const loaderHtml = `
-        <div id="${loaderId}" class="flex gap-2 w-full max-w-[85%]">
-            <div class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">🤖</div>
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-500 shadow-sm animate-pulse">
-                Ищу норматив и формулирую ответ...
+    chatHistory.insertAdjacentHTML('beforeend', `
+        <div id="${loaderId}" class="flex gap-2 w-full max-w-[95%]">
+            <div class="w-7 h-7 bg-indigo-200 rounded-full flex items-center justify-center text-[11px] shrink-0">🤖</div>
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[13px] text-slate-500 shadow-sm animate-pulse">
+                Ищу в чек-листах и нормативах…
             </div>
-        </div>`;
-    chatHistory.insertAdjacentHTML('beforeend', loaderHtml);
+        </div>`);
     chatHistory.scrollTop = chatHistory.scrollHeight;
 
-    // 3. ПРОДВИНУТЫЙ ЛОКАЛЬНЫЙ ПОИСК КОНТЕКСТА (ЧАНКИРОВАНИЕ RAG)
-    const allDocs = [...(typeof window.SYSTEM_DOCS !== 'undefined' ? window.SYSTEM_DOCS : []), ..._getCustomDocs()];
+    const appendAnswer = (bodyHtml, plainText, sources, statusText, relatedExtra) => {
+        const node = document.getElementById(loaderId);
+        if (node) node.remove();
+        const related = relatedExtra || { html: '', plain: '' };
+        const sourcesHtml = _renderAiDocSourcesHtml(sources || []);
+        const plainId = 'aidoc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        _aiDocPlainById[plainId] = String(plainText || '') + (related.plain || '');
+        chatHistory.insertAdjacentHTML('beforeend', `
+            <div class="flex gap-2 w-full max-w-[95%]" data-ai-doc-id="${plainId}">
+                <div class="w-7 h-7 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
+                <div class="min-w-0 flex-1 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-2xl rounded-tl-none text-[13px] text-slate-800 dark:text-slate-100 shadow-sm leading-relaxed font-medium">
+                    <div class="ai-doc-answer-body">${bodyHtml}</div>
+                    ${sourcesHtml}
+                    ${related.html || ''}
+                    <div class="mt-2 flex gap-2">
+                        <button type="button" onclick="copyAiDocAnswer(this)" class="flex-1 bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 py-2 rounded-lg text-[10px] font-black uppercase active:scale-95">Копировать</button>
+                    </div>
+                </div>
+            </div>`);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        _setAiDocStatus(statusText || '');
+        const chipHints = (sources || [])
+            .filter(s => s.type === 'Чек-лист' && (s.itemName || s.title))
+            .map(s => s.itemName || s.title)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .slice(0, 4);
+        if (chipHints.length) _renderAiDocChips(chipHints);
+    };
 
-    // Очищаем вопрос от знаков препинания
-    const cleanQuestion = question.toLowerCase().replace(/[.,?!]/g, '');
-
-    // БАЗОВЫЙ СТЕММИНГ ДЛЯ РУССКОГО ЯЗЫКА:
-    // Берем слова длиннее 3 символов. Если слово длиннее 5 букв — отрезаем последние 2 буквы (окончание),
-    // чтобы искать по корню слова (например, "арматурой" -> "арматур", найдет "арматура", "арматурный")
-    const keywords = cleanQuestion.split(' ')
-        .filter(w => w.length > 3)
-        .map(w => w.length > 5 ? w.substring(0, w.length - 2) : w);
-
-    let contextArr = [];
-
-    // Настройки нарезки текста (Чанки)
-    const CHUNK_SIZE = 1500; // Размер одного куска текста
-    const CHUNK_OVERLAP = 300; // Перекрытие, чтобы не разрезать фразу пополам
-
-    // А. Поиск по полнотекстовым PDF документам
-    allDocs.forEach(doc => {
-        let titleScore = keywords.filter(kw => doc.title.toLowerCase().includes(kw) || doc.code.toLowerCase().includes(kw)).length * 50;
-
-        if (doc.extractedText) {
-            const fullText = doc.extractedText;
-            // Режем текст на большие куски
-            for (let i = 0; i < fullText.length; i += (CHUNK_SIZE - CHUNK_OVERLAP)) {
-                const chunk = fullText.substring(i, i + CHUNK_SIZE);
-                const chunkLow = chunk.toLowerCase();
-
-                let score = titleScore;
-                let matchesCount = 0;
-
-                // 1. Ищем отдельные слова
-                keywords.forEach(kw => {
-                    if (chunkLow.includes(kw)) {
-                        score += 10;
-                        matchesCount++;
-                    }
-                });
-
-                // 2. Ищем точную фразу (Бонус X100)
-                if (chunkLow.includes(cleanQuestion)) {
-                    score += 500;
-                    matchesCount += keywords.length;
-                }
-
-                // Добавляем кусок только если нашли хотя бы одно слово
-                if (matchesCount > 0) {
-                    contextArr.push({
-                        type: 'Документ',
-                        title: doc.code,
-                        // Даем бонус кускам, где встретилось МНОГО РАЗНЫХ слов из запроса
-                        score: score * matchesCount,
-                        text: chunk.replace(/\s+/g, ' ') // Убираем лишние пробелы для экономии места
-                    });
-                }
-            }
-        } else if (titleScore > 0) {
-            contextArr.push({ type: 'Документ', title: doc.code, text: doc.title, score: titleScore });
-        }
-    });
-
-    // Б. Поиск по чек-листам
-    const flatList = getFlatList(window.AuditState.currentChecklist);
-    flatList.forEach(item => {
-        const text = `${item.n} ${item.t}`.toLowerCase();
-        let matches = keywords.filter(kw => text.includes(kw)).length;
-        if (matches > 0) {
-            const cleanNorm = item.t ? item.t.replace(/<\/?[^>]+(>|$)/g, "").replace(/<br>/g, " ") : "Нет норматива";
-            contextArr.push({ type: 'Пункт проверки', title: item.n, text: cleanNorm, score: matches * 20 });
-        }
-    });
-
-    // В. Поиск по TWI-инструкциям
-    if (typeof customTwiCards !== 'undefined') {
-        _getTwiCards().forEach(twi => {
-            const text = `${twi.title} ${twi.whyImportant || ''} ${twi.howToCheck || ''}`.toLowerCase();
-            let matches = keywords.filter(kw => text.includes(kw)).length;
-            if (matches > 0) {
-                let twiContent = `Название: ${twi.title}. `;
-                if (twi.whyImportant) twiContent += `Риски: ${twi.whyImportant}. `;
-                if (twi.howToCheck) twiContent += `Методика проверки: ${twi.howToCheck}.`;
-                contextArr.push({ type: 'TWI-карта', title: twi.title, text: twiContent, score: matches * 15 });
-            }
-        });
+    // Каталог базы — мгновенно, без обхода PDF и без DeepSeek (иначе UI «зависает»)
+    if (_isAiDocCatalogQuestion(question)) {
+        const catalog = _buildAiDocCatalogAnswer();
+        appendAnswer(catalog.html, catalog.plain, [], 'Список документов из каталога');
+        return;
     }
 
-    // Оставляем ТОП-6 самых релевантных огромных кусков (около 9000 символов суммарно)
-    contextArr.sort((a, b) => b.score - a.score);
-    const topContext = contextArr.slice(0, 6).map(c => `[ИСТОЧНИК: ${c.type} - ${c.title}]\n${c.text}`).join('\n\n');
+    const expanded = _expandAiDocQuery(question);
+    let usedRewrite = false;
 
-    // 4. ФОРМИРУЕМ ПРОМПТ ДЛЯ DEEPSEEK
-    const promptSystem = `Ты — главный эксперт технического надзора. Ответь на вопрос инженера максимально точно, технически грамотно и ПО СУЩЕСТВУ.
-    
-    ПРАВИЛА:
-    1. Опирайся ТОЛЬКО на информацию из БАЗЫ ЗНАНИЙ ниже. 
-    2. Обязательно указывай шифр документа (ГОСТ, СП), если цитируешь его.
-    3. Если ответа в базе нет, честно скажи: "В загруженной базе нет точного ответа", но дай общестроительный совет из своего опыта.
-    
-    БАЗА ЗНАНИЙ ИЗ PDF-ДОКУМЕНТОВ И РЕГЛАМЕНТОВ:
-    ${topContext || 'База пуста'}`;
+    _setAiDocStatus(docId ? 'Поиск в выбранном документе…' : (templateKey ? 'Поиск в выбранном виде работ…' : 'Поиск по чек-листам и PDF…'));
+
+    let retrieved;
+    try {
+        retrieved = _retrieveNormContext(expanded.searchText, {
+            docId,
+            templateKey,
+            extraKeywords: expanded.expandedKeywords,
+            originalQuestion: question
+        });
+    } catch (e) {
+        appendAnswer(
+            `<p class="mb-0 text-red-600">Ошибка поиска по базе: ${_escAiDoc(e.message || e)}</p>`,
+            'Ошибка поиска по базе',
+            [],
+            'Ошибка поиска'
+        );
+        return;
+    }
+
+    // Rewrite только если вид работ неясен и хиты слабые (иначе «кровля» → rewrite → газобетон)
+    const workLocked = !!(retrieved.workLocked || (_detectWorkTemplateKeys(question)[0] || {}).score >= 40);
+    const weakFirst = !workLocked && (retrieved.strongClCount || 0) < 2;
+    if (weakFirst) {
+        try {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            _setAiDocStatus('Уточняю формулировку…');
+            const rewritten = await _rewriteAiDocQueryForSearch(question);
+            if (rewritten && rewritten.length > 8 && rewritten.toLowerCase() !== question.toLowerCase()) {
+                usedRewrite = true;
+                const expanded2 = _expandAiDocQuery(rewritten);
+                _setAiDocStatus('Ищу по нормам…');
+                const second = _retrieveNormContext(expanded2.searchText, {
+                    docId,
+                    templateKey,
+                    extraKeywords: [
+                        ...expanded.expandedKeywords,
+                        ...expanded2.expandedKeywords
+                    ],
+                    originalQuestion: question
+                });
+                const better = !second.empty && (
+                    (second.strongClCount || 0) > (retrieved.strongClCount || 0)
+                    || (retrieved.empty && !second.empty)
+                    || ((second.sources || []).length > (retrieved.sources || []).length)
+                );
+                if (better) retrieved = second;
+            }
+        } catch (e) {
+            // остаёмся на локальном результате
+            console.warn('[askAiDocQuestion] rewrite skipped', e.message || e);
+        }
+    }
+
+    // При уже найденных пунктах чек-листа блок «связанные» только шумит
+    const hasClSrc = (retrieved.sources || []).some(s => s.type === 'Чек-лист');
+    const related = hasClSrc
+        ? { html: '', plain: '' }
+        : _relatedMaterialsAppendix(retrieved.cleanQuestion || expanded.searchText);
+
+    if (retrieved.empty) {
+        const msg = 'В загруженной базе нет точного ответа по этому запросу. Уточните формулировку, укажите шифр СП/ГОСТ, выберите вид работ или документ в фильтре.';
+        appendAnswer(`<p class="mb-0">${_escAiDoc(msg)}</p>`, msg, [], `Нет фрагментов · ${expanded.intent}`, related);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        return;
+    }
+
+    // Защита от гигантского промпта
+    let contextText = retrieved.contextText || '';
+    if (contextText.length > 14000) {
+        contextText = contextText.slice(0, 14000) + '\n\n[…контекст обрезан…]';
+    }
+
+    const hasNumericInBase = /\d+\s*мм|[≤≥±]|не более|не менее|допуск/i.test(contextText);
+    const hasNormQuote = /\[ИСТОЧНИК: Цитата СП\/ГОСТ/i.test(contextText)
+        || (retrieved.quoteN || 0) > 0;
+
+    const promptSystem = `Ты — главный эксперт технического надзора. Отвечаешь инженеру строго по переданной БАЗЕ ЗНАНИЙ.
+Инженер спрашивает простым языком — отвечай коротко и по делу, но только фактами из базы.
+
+ПРАВИЛА:
+1. Опирайся ТОЛЬКО на фрагменты в блоке «БАЗА ЗНАНИЙ». Не используй внешние знания и не давай советов «из опыта».
+2. Приоритет: пункт ЧЕК-ЛИСТА указывает норму; блок «Цитата СП/ГОСТ» — перепроверка по тексту документа. Цифры и формулировки бери из цитаты СП/ГОСТ, если она есть; чек-лист — для навигации (какой пункт/таблица).
+3. Если есть «Цитата СП/ГОСТ» — в «Основании» приведи фрагмент с допуском/мм из цитаты. Если в блоке цитаты только предисловие/«КонсультантПлюс» без мм — не выдавай это за текст нормы; опирайся на чек-лист и скажи, что полный текст таблицы в выборке не найден.
+4. Если в базе нет ответа — напиши дословно: «В загруженной базе нет точного ответа».
+5. Указывай шифр (ГОСТ/СП/СНиП) и пункт чек-листа / таблицу из базы.
+6. Учитывай вид работ СТРОГО. Кровля ≠ газобетон/кладка; монолит ≠ НФС/фасад. Если в базе чек-лист кровли — не отвечай про кладку стен и наоборот.
+7. ${hasNumericInBase
+        ? 'В БАЗЕ ЕСТЬ числа/мм/допуски — НАЧНИ ответ с конкретной цифры (или диапазона) из базы (предпочтительно из цитаты СП/ГОСТ). Запрещены общие фразы без числа.'
+        : 'Если чисел в базе нет — так и скажи; не выдумывай мм.'}
+8. Формат (обычный текст, можно **жирный** и списки «- »):
+   1) Краткий ответ — сначала цифра/допуск, если есть в базе
+   2) Основание: чек-лист → пункт + шифр${hasNormQuote ? ' + цитата из СП/ГОСТ' : ''}
+   3) На что обратить внимание — только если следует из базы; иначе пропусти
+
+БАЗА ЗНАНИЙ:
+${contextText}`;
 
     try {
-        btn.disabled = true; btn.style.opacity = '0.5';
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        _setAiDocStatus('Формулирую ответ…');
+        const response = await _withTimeout(
+            callAI([
+                { role: 'system', content: promptSystem },
+                { role: 'user', content: question }
+            ], { temperature: 0.2, max_tokens: 2000, raw: true }),
+            55000,
+            'Нейросеть не ответила за 55 секунд. Попробуйте более узкий вопрос или проверьте сеть.'
+        );
 
-        // ВЫЗЫВАЕМ ИИ
-        let response = await callAI([
-            { role: 'system', content: promptSystem },
-            { role: 'user', content: question }
-        ], { temperature: 0.2, max_tokens: 2000 }); // Температуру ставим низкую, чтобы не фантазировал, а отвечал строго по ГОСТ
-
-        // 5. Выводим результат
-        document.getElementById(loaderId).remove();
-        // --- НАЧАЛО НОВОГО БЛОКА: ПОИСК СВЯЗАННЫХ ЧЕК-ЛИСТОВ И TWI ---
-        // Берем только существенные слова из запроса (длиннее 4 букв)
-        const strongKeywords = cleanQuestion.split(' ')
-            .filter(w => w.length > 4)
-            .map(w => w.length > 6 ? w.substring(0, w.length - 2) : w);
-
-        let tmplScores = [];
-        const allTmpls = { ..._templates().getSystemTemplates(), ..._templates().getUserTemplates() };
-
-        if (strongKeywords.length > 0) {
-            Object.values(allTmpls).forEach(tmpl => {
-                let score = 0;
-                const titleStr = tmpl.title.toLowerCase();
-
-                // Совпадение в названии = 10 баллов
-                strongKeywords.forEach(kw => { if (titleStr.includes(kw)) score += 10; });
-
-                if (tmpl.groups) {
-                    tmpl.groups.forEach(g => {
-                        if (g.items) {
-                            g.items.forEach(item => {
-                                const textToSearch = `${item.n} ${item.t}`.toLowerCase();
-                                // Упоминание внутри пунктов = 1 балл
-                                strongKeywords.forEach(kw => {
-                                    if (textToSearch.includes(kw)) score += 1;
-                                });
-                            });
-                        }
-                    });
-                }
-
-                // Отсекаем мусор: берем только если набралось 2 и более баллов
-                if (score >= 2) tmplScores.push({ title: tmpl.title, score: score });
-            });
-        }
-
-        let twiScores = [];
-        if (typeof customTwiCards !== 'undefined' && strongKeywords.length > 0) {
-            _getTwiCards().forEach(twi => {
-                let score = 0;
-                const textToSearch = `${twi.title} ${twi.whyImportant || ''} ${twi.howToCheck || ''}`.toLowerCase();
-                strongKeywords.forEach(kw => {
-                    if (textToSearch.includes(kw)) score += 2;
-                });
-                if (score >= 2) twiScores.push({ title: twi.title, score: score });
-            });
-        }
-
-        // Сортируем по убыванию баллов
-        tmplScores.sort((a, b) => b.score - a.score);
-        twiScores.sort((a, b) => b.score - a.score);
-
-        // Берем ТОП-2 самых подходящих (чтобы не перегружать интерфейс)
-        const topChecklists = tmplScores.slice(0, 2).map(t => t.title);
-        const topTwis = twiScores.slice(0, 2).map(t => t.title);
-
-        if (topChecklists.length > 0 || topTwis.length > 0) {
-            let appendix = `\n\n<div class="mt-3 p-3 bg-indigo-100/50 dark:bg-indigo-900/50 rounded-xl border border-indigo-200 dark:border-indigo-800 text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">`;
-            appendix += `<b class="flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Связанные материалы в приложении:</b><br>`;
-
-            if (topChecklists.length > 0) {
-                appendix += `<span class="mt-1 block">• Чек-листы: <b>${topChecklists.join(', ')}</b></span>`;
-            }
-            if (topTwis.length > 0) {
-                appendix += `<span class="mt-1 block">• TWI-карты: <b>${topTwis.join(', ')}</b></span>`;
-            }
-            appendix += `</div>`;
-
-            response += appendix;
-        }
-        // --- КОНЕЦ НОВОГО БЛОКА ---
-        const aiMsgHtml = `
-            <div class="flex gap-2 w-full max-w-[90%]">
-                <div class="w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-[10px] shrink-0 font-bold shadow-md">AI</div>
-                <div class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 p-3 rounded-2xl rounded-tl-none text-[12px] text-indigo-900 dark:text-indigo-200 shadow-sm leading-relaxed whitespace-pre-wrap font-medium">
-                    ${response}
-                </div>
-            </div>`;
-        chatHistory.insertAdjacentHTML('beforeend', aiMsgHtml);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
-
+        const plain = String(response || '').replace(/\*\*/g, '').trim();
+        const clN = (retrieved.sources || []).filter(s => s.type === 'Чек-лист').length;
+        const qN = retrieved.quoteN || (retrieved.sources || []).filter(s => s.isNormQuote || s.type === 'Цитата СП/ГОСТ').length;
+        const statusBits = [
+            `intent:${expanded.intent}`,
+            retrieved.workTitle ? `вид:${retrieved.workTitle}` : null,
+            `ист:${retrieved.sources.length}`,
+            clN ? `CL:${clN}` : null,
+            qN ? `цит:${qN}` : null,
+            usedRewrite ? 'rewrite' : null
+        ].filter(Boolean);
+        appendAnswer(
+            _formatAiRichText(response),
+            plain,
+            retrieved.sources,
+            statusBits.join(' · '),
+            related
+        );
+        _gameLogAction('ai_generate', 'doc_chat');
     } catch (e) {
-        document.getElementById(loaderId).remove();
-        const errorHtml = `
-            <div class="flex gap-2 w-full max-w-[85%]">
-                <div class="w-6 h-6 bg-red-200 rounded-full flex items-center justify-center text-[10px] shrink-0">❌</div>
-                <div class="bg-red-50 text-red-600 border border-red-200 p-3 rounded-2xl rounded-tl-none text-[12px] shadow-sm">
-                    Ошибка связи с нейросетью: ${e.message}
+        const node = document.getElementById(loaderId);
+        if (node) node.remove();
+        chatHistory.insertAdjacentHTML('beforeend', `
+            <div class="flex gap-2 w-full max-w-[95%]">
+                <div class="w-7 h-7 bg-red-200 rounded-full flex items-center justify-center text-[11px] shrink-0">❌</div>
+                <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 p-3 rounded-2xl rounded-tl-none text-[13px] shadow-sm">
+                    ${_escAiDoc(e.message || e)}
                 </div>
-            </div>`;
-        chatHistory.insertAdjacentHTML('beforeend', errorHtml);
+            </div>`);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+        _setAiDocStatus('Ошибка или таймаут');
     } finally {
-        btn.disabled = false; btn.style.opacity = '1';
+        btn.disabled = false;
+        btn.style.opacity = '1';
     }
-
-    function inputFieldReset() {
-        inputEl.value = '';
-        inputEl.focus();
-    }
-};
+}
 
 // ГЕНЕРАЦИЯ ПРОТОКОЛА ЧЕРЕЗ DEEPSEEK (Умный сбор данных)
 async function rbi_generateMeetingMemo() {
@@ -2080,7 +3827,132 @@ async function runSelfLearningAi() {
     }
 };
 
-// === ИИ-ТРЕНЕР: РАЗБОР ОШИБОК И ГАРАНТИЙНЫХ РИСКОВ ===
+// === ИИ-ТРЕНЕР: РАЗБОР ОШИБОК (модалка как у тепловой карты) ===
+let _skTutorAiLast = { html: '', plain: '' };
+
+function _skTutorHtmlToPlain(html) {
+    try {
+        const d = document.createElement('div');
+        d.innerHTML = String(html || '');
+        return String(d.innerText || d.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+    } catch (e) {
+        return String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+}
+
+function closeSkTutorAiModal() {
+    const modal = document.getElementById('sk-tutor-ai-modal');
+    if (modal) modal.remove();
+}
+
+function copySkTutorAiText() {
+    const plain = _skTutorAiLast.plain || '';
+    if (!plain) return showToast('Нечего копировать');
+    const done = () => {
+        showToast('Разбор скопирован');
+        _gameLogAction('ai_copy', 'sk_coaching');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(plain).then(done).catch(() => {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = plain;
+                ta.style.cssText = 'position:fixed;left:-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                done();
+            } catch (e) {
+                showToast('Не удалось скопировать');
+            }
+        });
+        return;
+    }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = plain;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        done();
+    } catch (e) {
+        showToast('Не удалось скопировать');
+    }
+}
+
+function reopenSkTutorAiModal() {
+    if (!_skTutorAiLast.html) return showToast('Сначала сгенерируйте разбор');
+    openSkTutorAiModal({ html: _skTutorAiLast.html, plain: _skTutorAiLast.plain });
+}
+
+function openSkTutorAiModal(opts) {
+    const options = opts || {};
+    const loading = !!options.loading;
+    if (options.plain != null) _skTutorAiLast.plain = options.plain;
+    if (options.html != null && !loading) _skTutorAiLast.html = options.html;
+
+    let modal = document.getElementById('sk-tutor-ai-modal');
+    if (!modal) {
+        document.body.insertAdjacentHTML('beforeend', `
+<div id="sk-tutor-ai-modal" class="fixed inset-0 bg-slate-900/80 z-[6000] flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm" onclick="if(event.target===this)closeSkTutorAiModal()">
+  <div class="bg-[var(--card-bg)] w-full max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[94vh] sm:max-h-[90vh]" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="sk-tutor-ai-modal-title">
+    <div class="flex items-center justify-between gap-2 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--card-border)] shrink-0">
+      <h3 id="sk-tutor-ai-modal-title" class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">AI-Тренер: разбор формулировок</h3>
+      <button type="button" onclick="closeSkTutorAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="sk-tutor-ai-modal-body" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-4 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 dark:text-slate-100"></div>
+    <div class="flex gap-2 p-4 pt-3 border-t border-[var(--card-border)] shrink-0 bg-[var(--card-bg)]">
+      <button type="button" id="sk-tutor-ai-modal-copy" onclick="copySkTutorAiText()" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-[11px] uppercase tracking-widest shadow-md active:scale-95 flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:pointer-events-none">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+        Копировать
+      </button>
+      <button type="button" onclick="closeSkTutorAiModal()" class="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-3.5 rounded-xl font-bold text-[11px] uppercase border border-slate-200 dark:border-slate-700 active:scale-95">Закрыть</button>
+    </div>
+  </div>
+</div>`);
+        modal = document.getElementById('sk-tutor-ai-modal');
+    }
+
+    const body = document.getElementById('sk-tutor-ai-modal-body');
+    const copyBtn = document.getElementById('sk-tutor-ai-modal-copy');
+    if (body) {
+        if (loading) {
+            body.innerHTML = `<span class="animate-pulse text-indigo-500 dark:text-indigo-300 font-bold">⏳ DeepSeek готовит материал для планерки…</span>`;
+        } else {
+            body.innerHTML = options.html || _skTutorAiLast.html || '—';
+            body.scrollTop = 0;
+        }
+    }
+    if (copyBtn) copyBtn.disabled = loading || !_skTutorAiLast.plain;
+    modal.style.display = 'flex';
+}
+
+function _setSkTutorAiTeaser(state) {
+    const teaser = document.getElementById('sk-ai-templates-res');
+    if (!teaser) return;
+    teaser.classList.remove('hidden');
+    if (state === 'loading') {
+        teaser.innerHTML = `<span class="text-indigo-500 dark:text-indigo-300 font-bold animate-pulse">⏳ Разбор формируется в окне…</span>`;
+        return;
+    }
+    if (state === 'empty') {
+        teaser.innerHTML = `<div class="text-green-600 font-black flex items-center gap-2"><svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Ошибок в формулировках не найдено. Команда пишет предписания идеально!</div>`;
+        return;
+    }
+    if (state === 'error') {
+        teaser.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка связи с нейросетью</span>`;
+        return;
+    }
+    teaser.innerHTML = `
+        <div class="flex flex-col gap-2">
+            <p class="text-[12px] font-bold text-slate-700 dark:text-slate-200">Разбор готов — полный текст в отдельном окне.</p>
+            <button type="button" onclick="reopenSkTutorAiModal()" class="w-full bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 py-2.5 rounded-xl font-bold text-[10px] uppercase active:scale-95">Открыть разбор</button>
+        </div>`;
+}
+
 async function sk_auditTemplatesAi() {
     if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в Настройках!");
 
@@ -2089,15 +3961,17 @@ async function sk_auditTemplatesAi() {
 
     var skSvc = (AIActions._ctx && AIActions._ctx.sk) || window.RBI.services.sk;
     if (skSvc.getBadRemarksSync().length === 0) {
-        resBox.classList.remove('hidden');
-        resBox.innerHTML = `<div class="text-green-600 font-black flex items-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Ошибок в формулировках не найдено. Команда пишет предписания идеально!</div>`;
+        _setSkTutorAiTeaser('empty');
+        openSkTutorAiModal({
+            html: `<div class="text-green-600 font-black flex items-center gap-2"><svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg> Ошибок в формулировках не найдено. Команда пишет предписания идеально!</div>`,
+            plain: 'Ошибок в формулировках не найдено. Команда пишет предписания идеально!'
+        });
         return;
     }
 
-    resBox.classList.remove('hidden');
-    resBox.innerHTML = `<span class="animate-pulse text-indigo-500 font-bold flex items-center gap-2"><svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> DeepSeek готовит материал для планерки...</span>`;
+    _setSkTutorAiTeaser('loading');
+    openSkTutorAiModal({ loading: true });
 
-    // Берем 3 случайных плохих замечания
     const sample = skSvc.getBadRemarksSync().sort(() => 0.5 - Math.random()).slice(0, 3).map(r => `- ${r.eng}: "${r.text}"`);
 
     const promptSystem = `Ты — Директор по качеству. Твоя задача — провести короткий, жесткий, но конструктивный мастер-класс для инженеров стройконтроля по правильному написанию предписаний.
@@ -2114,14 +3988,21 @@ async function sk_auditTemplatesAi() {
         const response = await callAI([
             { role: 'system', content: promptSystem },
             { role: 'user', content: promptUser }
-        ], { temperature: 0.3, max_tokens: 800 });
+        ], { temperature: 0.3, max_tokens: 1600, raw: true });
 
-        resBox.innerHTML = response;
+        const html = String(response || '').trim() || '—';
+        const plain = _skTutorHtmlToPlain(html);
+        openSkTutorAiModal({ html, plain });
+        _setSkTutorAiTeaser('ready');
         _gameLogAction('ai_generate', 'sk_coaching');
     } catch (e) {
-        resBox.innerHTML = `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${e.message}</span>`;
+        _setSkTutorAiTeaser('error');
+        openSkTutorAiModal({
+            html: `<span class="text-red-500 font-bold">❌ Ошибка ИИ: ${_escAiDoc(e.message || e)}</span>`,
+            plain: 'Ошибка ИИ: ' + (e.message || e)
+        });
     }
-};
+}
 
 // === Панель руководителя: Добавить синоним подрядчику ВРУЧНУЮ ===
 async function gameAddContractorAliasInline(canonicalKey, predefinedValue = null) {
@@ -2336,6 +4217,9 @@ const AIActions = {
     openDocChat() {
       return _call('openAiDocChat', openAiDocChat, []);
     },
+    applyAiDocChip(...args) {
+      return _call('applyAiDocChip', applyAiDocChip, args);
+    },
     closeDocChat() {
       return _call('closeAiDocChat', closeAiDocChat, []);
     },
@@ -2358,6 +4242,18 @@ const AIActions = {
     },
     skAuditTemplates() {
       return _call('sk_auditTemplatesAi', sk_auditTemplatesAi, []);
+    },
+    openSkTutorAiModal(...args) {
+      return _call('openSkTutorAiModal', openSkTutorAiModal, args);
+    },
+    closeSkTutorAiModal() {
+      return _call('closeSkTutorAiModal', closeSkTutorAiModal, []);
+    },
+    copySkTutorAiText() {
+      return _call('copySkTutorAiText', copySkTutorAiText, []);
+    },
+    reopenSkTutorAiModal() {
+      return _call('reopenSkTutorAiModal', reopenSkTutorAiModal, []);
     },
 
     // ── Геймификация ──────────────────────────────────────────────────────
@@ -2388,13 +4284,15 @@ const AIActions = {
 
 export {
   changeAiMode, callAI, generateSmartComment, generateOnePagerForecastAi,
-  generatePulseAi, generateHeatmapAi, generateContractorForecastAi, generateCultureAi,
+  generatePulseAi, generateHeatmapAi, openHeatmapAiModal, closeHeatmapAiModal, copyHeatmapAiText, reopenHeatmapAiModal,
+  generateContractorForecastAi, generateCultureAi,
   generateTwiDraftAi, generatePrescriptionAi, generateTaskRiskAi, generateAiRoutePlan,
   generateAiTutorAdvice, generateAiHintForDefect, extractTextFromPdf, rbi_normalizeFeedbackAi,
-  openAiDocChat, closeAiDocChat, askAiDocQuestion, rbi_generateMeetingMemo,
+  openAiDocChat, closeAiDocChat, askAiDocQuestion, copyAiDocAnswer, applyAiDocChip, rbi_generateMeetingMemo,
   rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi,   rbi_fillFmeaWithAi, generateDefectRemediationTexts, rbi_generateWorkshop,
   rbi_generateIntroBriefing, rbi_generateFinalAcceptance, sk_aiMapColumns, sk_autoMapCategories,
   sk_generateContractorAiSummary, sk_predictRisksAi, rbi_generateGlobalAi, runSelfLearningAi,
-  sk_auditTemplatesAi, gameAddContractorAliasInline, gameGenerateContractorSynonymsAI,
+  sk_auditTemplatesAi, openSkTutorAiModal, closeSkTutorAiModal, copySkTutorAiText, reopenSkTutorAiModal,
+  gameAddContractorAliasInline, gameGenerateContractorSynonymsAI,
   AIActions
 };

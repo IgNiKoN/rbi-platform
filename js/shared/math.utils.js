@@ -11,7 +11,47 @@
     window.RBI.utils = window.RBI.utils || {};
 
     window._metricsCache = {};
-    window.clearMetricsCache = function () { window._metricsCache = {}; };
+    window._metricsCacheOrder = [];
+    var METRICS_CACHE_MAX = 40;
+
+    function _metricsCacheFingerprint(customArray, useSlidingWindow) {
+        // Короткий ключ вместо join всех id (огромные строки раздували RAM).
+        var ids = customArray.map(function (i) { return String(i && i.id != null ? i.id : ''); }).sort();
+        var h = 5381;
+        for (var n = 0; n < ids.length; n++) {
+            var s = ids[n];
+            for (var i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+        }
+        return ids.length + '_' + (h >>> 0) + '_' + (useSlidingWindow ? '1' : '0');
+    }
+
+    function _metricsCacheGet(key) {
+        if (!window._metricsCache[key]) return null;
+        var i = window._metricsCacheOrder.indexOf(key);
+        if (i >= 0) {
+            window._metricsCacheOrder.splice(i, 1);
+            window._metricsCacheOrder.push(key);
+        }
+        return window._metricsCache[key];
+    }
+
+    function _metricsCacheSet(key, val) {
+        if (window._metricsCache[key]) {
+            var i = window._metricsCacheOrder.indexOf(key);
+            if (i >= 0) window._metricsCacheOrder.splice(i, 1);
+        }
+        window._metricsCache[key] = val;
+        window._metricsCacheOrder.push(key);
+        while (window._metricsCacheOrder.length > METRICS_CACHE_MAX) {
+            var old = window._metricsCacheOrder.shift();
+            if (old) delete window._metricsCache[old];
+        }
+    }
+
+    window.clearMetricsCache = function () {
+        window._metricsCache = {};
+        window._metricsCacheOrder = [];
+    };
 
     // Вспомогательная функция для плоского массива
     function getFlatList(checklist) {
@@ -137,8 +177,9 @@
     function getContractorMetrics(customArray, userTemplatesData = {}, useSlidingWindow = true) {
         if (!customArray || customArray.length === 0) return null;
         // Мемоизация: если мы уже считали метрики для этого набора проверок - отдаем из кэша
-        const cacheKey = customArray.map(i => i.id).sort().join('_') + '_' + useSlidingWindow;
-        if (window._metricsCache[cacheKey]) return window._metricsCache[cacheKey];
+        const cacheKey = _metricsCacheFingerprint(customArray, useSlidingWindow);
+        const cached = _metricsCacheGet(cacheKey);
+        if (cached) return cached;
         const sortedChronologically = [...customArray].sort((a, b) => new Date(b.date) - new Date(a.date));
 
         // Если включено скользящее окно - берем последние 15. Иначе - берем ВСЕ проверки.
@@ -292,7 +333,7 @@
             confStatus: confidenceLevel, confCls, stdDev: s, ci95_margin: E, volatility: s, stabilityIndex, stabText, stabColor, stabDesc, riskStatus, riskCls, reason
         };
 
-        window._metricsCache[cacheKey] = result;
+        _metricsCacheSet(cacheKey, result);
         return result;
     }
 

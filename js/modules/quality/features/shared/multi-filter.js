@@ -288,6 +288,20 @@ function closeMultiFilterModal() {
 }
 window.closeMultiFilterModal = closeMultiFilterModal;
 
+// На мобиле быстрое переключение объектов запускает полный ререндер аналитики
+// (Chart.js + canvas-превью фото) на каждый тап → UI зависает. Схлопываем
+// подряд идущие apply в один отложенный вызов.
+var _analyticsFilterRenderTimer = null;
+function _scheduleAnalyticsRenderFromFilter() {
+    if (_analyticsFilterRenderTimer) clearTimeout(_analyticsFilterRenderTimer);
+    _analyticsFilterRenderTimer = setTimeout(function () {
+        _analyticsFilterRenderTimer = null;
+        if (typeof window.renderCurrentAnalyticsTab === 'function') {
+            window.renderCurrentAnalyticsTab();
+        }
+    }, 200);
+}
+
 function filterMultiModalList() {
     const term = document.getElementById('multi-filter-search').value.toLowerCase();
     const rows = document.querySelectorAll('.filter-item-row');
@@ -324,7 +338,7 @@ function applyMultiFilter() {
     if (currentFilterContext === 'history') {
         window.applyHistoryFilters();
     } else {
-        window.renderCurrentAnalyticsTab();
+        _scheduleAnalyticsRenderFromFilter();
     }
 }
 window.applyMultiFilter = applyMultiFilter;
@@ -344,7 +358,7 @@ function applyMultiFilterSingle(val) {
     if (currentFilterContext === 'history') {
         window.applyHistoryFilters();
     } else {
-        window.renderCurrentAnalyticsTab();
+        _scheduleAnalyticsRenderFromFilter();
     }
 }
 window.applyMultiFilterSingle = applyMultiFilterSingle;

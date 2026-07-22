@@ -90,8 +90,8 @@ export const HistoryActions = {
     /**
      * Дозагрузить СЛЕДУЮЩУЮ страницу Журнала (курсор продолжается с места,
      * где остановилась предыдущая страница) и добросить её к уже показанным
-     * записям. Не перечитывает и не пересортировывает весь массив — только
-     * добавляет новые записи и перерисовывает список.
+     * записям. Не перечитывает весь массив — append в state + DOM-patch
+     * (HistoryRender.appendPage), без полной пересборки списка.
      */
     async loadNextPage() {
         if (HistoryState.isLoadingPage || !HistoryState.pageHasMore) return;
@@ -105,14 +105,19 @@ export const HistoryActions = {
                 cursorKey: HistoryState.pageCursorKey,
                 cursorPrimaryKey: HistoryState.pageCursorPrimaryKey
             });
-            HistoryState.appendRecords(page.items || []);
+            const newItems = page.items || [];
+            HistoryState.appendRecords(newItems);
             HistoryState.setPageState({
                 pageCursorKey: page.nextCursorKey,
                 pageCursorPrimaryKey: page.nextCursorPrimaryKey,
                 pageHasMore: page.hasMore,
                 isLoadingPage: false
             });
-            HistoryRender.render();
+            if (typeof HistoryRender.appendPage === 'function') {
+                HistoryRender.appendPage(newItems);
+            } else {
+                HistoryRender.render();
+            }
         } catch (e) {
             console.error('[HistoryActions] ошибка loadNextPage:', e);
             HistoryState.setPageState({ isLoadingPage: false });

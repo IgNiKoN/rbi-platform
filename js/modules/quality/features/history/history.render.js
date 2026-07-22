@@ -48,20 +48,219 @@ function _templates() {
  * Сохраняет раскрытые аккордеоны Объект/Подрядчик до перерисовки списка.
  * Ключи — отображаемые имена (стабильнее index-based id hist-group-N).
  */
+function _escAttr(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function _histCollator() {
+    return new Intl.Collator('ru');
+}
+
+function _projectNameOf(item) {
+    return (item && item.projectName) || 'Без объекта';
+}
+
+function _contractorNameOf(item) {
+    return (item && item.contractorName) || 'Не указан';
+}
+
+function _filterHistoryRecords(allRecords) {
+    const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
+    const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
+    const fPhoto = document.getElementById('hist-filter-photo')?.checked;
+    const fB3 = document.getElementById('hist-filter-b3')?.checked;
+    const _histMultiFilters = (window.activeMultiFilters && window.activeMultiFilters.history) || {};
+    const fProj = _histMultiFilters.project || [];
+    const fContr = _histMultiFilters.contractor || [];
+    const fInsp = _histMultiFilters.inspector || [];
+
+    let filteredArr = allRecords || [];
+    const now = new Date();
+
+    if (fSearch) {
+        filteredArr = filteredArr.filter(i => {
+            const projectText = i.project_display_name || i.projectName || i.project_canonical_key || '';
+            return (
+                (i.location && i.location.toLowerCase().includes(fSearch)) ||
+                (projectText && projectText.toLowerCase().includes(fSearch)) ||
+                (i.inspectorName && i.inspectorName.toLowerCase().includes(fSearch)) ||
+                (i.contractorName && i.contractorName.toLowerCase().includes(fSearch))
+            );
+        });
+    }
+
+    if (fProj.length > 0) {
+        filteredArr = filteredArr.filter(i => {
+            const p = i.project_display_name || i.projectName || i.project_canonical_key || '';
+            return fProj.includes(p) || fProj.includes(i.project_canonical_key);
+        });
+    }
+    if (fContr.length > 0) filteredArr = filteredArr.filter(i => fContr.includes(i.contractorName));
+    if (fInsp.length > 0) filteredArr = filteredArr.filter(i => fInsp.includes(i.inspectorName));
+
+    if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.date).toDateString() === now.toDateString());
+    else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.date) >= w); }
+    else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.date) >= m); }
+
+    if (fPhoto) filteredArr = filteredArr.filter(i => i.photos && Object.keys(i.photos).length > 0);
+    if (fB3) filteredArr = filteredArr.filter(i => i.metrics && i.metrics.n_B3_fail > 0);
+
+    return filteredArr;
+}
+
+let _histGroupSeq = 0;
+
+function _nextHistGroupId() {
+    return 'hist-group-' + (_histGroupSeq++);
+}
+
+function _renderHistoryRowHtml(item) {
+    const photoIcon = (item.photos && Object.keys(item.photos).length > 0) ? `📸` : '';
+    const syncBadge = getSyncBadgeHtml(item);
+    const docScore = _getDocumentaryScore(item);
+    const tTitle = item.templateTitle || 'Неизвестный вид работ';
+    const when = new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const insp = item.inspectorName || 'Не указан';
+    const metaLine = when + ' · ' + tTitle + ' · ' + insp;
+    const ts = new Date(item.date).getTime() || 0;
+    const idAttr = _escAttr(item.id);
+    const statusCls = (item.metrics && item.metrics.statusCls) || 'tag-blue';
+    const finalPct = (item.metrics && item.metrics.final != null) ? item.metrics.final : '—';
+
+    return `
+                <div class="flex items-center gap-1.5 mb-1.5 min-w-0 w-full max-w-full" data-hist-id="${idAttr}" data-hist-date="${ts}">
+                    <input type="checkbox" class="hist-checkbox w-4 h-4 accent-indigo-600 rounded shrink-0 cursor-pointer" value="${idAttr}">
+                    <div class="flex-1 min-w-0 overflow-hidden bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')">
+                        <div class="flex justify-between items-start gap-2 min-w-0">
+                            <div class="min-w-0 flex-1 overflow-hidden">
+                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location || ''}${photoIcon ? ' ' + photoIcon : ''}</div>
+                                <div class="flex items-center gap-1 mt-0.5 min-w-0">
+                                    <div class="text-[8px] text-slate-400 truncate font-medium min-w-0 flex-1">${metaLine}</div>
+                                    <div class="shrink-0">${syncBadge}</div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end gap-0.5 shrink-0">
+                                <span class="status-tag ${statusCls} !text-[9px] !px-1.5 !py-0.5 shadow-sm">${finalPct}%</span>
+                                ${(docScore !== null && docScore !== undefined) ? `<span class="text-[9px] font-bold text-indigo-400 whitespace-nowrap" title="Документарный УрК">Док: ${docScore}%</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+}
+
+function _renderContractorBlockHtml(safeGroupName, cName, cIndex, items) {
+    const safeContractorName = `${safeGroupName}-contr-${cIndex}`;
+    const contrAvgUrk = _avgFinalUrk(items);
+    const contrUrkHtml = (contrAvgUrk !== null)
+        ? `<span class="status-tag ${_avgUrkStatusCls(contrAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" data-hist-urk-contr title="Средний УрК по подрядчику">${contrAvgUrk}%</span>`
+        : `<span class="hidden" data-hist-urk-contr></span>`;
+    const reversed = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const visibleItems = reversed.slice(0, 10);
+    const hiddenItems = reversed.slice(10);
+    const cEsc = _escAttr(cName);
+    const hiddenGroupId = `${safeGroupName}-hidden-${String(cName).replace(/\W/g, '')}`;
+
+    let html = `<div class="mb-1.5 ml-1 mt-1.5 flex justify-between items-center gap-2 cursor-pointer select-none" data-hist-contractor-head="${cEsc}" onclick="
+                    const body = document.getElementById('${safeContractorName}');
+                    const icon = this.querySelector('.chevron-icon-sm');
+                    if (body.classList.contains('hidden')) {
+                        body.classList.remove('hidden');
+                        icon.style.transform = 'rotate(180deg)';
+                    } else {
+                        body.classList.add('hidden');
+                        icon.style.transform = 'rotate(0deg)';
+                    }
+                ">
+                    <div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1 min-w-0">
+                        <svg class="w-3 h-3 text-indigo-400 transition-transform duration-300 chevron-icon-sm shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
+                        <span class="truncate">${cName}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        ${contrUrkHtml}
+                        <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]" data-hist-count-contr>${items.length} шт</span>
+                    </div>
+                </div>`;
+    html += `<div id="${safeContractorName}" class="hidden min-w-0" data-hist-contractor="${cEsc}">`;
+    html += visibleItems.map(_renderHistoryRowHtml).join('');
+    if (hiddenItems.length > 0) {
+        html += `<div id="${hiddenGroupId}" class="hidden" data-hist-hidden>${hiddenItems.map(_renderHistoryRowHtml).join('')}</div>`;
+        html += `<button type="button" data-hist-show-more onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать еще проверки (${hiddenItems.length})</button>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+function _renderProjectGroupHtml(pName, contractorsMap) {
+    const safeGroupName = _nextHistGroupId();
+    const collator = _histCollator();
+    const contractorNames = Object.keys(contractorsMap).sort(collator.compare);
+    const allObjectItems = [];
+    contractorNames.forEach(cName => {
+        const arr = contractorsMap[cName];
+        for (let i = 0; i < arr.length; i++) allObjectItems.push(arr[i]);
+    });
+    const totalChecksInGroup = allObjectItems.length;
+    const objAvgUrk = _avgFinalUrk(allObjectItems);
+    const objUrkHtml = (objAvgUrk !== null)
+        ? `<span class="status-tag ${_avgUrkStatusCls(objAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" data-hist-urk-obj title="Средний УрК по объекту">${objAvgUrk}%</span>`
+        : `<span class="hidden" data-hist-urk-obj></span>`;
+    const pEsc = _escAttr(pName);
+
+    let groupHtml = `
+        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden" data-hist-project="${pEsc}">
+            <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
+                const body = document.getElementById('${safeGroupName}');
+                const icon = this.querySelector('.chevron-icon');
+                if (body.classList.contains('hidden')) {
+                    body.classList.remove('hidden');
+                    icon.style.transform = 'rotate(180deg)';
+                } else {
+                    body.classList.add('hidden');
+                    icon.style.transform = 'rotate(0deg)';
+                }
+            ">
+                <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-[10px] flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${pName}</div>
+                        <div class="text-[9px] font-bold text-slate-400 truncate mt-[1px]" data-hist-contractor-count>${contractorNames.length} подрядч.</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 pl-1">
+                    ${objUrkHtml}
+                    <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]" data-hist-count-obj>${totalChecksInGroup} шт</span>
+                    <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+            </div>
+            
+            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden" data-hist-project-body>`;
+
+    contractorNames.forEach((cName, cIndex) => {
+        groupHtml += _renderContractorBlockHtml(safeGroupName, cName, cIndex, contractorsMap[cName]);
+    });
+    groupHtml += `</div></div>`;
+    return groupHtml;
+}
+
 function _captureExpandedHistory(listDiv) {
     const projects = new Set();
     const contractors = new Set();
     if (!listDiv) return { projects, contractors };
 
-    [...listDiv.children].forEach((card) => {
-        const pBody = [...card.querySelectorAll('[id^="hist-group-"]')].find((el) => !el.id.includes('-contr-'));
-        if (!pBody || pBody.classList.contains('hidden')) return;
-        const pName = (card.querySelector('.leading-tight') || card.querySelector('.font-black.truncate'))?.textContent?.trim();
-        if (!pName) return;
+    listDiv.querySelectorAll('[data-hist-project]').forEach((card) => {
+        const pName = card.getAttribute('data-hist-project');
+        const pBody = card.querySelector('[data-hist-project-body]');
+        if (!pName || !pBody || pBody.classList.contains('hidden')) return;
         projects.add(pName);
-        pBody.querySelectorAll('[id*="-contr-"]').forEach((cBody) => {
+        pBody.querySelectorAll('[data-hist-contractor]').forEach((cBody) => {
             if (cBody.classList.contains('hidden')) return;
-            const cName = cBody.previousElementSibling?.querySelector('.truncate')?.textContent?.trim();
+            const cName = cBody.getAttribute('data-hist-contractor');
             if (cName) contractors.add(pName + '\0' + cName);
         });
     });
@@ -71,24 +270,214 @@ function _captureExpandedHistory(listDiv) {
 function _restoreExpandedHistory(listDiv, expanded) {
     if (!listDiv || !expanded || !expanded.projects || expanded.projects.size === 0) return;
 
-    [...listDiv.children].forEach((card) => {
-        const pName = (card.querySelector('.leading-tight') || card.querySelector('.font-black.truncate'))?.textContent?.trim();
+    listDiv.querySelectorAll('[data-hist-project]').forEach((card) => {
+        const pName = card.getAttribute('data-hist-project');
         if (!pName || !expanded.projects.has(pName)) return;
 
-        const pBody = [...card.querySelectorAll('[id^="hist-group-"]')].find((el) => !el.id.includes('-contr-'));
+        const pBody = card.querySelector('[data-hist-project-body]');
         if (!pBody) return;
         pBody.classList.remove('hidden');
         const pIcon = card.querySelector('.chevron-icon');
         if (pIcon) pIcon.style.transform = 'rotate(180deg)';
 
-        pBody.querySelectorAll('[id*="-contr-"]').forEach((cBody) => {
-            const cName = cBody.previousElementSibling?.querySelector('.truncate')?.textContent?.trim();
+        pBody.querySelectorAll('[data-hist-contractor]').forEach((cBody) => {
+            const cName = cBody.getAttribute('data-hist-contractor');
             if (!cName || !expanded.contractors.has(pName + '\0' + cName)) return;
             cBody.classList.remove('hidden');
-            const cIcon = cBody.previousElementSibling?.querySelector('.chevron-icon-sm');
+            const head = cBody.previousElementSibling;
+            const cIcon = head && head.querySelector('.chevron-icon-sm');
             if (cIcon) cIcon.style.transform = 'rotate(180deg)';
         });
     });
+}
+
+function _findHistCard(listDiv, pName) {
+    if (!listDiv || !pName) return null;
+    const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(pName) : pName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return listDiv.querySelector('[data-hist-project="' + esc + '"]');
+}
+
+function _findHistContractorBody(card, cName) {
+    if (!card || !cName) return null;
+    const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(cName) : cName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return card.querySelector('[data-hist-contractor="' + esc + '"]');
+}
+
+function _enforceContractorVisibleLimit(cBody) {
+    if (!cBody) return;
+    const rows = [...cBody.querySelectorAll('[data-hist-id]')];
+    rows.sort((a, b) => (Number(b.getAttribute('data-hist-date')) || 0) - (Number(a.getAttribute('data-hist-date')) || 0));
+
+    let hiddenWrap = cBody.querySelector('[data-hist-hidden]');
+    let showMoreBtn = cBody.querySelector('[data-hist-show-more]');
+
+    if (rows.length <= 10) {
+        rows.forEach((row) => cBody.insertBefore(row, hiddenWrap || showMoreBtn || null));
+        if (hiddenWrap) hiddenWrap.remove();
+        if (showMoreBtn) showMoreBtn.remove();
+        return;
+    }
+
+    if (!hiddenWrap) {
+        hiddenWrap = document.createElement('div');
+        hiddenWrap.className = 'hidden';
+        hiddenWrap.setAttribute('data-hist-hidden', '');
+        hiddenWrap.id = (cBody.id || 'hist') + '-hidden';
+        cBody.appendChild(hiddenWrap);
+    }
+    if (!showMoreBtn) {
+        showMoreBtn = document.createElement('button');
+        showMoreBtn.type = 'button';
+        showMoreBtn.setAttribute('data-hist-show-more', '');
+        showMoreBtn.className = 'w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]';
+        showMoreBtn.onclick = function () {
+            hiddenWrap.classList.remove('hidden');
+            showMoreBtn.style.display = 'none';
+        };
+        cBody.appendChild(showMoreBtn);
+    }
+
+    rows.slice(0, 10).forEach((row) => cBody.insertBefore(row, hiddenWrap));
+    rows.slice(10).forEach((row) => hiddenWrap.appendChild(row));
+    cBody.appendChild(hiddenWrap);
+    cBody.appendChild(showMoreBtn);
+    const wasExpanded = !hiddenWrap.classList.contains('hidden') || showMoreBtn.style.display === 'none';
+    showMoreBtn.textContent = 'Показать еще проверки (' + (rows.length - 10) + ')';
+    if (wasExpanded) {
+        hiddenWrap.classList.remove('hidden');
+        showMoreBtn.style.display = 'none';
+    }
+}
+
+function _patchUrkEl(el, avg, title) {
+    if (!el) return;
+    if (avg === null || avg === undefined) {
+        el.className = 'hidden';
+        el.textContent = '';
+        return;
+    }
+    el.className = 'status-tag ' + _avgUrkStatusCls(avg) + ' !text-[9px] !px-1.5 !py-0.5 shadow-sm';
+    el.setAttribute('title', title || '');
+    el.textContent = avg + '%';
+}
+
+function _updateProjectCardStats(card, pName, filteredArr) {
+    if (!card) return;
+    const objItems = filteredArr.filter(i => _projectNameOf(i) === pName);
+    const countObj = card.querySelector('[data-hist-count-obj]');
+    if (countObj) countObj.textContent = objItems.length + ' шт';
+    _patchUrkEl(card.querySelector('[data-hist-urk-obj]'), _avgFinalUrk(objItems), 'Средний УрК по объекту');
+
+    const contractors = new Set(objItems.map(_contractorNameOf));
+    const cCount = card.querySelector('[data-hist-contractor-count]');
+    if (cCount) cCount.textContent = contractors.size + ' подрядч.';
+
+    card.querySelectorAll('[data-hist-contractor]').forEach((cBody) => {
+        const cName = cBody.getAttribute('data-hist-contractor');
+        const items = objItems.filter(i => _contractorNameOf(i) === cName);
+        const head = cBody.previousElementSibling;
+        const countContr = head && head.querySelector('[data-hist-count-contr]');
+        if (countContr) countContr.textContent = items.length + ' шт';
+        _patchUrkEl(head && head.querySelector('[data-hist-urk-contr]'), _avgFinalUrk(items), 'Средний УрК по подрядчику');
+    });
+}
+
+function _syncLoadMoreFooter(listDiv) {
+    if (!listDiv) return;
+    const existingBtn = document.getElementById('load-more-history-page-btn');
+    const existingSentinel = document.getElementById('history-load-sentinel');
+    if (!HistoryState.pageHasMore) {
+        if (existingBtn) existingBtn.remove();
+        if (existingSentinel) existingSentinel.remove();
+        if (HistoryRender._sentinelObserver) {
+            HistoryRender._sentinelObserver.disconnect();
+            HistoryRender._sentinelObserver = null;
+        }
+        return;
+    }
+    if (!existingBtn) {
+        listDiv.insertAdjacentHTML('beforeend', `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
+            Загрузить более старые проверки
+        </button>
+        <div id="history-load-sentinel" class="h-2 -mt-2"></div>`);
+    } else if (!existingSentinel) {
+        existingBtn.insertAdjacentHTML('afterend', `<div id="history-load-sentinel" class="h-2 -mt-2"></div>`);
+    }
+    HistoryRender._observeLoadSentinel();
+}
+
+function _insertProjectCardSorted(listDiv, cardHtml, pName) {
+    const collator = _histCollator();
+    const cards = [...listDiv.querySelectorAll(':scope > [data-hist-project]')];
+    let inserted = false;
+    for (let i = 0; i < cards.length; i++) {
+        const other = cards[i].getAttribute('data-hist-project') || '';
+        if (collator.compare(pName, other) < 0) {
+            cards[i].insertAdjacentHTML('beforebegin', cardHtml);
+            inserted = true;
+            break;
+        }
+    }
+    if (!inserted) {
+        const btn = document.getElementById('load-more-history-page-btn');
+        if (btn) btn.insertAdjacentHTML('beforebegin', cardHtml);
+        else listDiv.insertAdjacentHTML('beforeend', cardHtml);
+    }
+}
+
+function _ensureContractorBlock(card, cName) {
+    let cBody = _findHistContractorBody(card, cName);
+    if (cBody) return cBody;
+
+    const pBody = card.querySelector('[data-hist-project-body]');
+    if (!pBody) return null;
+    const safeGroupName = pBody.id || _nextHistGroupId();
+    const cIndex = pBody.querySelectorAll('[data-hist-contractor]').length;
+    const blockHtml = _renderContractorBlockHtml(safeGroupName, cName, cIndex, []);
+    const collator = _histCollator();
+    const heads = [...pBody.querySelectorAll(':scope > [data-hist-contractor-head]')];
+    let placed = false;
+    for (let i = 0; i < heads.length; i++) {
+        const other = heads[i].getAttribute('data-hist-contractor-head') || '';
+        if (collator.compare(cName, other) < 0) {
+            heads[i].insertAdjacentHTML('beforebegin', blockHtml);
+            placed = true;
+            break;
+        }
+    }
+    if (!placed) pBody.insertAdjacentHTML('beforeend', blockHtml);
+    return _findHistContractorBody(card, cName);
+}
+
+function _insertRowIntoContractor(cBody, item) {
+    if (!cBody || !item || item.id == null) return false;
+    const idStr = String(item.id);
+    if (cBody.querySelector('[data-hist-id="' + ((typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(idStr) : idStr.replace(/"/g, '\\"')) + '"]')) {
+        return false;
+    }
+
+    const newTs = new Date(item.date).getTime() || 0;
+    const rowHtml = _renderHistoryRowHtml(item);
+    const rows = [...cBody.querySelectorAll('[data-hist-id]')];
+    let insertBefore = null;
+    for (let i = 0; i < rows.length; i++) {
+        const ts = Number(rows[i].getAttribute('data-hist-date')) || 0;
+        if (ts < newTs) {
+            insertBefore = rows[i];
+            break;
+        }
+    }
+    if (insertBefore) {
+        insertBefore.insertAdjacentHTML('beforebegin', rowHtml);
+    } else {
+        const hiddenWrap = cBody.querySelector('[data-hist-hidden]');
+        const showMoreBtn = cBody.querySelector('[data-hist-show-more]');
+        if (hiddenWrap) hiddenWrap.insertAdjacentHTML('beforeend', rowHtml);
+        else if (showMoreBtn) showMoreBtn.insertAdjacentHTML('beforebegin', rowHtml);
+        else cBody.insertAdjacentHTML('beforeend', rowHtml);
+    }
+    _enforceContractorVisibleLimit(cBody);
+    return true;
 }
 
 function _getDocumentaryScore(item) {
@@ -169,8 +558,9 @@ export const HistoryRender = {
         if (!listDiv) return;
 
         // Preserve open Object/Contractor accordions across full re-render
-        // (sync dirty path, loadNextPage, filters) — same idea as Tasks UI restore.
+        // (sync dirty path, filters) — same idea as Tasks UI restore.
         const expanded = _captureExpandedHistory(listDiv);
+        _histGroupSeq = 0;
 
         if (HistoryState.allRecords.length === 0) {
             listDiv.innerHTML = '';
@@ -180,55 +570,8 @@ export const HistoryRender = {
         }
         if (emptyMsg) emptyMsg.style.display = 'none';
 
-        const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
-        const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
-        const fPhoto = document.getElementById('hist-filter-photo')?.checked;
-        const fB3 = document.getElementById('hist-filter-b3')?.checked;
-
-        // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "Глобальные фильтры истории не
-        // работают"): applyMultiFilter() (multi-filter.js) пишет выбор объекта/
-        // подрядчика/инспектора в window.activeMultiFilters.history, а не в
-        // HistoryState.filters — тот же split-brain, что уже был обойдён в
-        // analytics.render.js через _historyFilters(). HistoryState.filters
-        // никогда не заполняется этими тремя ключами (только period/searchText
-        // из DOM выше), поэтому чтение из него делало мультифильтр "визуально
-        // выбран, но не применяется". Источник правды — activeMultiFilters.
-        const _histMultiFilters = (window.activeMultiFilters && window.activeMultiFilters.history) || {};
-        const fProj = _histMultiFilters.project || [];
-        const fContr = _histMultiFilters.contractor || [];
-        const fInsp = _histMultiFilters.inspector || [];
-
-        let filteredArr = HistoryState.allRecords;
-        const now = new Date();
-
-        if (fSearch) {
-            filteredArr = filteredArr.filter(i => {
-                const projectText = i.project_display_name || i.projectName || i.project_canonical_key || '';
-                return (
-                    (i.location && i.location.toLowerCase().includes(fSearch)) ||
-                    (projectText && projectText.toLowerCase().includes(fSearch)) ||
-                    (i.inspectorName && i.inspectorName.toLowerCase().includes(fSearch)) ||
-                    (i.contractorName && i.contractorName.toLowerCase().includes(fSearch))
-                );
-            });
-        }
-
-        if (fProj.length > 0) {
-            filteredArr = filteredArr.filter(i => {
-                const p = i.project_display_name || i.projectName || i.project_canonical_key || '';
-                return fProj.includes(p) || fProj.includes(i.project_canonical_key);
-            });
-        }
-        if (fContr.length > 0) filteredArr = filteredArr.filter(i => fContr.includes(i.contractorName));
-        if (fInsp.length > 0) filteredArr = filteredArr.filter(i => fInsp.includes(i.inspectorName));
-
-        if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.date).toDateString() === now.toDateString());
-        else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.date) >= w); }
-        else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.date) >= m); }
-
-        if (fPhoto) filteredArr = filteredArr.filter(i => i.photos && Object.keys(i.photos).length > 0);
-        if (fB3) filteredArr = filteredArr.filter(i => i.metrics && i.metrics.n_B3_fail > 0);
-
+        // Фильтры: activeMultiFilters.history + DOM period/search (см. multi-filter).
+        const filteredArr = _filterHistoryRecords(HistoryState.allRecords);
         if (countEl) countEl.innerText = filteredArr.length;
 
         if (filteredArr.length === 0) {
@@ -236,176 +579,18 @@ export const HistoryRender = {
             return;
         }
 
-        // Иерархия навигации (по запросу пользователя, "чтобы было удобно
-        // ориентироваться"): Объект → Подрядчик (по алфавиту) → проверки по
-        // датам (новые сверху). Раньше верхний уровень группировки был парой
-        // (подрядчик, объект) вместе, а внутри — по виду работ (шаблону);
-        // теперь вид работ показывается инлайн-тегом в самой строке проверки,
-        // а не отдельным уровнем — так остаётся только 2 уровня вложенности
-        // вместо 3, что проще визуально сканировать при большом числе проверок.
+        // Объект → Подрядчик (алфавит) → проверки по дате (новые сверху).
         const grouped = {};
         filteredArr.forEach(item => {
-            const pName = item.projectName || 'Без объекта';
-            const cName = item.contractorName || 'Не указан';
+            const pName = _projectNameOf(item);
+            const cName = _contractorNameOf(item);
             if (!grouped[pName]) grouped[pName] = {};
             if (!grouped[pName][cName]) grouped[pName][cName] = [];
             grouped[pName][cName].push(item);
         });
 
-        const collator = new Intl.Collator('ru');
-        const groupKeys = Object.keys(grouped).sort(collator.compare);
-
-        let html = '';
-        let groupIndex = 0;
-
-        const renderGroup = (pName) => {
-            const safeGroupName = `hist-group-${groupIndex++}`;
-            const contractorNames = Object.keys(grouped[pName]).sort(collator.compare);
-
-            // Все проверки объекта — для счётчика и среднего УрК в свёрнутом
-            // заголовке аккордеона (по запросу пользователя: напротив объекта
-            // и подрядчика показывать средний уровень качества и кол-во проверок).
-            const allObjectItems = [];
-            contractorNames.forEach(cName => {
-                const arr = grouped[pName][cName];
-                for (let i = 0; i < arr.length; i++) allObjectItems.push(arr[i]);
-            });
-            const totalChecksInGroup = allObjectItems.length;
-            const objAvgUrk = _avgFinalUrk(allObjectItems);
-            const objUrkHtml = (objAvgUrk !== null)
-                ? `<span class="status-tag ${_avgUrkStatusCls(objAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" title="Средний УрК по объекту">${objAvgUrk}%</span>`
-                : '';
-
-            let groupHtml = `
-        <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden">
-            <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
-                const body = document.getElementById('${safeGroupName}');
-                const icon = this.querySelector('.chevron-icon');
-                if (body.classList.contains('hidden')) {
-                    body.classList.remove('hidden');
-                    icon.style.transform = 'rotate(180deg)';
-                } else {
-                    body.classList.add('hidden');
-                    icon.style.transform = 'rotate(0deg)';
-                }
-            ">
-                <div class="flex items-center gap-2.5 min-w-0 pr-2">
-                    <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-[10px] flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                    </div>
-                    <div class="min-w-0">
-                        <div class="text-[12px] font-black text-slate-800 dark:text-white truncate leading-tight">${pName}</div>
-                        <div class="text-[9px] font-bold text-slate-400 truncate mt-[1px]">${contractorNames.length} подрядч.</div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0 pl-1">
-                    ${objUrkHtml}
-                    <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${totalChecksInGroup} шт</span>
-                    <svg class="w-4 h-4 text-slate-400 transition-transform duration-300 transform rotate-0 chevron-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                </div>
-            </div>
-            
-            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden">`;
-
-            contractorNames.forEach((cName, cIndex) => {
-                const items = grouped[pName][cName];
-                const safeContractorName = `${safeGroupName}-contr-${cIndex}`;
-                const contrAvgUrk = _avgFinalUrk(items);
-                const contrUrkHtml = (contrAvgUrk !== null)
-                    ? `<span class="status-tag ${_avgUrkStatusCls(contrAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" title="Средний УрК по подрядчику">${contrAvgUrk}%</span>`
-                    : '';
-
-                // Второй уровень аккордеона: список подрядчика внутри объекта
-                // тоже сворачивается — при большом числе подрядчиков на объекте
-                // (или проверок у подрядчика) сразу открытый объект не превращался
-                // бы в длинную простыню всех проверок сразу. Справа — средний
-                // УрК и кол-во проверок (видны и в свёрнутом состоянии).
-                groupHtml += `<div class="mb-1.5 ml-1 mt-1.5 flex justify-between items-center gap-2 cursor-pointer select-none" onclick="
-                    const body = document.getElementById('${safeContractorName}');
-                    const icon = this.querySelector('.chevron-icon-sm');
-                    if (body.classList.contains('hidden')) {
-                        body.classList.remove('hidden');
-                        icon.style.transform = 'rotate(180deg)';
-                    } else {
-                        body.classList.add('hidden');
-                        icon.style.transform = 'rotate(0deg)';
-                    }
-                ">
-                    <div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1 min-w-0">
-                        <svg class="w-3 h-3 text-indigo-400 transition-transform duration-300 chevron-icon-sm shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
-                        <span class="truncate">${cName}</span>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        ${contrUrkHtml}
-                        <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]">${items.length} шт</span>
-                    </div>
-                </div>`;
-                groupHtml += `<div id="${safeContractorName}" class="hidden min-w-0">`;
-                const reversed = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-                const visibleItems = reversed.slice(0, 10);
-                const hiddenItems = reversed.slice(10);
-
-                const renderRow = (item) => {
-                    const photoIcon = (item.photos && Object.keys(item.photos).length > 0) ? `📸` : '';
-                    const syncBadge = getSyncBadgeHtml(item);
-                    const docScore = _getDocumentaryScore(item);
-                    const tTitle = item.templateTitle || 'Неизвестный вид работ';
-                    const when = new Date(item.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-                    const insp = item.inspectorName || 'Не указан';
-                    // На телефоне длинная строка «дата | вид работ | инспектор» + бейдж sync
-                    // выталкивала % вправо за край экрана: у flex-ребёнка нужен min-w-0,
-                    // truncate нельзя совмещать с flex на том же узле, что и бейдж.
-                    const metaLine = when + ' · ' + tTitle + ' · ' + insp;
-
-                    return `
-                <div class="flex items-center gap-1.5 mb-1.5 min-w-0 w-full max-w-full">
-                    <input type="checkbox" class="hist-checkbox w-4 h-4 accent-indigo-600 rounded shrink-0 cursor-pointer" value="${item.id}">
-                    <div class="flex-1 min-w-0 overflow-hidden bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${item.id}')">
-                        <div class="flex justify-between items-start gap-2 min-w-0">
-                            <div class="min-w-0 flex-1 overflow-hidden">
-                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location || ''}${photoIcon ? ' ' + photoIcon : ''}</div>
-                                <div class="flex items-center gap-1 mt-0.5 min-w-0">
-                                    <div class="text-[8px] text-slate-400 truncate font-medium min-w-0 flex-1">${metaLine}</div>
-                                    <div class="shrink-0">${syncBadge}</div>
-                                </div>
-                            </div>
-                            <div class="flex flex-col items-end gap-0.5 shrink-0">
-                                <span class="status-tag ${item.metrics.statusCls} !text-[9px] !px-1.5 !py-0.5 shadow-sm">${item.metrics.final}%</span>
-                                ${(docScore !== null && docScore !== undefined) ? `<span class="text-[9px] font-bold text-indigo-400 whitespace-nowrap" title="Документарный УрК">Док: ${docScore}%</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-                };
-
-                groupHtml += visibleItems.map(renderRow).join('');
-
-                if (hiddenItems.length > 0) {
-                    const hiddenGroupId = `${safeGroupName}-hidden-${cName.replace(/\W/g, '')}`;
-                    groupHtml += `<div id="${hiddenGroupId}" class="hidden">${hiddenItems.map(renderRow).join('')}</div>`;
-                    groupHtml += `<button onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать еще проверки (${hiddenItems.length})</button>`;
-                }
-                groupHtml += `</div>`;
-            });
-            groupHtml += `</div></div>`;
-            return groupHtml;
-        };
-
-        // ИСПРАВЛЕНИЕ (по запросу пользователя, "нормальная пагинация при
-        // скролле + одинаковые по размеру куски"): раньше здесь было ДВА
-        // независимых, разного размера механизма — окно из 15 верхнеуровневых
-        // групп (сколько именно проверок это давало — зависело от того,
-        // сколько проверок у каждой группы, то есть непредсказуемо) и
-        // отдельная курсорная докачка по 50 СЫРЫХ записей из IndexedDB, между
-        // которыми кнопка непредсказуемо переключалась. Теперь верхний
-        // уровень (Объекты) — их обычно немного (десятки, не сотни), рендерим
-        // ВСЕ сразу (все свёрнуты по умолчанию, лёгкие в DOM); единственная
-        // реальная порция — HistoryState.pageSize (50) записей за раз через
-        // курсорную докачку, всегда одного размера. Триггерится либо кликом
-        // по кнопке, либо автоматически при скролле вниз через
-        // IntersectionObserver на невидимом сентинеле в конце списка.
-        html += groupKeys.map(renderGroup).join('');
+        const groupKeys = Object.keys(grouped).sort(_histCollator().compare);
+        let html = groupKeys.map((pName) => _renderProjectGroupHtml(pName, grouped[pName])).join('');
 
         if (HistoryState.pageHasMore) {
             html += `<button id="load-more-history-page-btn" onclick="window.loadMoreHistoryPage()" class="w-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 py-3 mt-1 mb-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-colors border border-indigo-200 dark:border-indigo-800 shadow-sm">
@@ -417,6 +602,67 @@ export const HistoryRender = {
         listDiv.innerHTML = html;
         _restoreExpandedHistory(listDiv, expanded);
         HistoryRender._observeLoadSentinel();
+    },
+
+    /**
+     * Догрузка страницы без полной пересборки списка: вставляет только новые
+     * строки/группы, сохраняет скролл, чекбоксы и раскрытые аккордеоны.
+     * Fallback на render(), если DOM ещё без data-hist-* (пустой/фильтр-empty).
+     */
+    appendPage(newItems) {
+        const listDiv = document.getElementById('history-list');
+        const countEl = document.getElementById('hist-count-total');
+        const emptyMsg = document.getElementById('hist-empty-msg');
+        if (!listDiv) return;
+
+        const filteredAll = _filterHistoryRecords(HistoryState.allRecords);
+        if (countEl) countEl.innerText = filteredAll.length;
+        if (emptyMsg && HistoryState.allRecords.length > 0) emptyMsg.style.display = 'none';
+
+        if (!listDiv.querySelector('[data-hist-project]')) {
+            HistoryRender.render();
+            return;
+        }
+
+        const incoming = _filterHistoryRecords(newItems || []);
+        if (incoming.length === 0) {
+            _syncLoadMoreFooter(listDiv);
+            return;
+        }
+
+        const touchedProjects = new Set();
+        const byProject = {};
+        incoming.forEach((item) => {
+            const pName = _projectNameOf(item);
+            const cName = _contractorNameOf(item);
+            if (!byProject[pName]) byProject[pName] = {};
+            if (!byProject[pName][cName]) byProject[pName][cName] = [];
+            byProject[pName][cName].push(item);
+        });
+
+        Object.keys(byProject).forEach((pName) => {
+            let card = _findHistCard(listDiv, pName);
+            if (!card) {
+                _insertProjectCardSorted(listDiv, _renderProjectGroupHtml(pName, byProject[pName]), pName);
+                touchedProjects.add(pName);
+                return;
+            }
+
+            Object.keys(byProject[pName]).forEach((cName) => {
+                const cBody = _ensureContractorBlock(card, cName);
+                if (!cBody) return;
+                byProject[pName][cName].forEach((item) => {
+                    _insertRowIntoContractor(cBody, item);
+                });
+            });
+            touchedProjects.add(pName);
+        });
+
+        touchedProjects.forEach((pName) => {
+            _updateProjectCardStats(_findHistCard(listDiv, pName), pName, filteredAll);
+        });
+
+        _syncLoadMoreFooter(listDiv);
     },
 
     /**

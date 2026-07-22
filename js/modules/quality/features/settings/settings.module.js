@@ -158,6 +158,7 @@ export const SettingsModule = {
     dependencies: ['storage', 'settings'],
 
     _renderRequestedUnsubscribe: null,
+    _settingsChangedBound: false,
 
     /**
      * Инициализация: подписка на события платформы.
@@ -182,25 +183,15 @@ export const SettingsModule = {
             await settingsSvc.load();
         }
 
-        // Подписаться на изменения через EventBus
-        if (ctx && ctx.events && typeof ctx.events.on === 'function') {
+        // settings:changed нужен на всё приложение (тема с любой вкладки) —
+        // once-guard, без unsubscribe в unmount.
+        if (ctx && ctx.events && typeof ctx.events.on === 'function' && !SettingsModule._settingsChangedBound) {
+            SettingsModule._settingsChangedBound = true;
             ctx.events.on('settings:changed', (payload) => {
-                // Применить тему/UI при изменении настроек из других модулей
                 if (payload && (payload.key === 'theme' || payload.key === 'fontSize' || payload.key === 'navPosition')) {
                     if (typeof window.applySettingsToUI === 'function') {
                         window.applySettingsToUI();
                     }
-                }
-            });
-        }
-
-        // Также подписаться через сервис (работает и до инициализации ctx)
-        if (settingsSvc && typeof settingsSvc.onChange === 'function') {
-            settingsSvc.onChange((payload) => {
-                if (!payload) return;
-                // Синхронизировать изменения с RBI.events если EventBus уже есть
-                if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
-                    // событие уже эмитировано в settings.service.js — не дублируем
                 }
             });
         }

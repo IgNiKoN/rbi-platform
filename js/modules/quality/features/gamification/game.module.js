@@ -199,13 +199,16 @@ export const GameModule = {
 
     if (window.GameState) window.GameState.syncFromLegacy();
 
-    document.addEventListener('sync:completed', function () {
-      if (window.GameActions) window.GameActions.syncFromLegacy();
-    });
-
-    document.addEventListener('inspection:created', function () {
-      if (window.GameActions) window.GameActions.updatePlanProgress();
-    });
+    // once-guard: повторный init не должен копить document-listeners
+    if (!document.__gameSyncListenersBound) {
+      document.__gameSyncListenersBound = true;
+      document.addEventListener('sync:completed', function () {
+        if (window.GameActions) window.GameActions.syncFromLegacy();
+      });
+      document.addEventListener('inspection:created', function () {
+        if (window.GameActions) window.GameActions.updatePlanProgress();
+      });
+    }
 
     ctx.events.emit('game:initialized');
   },
@@ -215,7 +218,7 @@ export const GameModule = {
   },
 
   unmount() {
-    // Отписки при необходимости
+    // document-listeners живут на всё приложение (once-bound) — не снимаем
   }
 };
 

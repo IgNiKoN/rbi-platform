@@ -1985,6 +1985,22 @@ body.read-only-mode .swipe-bg-fail {
     pointer-events: none !important;
 }
 
+/* === AI тепловой карты: тизер под кнопкой; полный текст — в #heatmap-ai-modal === */
+#heatmap-ai-text {
+    display: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+#heatmap-ai-text.is-open {
+    display: block !important;
+}
+#heatmap-ai-modal-body {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
 /* === БЕГУЩАЯ СТРОКА ДЛЯ ДЛИННЫХ ИМЕН === */
 .name-marquee-container {
     display: block;

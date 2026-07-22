@@ -5,14 +5,16 @@
 import { AIState } from './ai.state.js';
 import {
   AIActions, changeAiMode, callAI, generateSmartComment, generateOnePagerForecastAi,
-  generatePulseAi, generateHeatmapAi, generateContractorForecastAi, generateCultureAi,
+  generatePulseAi, generateHeatmapAi, openHeatmapAiModal, closeHeatmapAiModal, copyHeatmapAiText, reopenHeatmapAiModal,
+  generateContractorForecastAi, generateCultureAi,
   generateTwiDraftAi, generatePrescriptionAi, generateTaskRiskAi, generateAiRoutePlan,
   generateAiTutorAdvice, generateAiHintForDefect, extractTextFromPdf, rbi_normalizeFeedbackAi,
-  openAiDocChat, closeAiDocChat, askAiDocQuestion, rbi_generateMeetingMemo,
+  openAiDocChat, closeAiDocChat, askAiDocQuestion, copyAiDocAnswer, applyAiDocChip, rbi_generateMeetingMemo,
   rbi_generatePracticeTitleAi, rbi_beautifyPracticeAi, rbi_fillFmeaWithAi, generateDefectRemediationTexts, rbi_generateWorkshop,
   rbi_generateIntroBriefing, rbi_generateFinalAcceptance, sk_aiMapColumns, sk_autoMapCategories,
   sk_generateContractorAiSummary, sk_predictRisksAi, rbi_generateGlobalAi, runSelfLearningAi,
-  sk_auditTemplatesAi, gameAddContractorAliasInline, gameGenerateContractorSynonymsAI
+  sk_auditTemplatesAi, openSkTutorAiModal, closeSkTutorAiModal, copySkTutorAiText, reopenSkTutorAiModal,
+  gameAddContractorAliasInline, gameGenerateContractorSynonymsAI
 } from './ai.actions.js';
 import { AIRender } from './ai.render.js';
 
@@ -25,6 +27,10 @@ window.generateSmartComment = generateSmartComment;
 window.generateOnePagerForecastAi = generateOnePagerForecastAi;
 window.generatePulseAi = generatePulseAi;
 window.generateHeatmapAi = generateHeatmapAi;
+window.openHeatmapAiModal = openHeatmapAiModal;
+window.closeHeatmapAiModal = closeHeatmapAiModal;
+window.copyHeatmapAiText = copyHeatmapAiText;
+window.reopenHeatmapAiModal = reopenHeatmapAiModal;
 window.generateContractorForecastAi = generateContractorForecastAi;
 window.generateCultureAi = generateCultureAi;
 window.generateTwiDraftAi = generateTwiDraftAi;
@@ -38,6 +44,8 @@ window.rbi_normalizeFeedbackAi = rbi_normalizeFeedbackAi;
 window.openAiDocChat = openAiDocChat;
 window.closeAiDocChat = closeAiDocChat;
 window.askAiDocQuestion = askAiDocQuestion;
+window.copyAiDocAnswer = copyAiDocAnswer;
+window.applyAiDocChip = applyAiDocChip;
 window.rbi_generateMeetingMemo = rbi_generateMeetingMemo;
 window.rbi_generatePracticeTitleAi = rbi_generatePracticeTitleAi;
 window.rbi_beautifyPracticeAi = rbi_beautifyPracticeAi;
@@ -53,77 +61,79 @@ window.sk_predictRisksAi = sk_predictRisksAi;
 window.rbi_generateGlobalAi = rbi_generateGlobalAi;
 window.runSelfLearningAi = runSelfLearningAi;
 window.sk_auditTemplatesAi = sk_auditTemplatesAi;
+window.openSkTutorAiModal = openSkTutorAiModal;
+window.closeSkTutorAiModal = closeSkTutorAiModal;
+window.copySkTutorAiText = copySkTutorAiText;
+window.reopenSkTutorAiModal = reopenSkTutorAiModal;
 window.gameAddContractorAliasInline = gameAddContractorAliasInline;
 window.gameGenerateContractorSynonymsAI = gameGenerateContractorSynonymsAI;
 
 // =========================================================================
-// РАЗМЕТКА МОДАЛКИ «ai-chat-modal» (перенос из index.html:1640-1693, перенос
-// 30 modal/overlay-блоков #app-modals в JS-рендер, публичная граница фичи
-// ai). HTML-строка 1:1 идентична прежней статичной разметке.
+// Full-screen «База знаний (AI)» — паттерн TWI-конструктора.
+// Legacy #ai-chat-modal не монтируем (strangler: вход только через view).
 // =========================================================================
-(function mountAiChatModalMarkup() {
-  if (document.getElementById('ai-chat-modal')) return;
-  var root = window.RBI && window.RBI.services && window.RBI.services.shell
-    ? window.RBI.services.shell.getModalsRoot()
-    : document.getElementById('app-modals');
+function mountAiDocChatView() {
+  if (document.getElementById('ai-doc-chat-view')) return;
+  var root = document.body;
   if (!root) return;
   root.insertAdjacentHTML('beforeend', `
-    <div id="ai-chat-modal"
-        class="fixed inset-0 bg-slate-900/80 z-[7000] hidden flex-col items-center justify-end sm:justify-center p-0 sm:p-4 backdrop-blur-sm transition-opacity duration-300"
-        data-action="closeAiDocChat">
-        <div class="bg-[var(--card-bg)] w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col h-[85vh] sm:h-[75vh] border border-[var(--card-border)]"
-            onclick="event.stopPropagation()">
-            <!-- Шапка чата -->
-            <div
-                class="p-4 border-b border-[var(--card-border)] flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 rounded-t-3xl sm:rounded-t-2xl shrink-0">
-                <div class="flex items-center gap-3">
-                    <div
-                        class="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center text-xl shadow-md">
-                        🤖</div>
-                    <div>
-                        <div class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">База
-                            Знаний (AI)</div>
-                        <div class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">Нейросеть знает все
-                            загруженные ГОСТы</div>
-                    </div>
+    <div id="ai-doc-chat-view"
+        class="hidden bg-[var(--bg-main)] fixed inset-0 z-[2100] h-[100dvh] max-h-[100dvh] flex flex-col">
+        <div
+            class="bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-3 py-3 shadow-sm shrink-0 flex items-center gap-2">
+            <button type="button" data-action="closeAiDocChat"
+                class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path>
+                </svg> Назад
+            </button>
+            <div class="min-w-0 flex-1">
+                <div class="font-black text-[12px] uppercase tracking-tight text-slate-800 dark:text-white truncate">База знаний (AI)</div>
+                <div id="ai-doc-chat-status" class="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold truncate">Поиск по загруженным нормативам</div>
+            </div>
+        </div>
+        <div class="px-3 pt-2 shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div>
+                <label class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest block mb-1">Вид работ (чек-лист)</label>
+                <select id="ai-doc-template-filter" class="input-base text-[11px] w-full !py-2.5">
+                    <option value="">Все виды работ</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest block mb-1">Документ PDF</label>
+                <select id="ai-doc-filter" class="input-base text-[11px] w-full !py-2.5">
+                    <option value="">Все документы</option>
+                </select>
+            </div>
+        </div>
+        <div id="ai-doc-chips" class="px-3 pt-2 shrink-0 flex flex-wrap gap-1.5 hidden"></div>
+        <div id="ai-chat-history"
+            class="flex-1 min-h-0 overflow-y-auto p-3 custom-scrollbar bg-slate-50 dark:bg-slate-900/40 space-y-3">
+            <div class="flex gap-2 w-full max-w-[95%]">
+                <div class="w-7 h-7 bg-indigo-200 dark:bg-indigo-800 rounded-full flex items-center justify-center text-[11px] shrink-0">🤖</div>
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[13px] text-slate-700 dark:text-slate-300 shadow-sm leading-relaxed">
+                    Можно простым языком: «стены кривые по монолиту», «сколько мм можно». Сначала чек-листы, потом PDF; ниже ответа — источники.
                 </div>
-                <button data-action="closeAiDocChat"
-                    class="w-8 h-8 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-500 active:scale-90 shadow-sm border border-slate-200 dark:border-slate-700">✕</button>
             </div>
-
-            <!-- Окно переписки -->
-            <div id="ai-chat-history"
-                class="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50 dark:bg-slate-900/50 space-y-4">
-                <div class="flex gap-2 w-full max-w-[85%]">
-                    <div
-                        class="w-6 h-6 bg-indigo-200 rounded-full flex items-center justify-center text-[10px] shrink-0">
-                        🤖</div>
-                    <div
-                        class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[12px] text-slate-700 dark:text-slate-300 shadow-sm">
-                        Привет! Задай мне любой вопрос по строительным нормам. Я найду нужный СП или ГОСТ в базе
-                        приложения и дам точный ответ.
-                    </div>
-                </div>
-            </div>
-
-            <!-- Поле ввода -->
-            <div
-                class="p-3 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 rounded-b-3xl sm:rounded-b-2xl shrink-0 flex gap-2">
-                <textarea id="ai-chat-input"
-                    class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[12px] outline-none resize-none h-12 text-slate-800 dark:text-white"
-                    placeholder="Например: Какое допустимое отклонение стен из газобетона?"></textarea>
-                <button data-action="askAiDocQuestion" id="ai-chat-send-btn"
-                    class="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 transition-transform">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8">
-                        </path>
-                    </svg>
-                </button>
-            </div>
+        </div>
+        <div class="shrink-0 border-t border-[var(--card-border)] bg-white dark:bg-slate-800 p-3 flex gap-2"
+            style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
+            <textarea id="ai-chat-input"
+                class="flex-1 bg-[var(--hover-bg)] border border-[var(--card-border)] rounded-xl p-3 text-[13px] outline-none resize-none min-h-[64px] max-h-32 text-slate-800 dark:text-white"
+                placeholder="Например: стены кривые по монолиту…"
+                rows="2"></textarea>
+            <button type="button" data-action="askAiDocQuestion" id="ai-chat-send-btn"
+                class="w-12 min-h-[64px] bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 shrink-0 self-end">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                </svg>
+            </button>
         </div>
     </div>
 `);
-}());
+}
+if (document.body) mountAiDocChatView();
+else document.addEventListener('DOMContentLoaded', mountAiDocChatView);
 
 // Паттерн делегирования событий для инициативы «Разбор inline onclick/onchange»
 // (см. _ai/INDEX_HTML_HANDLERS_MAP.md). Разметка задаёт `data-action="<id>"`
@@ -193,6 +203,7 @@ const AIModule = {
 
     window.AIState.syncFromLegacy();
 
+    mountAiDocChatView();
     bindAiActionDelegation();
 
     document.addEventListener('settings:changed', (e) => {

@@ -12,6 +12,18 @@ function _getSetting(key) {
     return window.RBI.services.settings.get(key);
 }
 
+function _captureExpanded(container) {
+    return typeof window._kbCaptureExpandedGroups === 'function'
+        ? window._kbCaptureExpandedGroups(container)
+        : new Set();
+}
+
+function _restoreExpanded(container, keys) {
+    if (typeof window._kbRestoreExpandedGroups === 'function') {
+        window._kbRestoreExpandedGroups(container, keys);
+    }
+}
+
 export const KnowledgeRender = {
 
     /**
@@ -21,6 +33,7 @@ export const KnowledgeRender = {
     renderTwiList() {
         var container = document.getElementById('twi-cards-container');
         if (!container) return;
+        var expanded = _captureExpanded(container);
 
         var searchInput = '';
         var searchEl = document.getElementById('twi-search-input');
@@ -54,6 +67,7 @@ export const KnowledgeRender = {
         }
 
         container.innerHTML = magicTwiHtml + html;
+        _restoreExpanded(container, expanded);
     },
 
     /**
@@ -62,6 +76,7 @@ export const KnowledgeRender = {
     renderDocsList() {
         var container = document.getElementById('docs-list-container');
         if (!container) return;
+        var expanded = _captureExpanded(container);
 
         var searchInput = '';
         var searchEl = document.getElementById('doc-search-input');
@@ -88,6 +103,7 @@ export const KnowledgeRender = {
         });
 
         container.innerHTML = html;
+        _restoreExpanded(container, expanded);
     },
 
     /**
@@ -96,6 +112,7 @@ export const KnowledgeRender = {
     renderNodesList() {
         var container = document.getElementById('nodes-list-container');
         if (!container) return;
+        var expanded = _captureExpanded(container);
 
         var searchInput = '';
         var searchEl = document.getElementById('node-search-input');
@@ -122,6 +139,7 @@ export const KnowledgeRender = {
         }
 
         container.innerHTML = html;
+        _restoreExpanded(container, expanded);
     },
 
     /**

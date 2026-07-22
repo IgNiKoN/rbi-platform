@@ -6,9 +6,44 @@
 const PhotoManager = {
     cache: {},
     activeUrls: new Set(),
+    // LRU порядка ключей cache (самый свежий — в конце). Ограничивает RAM
+    // от blob: ObjectURL на слабых устройствах без полной очистки UI.
+    _lruKeys: [],
+    MEMORY_URL_LIMIT: 80,
 
     async init() {
         console.log(`[PhotoManager] Инициализация`);
+    },
+
+    _touchLru(id) {
+        if (!id) return;
+        const i = this._lruKeys.indexOf(id);
+        if (i >= 0) this._lruKeys.splice(i, 1);
+        this._lruKeys.push(id);
+    },
+
+    releaseCachedUrl(id) {
+        if (!id || !this.cache[id]) return;
+        const url = this.cache[id];
+        try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+        this.activeUrls.delete(url);
+        delete this.cache[id];
+        const i = this._lruKeys.indexOf(id);
+        if (i >= 0) this._lruKeys.splice(i, 1);
+    },
+
+    _rememberObjectUrl(id, url) {
+        if (!id || !url) return;
+        if (this.cache[id] && this.cache[id] !== url) {
+            this.releaseCachedUrl(id);
+        }
+        this.cache[id] = url;
+        this.activeUrls.add(url);
+        this._touchLru(id);
+        while (this._lruKeys.length > this.MEMORY_URL_LIMIT) {
+            const oldest = this._lruKeys.shift();
+            if (oldest) this.releaseCachedUrl(oldest);
+        }
     },
 
     async saveLocal(base64Data, prefix = 'img', meta = {}) {
@@ -46,9 +81,7 @@ const PhotoManager = {
 
         const blob = arrayBufferToBlob(buffer, mimeType);
         const url = URL.createObjectURL(blob);
-
-        this.cache[id] = url;
-        this.activeUrls.add(url);
+        this._rememberObjectUrl(id, url);
 
         return id;
     },
@@ -59,7 +92,10 @@ const PhotoManager = {
         if (Array.isArray(url)) url = url[0];
         if (!url) return '';
 
-        if (this.cache[url]) return this.cache[url];
+        if (this.cache[url]) {
+            this._touchLru(url);
+            return this.cache[url];
+        }
 
         // local:// и cloud:// нельзя отдавать напрямую в img.src
         if (String(url).startsWith('local://') || String(url).startsWith('cloud://')) {
@@ -77,6 +113,7 @@ const PhotoManager = {
         if (!localIdOrHttp) return null;
 
         if (this.cache[localIdOrHttp]) {
+            this._touchLru(localIdOrHttp);
             return this.cache[localIdOrHttp];
         }
 
@@ -102,9 +139,7 @@ const PhotoManager = {
 
                 const blob = arrayBufferToBlob(record.data, record.mimeType || record.mime_type || 'image/webp');
                 const url = URL.createObjectURL(blob);
-
-                this.cache[localIdOrHttp] = url;
-                this.activeUrls.add(url);
+                this._rememberObjectUrl(localIdOrHttp, url);
 
                 return url;
             }
@@ -149,9 +184,7 @@ const PhotoManager = {
                 }
 
                 const localUrl = URL.createObjectURL(blob);
-
-                this.cache[localIdOrHttp] = localUrl;
-                this.activeUrls.add(localUrl);
+                this._rememberObjectUrl(localIdOrHttp, localUrl);
 
                 return localUrl;
             }
@@ -288,6 +321,7 @@ const PhotoManager = {
 
         this.activeUrls.clear();
         this.cache = {};
+        this._lruKeys = [];
     },
 
     async linkCloudToLocal(oldLocalUrl, newCloudUrl) {
@@ -311,8 +345,13 @@ const PhotoManager = {
 
             await dbDelete(STORES.PHOTOS, oldLocalUrl);
 
-            this.cache[newCloudUrl] = this.cache[oldLocalUrl];
-            delete this.cache[oldLocalUrl];
+            if (this.cache[oldLocalUrl]) {
+                this.cache[newCloudUrl] = this.cache[oldLocalUrl];
+                delete this.cache[oldLocalUrl];
+                const i = this._lruKeys.indexOf(oldLocalUrl);
+                if (i >= 0) this._lruKeys.splice(i, 1);
+                this._touchLru(newCloudUrl);
+            }
 
             if (window.RbiStorageManager) {
                 await window.RbiStorageManager.upsertLocalFileRegistry({
@@ -333,7 +372,10 @@ const PhotoManager = {
     },
 
     async downloadForOffline(url) {
-        if (!url || !String(url).startsWith('http') || this.cache[url]) return;
+        if (!url || !String(url).startsWith('http') || this.cache[url]) {
+            if (this.cache[url]) this._touchLru(url);
+            return;
+        }
 
         try {
             if (window.RbiStorageManager) {
@@ -382,9 +424,7 @@ const PhotoManager = {
                 );
             }
             const localUrl = URL.createObjectURL(blob);
-
-            this.cache[url] = localUrl;
-            this.activeUrls.add(localUrl);
+            this._rememberObjectUrl(url, localUrl);
         } catch (e) {
             console.warn('[PhotoManager] downloadForOffline error:', e);
         }
