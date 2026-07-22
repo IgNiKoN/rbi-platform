@@ -390,6 +390,21 @@ html {
     /* Добавляем плавный скролл всей странице */
 }
 
+/* Непрозрачная заливка «ушей» у Dynamic Island / notch:
+   при black-translucent полупрозрачная шапка пропускала скролл-текст по бокам выреза */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background-color: var(--bg-main);
+    z-index: 1100;
+    /* выше шапки/контента, ниже системного статус-бара; только полоса inset */
+    pointer-events: none;
+}
+
 body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-main);
@@ -431,7 +446,10 @@ body.nav-pos-top {
 body.nav-pos-bottom .bottom-nav {
     top: auto;
     bottom: 0;
-    padding-bottom: env(safe-area-inset-bottom);
+    /* Как у top-nav: safe-area снаружи контента, иначе при border-box
+       padding съедает 65px и подвкладки «висят» с большим зазором */
+    height: calc(65px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     border-top: 1px solid var(--card-border);
     border-bottom: none;
 }
@@ -442,7 +460,7 @@ body.nav-pos-bottom .header-fixed {
 }
 
 body.nav-pos-bottom {
-    padding-bottom: 90px;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
 }
 
 @media (min-width: 768px) {
@@ -543,7 +561,9 @@ body.modal-open {
     left: 0;
     right: 0;
     z-index: 50;
-    background: var(--header-bg);
+    /* Сплошной фон под полупрозрачным слоем — уши выреза не «просвечивают» контентом */
+    background-color: var(--bg-main);
+    background-image: linear-gradient(var(--header-bg), var(--header-bg));
     border-bottom: 1px solid var(--card-border);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     /* Blur под статус-баром (iPhone notch / Dynamic Island); отступ — чтобы логотип не лез под часы */
@@ -584,15 +604,18 @@ body.modal-open {
     bottom: 0;
     left: 0;
     right: 0;
-    background: var(--nav-bg);
+    background-color: var(--bg-main);
+    background-image: linear-gradient(var(--nav-bg), var(--nav-bg));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-top: 1px solid var(--card-border);
     display: flex;
     justify-content: space-around;
     align-items: center;
-    height: 65px;
-    padding-bottom: env(safe-area-inset-bottom);
+    /* 65px под иконки + home-indicator; иначе subtabs (65+safe+10) дают дыру */
+    height: calc(65px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
     z-index: 1000;
     transition: transform 0.3s;
     box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.02);
@@ -1634,7 +1657,8 @@ body.nav-pos-auto #ref-docs-filters,
 body.nav-pos-auto #twi-filters-block,
 body.nav-pos-auto #node-filters-block,
 body.nav-pos-auto .sticky-top-panel {
-    top: 10px !important;
+    /* + safe-area: иначе sticky top:10px заезжает в «уши» выреза */
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
     margin-top: 0 !important;
 }
 
@@ -1687,7 +1711,7 @@ body.nav-pos-top #tab-settings .sticky-top-panel {
 /* Мобильная версия (навигация снизу) */
 body.nav-pos-bottom #contractor-detail-header,
 body.nav-pos-auto #contractor-detail-header {
-    top: 65px !important; /* Высота свернутого фильтра + отступ */
+    top: calc(65px + env(safe-area-inset-top, 0px)) !important; /* фильтр + safe-area */
 }
 
 /* Версия для ПК (навигация сверху) */
@@ -1770,8 +1794,8 @@ body.nav-pos-top #tab-reference {
 
 /* ИСПРАВЛЕНИЕ: Кнопка PDF не должна перекрывать нижнее меню подвкладок */
 body.nav-pos-bottom #fab-download-btn {
-    /* Навигация (65px) + Подвкладки (около 50px) + Зазоры */
-    bottom: 165px !important;
+    /* Навигация (65+safe) + Подвкладки (~50) + зазоры */
+    bottom: calc(165px + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 /* === ЖЕЛЕЗОБЕТОННЫЕ ПРАВИЛА ДЛЯ МЕНЮ СНИЗУ === */
@@ -1790,7 +1814,7 @@ body.nav-pos-bottom #ref-docs-filters,
 body.nav-pos-bottom #twi-filters-block,
 body.nav-pos-bottom #node-filters-block,
 body.nav-pos-bottom .sticky-top-panel {
-    top: 10px !important;
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
     /* Эти панели всегда липнут к верху, даже если меню внизу */
     position: sticky !important;
     z-index: 40 !important;
