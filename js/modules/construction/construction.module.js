@@ -46,13 +46,20 @@ export var ConstructionModule = {
       window.ConstructionState.syncFromLegacy();
     }
 
-    // sync:completed → переинициализировать и обновить состояние
+    // sync:completed → данные в память; full-render ConstManager.init только
+    // если Стройконтроль сейчас НЕ на экране (единый хелпер §5).
     on(document, 'sync:completed', function () {
-      if (window.ConstructionActions) {
-        window.ConstructionActions.init();
-      }
       if (window.ConstructionState && typeof window.ConstructionState.syncFromLegacy === 'function') {
         window.ConstructionState.syncFromLegacy();
+      }
+      if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('construction')) {
+        if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
+          window.RBI.utils.syncUi.markDirty('construction');
+        }
+        return;
+      }
+      if (window.ConstructionActions) {
+        window.ConstructionActions.init();
       }
     });
 

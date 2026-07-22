@@ -129,7 +129,7 @@ window.rbiShowTutorialHistoryCard = function (mode = 'history') {
 
             const html = `
                 <div id="${card.id}"
-                    class="tutorial-history-card mx-1 mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[24px] shadow-sm overflow-hidden">
+                    class="tutorial-history-card mb-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[24px] shadow-sm overflow-hidden">
 
                     <div class="p-4 ${c.bg} border-b ${c.border}">
                         <div class="flex items-start gap-3">

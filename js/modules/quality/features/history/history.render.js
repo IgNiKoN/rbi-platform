@@ -73,7 +73,7 @@ function _contractorNameOf(item) {
 
 function _filterHistoryRecords(allRecords) {
     const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
-    const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
+    const fPeriod = document.getElementById('hist-filter-period')?.value || 'D30';
     const fPhoto = document.getElementById('hist-filter-photo')?.checked;
     const fB3 = document.getElementById('hist-filter-b3')?.checked;
     const _histMultiFilters = (window.activeMultiFilters && window.activeMultiFilters.history) || {};
@@ -105,9 +105,16 @@ function _filterHistoryRecords(allRecords) {
     if (fContr.length > 0) filteredArr = filteredArr.filter(i => fContr.includes(i.contractorName));
     if (fInsp.length > 0) filteredArr = filteredArr.filter(i => fInsp.includes(i.inspectorName));
 
-    if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.date).toDateString() === now.toDateString());
-    else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.date) >= w); }
-    else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.date) >= m); }
+    if (fPeriod && fPeriod !== 'ALL') {
+        const histDays = typeof window.getAnalyticsPeriodDays === 'function'
+            ? window.getAnalyticsPeriodDays(fPeriod)
+            : null;
+        if (histDays) {
+            const from = new Date(now);
+            from.setDate(now.getDate() - histDays);
+            filteredArr = filteredArr.filter(i => new Date(i.date) >= from);
+        }
+    }
 
     if (fPhoto) filteredArr = filteredArr.filter(i => i.photos && Object.keys(i.photos).length > 0);
     if (fB3) filteredArr = filteredArr.filter(i => i.metrics && i.metrics.n_B3_fail > 0);
@@ -167,16 +174,12 @@ function _renderContractorBlockHtml(safeGroupName, cName, cIndex, items) {
     const cEsc = _escAttr(cName);
     const hiddenGroupId = `${safeGroupName}-hidden-${String(cName).replace(/\W/g, '')}`;
 
-    let html = `<div class="mb-1.5 ml-1 mt-1.5 flex justify-between items-center gap-2 cursor-pointer select-none" data-hist-contractor-head="${cEsc}" onclick="
+    let html = `<div class="mb-1.5 mt-1.5 flex justify-between items-center gap-2 cursor-pointer select-none rounded-lg px-1.5 py-1 hover:bg-[var(--hover-bg)] transition-colors" data-hist-contractor-head="${cEsc}" onclick="
                     const body = document.getElementById('${safeContractorName}');
                     const icon = this.querySelector('.chevron-icon-sm');
-                    if (body.classList.contains('hidden')) {
-                        body.classList.remove('hidden');
-                        icon.style.transform = 'rotate(180deg)';
-                    } else {
-                        body.classList.add('hidden');
-                        icon.style.transform = 'rotate(0deg)';
-                    }
+                    if (!body) return;
+                    const open = body.classList.toggle('is-open');
+                    if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
                 ">
                     <div class="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-1 min-w-0">
                         <svg class="w-3 h-3 text-indigo-400 transition-transform duration-300 chevron-icon-sm shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"></path></svg>
@@ -187,13 +190,13 @@ function _renderContractorBlockHtml(safeGroupName, cName, cIndex, items) {
                         <span class="text-[9px] font-bold text-slate-500 bg-[var(--hover-bg)] px-1.5 py-0.5 rounded-md border border-[var(--card-border)]" data-hist-count-contr>${items.length} шт</span>
                     </div>
                 </div>`;
-    html += `<div id="${safeContractorName}" class="hidden min-w-0" data-hist-contractor="${cEsc}">`;
+    html += `<div id="${safeContractorName}" class="rbi-acc min-w-0" data-hist-contractor="${cEsc}"><div class="rbi-acc-inner">`;
     html += visibleItems.map(_renderHistoryRowHtml).join('');
     if (hiddenItems.length > 0) {
         html += `<div id="${hiddenGroupId}" class="hidden" data-hist-hidden>${hiddenItems.map(_renderHistoryRowHtml).join('')}</div>`;
         html += `<button type="button" data-hist-show-more onclick="document.getElementById('${hiddenGroupId}').classList.remove('hidden'); this.style.display='none'" class="w-full bg-[var(--hover-bg)] text-slate-500 dark:text-slate-400 py-2 mt-1 mb-2 rounded-lg text-[9px] font-bold uppercase active:scale-95 transition-colors border border-dashed border-[var(--card-border)]">Показать еще проверки (${hiddenItems.length})</button>`;
     }
-    html += `</div>`;
+    html += `</div></div>`;
     return html;
 }
 
@@ -215,16 +218,12 @@ function _renderProjectGroupHtml(pName, contractorsMap) {
 
     let groupHtml = `
         <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-[14px] shadow-sm mb-2 overflow-hidden" data-hist-project="${pEsc}">
-            <div class="flex justify-between items-center p-2.5 cursor-pointer active:bg-[var(--hover-bg)] transition-colors select-none" onclick="
+            <div class="flex justify-between items-center p-2.5 cursor-pointer hover:bg-[var(--hover-bg)] active:bg-[var(--hover-bg)] transition-colors select-none rounded-t-[14px]" onclick="
                 const body = document.getElementById('${safeGroupName}');
                 const icon = this.querySelector('.chevron-icon');
-                if (body.classList.contains('hidden')) {
-                    body.classList.remove('hidden');
-                    icon.style.transform = 'rotate(180deg)';
-                } else {
-                    body.classList.add('hidden');
-                    icon.style.transform = 'rotate(0deg)';
-                }
+                if (!body) return;
+                const open = body.classList.toggle('is-open');
+                if (icon) icon.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
             ">
                 <div class="flex items-center gap-2.5 min-w-0 pr-2">
                     <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-[10px] flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800">
@@ -242,13 +241,52 @@ function _renderProjectGroupHtml(pName, contractorsMap) {
                 </div>
             </div>
             
-            <div id="${safeGroupName}" class="hidden border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden" data-hist-project-body>`;
+            <div id="${safeGroupName}" class="rbi-acc min-w-0" data-hist-project-body>
+                <div class="rbi-acc-inner">
+                    <div class="hist-project-list border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden">`;
 
     contractorNames.forEach((cName, cIndex) => {
         groupHtml += _renderContractorBlockHtml(safeGroupName, cName, cIndex, contractorsMap[cName]);
     });
-    groupHtml += `</div></div>`;
+    groupHtml += `</div></div></div></div>`;
     return groupHtml;
+}
+
+function _histAccIsOpen(el) {
+    return !!(el && el.classList.contains('is-open'));
+}
+
+function _histAccOpen(el) {
+    if (!el) return;
+    el.classList.add('is-open');
+}
+
+/** Контент аккордеона всегда внутри .rbi-acc-inner (иначе grid-анимация ломается). */
+function _histAccContentHost(accEl) {
+    if (!accEl) return null;
+    let inner = accEl.querySelector(':scope > .rbi-acc-inner');
+    if (!inner) {
+        inner = document.createElement('div');
+        inner.className = 'rbi-acc-inner';
+        while (accEl.firstChild) inner.appendChild(accEl.firstChild);
+        accEl.appendChild(inner);
+    }
+    return inner;
+}
+
+/** Хост списка подрядчиков внутри раскрытого объекта. */
+function _histProjectListHost(pBody) {
+    if (!pBody) return null;
+    const inner = _histAccContentHost(pBody);
+    if (!inner) return null;
+    let host = inner.querySelector(':scope > .hist-project-list');
+    if (!host) {
+        host = document.createElement('div');
+        host.className = 'hist-project-list border-t border-[var(--card-border)] bg-slate-50 dark:bg-slate-900/30 p-2 min-w-0 overflow-x-hidden';
+        while (inner.firstChild) host.appendChild(inner.firstChild);
+        inner.appendChild(host);
+    }
+    return host;
 }
 
 function _captureExpandedHistory(listDiv) {
@@ -259,10 +297,10 @@ function _captureExpandedHistory(listDiv) {
     listDiv.querySelectorAll('[data-hist-project]').forEach((card) => {
         const pName = card.getAttribute('data-hist-project');
         const pBody = card.querySelector('[data-hist-project-body]');
-        if (!pName || !pBody || pBody.classList.contains('hidden')) return;
+        if (!pName || !pBody || !_histAccIsOpen(pBody)) return;
         projects.add(pName);
         pBody.querySelectorAll('[data-hist-contractor]').forEach((cBody) => {
-            if (cBody.classList.contains('hidden')) return;
+            if (!_histAccIsOpen(cBody)) return;
             const cName = cBody.getAttribute('data-hist-contractor');
             if (cName) contractors.add(pName + '\0' + cName);
         });
@@ -279,14 +317,14 @@ function _restoreExpandedHistory(listDiv, expanded) {
 
         const pBody = card.querySelector('[data-hist-project-body]');
         if (!pBody) return;
-        pBody.classList.remove('hidden');
+        _histAccOpen(pBody);
         const pIcon = card.querySelector('.chevron-icon');
         if (pIcon) pIcon.style.transform = 'rotate(180deg)';
 
         pBody.querySelectorAll('[data-hist-contractor]').forEach((cBody) => {
             const cName = cBody.getAttribute('data-hist-contractor');
             if (!cName || !expanded.contractors.has(pName + '\0' + cName)) return;
-            cBody.classList.remove('hidden');
+            _histAccOpen(cBody);
             const head = cBody.previousElementSibling;
             const cIcon = head && head.querySelector('.chevron-icon-sm');
             if (cIcon) cIcon.style.transform = 'rotate(180deg)';
@@ -308,14 +346,16 @@ function _findHistContractorBody(card, cName) {
 
 function _enforceContractorVisibleLimit(cBody) {
     if (!cBody) return;
-    const rows = [...cBody.querySelectorAll('[data-hist-id]')];
+    const host = _histAccContentHost(cBody);
+    if (!host) return;
+    const rows = [...host.querySelectorAll('[data-hist-id]')];
     rows.sort((a, b) => (Number(b.getAttribute('data-hist-date')) || 0) - (Number(a.getAttribute('data-hist-date')) || 0));
 
-    let hiddenWrap = cBody.querySelector('[data-hist-hidden]');
-    let showMoreBtn = cBody.querySelector('[data-hist-show-more]');
+    let hiddenWrap = host.querySelector('[data-hist-hidden]');
+    let showMoreBtn = host.querySelector('[data-hist-show-more]');
 
     if (rows.length <= HIST_CONTRACTOR_VISIBLE) {
-        rows.forEach((row) => cBody.insertBefore(row, hiddenWrap || showMoreBtn || null));
+        rows.forEach((row) => host.insertBefore(row, hiddenWrap || showMoreBtn || null));
         if (hiddenWrap) hiddenWrap.remove();
         if (showMoreBtn) showMoreBtn.remove();
         return;
@@ -326,7 +366,7 @@ function _enforceContractorVisibleLimit(cBody) {
         hiddenWrap.className = 'hidden';
         hiddenWrap.setAttribute('data-hist-hidden', '');
         hiddenWrap.id = (cBody.id || 'hist') + '-hidden';
-        cBody.appendChild(hiddenWrap);
+        host.appendChild(hiddenWrap);
     }
     if (!showMoreBtn) {
         showMoreBtn = document.createElement('button');
@@ -337,13 +377,13 @@ function _enforceContractorVisibleLimit(cBody) {
             hiddenWrap.classList.remove('hidden');
             showMoreBtn.style.display = 'none';
         };
-        cBody.appendChild(showMoreBtn);
+        host.appendChild(showMoreBtn);
     }
 
-    rows.slice(0, HIST_CONTRACTOR_VISIBLE).forEach((row) => cBody.insertBefore(row, hiddenWrap));
+    rows.slice(0, HIST_CONTRACTOR_VISIBLE).forEach((row) => host.insertBefore(row, hiddenWrap));
     rows.slice(HIST_CONTRACTOR_VISIBLE).forEach((row) => hiddenWrap.appendChild(row));
-    cBody.appendChild(hiddenWrap);
-    cBody.appendChild(showMoreBtn);
+    host.appendChild(hiddenWrap);
+    host.appendChild(showMoreBtn);
     const wasExpanded = !hiddenWrap.classList.contains('hidden') || showMoreBtn.style.display === 'none';
     showMoreBtn.textContent = 'Показать еще проверки (' + (rows.length - HIST_CONTRACTOR_VISIBLE) + ')';
     if (wasExpanded) {
@@ -433,12 +473,13 @@ function _ensureContractorBlock(card, cName) {
     if (cBody) return cBody;
 
     const pBody = card.querySelector('[data-hist-project-body]');
-    if (!pBody) return null;
+    const listHost = _histProjectListHost(pBody);
+    if (!listHost) return null;
     const safeGroupName = pBody.id || _nextHistGroupId();
     const cIndex = pBody.querySelectorAll('[data-hist-contractor]').length;
     const blockHtml = _renderContractorBlockHtml(safeGroupName, cName, cIndex, []);
     const collator = _histCollator();
-    const heads = [...pBody.querySelectorAll(':scope > [data-hist-contractor-head]')];
+    const heads = [...listHost.querySelectorAll(':scope > [data-hist-contractor-head]')];
     let placed = false;
     for (let i = 0; i < heads.length; i++) {
         const other = heads[i].getAttribute('data-hist-contractor-head') || '';
@@ -448,7 +489,7 @@ function _ensureContractorBlock(card, cName) {
             break;
         }
     }
-    if (!placed) pBody.insertAdjacentHTML('beforeend', blockHtml);
+    if (!placed) listHost.insertAdjacentHTML('beforeend', blockHtml);
     return _findHistContractorBody(card, cName);
 }
 
@@ -473,11 +514,12 @@ function _insertRowIntoContractor(cBody, item) {
     if (insertBefore) {
         insertBefore.insertAdjacentHTML('beforebegin', rowHtml);
     } else {
-        const hiddenWrap = cBody.querySelector('[data-hist-hidden]');
-        const showMoreBtn = cBody.querySelector('[data-hist-show-more]');
+        const host = _histAccContentHost(cBody);
+        const hiddenWrap = host && host.querySelector('[data-hist-hidden]');
+        const showMoreBtn = host && host.querySelector('[data-hist-show-more]');
         if (hiddenWrap) hiddenWrap.insertAdjacentHTML('beforeend', rowHtml);
         else if (showMoreBtn) showMoreBtn.insertAdjacentHTML('beforebegin', rowHtml);
-        else cBody.insertAdjacentHTML('beforeend', rowHtml);
+        else if (host) host.insertAdjacentHTML('beforeend', rowHtml);
     }
     _enforceContractorVisibleLimit(cBody);
     return true;

@@ -86,20 +86,14 @@ export const HistoryModule = {
         // 1. Загрузить данные
         await HistoryActions.loadRecords();
 
-        // 2. sync:completed — no full-render on active History view
-        // (PLATFORM_TARGET_ARCHITECTURE §5). Данные подтянем при следующем
-        // заходе на sub-history (dirty); на активной вкладке не трогаем DOM
-        // и не сбрасываем пагинацию/аккордеоны через loadRecords+render.
+        // 2. sync:completed — no full-render on active History (единый хелпер §5).
         if (events && typeof events.on === 'function') {
             const onSync = async () => {
-                const analyticsTab = document.getElementById('tab-analytics');
-                const histSub = document.getElementById('sub-history');
-                const historyActive = !!(
-                    analyticsTab && analyticsTab.classList.contains('active') &&
-                    histSub && !histSub.classList.contains('hidden')
-                );
-                if (window.syncDirtyFlags) window.syncDirtyFlags.history = true;
-                if (historyActive) return;
+                if (window.RBI?.utils?.syncUi?.markDirty) window.RBI.utils.syncUi.markDirty('history');
+                else if (window.syncDirtyFlags) window.syncDirtyFlags.history = true;
+                if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('history')) {
+                    return;
+                }
                 await HistoryActions.loadRecords();
             };
             events.on('sync:completed', onSync);

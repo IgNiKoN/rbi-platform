@@ -272,7 +272,8 @@ window.normalizeInspectionContractorBeforeSave = async function () {
             contractor_raw_name: '',
             contractor_name: '',
             contractor_canonical_key: '',
-            contractor_normalization_status: 'empty'
+            contractor_normalization_status: 'empty',
+            contractorId: ''
         };
     }
 
@@ -283,9 +284,26 @@ window.normalizeInspectionContractorBeforeSave = async function () {
             contractor_raw_name: '',
             contractor_name: '',
             contractor_canonical_key: '',
-            contractor_normalization_status: 'empty'
+            contractor_normalization_status: 'empty',
+            contractorId: ''
         };
     }
+
+    const resolveContractorId = (normalized) => {
+        const svc = window.RBI && window.RBI.services && window.RBI.services.contractors;
+        if (svc && typeof svc.resolveIdFromNormalized === 'function') {
+            return svc.resolveIdFromNormalized(normalized) || '';
+        }
+        if (window.ContractorDirectory && typeof window.ContractorDirectory.resolveIdFromNormalized === 'function') {
+            return window.ContractorDirectory.resolveIdFromNormalized(normalized) || '';
+        }
+        if (window.ContractorDirectory && typeof window.ContractorDirectory.getByCanonicalKey === 'function') {
+            const key = normalized && normalized.canonical_key;
+            const card = key ? window.ContractorDirectory.getByCanonicalKey(key) : null;
+            return (card && card.id) ? String(card.id) : '';
+        }
+        return '';
+    };
 
     // Если справочник подрядчиков подключен — пробуем нормализовать
     if (window.ContractorDirectory && typeof window.ContractorDirectory.normalizeContractorName === 'function') {
@@ -299,7 +317,8 @@ window.normalizeInspectionContractorBeforeSave = async function () {
                 contractor_raw_name: rawName,
                 contractor_name: result.display_name,
                 contractor_canonical_key: result.canonical_key,
-                contractor_normalization_status: 'matched'
+                contractor_normalization_status: 'matched',
+                contractorId: resolveContractorId(result)
             };
         }
 
@@ -308,7 +327,8 @@ window.normalizeInspectionContractorBeforeSave = async function () {
             contractor_raw_name: rawName,
             contractor_name: rawName,
             contractor_canonical_key: '',
-            contractor_normalization_status: 'pending'
+            contractor_normalization_status: 'pending',
+            contractorId: ''
         };
     }
 
@@ -317,7 +337,8 @@ window.normalizeInspectionContractorBeforeSave = async function () {
         contractor_raw_name: rawName,
         contractor_name: rawName,
         contractor_canonical_key: '',
-        contractor_normalization_status: 'pending'
+        contractor_normalization_status: 'pending',
+        contractorId: ''
     };
 };
 

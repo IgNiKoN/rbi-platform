@@ -195,7 +195,7 @@ import { AuditActions } from './audit.actions.js';
         <div id="tab-audit" class="view-section active">
             <!-- Пустое состояние (Оригинальный дизайн, компактная версия) -->
             <div id="empty-checklist-state"
-                class="py-3 ios-panel border border-slate-200/50 dark:border-slate-700/50 rounded-[22px] shadow-sm mb-3 mt-1 mx-1 overflow-hidden">
+                class="py-3 ios-panel border border-slate-200/50 dark:border-slate-700/50 rounded-[22px] shadow-sm mb-3 mt-1 overflow-hidden">
 
                 <div class="px-4 text-center">
                     <div
@@ -945,14 +945,13 @@ import { AuditActions } from './audit.actions.js';
             ${warningHtml}
             <div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-200 dark:border-indigo-800 mb-5 shadow-sm relative overflow-hidden">
                 <div class="text-[10px] uppercase font-bold text-indigo-500 mb-2 flex justify-between items-center">
-                    <span>УрК Подрядчика</span>
-                    <span class="text-[9px] font-bold ${c.confCls} px-2 py-0.5 rounded border uppercase">${c.confStatus}</span>
+                    <span>Надёжность (оперативно, окно ≤15)</span>
                 </div>
                 <div class="flex items-center justify-between mt-1">
                     <div class="text-5xl font-black text-indigo-700 dark:text-indigo-400">${c.finalC}%</div>
                     <div class="text-right">
                         <span class="text-[10px] font-bold text-indigo-800 bg-indigo-100 px-2 py-1 rounded uppercase block w-fit ml-auto border border-indigo-200">${c.statusTxt}</span>
-                        <div class="text-[9px] text-indigo-500 mt-1 font-bold">Выборка: ${c.count} пров.</div>
+                        <div class="text-[9px] text-indigo-500 mt-1 font-bold">N в окне: ${c.count}</div>
                     </div>
                 </div>
             </div>
@@ -969,17 +968,11 @@ import { AuditActions } from './audit.actions.js';
                 </li>
             </ul>
 
-            <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2">Достоверность и Стабильность</div>
-            <div class="grid grid-cols-2 gap-2 mb-5">
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm text-center">
-                    <div class="text-[9px] text-[var(--text-muted)] font-bold uppercase mb-1" title="Доверительный интервал 95%">Погрешность (±E)</div>
-                    <div class="text-xl font-black text-slate-700 dark:text-slate-300">± ${c.ci95_margin.toFixed(1)}%</div>
-                </div>
-                <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm text-center cursor-help" title="${c.stabDesc}">
-                    <div class="text-[9px] text-[var(--text-muted)] font-bold uppercase mb-1 border-b border-dashed border-slate-300 pb-1 inline-block">Индекс стаб.</div>
-                    <div class="text-xl font-black ${c.stabColor} leading-none">${c.stabilityIndex}</div>
-                    <div class="text-[8px] font-bold uppercase mt-1 ${c.stabColor}">${c.stabText}</div>
-                </div>
+            <div class="text-[10px] font-black text-[var(--text-muted)] uppercase mb-2">Стабильность</div>
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] p-3 rounded-xl shadow-sm text-center mb-5 cursor-help" title="${c.stabDesc}">
+                <div class="text-[9px] text-[var(--text-muted)] font-bold uppercase mb-1 border-b border-dashed border-slate-300 pb-1 inline-block">Индекс стаб.</div>
+                <div class="text-xl font-black ${c.stabColor} leading-none">${c.stabilityIndex}</div>
+                <div class="text-[8px] font-bold uppercase mt-1 ${c.stabColor}">${c.stabText}</div>
             </div>
 
             <div class="text-[11px] font-bold ${c.finalC < 70 ? 'text-red-700 bg-red-50 border-red-200' : (c.finalC < 85 ? 'text-orange-700 bg-orange-50 border-orange-200' : 'text-green-700 bg-green-50 border-green-200')} mt-2 p-3 rounded-xl border shadow-sm leading-snug">

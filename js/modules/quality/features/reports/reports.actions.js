@@ -448,9 +448,11 @@ function exportTenderPDF() {
                     </td>
                     <td style="width: 40%; vertical-align: top;">
                         <div style="background: ${m.finalC < 70 ? '#fef2f2' : (m.finalC < 85 ? '#fffbeb' : '#f0fdf4')}; border: 2px solid ${m.finalC < 70 ? '#fca5a5' : (m.finalC < 85 ? '#fde68a' : '#bbf7d0')}; border-radius: 12px; padding: 20px; text-align: center;">
-                            <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Надежность (ИУрК)</div>
+                            <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 900;">Надежность (ИУрК) · вся история</div>
                             <div style="font-size: 64px; font-weight: 900; color: ${m.finalC < 70 ? '#dc2626' : (m.finalC < 85 ? '#d97706' : '#16a34a')}; line-height: 1; margin: 10px 0;">${m.finalC}%</div>
-                            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">База: ${m.count} проверок</div>
+                            <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">База: ${m.count} проверок · без окна 15</div>
+                            ${m.count >= 2 ? `<div style="font-size: 12px; color: #475569; font-weight: 800; margin-top: 8px;">Доверительный интервал ±${Number(m.ci95_margin).toFixed(1)}%</div>` : ''}
+                            <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; margin-top: 6px; color: ${m.confCls === 'conf-high' ? '#16a34a' : (m.confCls === 'conf-med' ? '#d97706' : '#64748b')};">${m.confStatus}</div>
                         </div>
                     </td>
                 </tr>
@@ -530,6 +532,17 @@ async function handleFabExportAction(actionType, mode = 'script') {
 
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast('Нет данных для выгрузки');
+
+    // Пилот print-first: интерактивное HTML-превью (секции on/off + window.print).
+    // Старые onepager / html2pdf-ветки не трогаем.
+    if (actionType === 'onepager_preview') {
+        if (typeof window.openReportPreview === 'function') {
+            window.openReportPreview(data);
+        } else {
+            showToast('Превью отчёта ещё не загружено');
+        }
+        return;
+    }
 
     // Если это отчеты, которые поддерживают шаблоны, мы сначала ищем шаблон!
     if (actionType === 'onepager' || actionType === 'global_onepager') {
@@ -836,6 +849,65 @@ async function buildPhotoGridHTML(photos, title, titleColor, borderColor, bgCell
     </div>`;
 }
 
+/** Ключ группы подрядчика для рейтингов в отчётах (как в One-Pager). */
+function _reportContractorGroupKey(item) {
+    if (typeof window.trendContractorKey === 'function') return window.trendContractorKey(item);
+    return (item.contractorName || 'Неизвестно') + ' ['
+        + (item.project_display_name || item.projectName || 'Без объекта') + ']';
+}
+
+/**
+ * Средние рейтинги по подрядчикам среза.
+ * У каждого — getContractorMetrics (скользящие ≤15 внутри среза).
+ * KPI: приоритет подрядчиков с N≥7, иначе fallback по всем с метриками.
+ */
+function _avgContractorRatingsFromChecks(items, keyFn) {
+    const grouped = {};
+    const keyOf = typeof keyFn === 'function' ? keyFn : _reportContractorGroupKey;
+    (items || []).forEach((item) => {
+        const k = keyOf(item);
+        (grouped[k] = grouped[k] || []).push(item);
+    });
+    let sumRel = 0, relN = 0, redContrCount = 0;
+    let sumUrk = 0, urkN = 0, sumDoc = 0, docN = 0;
+    let sumUrkAll = 0, urkAllN = 0, sumDocAll = 0, docAllN = 0;
+    let sumRelAll = 0, relAllN = 0;
+    for (const k in grouped) {
+        const m = typeof getContractorMetrics === 'function'
+            ? getContractorMetrics(grouped[k], _templates().getUserTemplates())
+            : null;
+        if (!m) continue;
+        sumUrkAll += m.baseUrkContrPerc;
+        urkAllN++;
+        sumRelAll += m.finalC;
+        relAllN++;
+        if (m.documentaryC != null) { sumDocAll += m.documentaryC; docAllN++; }
+        if (m.count >= 7) {
+            sumRel += m.finalC;
+            relN++;
+            sumUrk += m.baseUrkContrPerc;
+            urkN++;
+            if (m.documentaryC != null) { sumDoc += m.documentaryC; docN++; }
+            if (m.finalC < 70) redContrCount++;
+        }
+    }
+    return {
+        contrCount: Object.keys(grouped).length,
+        avgUrk: urkN > 0
+            ? Math.round(sumUrk / urkN)
+            : (urkAllN > 0 ? Math.round(sumUrkAll / urkAllN) : 0),
+        avgDoc: docN > 0
+            ? Math.round(sumDoc / docN)
+            : (docAllN > 0 ? Math.round(sumDocAll / docAllN) : null),
+        avgReliability: relN > 0
+            ? Math.round(sumRel / relN)
+            : (relAllN > 0 ? Math.round(sumRelAll / relAllN) : null),
+        relN,
+        redContrCount,
+        redContrPerc: relN > 0 ? Math.round((redContrCount / relN) * 100) : null
+    };
+}
+
 // Расчет данных для плаката качества. Перенесено из export.js:generatePosterData (группа G1).
 function generatePosterData() {
     const _allInspections = _getAllInspections();
@@ -859,7 +931,7 @@ function generatePosterData() {
     });
 
     const candidates = [];
-    let globalUrkSum = 0; let globalB3Count = 0;
+    let globalB3Count = 0;
 
     for (let cName in grouped) {
         const cData = grouped[cName];
@@ -869,7 +941,6 @@ function generatePosterData() {
                 let bestPhoto = null; let worstPhoto = null; let worstDefectName = '';
                 cData.forEach(check => {
                     if (check.metrics) {
-                        globalUrkSum += Number(check.metrics.final) || 0;
                         globalB3Count += Number(check.metrics.n_B3_fail) || 0;
                     }
                     if (check.photos && check.state) {
@@ -893,7 +964,8 @@ function generatePosterData() {
         }
     }
 
-    const avgObjectUrk = weekData.length > 0 ? Math.round(globalUrkSum / weekData.length) : 0;
+    const posterKey = (i) => i.contractorName || 'Неизвестно';
+    const avgObjectUrk = _avgContractorRatingsFromChecks(weekData, posterKey).avgUrk;
     const ikoMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(weekData, _templates().getUserTemplates()) : null;
 
     candidates.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
@@ -999,6 +1071,49 @@ function classifyDocKind(title) {
     return 'Прочее';
 }
 
+/** Текущее значение фильтра периода аналитики (дефолт 30 дней). */
+function _reportPeriodSel() {
+    try {
+        const el = document.getElementById('global-filter-period');
+        if (el && el.value) return el.value;
+    } catch (_) { /* ignore */ }
+    return 'D30';
+}
+
+/** Предыдущее окно для Δ: { prevData, trendLabel, days, bounds }. */
+function _resolvePrevPeriodSlice(allInspections, currData, now) {
+    const sel = _reportPeriodSel();
+    const n = now || new Date();
+    const bounds = typeof getAnalyticsPrevPeriodBounds === 'function'
+        ? getAnalyticsPrevPeriodBounds(sel, n)
+        : null;
+    if (bounds) {
+        const prevData = (allInspections || []).filter((i) => {
+            const d = new Date(i.date);
+            return d >= bounds.startPrev && d < bounds.endPrev;
+        });
+        return { prevData, trendLabel: bounds.trendLabel, days: bounds.days, bounds };
+    }
+    const sorted = (currData || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+    return {
+        prevData: sorted.slice(0, Math.floor(sorted.length / 2)),
+        trendLabel: 'к 1-й пол.',
+        days: null,
+        bounds: null
+    };
+}
+
+function _reportPeriodHint(sel) {
+    const days = typeof getAnalyticsPeriodDays === 'function' ? getAnalyticsPeriodDays(sel || _reportPeriodSel()) : null;
+    if (days) return days + ' дней';
+    const n = typeof normalizeAnalyticsPeriod === 'function'
+        ? normalizeAnalyticsPeriod(sel || _reportPeriodSel())
+        : (sel || 'D30');
+    if (n === 'CUSTOM') return 'свой период';
+    if (n === 'ALL') return 'всё время';
+    return '30 дней';
+}
+
 /** Период выгрузки для шапки PDF и карточки архива: «с ДД.ММ.ГГГГ по ДД.ММ.ГГГГ». */
 function resolveExportPeriodLabel(overridePeriod) {
     if (overridePeriod != null && String(overridePeriod).trim()) {
@@ -1009,23 +1124,12 @@ function resolveExportPeriodLabel(overridePeriod) {
         return d.toLocaleDateString('ru-RU');
     };
     const range = (from, to) => `с ${fmt(from)} по ${fmt(to)}`;
-    const sel = document.getElementById('global-filter-period')?.value || 'ALL';
+    const sel = _reportPeriodSel();
     const now = new Date();
+    const days = typeof getAnalyticsPeriodDays === 'function' ? getAnalyticsPeriodDays(sel) : null;
+    const norm = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(sel) : sel;
 
-    if (sel === 'DAY') {
-        return range(now, now);
-    }
-    if (sel === 'WEEK') {
-        const from = new Date(now);
-        from.setDate(from.getDate() - 7);
-        return range(from, now);
-    }
-    if (sel === 'MONTH') {
-        const from = new Date(now);
-        from.setDate(from.getDate() - 30);
-        return range(from, now);
-    }
-    if (sel === 'CUSTOM') {
+    if (norm === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
         const dTo = document.getElementById('filter-date-to')?.value;
         if (dFrom || dTo) {
@@ -1033,8 +1137,15 @@ function resolveExportPeriodLabel(overridePeriod) {
             const to = dTo ? new Date(dTo) : null;
             return `с ${from ? fmt(from) : '…'} по ${to ? fmt(to) : '…'}`;
         }
+        return 'свой период';
     }
-    return 'Всё время';
+    if (days) {
+        const from = new Date(now);
+        from.setDate(from.getDate() - days);
+        return range(from, now);
+    }
+    if (norm === 'ALL') return 'Всё время';
+    return 'За 30 дней';
 }
 
 /** Период документа по дате сохранения и типу периода (FMEA «Неделя»/«Месяц»). */
@@ -2221,28 +2332,17 @@ async function exportPdfOnePager(data, mode = 'script') {
         projName = _analyticsFilters().project.join(', ');
     }
 
-    let sumUrk = 0; let sumB3 = 0; let sumDoc = 0; let cntDoc = 0;
+    let sumB3 = 0;
     data.forEach(i => {
-        if (i.metrics) {
-            sumUrk += Number(i.metrics.final) || 0;
-            sumB3 += Number(i.metrics.n_B3_fail) || 0;
-            const docScore = (i.metrics.documentary !== undefined) ? i.metrics.documentary : (typeof window.getDocumentaryScore === 'function' && i.state && i.templateKey ? (() => {
-                const tType = i.templateKey.split('_')[0];
-                const tKey = i.templateKey.replace(tType + '_', '');
-                const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey] ? _templates().getSystemTemplates()[tKey].groups : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
-                return window.getDocumentaryScore(i.state, getFlatList(cl));
-            })() : null);
-            if (docScore !== null && docScore !== undefined) { sumDoc += docScore; cntDoc++; }
-        }
+        if (i.metrics) sumB3 += Number(i.metrics.n_B3_fail) || 0;
     });
-    const currAvgUrk = data.length > 0 ? Math.round(sumUrk / data.length) : 0;
-    const currAvgDoc = cntDoc > 0 ? Math.round(sumDoc / cntDoc) : null;
+    const op1Ratings = _avgContractorRatingsFromChecks(data);
+    const currAvgUrk = op1Ratings.avgUrk;
+    const currAvgDoc = op1Ratings.avgDoc;
 
     const groupedC = {};
     data.forEach(item => {
-        const cKey = (typeof window.trendContractorKey === 'function')
-            ? window.trendContractorKey(item)
-            : ((item.contractorName || 'Неизвестно') + ' [' + (item.project_display_name || item.projectName || 'Без объекта') + ']');
+        const cKey = _reportContractorGroupKey(item);
         groupedC[cKey] = groupedC[cKey] || [];
         groupedC[cKey].push(item);
     });
@@ -2268,28 +2368,11 @@ async function exportPdfOnePager(data, mode = 'script') {
     }
     ratingData.sort((a, b) => b.val - a.val);
 
-    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
-    let prevData = [];
+    const selPeriod = _reportPeriodSel();
     const now = new Date();
-    let trendLabel = "к 1-й пол. базы";
-
-    if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-        trendLabel = "к прош. нед.";
-    } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-        trendLabel = "к прош. мес.";
-    } else if (selPeriod === 'CUSTOM') {
-        trendLabel = "к пред. периоду";
-    } else {
-        const half = Math.floor(data.length / 2);
-        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-        prevData = sortedData.slice(0, half);
-    }
+    const _prevSlice = _resolvePrevPeriodSlice(_allInspections, data, now);
+    let prevData = _prevSlice.prevData;
+    let trendLabel = _prevSlice.trendLabel;
 
     const currProjectsPdf = new Set(data.map(i => i.project_canonical_key || i.project_display_name || i.projectName).filter(Boolean));
     const prevGroupedPdf = {};
@@ -2311,10 +2394,9 @@ async function exportPdfOnePager(data, mode = 'script') {
 
     let prevAvgUrk = 0; let prevIko = "0.00"; let prevChecks = prevData.length; let prevContrsCount = 0;
     if (prevData.length > 0) {
-        let pSum = 0; prevData.forEach(i => pSum += (i.metrics?.final || 0));
-        prevAvgUrk = Math.round(pSum / prevData.length);
-        const pGrouped = {}; prevData.forEach(i => pGrouped[i.contractorName] = true);
-        prevContrsCount = Object.keys(pGrouped).length;
+        const pR = _avgContractorRatingsFromChecks(prevData);
+        prevAvgUrk = pR.avgUrk;
+        prevContrsCount = pR.contrCount;
         const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
         if (pInt) prevIko = pInt.IKO;
     }
@@ -2334,9 +2416,8 @@ async function exportPdfOnePager(data, mode = 'script') {
         const dStart = new Date(); dStart.setDate(now.getDate() - (i * 7) - 7);
         const dEnd = new Date(); dEnd.setDate(now.getDate() - (i * 7));
         const weekChecks = _allInspections.filter(c => { const d = new Date(c.date); return d >= dStart && d < dEnd; });
-        let wSum = 0; weekChecks.forEach(c => wSum += (c.metrics?.final || 0));
         sparkLabels.push(`-${i}н`);
-        sparkData.push(weekChecks.length > 0 ? Math.round(wSum / weekChecks.length) : null);
+        sparkData.push(weekChecks.length > 0 ? _avgContractorRatingsFromChecks(weekChecks).avgUrk : null);
     }
 
     let b3Map = {}; let b2Map = {}; let okMap = {};
@@ -2569,25 +2650,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
         return keys.includes(name) || projectKeyOf(item) === name;
     };
 
-    const resolveDocScore = (i) => {
-        if (!i || !i.metrics) return null;
-        if (i.metrics.documentary !== undefined && i.metrics.documentary !== null) return Number(i.metrics.documentary);
-        if (typeof window.getDocumentaryScore !== 'function' || !i.state || !i.templateKey) return null;
-        const tType = i.templateKey.split('_')[0];
-        const tKey = i.templateKey.replace(tType + '_', '');
-        const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey]
-            ? _templates().getSystemTemplates()[tKey].groups
-            : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
-        return window.getDocumentaryScore(i.state, getFlatList(cl));
-    };
-    let sumUrk = 0, sumDoc = 0, cntDoc = 0;
-    data.forEach(i => {
-        sumUrk += Number(i.metrics?.final) || 0;
-        const ds = resolveDocScore(i);
-        if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { sumDoc += ds; cntDoc++; }
-    });
-    const currAvgUrk = Math.round(sumUrk / data.length);
-    const currAvgDoc = cntDoc > 0 ? Math.round(sumDoc / cntDoc) : null;
+    // Рейтинги подрядчика: всегда последние до 15 проверок внутри текущего фильтра периода.
+    // KPI «средний УрК / надёжность» — среднее по подрядчикам (приоритет N≥7).
     const currInt = typeof getObjectIntegralMetrics === 'function'
         ? getObjectIntegralMetrics(data, _templates().getUserTemplates())
         : null;
@@ -2612,6 +2676,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
     };
 
     let sumRel = 0, relN = 0;
+    let sumUrkC = 0, urkN = 0, sumDocC = 0, docN = 0;
+    let sumUrkAll = 0, urkAllN = 0, sumDocAll = 0, docAllN = 0;
     const ratingRel = [];
     for (const cName in groupedC) {
         const m = getContractorMetrics(groupedC[cName], _templates().getUserTemplates());
@@ -2619,36 +2685,39 @@ async function buildOnePagerV2Html(data, opts = {}) {
         ratingRel.push({
             name: cName,
             val: m.finalC,
+            urk: m.baseUrkContrPerc,
             count: m.count,
             doc: m.documentaryC != null ? m.documentaryC : null,
             workType: dominantWorkType(groupedC[cName])
         });
-        if (m.count >= 7) { sumRel += m.finalC; relN++; }
+        sumUrkAll += m.baseUrkContrPerc;
+        urkAllN++;
+        if (m.documentaryC != null) { sumDocAll += m.documentaryC; docAllN++; }
+        if (m.count >= 7) {
+            sumRel += m.finalC;
+            relN++;
+            sumUrkC += m.baseUrkContrPerc;
+            urkN++;
+            if (m.documentaryC != null) { sumDocC += m.documentaryC; docN++; }
+        }
     }
     ratingRel.sort((a, b) => b.val - a.val);
     const avgReliability = relN > 0 ? Math.round(sumRel / relN) : null;
+    const currAvgUrk = urkN > 0
+        ? Math.round(sumUrkC / urkN)
+        : (urkAllN > 0 ? Math.round(sumUrkAll / urkAllN) : 0);
+    const currAvgDoc = docN > 0
+        ? Math.round(sumDocC / docN)
+        : (docAllN > 0 ? Math.round(sumDocAll / docAllN) : null);
     // Подрядчики с надёжностью в провале (ИУрК < 70%) — среди тех, у кого уже N≥7
     const redContrCount = ratingRel.filter(r => r.count >= 7 && r.val < 70).length;
     const redContrPerc = relN > 0 ? Math.round((redContrCount / relN) * 100) : null;
 
-    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    const selPeriod = _reportPeriodSel();
     const now = new Date();
-    let prevData = [];
-    let trendLabel = 'к 1-й пол.';
-    if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
-        trendLabel = 'к прош. нед.';
-    } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
-        trendLabel = 'к прош. мес.';
-    } else {
-        const sorted = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-        prevData = sorted.slice(0, Math.floor(sorted.length / 2));
-    }
+    const _prevSlice = _resolvePrevPeriodSlice(_allInspections, data, now);
+    let prevData = _prevSlice.prevData;
+    let trendLabel = _prevSlice.trendLabel;
     // Company stitch: тренды только по этому объекту (не по всей компании)
     if (opts.forceProjectName) {
         prevData = prevData.filter(matchesForcedProject);
@@ -2656,14 +2725,6 @@ async function buildOnePagerV2Html(data, opts = {}) {
 
     let prevAvgUrk = 0, prevAvgDoc = null, prevIko = '0.00', prevChecks = prevData.length, prevContrs = 0, prevRel = null, prevRedContrCount = null;
     if (prevData.length > 0) {
-        const pSum = prevData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-        prevAvgUrk = Math.round(pSum / prevData.length);
-        let pSumDoc = 0, pCntDoc = 0;
-        prevData.forEach(i => {
-            const ds = resolveDocScore(i);
-            if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { pSumDoc += ds; pCntDoc++; }
-        });
-        if (pCntDoc > 0) prevAvgDoc = Math.round(pSumDoc / pCntDoc);
         prevContrs = new Set(prevData.map(i => i.contractorName).filter(Boolean)).size;
         const pInt = typeof getObjectIntegralMetrics === 'function'
             ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
@@ -2676,19 +2737,32 @@ async function buildOnePagerV2Html(data, opts = {}) {
             (pGrouped[cKey] = pGrouped[cKey] || []).push(item);
         });
         let ps = 0, pn = 0, pred = 0;
+        let pUrk = 0, pUrkN = 0, pDoc = 0, pDocN = 0;
+        let pUrkAll = 0, pUrkAllN = 0, pDocAll = 0, pDocAllN = 0;
         for (const k in pGrouped) {
-            if (pGrouped[k].length < 7) continue;
             const m = getContractorMetrics(pGrouped[k], _templates().getUserTemplates());
-            if (m) {
-                ps += m.finalC;
-                pn++;
-                if (m.finalC < 70) pred++;
-            }
+            if (!m) continue;
+            pUrkAll += m.baseUrkContrPerc;
+            pUrkAllN++;
+            if (m.documentaryC != null) { pDocAll += m.documentaryC; pDocAllN++; }
+            if (m.count < 7) continue;
+            ps += m.finalC;
+            pn++;
+            pUrk += m.baseUrkContrPerc;
+            pUrkN++;
+            if (m.documentaryC != null) { pDoc += m.documentaryC; pDocN++; }
+            if (m.finalC < 70) pred++;
         }
         if (pn > 0) {
             prevRel = Math.round(ps / pn);
             prevRedContrCount = pred;
         }
+        prevAvgUrk = pUrkN > 0
+            ? Math.round(pUrk / pUrkN)
+            : (pUrkAllN > 0 ? Math.round(pUrkAll / pUrkAllN) : 0);
+        prevAvgDoc = pDocN > 0
+            ? Math.round(pDoc / pDocN)
+            : (pDocAllN > 0 ? Math.round(pDocAll / pDocAllN) : null);
     }
 
     // Подпись тренда — в одной строке с ▲/▼, чтобы не вылезала из плитки KPI
@@ -2705,7 +2779,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
     };
 
     // Вертикальные столбцы по подрядчикам: текущее значение + Δ к пред. интервалу
-    const chartPeriod = (selPeriod === 'WEEK' || selPeriod === 'DAY') ? 'WEEK' : 'MONTH';
+    const _periodDaysForChart = typeof getAnalyticsPeriodDays === 'function' ? getAnalyticsPeriodDays(selPeriod) : 30;
+    const chartPeriod = (_periodDaysForChart && _periodDaysForChart <= 14) ? 'WEEK' : 'MONTH';
     const bucketKeys = [];
     if (chartPeriod === 'WEEK') {
         for (let i = 5; i >= 0; i--) {
@@ -2770,16 +2845,17 @@ async function buildOnePagerV2Html(data, opts = {}) {
         else if (cur) lines[lines.length - 1] = (lines[lines.length - 1] || '') + ' ' + cur;
         return lines.length ? lines : ['—'];
     };
+    // Внутри календарного бакета — то же скользящее окно до 15 (не среднее по всем проверкам месяца).
     const bucketAvgUrk = (items, start, end) => {
         const slice = items.filter(i => { const d = new Date(i.date); return d >= start && d < end; });
         if (slice.length < 1) return null;
-        const sum = slice.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-        return Math.round(sum / slice.length);
+        const metrics = getContractorMetrics(slice, _templates().getUserTemplates());
+        return metrics ? metrics.baseUrkContrPerc : null;
     };
     const bucketIurk = (items, start, end) => {
         const slice = items.filter(i => { const d = new Date(i.date); return d >= start && d < end; });
         if (slice.length < 1) return null;
-        const metrics = getContractorMetrics(slice, _templates().getUserTemplates(), false);
+        const metrics = getContractorMetrics(slice, _templates().getUserTemplates());
         return metrics ? metrics.finalC : null;
     };
     const deltaForContractor = (items, valueFn) => {
@@ -2929,12 +3005,12 @@ async function buildOnePagerV2Html(data, opts = {}) {
         }, chartW, chartH);
     };
 
-    // Все подрядчики выборки, у которых есть проверки
+    // Все подрядчики выборки: УрК/ИУрК — последние до 15 из текущего фильтра периода
     const chartRows = Object.keys(groupedC).map(cName => {
         const items = groupedC[cName] || [];
         if (!items.length) return null;
-        const urkNow = Math.round(items.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0) / items.length);
         const m = getContractorMetrics(items, _templates().getUserTemplates());
+        const urkNow = m ? m.baseUrkContrPerc : 0;
         const dUrk = deltaForContractor(items, bucketAvgUrk);
         const dIurk = deltaForContractor(items, bucketIurk);
         return {
@@ -2990,19 +3066,9 @@ async function buildOnePagerV2Html(data, opts = {}) {
         const d = new Date(loadTs);
         if (!Number.isNaN(d.getTime()) && (!lastSkLoad || d > lastSkLoad)) lastSkLoad = d;
     });
-    let periodDays = 30;
-    if (selPeriod === 'DAY') {
-        periodDays = 1;
-        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
-    } else if (selPeriod === 'WEEK') {
-        periodDays = 7;
-        const w = new Date(now); w.setDate(now.getDate() - 7);
-        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= w);
-    } else if (selPeriod === 'MONTH') {
-        periodDays = 30;
-        const m = new Date(now); m.setDate(now.getDate() - 30);
-        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= m);
-    } else if (selPeriod === 'CUSTOM') {
+    let periodDays = typeof getAnalyticsPeriodDays === 'function' ? (getAnalyticsPeriodDays(selPeriod) || 30) : 30;
+    const periodNormSk = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+    if (periodNormSk === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
         const dTo = document.getElementById('filter-date-to')?.value;
         const fromD = dFrom ? new Date(dFrom) : null;
@@ -3014,11 +3080,10 @@ async function buildOnePagerV2Html(data, opts = {}) {
             const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
             skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) <= tDate);
         }
-    } else {
-        const dates = skRecords.map(r => r.date_issued ? new Date(r.date_issued).getTime() : NaN).filter(n => !Number.isNaN(n));
-        if (dates.length) {
-            periodDays = Math.max(1, Math.ceil((Math.max(...dates) - Math.min(...dates)) / DAY_MS) || 1);
-        }
+    } else if (typeof getAnalyticsPeriodDays === 'function' && getAnalyticsPeriodDays(selPeriod)) {
+        periodDays = getAnalyticsPeriodDays(selPeriod);
+        const fromSk = new Date(now); fromSk.setDate(now.getDate() - periodDays);
+        skRecords = skRecords.filter(r => r.date_issued && new Date(r.date_issued) >= fromSk);
     }
     const fProj = _analyticsFilters().project || [];
     const fContr = _analyticsFilters().contractor || [];
@@ -3096,10 +3161,7 @@ async function buildOnePagerV2Html(data, opts = {}) {
     const lastSkLoadLabel = lastSkLoad
         ? lastSkLoad.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : 'не зафиксирована';
-    const skPeriodHint = selPeriod === 'ALL' ? 'весь период'
-        : (selPeriod === 'DAY' ? 'сегодня'
-            : (selPeriod === 'WEEK' ? '7 дней'
-                : (selPeriod === 'MONTH' ? '30 дней' : 'свой период')));
+    const skPeriodHint = _reportPeriodHint(selPeriod);
 
     // ── Нижняя часть: сводка аудитов + ПК СК списки + справка ─────────────
     const escPdf = (s) => String(s || '')
@@ -3123,7 +3185,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
         });
         const n = items.length;
         const hasRel = n >= 7;
-        const m = getContractorMetrics(items, _templates().getUserTemplates(), false);
+        // Рейтинг — окно 15; N/дефекты в таблице — весь период (объём выборки)
+        const m = getContractorMetrics(items, _templates().getUserTemplates());
         const percCrit = n ? Math.round((checksWithB3 / n) * 100) : 0;
         const rB2 = m ? Math.round(m.maxFailRate) : 0;
         const cName = cleanContrName(r.name);
@@ -3140,8 +3203,8 @@ async function buildOnePagerV2Html(data, opts = {}) {
             workType: r.workType || '—',
             n,
             hasRel,
-            urk: r.urk.value,
-            // ИУрК / надёжность только при N≥7
+            urk: m ? m.baseUrkContrPerc : r.urk.value,
+            // ИУрК / надёжность только при N≥7 (проверок в периоде)
             iurk: hasRel && m ? m.finalC : null,
             defects: sumB1 + sumB2 + sumB3,
             b1: sumB1,
@@ -3265,6 +3328,7 @@ async function buildOnePagerV2Html(data, opts = {}) {
             <div style="font-size:8px;font-weight:800;color:#475569;text-transform:uppercase;margin-bottom:1px;line-height:1.05;">Пояснения · как читать и считать показатели</div>
             <div style="font-size:6.5px;line-height:1.15;color:#92400e;font-weight:600;background:#fffbeb;border:1px solid #fde68a;border-radius:2px;padding:1px 3px;margin-bottom:1px;">
                 УрК — <b>снимок на дату осмотра</b> (поздние устранения не меняют). B1/B2/B3 — лёгкий / средний / критичный; fail_escalated = B3.
+                <b>Рейтинг подрядчика</b> (УрК и ИУрК в KPI, столбцах и таблице): операционный снимок — фильтр периода, затем <b>последние до 15 проверок</b>. Доверительный интервал (±E) и шкала достоверности — только в карточке подрядчика (аккордеон «История») и в тендерном паспорте (вся история без окна 15).
             </div>
             <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
                 <tr>
@@ -3286,14 +3350,15 @@ async function buildOnePagerV2Html(data, opts = {}) {
                         `)}
                     </td>
                     <td style="width:50%;padding:0 0 1px 1px;vertical-align:top;">
-                        ${helpCard('2. ИУрК — надёжность подрядчика', '#e0f2fe', '#7dd3fc', `
-                            Не одна проверка, а <b>насколько стабильно</b> держит качество со временем.
+                        ${helpCard('2. УрК подрядчика и ИУрК (надёжность)', '#e0f2fe', '#7dd3fc', `
+                            Не одна проверка, а оценка подрядчика по <b>последним до 15</b> проверкам внутри выбранного периода.
                             <div style="margin:1px 0;padding:1px 2px;background:#f0f9ff;border:1px solid #e0f2fe;border-radius:2px;font-size:6.5px;font-weight:600;color:#0284c7;">
-                                В ИУрК идёт <b>только физика</b>. Документация не входит.
+                                <b>УрК</b> в таблице/столбцах = среднее баллов этих ≤15 проверок (уже со штрафами одной проверки).<br>
+                                <b>ИУрК</b> = тот же срез × штрафы за повторяемость (Ks) и долю B3 (KB3). Документация в ИУрК не входит.
                             </div>
-                            Берут ср. УрК физики за последние проверки (до 15) и снижают за повторяющиеся B2 и частые B3.
-                            Показывают при <b>N≥7</b>; иначе «СБОР». При штрафах — потолок 84.
-                            ${helpFormula('ИУрК = round( УрК<sub>ср. физики</sub> × Ks × KB3 )')}
+                            ИУрК показывают при <b>N≥7</b> проверок в периоде; иначе «СБОР». При штрафах подрядчика — потолок 84.
+                            ${helpFormula('УрК<sub>подрядчика</sub> = avg( final проверок ), окно ≤15')}
+                            ${helpFormula('ИУрК = round( УрК<sub>подрядчика</sub> × Ks × KB3 )')}
                             ${helpNote('Ks — штраф, если один и тот же B2-пункт часто «краснеет». KB3 — штраф, если много проверок с критикой.')}
                             ${helpThreshLine('Ks (повтор B2)', [['&lt;10%', '1'], ['≥10%', '0,95'], ['≥20%', '0,85'], ['≥40%', '0,70'], ['≥60%', '0,50']])}
                             ${helpThreshLine('KB3 (доля пр. с B3)', [['0%', '1'], ['&gt;0%', '0,95'], ['≥5%', '0,90'], ['≥10%', '0,85'], ['≥20%', '0,70'], ['≥30%', '0,50']])}
@@ -3304,14 +3369,16 @@ async function buildOnePagerV2Html(data, opts = {}) {
                     <td style="width:50%;padding:0 1px 0 0;vertical-align:top;">
                         ${helpCard('3. ИКО · подрядчики в провале · Δ · сводка', '#fef3c7', '#fcd34d', `
                             <b>ИКО — индекс риска объекта</b> (от 0 до 1). Отвечает на вопрос: <b>насколько «опасно» качество на объекте в целом</b>.
-                            Чем <b>выше</b> ИКО — тем хуже (больше риск). Считается только по подрядчикам с N≥7.
-                            Для каждого такого подрядчика считают свой риск K<sub>op</sub> (чем ниже УрК и стабильность и чем чаще B3 — тем K<sub>op</sub> выше), затем берут взвешенное среднее.
+                            Чем <b>выше</b> ИКО — тем хуже (больше риск). Считается только по подрядчикам с N≥7; у каждого рейтинг — из окна ≤15.
+                            Для каждого такого подрядчика считают свой риск K<sub>op</sub> (чем ниже надёжность и стабильность и чем чаще B3 — тем K<sub>op</sub> выше), затем берут взвешенное среднее.
                             ${helpFormula('K<sub>op</sub> = 1 − (urk/100)×(stab/100)×(1 − 0,5·hasB3)')}
                             ${helpFormula('ИКО = Σ(K<sub>op</sub> × Wr) / Σ(Wr)')}
-                            ${helpNote('urk — УрК; stab — стабильность; hasB3=1 если был B3; Wr — вес подрядчика. Пример: ИКО 0,2 — спокойно; 0,6+ — зона внимания.')}
-                            <b>Подрядчики с ИУрК&lt;70%</b> — сколько подрядчиков уже с надёжностью (N≥7) и при этом в провале. Рядом доля от всех с N≥7. Это масштаб проблемы «по людям», а не по проверкам.<br>
-                            <b>Δ</b> — рост/спад к предыдущему ${deltaPeriodLabel === 'недельный' ? 'недельному' : 'месячному'} интервалу (п.п.).<br>
-                            <b>Сводка:</b> N · Деф.=B1+B2+B3 · B1/B2/B3 · Повт.B2 · %B3. При &gt;10 подрядчиках и ≥10 с ИУрК — топ-5 лучших и топ-5 худших без пересечений.
+                            ${helpNote('urk — ИУрК; stab — стабильность; hasB3=1 если был B3; Wr — вес вида работ. Пример: ИКО 0,2 — спокойно; 0,6+ — зона внимания.')}
+                            <b>KPI «ср. УрК» / «ср. надёжность»</b> — среднее по подрядчикам с N≥7 (каждый из своих ≤15), не среднее всех проверок подряд.<br>
+                            <b>Подрядчики с ИУрК&lt;70%</b> — сколько уже с надёжностью (N≥7) и в провале; рядом доля от всех с N≥7.<br>
+                            <b>Δ в шапке</b> — к предыдущему окну фильтра (напр. −30…−60 дн. при «30 дней»); внутри прошлого окна снова ≤15.<br>
+                            <b>Δ на столбцах</b> — к предыдущему ${deltaPeriodLabel === 'недельный' ? 'недельному' : 'календарному месячному'} бакету; внутри бакета тоже ≤15.<br>
+                            <b>Сводка:</b> N и B1/B2/B3 — <b>все</b> проверки периода (объём); УрК/ИУрК — окно ≤15. При &gt;10 подрядчиках и ≥10 с ИУрК — топ-5 лучших и топ-5 худших без пересечений.
                         `)}
                     </td>
                     <td style="width:50%;padding:0 0 0 1px;vertical-align:top;">
@@ -3556,8 +3623,25 @@ async function buildOnePagerV2Html(data, opts = {}) {
         </div>`;
 
     const OP2_LISTS_MAX = Math.max(180, OP2_COLS_H - OP2_CHART_H - OP2_SK_MINI_H);
-    const content = `
-    <div class="no-break" style="font-family:'Bricolage Grotesque',Verdana,sans-serif;height:${OP2_BODY_MAX}px;max-height:${OP2_BODY_MAX}px;overflow:hidden;overflow-x:hidden;width:100%;box-sizing:border-box;">
+    // forPreview: тот же состав OP2, но без жёсткого клипа A3 — для HTML-конструктора печати.
+    const forPreview = !!opts.forPreview;
+    const wrapSec = (id, html) => forPreview
+        ? `<section class="rbi-op2-sec" data-op2-sec="${id}">${html}</section>`
+        : html;
+    const rootBoxStyle = forPreview
+        ? `font-family:'Bricolage Grotesque',Verdana,sans-serif;width:100%;box-sizing:border-box;overflow-x:hidden;`
+        : `font-family:'Bricolage Grotesque',Verdana,sans-serif;height:${OP2_BODY_MAX}px;max-height:${OP2_BODY_MAX}px;overflow:hidden;overflow-x:hidden;width:100%;box-sizing:border-box;`;
+    const colsTableStyle = forPreview
+        ? `width:100%;border-collapse:collapse;table-layout:fixed;`
+        : `width:100%;border-collapse:collapse;table-layout:fixed;height:${OP2_COLS_H}px;max-height:${OP2_COLS_H}px;`;
+    const colTdStyle = (side) => forPreview
+        ? `width:50%;padding-${side === 'left' ? 'right' : 'left'}:4px;vertical-align:top;`
+        : `width:50%;padding-${side === 'left' ? 'right' : 'left'}:4px;vertical-align:top;height:${OP2_COLS_H}px;max-height:${OP2_COLS_H}px;overflow:hidden;`;
+    const listsWrapStyle = forPreview
+        ? ``
+        : `max-height:${OP2_LISTS_MAX}px;overflow:hidden;`;
+
+    const kpiBlockHtml = `
         <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4px;">
             <tr>
                 ${kpiCard('Средний УрК · физика / документация', urkKpiValue, urkTrendHtml)}
@@ -3574,30 +3658,72 @@ async function buildOnePagerV2Html(data, opts = {}) {
                     redContrCount > 0 ? 'background:#fef2f2;border-color:#fecaca;' : ''
                 )}
             </tr>
-        </table>
+        </table>`;
 
-        <table style="width:100%;border-collapse:collapse;table-layout:fixed;height:${OP2_COLS_H}px;max-height:${OP2_COLS_H}px;">
+    const chartUrkHtml = `
+        <div style="margin-bottom:3px;">
+            ${chartBox(
+                'Уровень качества',
+                `Средний УрК физики по подрядчику · Δ (${growthHint}). До ${CHART_CAP} столбцов.${chartTrimNote}`,
+                imgUrk
+            )}
+        </div>`;
+    const auditBlockHtml = `
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 5px;box-sizing:border-box;overflow:hidden;">
+            ${blockHead(
+                'Сводка по аудитам',
+                useTopBottom
+                    ? `Топ-5 лучших и топ-5 худших по ИУрК из ${withRel.length} с надёжностью.`
+                    : `Подрядчики выборки${contrStatsTotal ? ` (${contrStatsTotal})` : ''}: проверки, качество, дефекты.`
+            )}
+            ${auditTableHtml}
+        </div>`;
+    const chartRelHtml = `
+        <div style="margin-bottom:3px;">
+            ${chartBox(
+                'Надёжность',
+                `ИУрК по подрядчику · Δ (${growthHint}). До ${CHART_CAP} столбцов.${chartTrimNote}`,
+                imgRel
+            )}
+        </div>`;
+    const skListsHtml = `
+        <div style="${listsWrapStyle}">
+            <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                <tr>
+                    <td style="width:50%;padding-right:2px;vertical-align:top;">${skOverdueBlock}</td>
+                    <td style="width:50%;padding-left:2px;vertical-align:top;">${skEngBlock}</td>
+                </tr>
+            </table>
+        </div>`;
+
+    const content = forPreview ? `
+    <div class="rbi-op2-preview-root no-break" style="${rootBoxStyle}">
+        ${wrapSec('kpi', kpiBlockHtml)}
+        <table style="${colsTableStyle}">
             <tr>
-                <td style="width:50%;padding-right:4px;vertical-align:top;height:${OP2_COLS_H}px;overflow:hidden;">
+                <td style="${colTdStyle('left')}">
+                    ${wrapSec('chartUrk', chartUrkHtml)}
+                    ${wrapSec('audit', auditBlockHtml)}
+                    ${wrapSec('help', metricsHelpHtml)}
+                </td>
+                <td style="${colTdStyle('right')}">
+                    ${wrapSec('chartRel', chartRelHtml)}
+                    ${wrapSec('sk', skMiniBlock)}
+                    ${wrapSec('skLists', skListsHtml)}
+                </td>
+            </tr>
+        </table>
+    </div>` : `
+    <div class="no-break" style="${rootBoxStyle}">
+        ${kpiBlockHtml}
+        <table style="${colsTableStyle}">
+            <tr>
+                <td style="${colTdStyle('left')}">
                     <table style="width:100%;border-collapse:collapse;table-layout:fixed;height:100%;">
                         <tr style="height:100%;">
                             <td style="vertical-align:top;padding:0;overflow:hidden;">
-                                <div style="margin-bottom:3px;">
-                                    ${chartBox(
-                                        'Уровень качества',
-                                        `Средний УрК физики по подрядчику · Δ (${growthHint}). До ${CHART_CAP} столбцов.${chartTrimNote}`,
-                                        imgUrk
-                                    )}
-                                </div>
-                                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 5px;box-sizing:border-box;overflow:hidden;">
-                                    ${blockHead(
-                                        'Сводка по аудитам',
-                                        useTopBottom
-                                            ? `Топ-5 лучших и топ-5 худших по ИУрК из ${withRel.length} с надёжностью.`
-                                            : `Подрядчики выборки${contrStatsTotal ? ` (${contrStatsTotal})` : ''}: проверки, качество, дефекты.`
-                                    )}
-                                    ${auditTableHtml}
-                                </div>
+                                ${chartUrkHtml}
+                                ${auditBlockHtml}
                             </td>
                         </tr>
                         <tr>
@@ -3607,23 +3733,10 @@ async function buildOnePagerV2Html(data, opts = {}) {
                         </tr>
                     </table>
                 </td>
-                <td style="width:50%;padding-left:4px;vertical-align:top;height:${OP2_COLS_H}px;max-height:${OP2_COLS_H}px;overflow:hidden;">
-                    <div style="margin-bottom:3px;">
-                        ${chartBox(
-                            'Надёжность',
-                            `ИУрК по подрядчику · Δ (${growthHint}). До ${CHART_CAP} столбцов.${chartTrimNote}`,
-                            imgRel
-                        )}
-                    </div>
+                <td style="${colTdStyle('right')}">
+                    ${chartRelHtml}
                     ${skMiniBlock}
-                    <div style="max-height:${OP2_LISTS_MAX}px;overflow:hidden;">
-                        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-                            <tr>
-                                <td style="width:50%;padding-right:2px;vertical-align:top;">${skOverdueBlock}</td>
-                                <td style="width:50%;padding-left:2px;vertical-align:top;">${skEngBlock}</td>
-                            </tr>
-                        </table>
-                    </div>
+                    ${skListsHtml}
                 </td>
             </tr>
         </table>
@@ -3744,18 +3857,7 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
         (projectsMap[key] = projectsMap[key] || []).push(item);
     });
 
-    const resolveDocScore = (i) => {
-        if (!i || !i.metrics) return null;
-        if (i.metrics.documentary !== undefined && i.metrics.documentary !== null) return Number(i.metrics.documentary);
-        if (typeof window.getDocumentaryScore !== 'function' || !i.state || !i.templateKey) return null;
-        const tType = i.templateKey.split('_')[0];
-        const tKey = i.templateKey.replace(tType + '_', '');
-        const cl = tType === 'sys' && _templates().getSystemTemplates()[tKey]
-            ? _templates().getSystemTemplates()[tKey].groups
-            : (_templates().getUserTemplates()[tKey] ? _templates().getUserTemplates()[tKey].groups : []);
-        return window.getDocumentaryScore(i.state, getFlatList(cl));
-    };
-
+    // Рейтинги: окно ≤15 внутри среза; KPI — среднее по подрядчикам (N≥7, иначе fallback).
     const contractorBucketMetrics = (items) => {
         const groupedC = {};
         items.forEach(item => {
@@ -3765,18 +3867,32 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
             (groupedC[cKey] = groupedC[cKey] || []).push(item);
         });
         let sumRel = 0, relN = 0, redContrCount = 0;
+        let sumUrk = 0, urkN = 0, sumDoc = 0, docN = 0;
+        let sumUrkAll = 0, urkAllN = 0, sumDocAll = 0, docAllN = 0;
         for (const cName in groupedC) {
             const m = getContractorMetrics(groupedC[cName], _templates().getUserTemplates());
             if (!m) continue;
+            sumUrkAll += m.baseUrkContrPerc;
+            urkAllN++;
+            if (m.documentaryC != null) { sumDocAll += m.documentaryC; docAllN++; }
             if (m.count >= 7) {
                 sumRel += m.finalC;
                 relN++;
+                sumUrk += m.baseUrkContrPerc;
+                urkN++;
+                if (m.documentaryC != null) { sumDoc += m.documentaryC; docN++; }
                 if (m.finalC < 70) redContrCount++;
             }
         }
         return {
             contrCount: Object.keys(groupedC).length,
             avgReliability: relN > 0 ? Math.round(sumRel / relN) : null,
+            avgUrk: urkN > 0
+                ? Math.round(sumUrk / urkN)
+                : (urkAllN > 0 ? Math.round(sumUrkAll / urkAllN) : 0),
+            avgDoc: docN > 0
+                ? Math.round(sumDoc / docN)
+                : (docAllN > 0 ? Math.round(sumDocAll / docAllN) : null),
             relN,
             redContrCount,
             redContrPerc: relN > 0 ? Math.round((redContrCount / relN) * 100) : null
@@ -3784,55 +3900,30 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
     };
 
     // ── KPI компании (те же 6 плиток, что OP2) ───────────────────────────
-    let sumUrk = 0, sumDoc = 0, cntDoc = 0;
-    data.forEach(i => {
-        sumUrk += Number(i.metrics?.final) || 0;
-        const ds = resolveDocScore(i);
-        if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { sumDoc += ds; cntDoc++; }
-    });
-    const currAvgUrk = Math.round(sumUrk / data.length);
-    const currAvgDoc = cntDoc > 0 ? Math.round(sumDoc / cntDoc) : null;
     const mData = (typeof getObjectIntegralMetrics === 'function'
         ? getObjectIntegralMetrics(data, _templates().getUserTemplates())
         : null) || { IKO: '0.00' };
     const companyContr = contractorBucketMetrics(data);
+    const currAvgUrk = companyContr.avgUrk;
+    const currAvgDoc = companyContr.avgDoc;
 
     const _allInspections = _getAllInspections();
-    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+    const selPeriod = _reportPeriodSel();
     const now = new Date();
-    let prevData = [];
-    let trendLabel = 'к 1-й пол.';
-    if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
-        trendLabel = 'к прош. нед.';
-    } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        prevData = _allInspections.filter(i => { const d = new Date(i.date); return d >= startPrev && d < startCurr; });
-        trendLabel = 'к прош. мес.';
-    } else {
-        const sorted = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-        prevData = sorted.slice(0, Math.floor(sorted.length / 2));
-    }
+    const _prevSlice = _resolvePrevPeriodSlice(_allInspections, data, now);
+    let prevData = _prevSlice.prevData;
+    let trendLabel = _prevSlice.trendLabel;
 
     let prevAvgUrk = 0, prevAvgDoc = null, prevIko = '0.00', prevChecks = prevData.length;
     let prevContrs = 0, prevRel = null, prevRedContrCount = null;
     if (prevData.length > 0) {
-        const pSum = prevData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-        prevAvgUrk = Math.round(pSum / prevData.length);
-        let pSumDoc = 0, pCntDoc = 0;
-        prevData.forEach(i => {
-            const ds = resolveDocScore(i);
-            if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { pSumDoc += ds; pCntDoc++; }
-        });
-        if (pCntDoc > 0) prevAvgDoc = Math.round(pSumDoc / pCntDoc);
-        prevContrs = contractorBucketMetrics(prevData).contrCount;
+        const pC = contractorBucketMetrics(prevData);
+        prevAvgUrk = pC.avgUrk;
+        prevAvgDoc = pC.avgDoc;
+        prevContrs = pC.contrCount;
         const pInt = typeof getObjectIntegralMetrics === 'function'
             ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
         if (pInt) prevIko = pInt.IKO;
-        const pC = contractorBucketMetrics(prevData);
         prevRel = pC.avgReliability;
         prevRedContrCount = pC.relN > 0 ? pC.redContrCount : null;
     }
@@ -3881,18 +3972,12 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
     const TITLE_MIN_CHECKS = 10;
     const projectsArray = Object.keys(projectsMap).map(name => {
         const pData = projectsMap[name];
-        const pSum = pData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-        const avgUrk = pData.length ? Math.round(pSum / pData.length) : 0;
-        let sumDocP = 0, cntDocP = 0;
-        pData.forEach(i => {
-            const ds = resolveDocScore(i);
-            if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { sumDocP += ds; cntDocP++; }
-        });
-        const avgDoc = cntDocP > 0 ? Math.round(sumDocP / cntDocP) : null;
         const pInt = typeof getObjectIntegralMetrics === 'function'
             ? getObjectIntegralMetrics(pData, _templates().getUserTemplates()) : null;
         const IKO = pInt ? pInt.IKO : '0.00';
         const c = contractorBucketMetrics(pData);
+        const avgUrk = c.avgUrk;
+        const avgDoc = c.avgDoc;
         const prevPData = prevProjectsMap[name] || [];
         let prevAvgUrk = null;
         let prevAvgDoc = null;
@@ -3901,18 +3986,12 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
         let prevRedContrCount = null;
         let prevContrCount = null;
         if (prevPData.length > 0) {
-            const ppSum = prevPData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-            prevAvgUrk = Math.round(ppSum / prevPData.length);
-            let ppDoc = 0, ppCnt = 0;
-            prevPData.forEach(i => {
-                const ds = resolveDocScore(i);
-                if (ds !== null && ds !== undefined && !Number.isNaN(ds)) { ppDoc += ds; ppCnt++; }
-            });
-            if (ppCnt > 0) prevAvgDoc = Math.round(ppDoc / ppCnt);
             const ppInt = typeof getObjectIntegralMetrics === 'function'
                 ? getObjectIntegralMetrics(prevPData, _templates().getUserTemplates()) : null;
             if (ppInt) prevIKO = ppInt.IKO;
             const pc = contractorBucketMetrics(prevPData);
+            prevAvgUrk = pc.avgUrk;
+            prevAvgDoc = pc.avgDoc;
             prevRel = pc.avgReliability;
             prevRedContrCount = pc.relN > 0 ? pc.redContrCount : null;
             prevContrCount = pc.contrCount;
@@ -3922,7 +4001,7 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
             ? (parseFloat(IKO) - parseFloat(prevIKO))
             : null;
         const b3Found = pData.reduce((s, i) => s + (Number(i.metrics?.n_B3_fail) || 0), 0);
-        // Подрядчики с низким УрК на объекте (среднее по проверкам < 70, N≥2)
+        // Подрядчики с низким УрК на объекте (окно ≤15, N≥2 в срезе)
         const byContr = {};
         pData.forEach(i => {
             const cn = i.contractorName || i.contractor || 'Неизвестно';
@@ -3932,8 +4011,8 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
         Object.keys(byContr).forEach(cn => {
             const arr = byContr[cn];
             if (arr.length < 2) return;
-            const avg = arr.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0) / arr.length;
-            if (avg < 70) lowUrkContrCount++;
+            const m = getContractorMetrics(arr, _templates().getUserTemplates());
+            if (m && m.baseUrkContrPerc < 70) lowUrkContrCount++;
         });
         return {
             name,
@@ -4008,20 +4087,10 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
     const goodByPerc = (v) => (v >= 80 ? '#16a34a' : (v >= 50 ? '#d97706' : '#dc2626'));
 
     let skTitleRecords = (_getSkRecords() || []).filter(r => !r._deleted && !r.is_deleted);
-    let periodDays = 30;
+    let periodDays = typeof getAnalyticsPeriodDays === 'function' ? (getAnalyticsPeriodDays(selPeriod) || 30) : 30;
     let lastSkLoad = null;
-    if (selPeriod === 'DAY') {
-        periodDays = 1;
-        skTitleRecords = skTitleRecords.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
-    } else if (selPeriod === 'WEEK') {
-        periodDays = 7;
-        const w = new Date(now); w.setDate(now.getDate() - 7);
-        skTitleRecords = skTitleRecords.filter(r => r.date_issued && new Date(r.date_issued) >= w);
-    } else if (selPeriod === 'MONTH') {
-        periodDays = 30;
-        const m = new Date(now); m.setDate(now.getDate() - 30);
-        skTitleRecords = skTitleRecords.filter(r => r.date_issued && new Date(r.date_issued) >= m);
-    } else if (selPeriod === 'CUSTOM') {
+    const periodNormTitle = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+    if (periodNormTitle === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
         const dTo = document.getElementById('filter-date-to')?.value;
         if (dFrom) skTitleRecords = skTitleRecords.filter(r => r.date_issued && new Date(r.date_issued) >= new Date(dFrom));
@@ -4032,9 +4101,10 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
         const fromD = dFrom ? new Date(dFrom) : null;
         const toD = dTo ? new Date(dTo) : null;
         if (fromD && toD) periodDays = Math.max(1, Math.ceil((toD - fromD) / DAY_MS));
-    } else {
-        const dates = skTitleRecords.map(r => r.date_issued && new Date(r.date_issued).getTime()).filter(Boolean);
-        if (dates.length) periodDays = Math.max(1, Math.ceil((Math.max(...dates) - Math.min(...dates)) / DAY_MS) || 1);
+    } else if (typeof getAnalyticsPeriodDays === 'function' && getAnalyticsPeriodDays(selPeriod)) {
+        periodDays = getAnalyticsPeriodDays(selPeriod);
+        const fromTitle = new Date(now); fromTitle.setDate(now.getDate() - periodDays);
+        skTitleRecords = skTitleRecords.filter(r => r.date_issued && new Date(r.date_issued) >= fromTitle);
     }
 
     let skOpen = 0, skOverdue = 0, skOpenOverdue = 0, skClosedLate = 0;
@@ -4099,10 +4169,7 @@ async function exportPdfGlobalOnePagerV2(data, mode = 'script', opts = {}) {
     const lastSkLoadLabel = lastSkLoad
         ? lastSkLoad.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
         : 'не зафиксирована';
-    const skPeriodHint = selPeriod === 'ALL' ? 'весь период'
-        : (selPeriod === 'DAY' ? 'сегодня'
-            : (selPeriod === 'WEEK' ? '7 дней'
-                : (selPeriod === 'MONTH' ? '30 дней' : 'свой период')));
+    const skPeriodHint = _reportPeriodHint(selPeriod);
 
     // Сводка: читаемые однострочные строки (~26px) — до 15 объектов на лист
     const tocRows = projectsForTitle.map((p, idx) => {
@@ -4476,9 +4543,8 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     // ==========================================
     // 1. РАСЧЕТ ГЛОБАЛЬНЫХ МЕТРИК И ТРЕНДОВ
     // ==========================================
-    let globalSumUrk = 0;
-    data.forEach(i => { if (i.metrics) globalSumUrk += Number(i.metrics.final) || 0; });
-    const globalAvgUrk = data.length > 0 ? Math.round(globalSumUrk / data.length) : 0;
+    const globalRatings = _avgContractorRatingsFromChecks(data);
+    const globalAvgUrk = globalRatings.avgUrk;
 
     const globalIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, _templates().getUserTemplates()) : null;
     const globalIKO = globalIntMetrics ? globalIntMetrics.IKO : "0.00";
@@ -4488,36 +4554,19 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
     else if (globalIKO >= 0.3) pdfIkoColorGlobal = "#d97706";
     else pdfIkoColorGlobal = "#16a34a";
 
-    const uniqueContractorsGlobal = new Set(data.map(i => i.contractorName).filter(Boolean)).size;
+    const uniqueContractorsGlobal = globalRatings.contrCount;
 
-    const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
-    let prevData = [];
+    const selPeriod = _reportPeriodSel();
     const now = new Date();
-    let trendLabel = "к 1-й пол. базы";
-
-    if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-        trendLabel = "к прош. нед.";
-    } else if (selPeriod === 'MONTH') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-        trendLabel = "к прош. мес.";
-    } else if (selPeriod === 'CUSTOM') {
-        trendLabel = "к пред. периоду";
-    } else {
-        const half = Math.floor(data.length / 2);
-        const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-        prevData = sortedData.slice(0, half);
-    }
+    const _prevSlice = _resolvePrevPeriodSlice(_allInspections, data, now);
+    let prevData = _prevSlice.prevData;
+    let trendLabel = _prevSlice.trendLabel;
 
     let prevGlobalAvgUrk = 0; let prevGlobalIko = "0.00"; let prevGlobalChecks = prevData.length; let prevGlobalContrs = 0;
     if (prevData.length > 0) {
-        let pSum = 0; prevData.forEach(i => pSum += (i.metrics?.final || 0));
-        prevGlobalAvgUrk = Math.round(pSum / prevData.length);
-        prevGlobalContrs = new Set(prevData.map(i => i.contractorName).filter(Boolean)).size;
+        const pR = _avgContractorRatingsFromChecks(prevData);
+        prevGlobalAvgUrk = pR.avgUrk;
+        prevGlobalContrs = pR.contrCount;
         const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
         if (pInt) prevGlobalIko = pInt.IKO;
     }
@@ -4553,9 +4602,8 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
 
     const projectsArray = Object.keys(projectsMap).map(pName => {
         const pData = projectsMap[pName];
-        let pSumUrk = 0; let redZone = 0;
-        pData.forEach(i => { if (i.metrics) pSumUrk += Number(i.metrics.final) || 0; });
-        const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
+        let redZone = 0;
+        const pAvgUrk = _avgContractorRatingsFromChecks(pData).avgUrk;
         const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, _templates().getUserTemplates()) : null;
         const IKO = pMetrics ? pMetrics.IKO : "0.00";
         if (pMetrics) redZone = pMetrics.redZonePerc;
@@ -4563,8 +4611,7 @@ async function exportPdfGlobalOnePager(data, mode = 'script') {
         const prevPData = prevProjectsMap[pName] || [];
         let pPrevAvgUrk = 0; let pPrevIKO = "0.00";
         if (prevPData.length > 0) {
-            let ppSum = 0; prevPData.forEach(i => ppSum += (i.metrics?.final || 0));
-            pPrevAvgUrk = Math.round(ppSum / prevPData.length);
+            pPrevAvgUrk = _avgContractorRatingsFromChecks(prevPData).avgUrk;
             const ppMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevPData, _templates().getUserTemplates()) : null;
             if (ppMetrics) pPrevIKO = ppMetrics.IKO;
         }
@@ -5100,9 +5147,7 @@ async function buildContractorPassportHtml(opts) {
         + '<div style="background:' + bgMain + ';border:2px solid ' + borderMain + ';border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
         + '<div style="font-size:' + fsLabel + ';color:#64748b;text-transform:uppercase;font-weight:800;margin-bottom:6px;">Надёжность</div>'
         + '<div style="font-size:' + fsNum + ';font-weight:900;color:' + colorMain + ';line-height:1;">' + escapeHtml(String(relLabel)) + '</div>'
-        + (m.count >= 7 && m.ci95_margin != null
-            ? ('<div style="font-size:' + fsLabel + ';color:#64748b;font-weight:700;margin-top:6px;">±' + Number(m.ci95_margin).toFixed(1) + '%</div>')
-            : '')
+        + '<div style="font-size:' + fsLabel + ';color:#64748b;font-weight:700;margin-top:6px;">N ' + m.count + ' (окно ≤15)</div>'
         + '</div></td>'
         + '<td style="width:24%;padding:0;vertical-align:top;">'
         + '<div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:12px 8px;text-align:center;min-height:88px;box-sizing:border-box;">'
@@ -5156,37 +5201,34 @@ async function exportPdfCurrentScreen(data, mode = 'script') {
 
     } else {
         // --- РЕЖИМ 2: СПИСОК ВСЕХ ПОДРЯДЧИКОВ (С ВЕРХНЕЙ СВОДКОЙ) ---
-        let sumUrkProd = 0, sumB1 = 0, sumB2 = 0, sumB3 = 0;
+        let sumB1 = 0, sumB2 = 0, sumB3 = 0;
         data.forEach(i => {
             if (i.metrics) {
-                sumUrkProd += Number(i.metrics.final) || 0;
                 sumB1 += Number(i.metrics.n_B1_fail) || 0;
                 sumB2 += Number(i.metrics.n_B2_fail) || 0;
                 sumB3 += Number(i.metrics.n_B3_fail) || 0;
             }
         });
-        const avgUrkProd = data.length > 0 ? Math.round(sumUrkProd / data.length) : 0;
+        const listRatings = _avgContractorRatingsFromChecks(data);
+        const avgUrkProd = listRatings.avgUrk;
 
         const grouped = {};
         data.forEach(item => {
-            const cKey = `${item.contractorName} [${item.projectName || 'Без объекта'}]`;
+            const cKey = _reportContractorGroupKey(item);
             grouped[cKey] = grouped[cKey] || [];
             grouped[cKey].push(item);
         });
 
         const cList = [];
-        let validContrCount = 0;
-        let sumIntegralUrk = 0;
-
         for (let cName in grouped) {
             const m = getContractorMetrics(grouped[cName], _templates().getUserTemplates());
             if (m) {
                 cList.push({ name: cName, metrics: m, workType: grouped[cName][0].templateTitle });
-                if (m.count >= 7) { sumIntegralUrk += m.finalC; validContrCount++; }
             }
         }
         cList.sort((a, b) => b.metrics.finalC - a.metrics.finalC);
-        const avgIntegralUrk = validContrCount > 0 ? Math.round(sumIntegralUrk / validContrCount) : 0;
+        const validContrCount = listRatings.relN;
+        const avgIntegralUrk = listRatings.avgReliability || 0;
 
         const renderContractorCard = (c) => {
             if (!c) return '';
@@ -5386,39 +5428,16 @@ function _meetingFilterSkRecords(opts) {
     opts = opts || {};
     const DAY_MS = 86400000;
     const now = new Date();
-    let selPeriod = 'MONTH';
-    try {
-        const el = document.getElementById('global-filter-period');
-        if (el && el.value) selPeriod = el.value;
-    } catch (_) { /* ignore */ }
+    const selPeriod = _reportPeriodSel();
 
     let skRecords = (_getSkRecords() || []).filter(function (r) {
         return r && !r._deleted && !r.is_deleted;
     });
 
-    let periodDays = 30;
-    let periodHint = '30 дней';
-    if (selPeriod === 'DAY') {
-        periodDays = 1;
-        periodHint = 'сегодня';
-        skRecords = skRecords.filter(function (r) {
-            return r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString();
-        });
-    } else if (selPeriod === 'WEEK') {
-        periodDays = 7;
-        periodHint = '7 дней';
-        const w = new Date(now); w.setDate(now.getDate() - 7);
-        skRecords = skRecords.filter(function (r) {
-            return r.date_issued && new Date(r.date_issued) >= w;
-        });
-    } else if (selPeriod === 'MONTH') {
-        periodDays = 30;
-        periodHint = '30 дней';
-        const m = new Date(now); m.setDate(now.getDate() - 30);
-        skRecords = skRecords.filter(function (r) {
-            return r.date_issued && new Date(r.date_issued) >= m;
-        });
-    } else if (selPeriod === 'CUSTOM') {
+    let periodDays = typeof getAnalyticsPeriodDays === 'function' ? (getAnalyticsPeriodDays(selPeriod) || 30) : 30;
+    let periodHint = _reportPeriodHint(selPeriod);
+    const periodNormM = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+    if (periodNormM === 'CUSTOM') {
         periodHint = 'свой период';
         let dFrom = null;
         let dTo = null;
@@ -5443,14 +5462,12 @@ function _meetingFilterSkRecords(opts) {
                 return r.date_issued && new Date(r.date_issued) <= tDate;
             });
         }
-    } else {
-        periodHint = 'весь период';
-        const dates = skRecords.map(function (r) {
-            return r.date_issued ? new Date(r.date_issued).getTime() : NaN;
-        }).filter(function (n) { return !Number.isNaN(n); });
-        if (dates.length) {
-            periodDays = Math.max(1, Math.ceil((Math.max.apply(null, dates) - Math.min.apply(null, dates)) / DAY_MS) || 1);
-        }
+    } else if (typeof getAnalyticsPeriodDays === 'function' && getAnalyticsPeriodDays(selPeriod)) {
+        periodDays = getAnalyticsPeriodDays(selPeriod);
+        const fromM = new Date(now); fromM.setDate(now.getDate() - periodDays);
+        skRecords = skRecords.filter(function (r) {
+            return r.date_issued && new Date(r.date_issued) >= fromM;
+        });
     }
 
     let projectNames = opts.projectNames;
@@ -5974,40 +5991,13 @@ function _meetingPanel(title, bodyHtml, borderColor) {
         + bodyHtml + '</div>';
 }
 
-/** Предыдущий период для Δ — та же логика окна, что у One-Pager (WEEK/MONTH/ALL). */
+/** Предыдущий период для Δ — та же логика окна, что у One-Pager. */
 function _meetingPrevPeriod(currData) {
     const all = typeof _getAllInspections === 'function' ? (_getAllInspections() || []) : [];
     const now = new Date();
-    let selPeriod = 'MONTH';
-    try {
-        const el = document.getElementById('global-filter-period');
-        if (el && el.value) selPeriod = el.value;
-    } catch (_) { /* ignore */ }
-    let prevData = [];
-    let trendLabel = 'к прош. мес.';
-    if (selPeriod === 'WEEK') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        prevData = all.filter(function (i) {
-            const d = new Date(i.date);
-            return d >= startPrev && d < startCurr;
-        });
-        trendLabel = 'к прош. нед.';
-    } else if (selPeriod === 'MONTH' || selPeriod === 'DAY') {
-        const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-        const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-        prevData = all.filter(function (i) {
-            const d = new Date(i.date);
-            return d >= startPrev && d < startCurr;
-        });
-        trendLabel = 'к прош. мес.';
-    } else {
-        const sorted = (currData || []).slice().sort(function (a, b) {
-            return new Date(a.date) - new Date(b.date);
-        });
-        prevData = sorted.slice(0, Math.floor(sorted.length / 2));
-        trendLabel = 'к 1-й пол.';
-    }
+    const slice = _resolvePrevPeriodSlice(all, currData, now);
+    let prevData = slice.prevData;
+    let trendLabel = slice.trendLabel;
     const projSet = new Set((currData || []).map(function (i) {
         return _meetingNormName(i.project_display_name || i.projectName || '');
     }).filter(Boolean));
@@ -6022,28 +6012,12 @@ function _meetingPrevPeriod(currData) {
 
 function _meetingAvgUrk(checks) {
     if (!checks || !checks.length) return null;
-    let s = 0;
-    checks.forEach(function (i) { s += Number(i.metrics && i.metrics.final) || 0; });
-    return Math.round(s / checks.length);
+    return _avgContractorRatingsFromChecks(checks).avgUrk;
 }
 
 function _meetingAvgRelFromChecks(checks) {
     if (!checks || !checks.length) return null;
-    const grouped = {};
-    checks.forEach(function (item) {
-        const cKey = String(item.contractorName || '—') + ' [' + (item.projectName || item.project_display_name || 'Без объекта') + ']';
-        if (!grouped[cKey]) grouped[cKey] = [];
-        grouped[cKey].push(item);
-    });
-    let sum = 0;
-    let n = 0;
-    Object.keys(grouped).forEach(function (k) {
-        const m = getContractorMetrics(grouped[k], _templates().getUserTemplates());
-        if (!m) return;
-        sum += m.finalC;
-        n++;
-    });
-    return n > 0 ? Math.round(sum / n) : null;
+    return _avgContractorRatingsFromChecks(checks).avgReliability;
 }
 
 function _meetingDefectFailCounts(checks) {
@@ -6377,7 +6351,7 @@ async function buildContractorMeetingSlides(cObj, mode, opts) {
             + ' × KB3 ' + (m.kcritC != null ? Number(m.kcritC).toFixed(2) : '—')
             + ' → <b style="color:' + _meetingMetricColor(m.finalC) + ';">' + m.finalC + '%</b>'
             + ' · ' + escapeHtml(String(m.reason))
-            + ' · ' + escapeHtml(String(m.confStatus || '')) + ' (N=' + m.count + ')'
+            + ' · N=' + m.count + ' (окно ≤15)'
             + ' · эталон: ' + (cObj.hasEtalon ? 'есть' : 'нет') + '</div>')
         : '';
 
@@ -7459,7 +7433,7 @@ function _promptPosterFormat() {
 /** Период плаката: ALL → 14 дней; иначе фильтр аналитики. prev — такое же окно назад. */
 function _posterResolvePeriod(filteredData) {
     const fmt = (d) => d.toLocaleDateString('ru-RU');
-    const sel = document.getElementById('global-filter-period')?.value || 'ALL';
+    const sel = _reportPeriodSel();
     const now = new Date();
     const projects = (_analyticsFilters().project || []).filter(Boolean);
     const contractors = (_analyticsFilters().contractor || []).filter(Boolean);
@@ -7494,7 +7468,10 @@ function _posterResolvePeriod(filteredData) {
         return { current, previous: [], periodStr: 'Демонстрационный период', windowLabel: 'демо' };
     }
 
-    if (sel === 'CUSTOM') {
+    const days = typeof getAnalyticsPeriodDays === 'function' ? getAnalyticsPeriodDays(sel) : 30;
+    const norm = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(sel) : sel;
+
+    if (norm === 'CUSTOM') {
         const dFrom = document.getElementById('filter-date-from')?.value;
         const dTo = document.getElementById('filter-date-to')?.value;
         from = dFrom ? new Date(dFrom) : null;
@@ -7503,23 +7480,15 @@ function _posterResolvePeriod(filteredData) {
         if (to) to.setHours(23, 59, 59, 999);
         current = (filteredData && filteredData.length) ? filteredData.filter((i) => !i._deleted) : inRange(all, from || new Date(0), to);
         periodStr = `с ${from ? fmt(from) : '…'} по ${to ? fmt(to) : '…'}`;
-        windowMs = (from && to) ? Math.max(86400000, (to - from)) : (14 * 86400000);
-    } else if (sel === 'WEEK' || sel === 'DAY' || sel === 'MONTH') {
-        const days = sel === 'DAY' ? 1 : (sel === 'WEEK' ? 7 : 30);
+        windowMs = (from && to) ? Math.max(86400000, (to - from)) : (30 * 86400000);
+    } else {
+        const d = days || 30;
         from = new Date(to);
-        from.setDate(from.getDate() - (days - 1));
+        from.setDate(from.getDate() - (d - 1));
         from.setHours(0, 0, 0, 0);
         current = (filteredData && filteredData.length) ? filteredData.filter((i) => !i._deleted) : inRange(all, from, to);
-        periodStr = `${fmt(from)} — ${fmt(to)} · ${days} дн.`;
-        windowMs = days * 86400000;
-    } else {
-        // ALL → скользящие 14 дней
-        from = new Date(to);
-        from.setDate(from.getDate() - 13);
-        from.setHours(0, 0, 0, 0);
-        current = inRange(all, from, to);
-        periodStr = `${fmt(from)} — ${fmt(to)} · 14 дн.`;
-        windowMs = 14 * 86400000;
+        periodStr = `${fmt(from)} — ${fmt(to)} · ${d} дн.`;
+        windowMs = d * 86400000;
     }
 
     const prevTo = new Date(from || to);
@@ -7528,7 +7497,7 @@ function _posterResolvePeriod(filteredData) {
     prevFrom.setHours(0, 0, 0, 0);
     const previous = inRange(all, prevFrom, prevTo);
 
-    return { current, previous, periodStr, windowLabel: sel === 'ALL' ? '14 дн.' : sel };
+    return { current, previous, periodStr, windowLabel: days ? (days + ' дн.') : 'custom' };
 }
 
 function _posterFlatItemName(check, itemId) {
@@ -7785,8 +7754,8 @@ async function exportPdfPoster(data, mode = 'script') {
     });
 
     const candidates = [];
-    let globalUrkSum = 0;
     let globalB3Count = 0;
+    const posterKey = (i) => i.contractorName || 'Неизвестно';
 
     for (const cName of Object.keys(grouped)) {
         const cData = grouped[cName];
@@ -7795,7 +7764,6 @@ async function exportPdfPoster(data, mode = 'script') {
         if (!m) continue;
         cData.forEach((check) => {
             if (check.metrics) {
-                globalUrkSum += Number(check.metrics.final) || 0;
                 globalB3Count += Number(check.metrics.n_B3_fail) || 0;
             }
         });
@@ -7828,11 +7796,11 @@ async function exportPdfPoster(data, mode = 'script') {
         return showToast('Защита печати: на плакате нужны фото. За период нет снимков OK/брака.');
     }
 
-    const avgObjectUrk = Math.round(globalUrkSum / weekData.length);
+    // УрК объекта: среднее УрК подрядчиков (каждый — окно ≤15), не среднее всех проверок
+    const avgObjectUrk = _avgContractorRatingsFromChecks(weekData, posterKey).avgUrk;
     let prevAvgUrk = null;
     if (prevData.length) {
-        const pSum = prevData.reduce((s, i) => s + (Number(i.metrics?.final) || 0), 0);
-        prevAvgUrk = Math.round(pSum / prevData.length);
+        prevAvgUrk = _avgContractorRatingsFromChecks(prevData, posterKey).avgUrk;
     }
     const urkDelta = (prevAvgUrk != null) ? (avgObjectUrk - prevAvgUrk) : null;
     const ikoMetrics = typeof getObjectIntegralMetrics === 'function'
@@ -9564,17 +9532,11 @@ export const ReportsActions = {
                 r.source === 'cloud' || r.syncStatus === 'synced' || r.sync_status === 'synced');
         }
 
-        const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+        const selPeriod = _reportPeriodSel();
         const now = new Date();
-        if (selPeriod === 'DAY') {
-            skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString());
-        } else if (selPeriod === 'WEEK') {
-            const w = new Date(now); w.setDate(now.getDate() - 7);
-            skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued) >= w);
-        } else if (selPeriod === 'MONTH') {
-            const m = new Date(now); m.setDate(now.getDate() - 30);
-            skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued) >= m);
-        } else if (selPeriod === 'CUSTOM') {
+        const periodNormPdf = typeof normalizeAnalyticsPeriod === 'function' ? normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+        const periodDaysPdf = typeof getAnalyticsPeriodDays === 'function' ? getAnalyticsPeriodDays(selPeriod) : null;
+        if (periodNormPdf === 'CUSTOM') {
             const dFrom = document.getElementById('filter-date-from')?.value;
             const dTo = document.getElementById('filter-date-to')?.value;
             if (dFrom) skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued) >= new Date(dFrom));
@@ -9582,6 +9544,9 @@ export const ReportsActions = {
                 const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
                 skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued) <= tDate);
             }
+        } else if (periodDaysPdf) {
+            const fromPdf = new Date(now); fromPdf.setDate(now.getDate() - periodDaysPdf);
+            skRecordsList = skRecordsList.filter(r => r.date_issued && new Date(r.date_issued) >= fromPdf);
         }
 
         const f = _analyticsFilters() || {};
@@ -10300,8 +10265,7 @@ export const ReportsActions = {
             const currentData = _allInspections.filter(c => new Date(c.date) >= startOfMonth && new Date(c.date) <= endOfMonth);
             const prevData = _allInspections.filter(c => new Date(c.date) >= prevMonthStart && new Date(c.date) <= prevMonthEnd);
 
-            let sumUrk = 0; currentData.forEach(i => { if (i.metrics) sumUrk += Number(i.metrics.final) || 0; });
-            const currAvgUrk = currentData.length > 0 ? Math.round(sumUrk / currentData.length) : 0;
+            const currAvgUrk = _avgContractorRatingsFromChecks(currentData).avgUrk;
 
             const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(currentData, _templates().getUserTemplates()) : null;
             const IKO = currIntMetrics ? currIntMetrics.IKO : "0.00";
@@ -10787,6 +10751,7 @@ if (typeof window !== 'undefined') {
     // вызыватель (exportPdfPoster) теперь в этом же файле. Группа G6 и весь
     // export.js закрыты этим присвоением целиком.
     window.handleFabExportAction = handleFabExportAction;
+    window.buildOnePagerV2Html = buildOnePagerV2Html;
     window.collectRecurringDefectCards = collectRecurringDefectCards;
     window.openDefectRemediationPreview = openDefectRemediationPreview;
     window.closeDefectRemediationPreview = closeDefectRemediationPreview;

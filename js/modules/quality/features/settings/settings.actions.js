@@ -156,7 +156,7 @@
             assignedContractor: '',
             contractorName: '',
             theme: 'auto', engineerName: '', defaultProject: '', fontSize: 'medium', navPosition: 'auto', swipeEnabled: false,
-            autoCollapseOk: false, defaultGroupsCollapsed: false, fastMode: false,
+            autoCollapseOk: false, autoCollapseFilters: 'auto', uiMotionEnabled: true, hardOverscrollLock: false, defaultGroupsCollapsed: false, fastMode: false,
             soundEnabled: true, autoSave: true, aiEnabled: false, autoCacheCloudFiles: true, pushEnabled: false, storageMode: 'adaptive',
             storageAutoCleanupEnabled: true,
             storageSilentCleanupEnabled: true,

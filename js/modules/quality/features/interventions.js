@@ -773,7 +773,7 @@ window.rbi_renderPracticesTab = async function () {
 
     const titleContainer = listContainer.previousElementSibling;
     if (titleContainer) {
-        titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 z-40";
+        titleContainer.className = "sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mt-2 z-40";
 
         titleContainer.innerHTML = `
             <div class="flex justify-between items-center mb-3 border-b border-[var(--card-border)] pb-2">

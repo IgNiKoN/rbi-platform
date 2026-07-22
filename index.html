@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>RBI Platform</title>
 
     <link rel="manifest" href="./manifest.webmanifest">
@@ -11,7 +11,8 @@
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <!-- black-translucent: шапка с blur заходит под статус-бар; контент ниже через safe-area -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <script src="./libs/tailwindcdn.js"></script>
 
@@ -204,7 +205,7 @@
 
     <!-- === ШАПКА === -->
     <header class="header-fixed" id="main-header">
-        <div class="max-w-4xl mx-auto px-2 md:px-4 py-2" id="header-inner">
+        <div class="max-w-4xl mx-auto px-2 py-2" id="header-inner">
             <!-- СТРОКА 1: Логотип -->
             <div class="header-top-row flex items-center justify-between mb-1.5 header-collapsible">
 
@@ -441,10 +442,10 @@
     </header>
 
     <!-- === ОСНОВНОЙ КОНТЕЙНЕР === -->
-    <main id="app-root" class="max-w-4xl mx-auto px-4 pt-4 pb-20">
+    <main id="app-root" class="max-w-4xl mx-auto px-2 pt-4 pb-20">
         <!-- === БАННЕР ПРЕДУПРЕЖДЕНИЯ ДЛЯ РЕЖИМА СТРОЙКОНТРОЛЬ === -->
         <div id="construction-warning-banner"
-            class="hidden mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-2xl shadow-sm items-start gap-3 mx-1 mt-2">
+            class="hidden mb-4 bg-yellow-50 border border-yellow-200 p-3 rounded-2xl shadow-sm items-start gap-3 mt-2">
             <div class="text-2xl mt-1">🚧</div>
             <div>
                 <div class="text-[11px] font-black text-yellow-800 uppercase tracking-widest mb-0.5">Режим
@@ -714,6 +715,8 @@
     <script type="module" src="js/services/storage/storage-photo-manager.js"></script>
     <script type="module" src="js/services/storage/storage-file-queue.actions.js"></script>
     <script type="module" src="js/services/storage.service.js"></script>
+    <!-- service.locations (Vite/TS бандл) — после storage -->
+    <script type="module" src="js/dist/rbi-locations.js"></script>
     <script type="module" src="js/services/settings.service.js"></script>
     <script type="module" src="js/services/session.service.js"></script>
     <script type="module" src="js/services/inspection.service.js"></script>
@@ -745,9 +748,11 @@
     <script type="module" src="js/shared/pwa-update.utils.js"></script>
     <script type="module" src="js/shared/fab-export.utils.js"></script>
     <script type="module" src="js/shared/layout.utils.js"></script>
+    <script type="module" src="js/shared/sync-ui-defer.utils.js"></script>
     <script type="module" src="js/shared/notify.utils.js"></script>
     <script type="module" src="js/shared/error-log.utils.js"></script>
     <script type="module" src="js/shared/touch-gestures.utils.js"></script>
+    <script type="module" src="js/shared/ui-motion.utils.js"></script>
     <script type="module" src="js/shared/snake-game.utils.js"></script>
     <script type="module" src="js/modules/quality/features/engineer/engineer.module.js"></script>
     <script type="module" src="js/modules/quality/features/schedule/schedule.module.js"></script>

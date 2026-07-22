@@ -17,7 +17,7 @@ function renderReferenceMarkup() {
             <!-- БЛОК ПОДВКЛАДОК СПРАВОЧНИКА (Липкий сверху) -->
             <div id="reference-subtabs-block" class="z-[45] transition-all duration-300 w-full max-w-4xl mx-auto py-2">
                 <div
-                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)] mx-1">
+                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)]">
                     <button data-reference-action="switchReferenceSubTab" data-action-arg="ref-sub-checklists" data-reference-action-arg2-type="element"
                         class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,7 +66,7 @@ function renderReferenceMarkup() {
 
                 <!-- ЕДИНАЯ ЛИПКАЯ ПАНЕЛЬ (Поиск + Управление) -->
                 <div id="ref-filters-block"
-                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2">
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mt-2">
 
                     <!-- СТРОКА 1: Выбор чек-листа (Всегда виден) -->
                     <div
@@ -126,7 +126,7 @@ function renderReferenceMarkup() {
                 </div>
 
                 <!-- СПИСОК ПУНКТОВ -->
-                <div id="reference-items" class="mx-1 mt-2 pb-6">
+                <div id="reference-items" class="mt-2 pb-6">
                     <div
                         class="text-center py-8 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm">
                         <div class="text-3xl mb-2">📖</div>
@@ -137,10 +137,10 @@ function renderReferenceMarkup() {
             </div>
 
             <!-- ПОДВКЛАДКА 2: НОРМАТИВЫ (НД) -->
-            <div id="ref-sub-docs" class="ref-sub-section hidden mx-1">
+            <div id="ref-sub-docs" class="ref-sub-section hidden">
                 <!-- ЛИПКАЯ ПАНЕЛЬ ФИЛЬТРОВ НД (ДОБАВЛЕН ID) -->
                 <div id="ref-docs-filters"
-                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2">
+                    class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mt-2">
                     <div class="flex justify-between items-center mb-2">
                         <div class="relative flex-1 mr-2">
                             <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-4 h-4" fill="none"
@@ -187,11 +187,11 @@ function renderReferenceMarkup() {
             </div>
 
             <!-- ПОДВКЛАДКА 3: TWI КАРТЫ И ТЕХКАРТЫ -->
-            <div id="ref-sub-twi" class="ref-sub-section hidden mx-1 mt-2 relative">
+            <div id="ref-sub-twi" class="ref-sub-section hidden mt-2 relative">
                 <!-- ЭКРАН 1: СПИСОК КАРТ -->
                 <div id="twi-list-view">
                     <div id="twi-filters-block"
-                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mx-1 mt-2">
+                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mt-2">
 
                         <!-- НОВЫЙ БЛОК: Фильтр Мои/Все и Офлайн-загрузка -->
                         <div class="flex justify-between items-center mb-3">
@@ -279,7 +279,7 @@ function renderReferenceMarkup() {
                             </div>
                         </div>
                     </div>
-                    <div id="twi-cards-container" class="pb-8 mx-1"></div>
+                    <div id="twi-cards-container" class="pb-8"></div>
                 </div>
 
                 <!-- ЭКРАН 2: КОНСТРУКТОР TWI -->
@@ -576,11 +576,11 @@ function renderReferenceMarkup() {
             </div>
 
             <!-- ПОДВКЛАДКА 4: ТЕХ. УЗЛЫ И КОНСТРУКТОР -->
-            <div id="ref-sub-nodes" class="ref-sub-section hidden mx-1 mt-2">
+            <div id="ref-sub-nodes" class="ref-sub-section hidden mt-2">
                 <!-- СПИСОК УЗЛОВ -->
                 <div id="nodes-main-view">
                     <div id="node-filters-block"
-                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mx-1 mt-2">
+                        class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md border border-[var(--card-border)] rounded-xl p-3 shadow-sm mb-4 mt-2">
                         <div class="flex justify-between items-center gap-2 mb-2">
                             <div class="relative flex-1">
                                 <span class="absolute left-3 top-2.5 text-slate-400"><svg class="w-5 h-5" fill="none"
@@ -649,7 +649,7 @@ function renderReferenceMarkup() {
                             </div>
                         </div>
                     </div>
-                    <div id="nodes-list-container" class="pb-8 mx-1"></div>
+                    <div id="nodes-list-container" class="pb-8"></div>
                 </div>
 
                 <!-- КОНСТРУКТОР УЗЛОВ (ИСПРАВЛЕНО: fixed inset-0 z-[2000]) -->
@@ -770,7 +770,7 @@ function renderReferenceMarkup() {
             <!-- ПОДВКЛАДКА 5: FAQ И ЛОГИКА РАСЧЕТОВ (ОБНОВЛЕННЫЙ БОЛЬШОЙ FAQ) -->
 
             <!-- ПОДВКЛАДКА 5: ПРАКТИКИ -->
-            <div id="ref-sub-practices" class="ref-sub-section hidden mx-1 mt-2">
+            <div id="ref-sub-practices" class="ref-sub-section hidden mt-2">
                 <div id="practices-auto-detector" class="mb-4"></div>
                 <div class="flex justify-between items-center mb-3">
                     <h2 class="text-[14px] font-black uppercase text-slate-800 dark:text-white tracking-tight">
@@ -1254,47 +1254,102 @@ function switchReferenceSubTab(tabId, btnElement) {
 }
 window.switchReferenceSubTab = switchReferenceSubTab;
 
-// === УМНЫЕ ПРИЛИПАЮЩИЕ ПАНЕЛИ ПОИСКА (История / Справочник) ===
-// Работают как мини-дашборд: сворачиваются при скролле вниз, разворачиваются вверх
+// === СВОРАЧИВАЕМЫЕ ПАНЕЛИ ФИЛЬТРОВ ===
+// Режим: autoCollapseFilters = 'auto' | 'manual' (настройки интерфейса).
+// Авто: свернуть в середине страницы; развернуть у верха и у низа (не по каждому свайпу).
+// Анимация всегда iOS spring (cubic-bezier) — и по клику, и по скроллу.
+// Панели: #analytics-filters-block и #hist-sticky-panel.
 
-function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
-    let lastScrollY = 0;
-    let isCollapsed = false;
+function _isAutoCollapseFiltersEnabled() {
+    try {
+        var v = window.appSettings && window.appSettings.autoCollapseFilters;
+        if (v === false || v === 'manual') return false;
+        return true;
+    } catch (_) {
+        return true;
+    }
+}
 
-    const panel = document.getElementById(panelId);
-    const body = document.getElementById(bodyId);
-    if (!panel || !body) return;
+function _collapsiblePanelIsOnScreen(panel) {
+    if (!panel || !panel.isConnected) return false;
+    var el = panel;
+    while (el) {
+        if (el.classList && el.classList.contains('hidden')) return false;
+        el = el.parentElement;
+    }
+    var st = window.getComputedStyle(panel);
+    if (st.display === 'none' || st.visibility === 'hidden') return false;
+    var r = panel.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
+}
 
-    // Клик по заголовку — принудительный тоггл
-    const header = document.getElementById(headerId);
-    if (header) {
-        header.style.cursor = 'pointer';
-        header.addEventListener('click', () => {
-            isCollapsed = !isCollapsed;
-            applyPanelState(body, isCollapsed);
-            // Убрано принудительное изменение скролла (window.scrollTo),
-            // так как на мобильных устройствах это вызывает "прыжки" экрана.
-            // CSS-свойство transition: max-height справится с этим плавно и естественно.
-        });
+function _truncateFilterLabel(text, maxLen) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (t.length <= maxLen) return t;
+    return t.slice(0, Math.max(1, maxLen - 1)) + '…';
+}
+
+function _isDefaultFilterLabel(text) {
+    const t = String(text || '').trim().toLowerCase();
+    return !t
+        || /^все\b/.test(t)
+        || t === 'поиск...'
+        || t === 'фильтры';
+}
+
+/** Краткая сводка для свёрнутого заголовка — чтобы не разворачивать «вспомнить фильтр». */
+function buildCollapsibleFilterSummary(panelId) {
+    const bits = [];
+    const push = (elOrText, maxLen) => {
+        const raw = typeof elOrText === 'string'
+            ? elOrText
+            : (elOrText && (elOrText.querySelector?.('.truncate')?.textContent || elOrText.textContent)) || '';
+        const label = _truncateFilterLabel(raw, maxLen || 22);
+        if (label && !_isDefaultFilterLabel(label)) bits.push(label);
+    };
+
+    if (panelId === 'analytics-filters-block') {
+        push(document.getElementById('btn-ana-period-label'), 18);
+        push(document.getElementById('btn-ana-project'), 20);
+        push(document.getElementById('btn-ana-contractor'), 18);
+        push(document.getElementById('btn-ana-inspector'), 16);
+        push(document.getElementById('btn-ana-template'), 16);
+        if (!bits.length) {
+            const period = _truncateFilterLabel(
+                document.querySelector('#btn-ana-period-label .truncate')?.textContent || 'За 30 дней',
+                18
+            );
+            if (period) bits.push(period);
+        }
+    } else if (panelId === 'hist-sticky-panel') {
+        const search = document.getElementById('hist-search-text')?.value;
+        if (search && search.trim()) bits.push('«' + _truncateFilterLabel(search, 14) + '»');
+        push(document.getElementById('btn-hist-period-label'), 18);
+        push(document.getElementById('btn-hist-project'), 20);
+        push(document.getElementById('btn-hist-contractor'), 18);
+        push(document.getElementById('btn-hist-inspector'), 16);
+        if (!bits.length) {
+            const period = _truncateFilterLabel(
+                document.querySelector('#btn-hist-period-label .truncate')?.textContent || 'За 30 дней',
+                18
+            );
+            if (period) bits.push(period);
+        }
     }
 
-    // Скролл — только авто-сворачивание вниз. Разворот только по клику
-    // на заголовок: авто-expand при scroll-up давал «фильтр сам открывается
-    // обратно» и усиливал ощущение прыжка экрана на телефоне.
-    window.addEventListener('scroll', () => {
-        const currentY = window.scrollY;
-        if (currentY > lastScrollY + 10 && currentY > 60 && !isCollapsed) {
-            isCollapsed = true;
-            applyPanelState(body, true);
-        }
-        lastScrollY = currentY;
-    }, { passive: true });
+    return bits.slice(0, 3).join(' · ');
+}
+
+function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
+    // Совместимость: тот же ручной режим, что у initCollapsiblePanel.
+    initCollapsiblePanel(panelId, bodyId, headerId, null);
 }
 
 function applyPanelState(bodyEl, collapsed) {
-    // Находим иконку-стрелку (ищем в ближайшем родителе)
     const panel = bodyEl.closest('[id$="-sticky-panel"]') || bodyEl.parentElement;
     const icon = panel?.querySelector('[id$="-panel-toggle-icon"]');
+    const summary = panel?.querySelector('[data-panel-filter-summary]');
 
     if (collapsed) {
         bodyEl.style.maxHeight = '0px';
@@ -1302,61 +1357,111 @@ function applyPanelState(bodyEl, collapsed) {
         bodyEl.style.overflow = 'hidden';
         bodyEl.style.marginBottom = '0';
         if (icon) icon.style.transform = 'rotate(-90deg)';
+        if (summary) {
+            const text = buildCollapsibleFilterSummary(panel?.id || '');
+            summary.textContent = text;
+            summary.classList.toggle('hidden', !text);
+        }
     } else {
         bodyEl.style.maxHeight = '400px';
         bodyEl.style.opacity = '1';
         bodyEl.style.overflow = '';
         bodyEl.style.marginBottom = '';
         if (icon) icon.style.transform = 'rotate(0deg)';
+        if (summary) {
+            summary.textContent = '';
+            summary.classList.add('hidden');
+        }
     }
 }
 
-// === СВОРАЧИВАЕМЫЕ ПАНЕЛИ (УМНАЯ ЛОГИКА БЕЗ ПРЫЖКОВ) ===
 function initCollapsiblePanel(panelId, bodyId, headerId, iconId) {
     const panel = document.getElementById(panelId);
     const body = document.getElementById(bodyId);
     const header = document.getElementById(headerId);
-    const icon = document.getElementById(iconId);
+    const icon = iconId ? document.getElementById(iconId) : panel?.querySelector('[id$="-panel-toggle-icon"]');
     if (!panel || !body) return;
     if (panel.dataset.inited) return;
     panel.dataset.inited = '1';
 
     let collapsed = false;
-    let isAnimating = false; // Блокировка от дребезга
+    let isAnimating = false;
+    const SPRING_TRANSITION =
+        'max-height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), margin-top 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+
+    body.style.transition = SPRING_TRANSITION;
 
     function setCollapsed(val) {
         if (collapsed === val || isAnimating) return;
         collapsed = val;
         isAnimating = true;
 
+        // Пружина и при клике, и при скролле — transition не снимаем.
+        body.style.transition = SPRING_TRANSITION;
         body.style.maxHeight = collapsed ? '0px' : '400px';
         body.style.opacity = collapsed ? '0' : '1';
-        body.style.overflow = collapsed ? 'hidden' : 'visible';
+        body.style.overflow = 'hidden'; // на время анимации, иначе spring «прыгает»
         body.style.marginTop = collapsed ? '0px' : '8px';
-        if (icon) icon.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+        if (icon) {
+            icon.style.transition = 'transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+            icon.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+        }
 
-        setTimeout(() => { isAnimating = false; }, 400); // Ждем конца CSS анимации
+        const summary = panel.querySelector('[data-panel-filter-summary]');
+        if (summary) {
+            if (collapsed) {
+                const text = buildCollapsibleFilterSummary(panelId);
+                summary.textContent = text;
+                summary.classList.toggle('hidden', !text);
+            } else {
+                summary.textContent = '';
+                summary.classList.add('hidden');
+            }
+        }
+
+        setTimeout(function () {
+            if (!collapsed) body.style.overflow = 'visible';
+            isAnimating = false;
+        }, 520);
     }
 
     if (header) {
-        header.addEventListener('click', () => setCollapsed(!collapsed));
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', function (e) {
+            if (e.target.closest('[data-no-panel-toggle], select, input, button, a, label')) return;
+            setCollapsed(!collapsed);
+        });
     }
 
-    window.addEventListener('scroll', () => {
-        // Если панель не на активной вкладке - игнорируем
-        if (!panel.closest('.view-section.active') && !panel.closest('.active')) return;
+    window.addEventListener('scroll', function () {
+        if (!_isAutoCollapseFiltersEnabled()) return;
+        if (!_collapsiblePanelIsOnScreen(panel)) return;
 
-        // Короткая страница — нечего сворачивать
-        if (document.body.scrollHeight <= window.innerHeight + 250) return;
+        const y = window.scrollY || 0;
+        const viewH = window.innerHeight || 0;
+        const docH = Math.max(
+            document.documentElement ? document.documentElement.scrollHeight : 0,
+            document.body ? document.body.scrollHeight : 0
+        );
 
-        const y = window.scrollY;
-        // Только сворачивание при уходе вниз. Разворот — только кликом по
-        // заголовку (порог y < 40 раньше сам раскрывал панель обратно и
-        // на телефоне выглядел как «экран прыгает / фильтр дёргается»).
-        if (y > 100 && !collapsed) setCollapsed(true);
+        if (docH <= viewH + 250) {
+            setCollapsed(false);
+            return;
+        }
+
+        const nearTop = y < 40;
+        const nearBottom = y + viewH >= docH - 140;
+
+        // Середина — свернуть; верх или низ страницы — развернуть (с пружиной).
+        if (nearTop || nearBottom) {
+            if (collapsed) setCollapsed(false);
+        } else if (y > 100 && !collapsed) {
+            setCollapsed(true);
+        }
     }, { passive: true });
 }
 window.initCollapsiblePanel = initCollapsiblePanel;
+window.buildCollapsibleFilterSummary = buildCollapsibleFilterSummary;
 
 // === КОНСТРУКТОР СВОИХ ЧЕК-ЛИСТОВ ===
 let builderGroupCount = 0;
@@ -1926,3 +2031,25 @@ async function handleFileUpload(event) {
     event.target.value = '';
 }
 window.handleFileUpload = handleFileUpload;
+
+// templates:changed → перерисовать вкладку Справочник, если она смонтирована.
+// Патч bindCtx в конце файла (без нового window.*= и без сдвига baseline-строк выше).
+(function patchReferenceTemplatesChanged() {
+    var shared = window.ReferenceShared;
+    if (!shared || typeof shared.bindCtx !== 'function') return;
+    var origBindCtx = shared.bindCtx;
+    var bound = false;
+    shared.bindCtx = function (ctx) {
+        origBindCtx(ctx);
+        if (bound) return;
+        bound = true;
+        var events = (ctx && ctx.events) || (window.RBI && window.RBI.events);
+        if (!events || typeof events.on !== 'function') return;
+        events.on('templates:changed', function () {
+            var mounted = document.getElementById('reference-items')
+                && document.getElementById('ref-checklist-selector');
+            if (!mounted) return;
+            if (typeof renderReferenceTab === 'function') renderReferenceTab();
+        });
+    };
+}());

@@ -143,19 +143,19 @@ export const SKModule = {
         await SKActions.loadData();
 
         // sync:completed — данные в память; full-render только если ПК СК
-        // сейчас не на экране (PLATFORM_TARGET_ARCHITECTURE §5).
+        // не на экране (единый хелпер §5).
         var events = (ctx && ctx.events) || (window.RBI && window.RBI.events);
         if (events && typeof events.on === 'function') {
             var handler = async function () {
                 await SKActions.loadData();
-                if (window.syncDirtyFlags) window.syncDirtyFlags.sk = true;
-                var analyticsTab = document.getElementById('tab-analytics');
-                var skSub = document.getElementById('sub-sk');
-                var skActive = !!(
-                    analyticsTab && analyticsTab.classList.contains('active') &&
-                    skSub && !skSub.classList.contains('hidden')
-                );
-                if (skActive) return;
+                if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
+                    window.RBI.utils.syncUi.markDirty('sk');
+                } else if (window.syncDirtyFlags) {
+                    window.syncDirtyFlags.sk = true;
+                }
+                if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('sk')) {
+                    return;
+                }
                 SKRender.render(SKState.currentSubTab);
                 if (window.syncDirtyFlags) window.syncDirtyFlags.sk = false;
             };

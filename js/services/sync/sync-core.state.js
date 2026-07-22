@@ -9,8 +9,16 @@ window.appAssistantData = []; // Массив базы знаний ИИ
 let syncTimeout = null;
 const syncChannel = new BroadcastChannel('rbi_sync_lock');
 syncChannel.onmessage = (e) => {
-    if (e.data === 'sync_started') window.isSyncing = true;
-    if (e.data === 'sync_done') window.isSyncing = false;
+    if (e.data === 'sync_started') {
+        window.isSyncing = true;
+        if (typeof window.rbiBeginSyncUiDefer === 'function') window.rbiBeginSyncUiDefer();
+        else window._rbiDeferActiveViewFullRender = true;
+    }
+    if (e.data === 'sync_done') {
+        window.isSyncing = false;
+        if (typeof window.rbiEndSyncUiDefer === 'function') window.rbiEndSyncUiDefer(400);
+        else window._rbiDeferActiveViewFullRender = false;
+    }
 };
 // Флаги отложенного обновления интерфейса (Lazy Rendering)
 window.syncDirtyFlags = {
@@ -20,7 +28,8 @@ window.syncDirtyFlags = {
     tasks: false,
     session: false,
     reference: false,
-    sk: false
+    sk: false,
+    construction: false
 };
 // Хэш SHA-256 для пароля ""
 const SYNC_FULL_ACCESS_HASH = "1570722437"

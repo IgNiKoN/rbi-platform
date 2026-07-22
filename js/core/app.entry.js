@@ -20,6 +20,7 @@
         'module.settings',
         'module.knowledge',
         'module.construction',
+        'module.construction-v2',
         'module.game',
         'module.ai',
     ];

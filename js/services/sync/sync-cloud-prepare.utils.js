@@ -28,6 +28,9 @@ function prepareSkRecordForCloud(record, projectCode) {
         contractor_canonical_key: record.contractor_canonical_key || '',
         contractor_normalization_status: record.contractor_normalization_status || 'pending',
         contractor_representative: record.contractor_representative || '',
+        ...(isUuidLike(record.contractorId || record.contractor_id)
+            ? { contractorId: String(record.contractorId || record.contractor_id).trim() }
+            : {}),
 
         deadline: record.deadline || null,
         status_raw: record.status_raw || record.status || '',
@@ -90,6 +93,7 @@ function normalizeCloudSkRecordForLocal(row) {
         contractorName: row.contractor_name || row.contractor_raw || '',
         contractor_name: row.contractor_name || row.contractor_raw || '',
         raw_contractor: row.contractor_raw || '',
+        contractorId: row.contractorId || row.contractor_id || '',
 
         status: row.status_raw || '',
         status_raw: row.status_raw || '',
@@ -263,6 +267,78 @@ function prepareContractorQueueForCloud(item, projectCode) {
     return payload;
 }
 
+// === Платформенная таблица contractors (dual-write с contractor_directory) ===
+function preparePlatformContractorForCloud(item) {
+    if (!item || !isUuidLike(item.id)) return null;
+
+    const displayName = String(item.display_name || item.displayName || '').trim();
+    const canonicalKey = String(item.canonical_key || '').trim();
+    if (!displayName || !canonicalKey) return null;
+
+    const isDeleted = item.is_deleted === true || item._deleted === true;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: item.id,
+        companyId: item.companyId || 'rbi',
+        canonical_key: canonicalKey,
+        displayName: displayName,
+        synonyms: Array.isArray(item.synonyms) ? item.synonyms : [],
+        inn: item.inn || '',
+        legal_name: item.legal_name || '',
+        legal_form: item.legal_form || '',
+        legal_address: item.legal_address || '',
+        contact_person: item.contact_person || '',
+        contact_phone: item.contact_phone || '',
+        contact_email: item.contact_email || '',
+        created_by: item.created_by || window.syncConfig?.engineerName || '',
+        is_deleted: isDeleted,
+        created_at: item.created_at || item.createdAt || nowIso,
+        updated_at: nowIso,
+        version: Number.isFinite(item.version) ? item.version : 1
+    };
+
+    if (item.locationId) {
+        payload.locationId = item.locationId;
+    }
+
+    if (isDeleted) {
+        payload.deleted_at = item.deleted_at || nowIso;
+    }
+
+    return payload;
+}
+
+// === Платформенная таблица contracts ===
+function prepareContractForCloud(item) {
+    if (!item || !isUuidLike(item.id)) return null;
+
+    const contractorId = String(item.contractorId || item.contractor_id || '').trim();
+    if (!isUuidLike(contractorId)) return null;
+
+    const isDeleted = item.is_deleted === true || item._deleted === true;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: item.id,
+        companyId: item.companyId || 'rbi',
+        contractorId: contractorId,
+        contract_number: item.contract_number || '',
+        contract_date: item.contract_date || null,
+        work_type: item.work_type || '',
+        status: item.status || '',
+        created_by: item.created_by || window.syncConfig?.engineerName || '',
+        is_deleted: isDeleted,
+        created_at: item.created_at || item.createdAt || nowIso,
+        updated_at: nowIso,
+        version: Number.isFinite(item.version) ? item.version : 1
+    };
+
+    if (isDeleted) {
+        payload.deleted_at = item.deleted_at || nowIso;
+    }
+
+    return payload;
+}
+
 window.prepareSkRecordForCloud = prepareSkRecordForCloud;
 window.normalizeCloudSkRecordForLocal = normalizeCloudSkRecordForLocal;
 window.isSkRecordDirtyForPush = isSkRecordDirtyForPush;
@@ -270,3 +346,56 @@ window.prepareSkImportBatchForCloud = prepareSkImportBatchForCloud;
 window.prepareContractorForCloud = prepareContractorForCloud;
 window.prepareContractorAliasForCloud = prepareContractorAliasForCloud;
 window.prepareContractorQueueForCloud = prepareContractorQueueForCloud;
+window.preparePlatformContractorForCloud = preparePlatformContractorForCloud;
+window.prepareContractForCloud = prepareContractForCloud;
+
+// === Платформенная иерархия location_nodes + construction_floors_v2 ===
+function prepareLocationNodeForCloud(item) {
+    if (!item || !item.id) return null;
+    const isDeleted = item.is_deleted === true || item._deleted === true;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: item.id,
+        companyId: item.companyId || 'rbi',
+        nodeType: item.nodeType || item.node_type || null,
+        parentId: item.parentId === undefined ? (item.parent_id ?? null) : item.parentId,
+        displayName: item.displayName || item.display_name || '',
+        canonical_key: item.canonical_key || null,
+        sort_order: Number.isFinite(item.sort_order) ? item.sort_order : 0,
+        synonyms: item.synonyms != null ? item.synonyms : [],
+        created_by: item.created_by || window.syncConfig?.engineerName || '',
+        is_deleted: isDeleted,
+        created_at: item.created_at || item.createdAt || nowIso,
+        updated_at: nowIso,
+        version: Number.isFinite(item.version) ? item.version : 1
+    };
+    if (isDeleted) payload.deleted_at = item.deleted_at || nowIso;
+    return payload;
+}
+
+function prepareFloorPlanForCloud(item) {
+    if (!item || !item.id || !item.locationId) return null;
+    const isDeleted = item.is_deleted === true || item._deleted === true;
+    const nowIso = new Date().toISOString();
+    const payload = {
+        id: item.id,
+        companyId: item.companyId || 'rbi',
+        locationId: item.locationId,
+        name: item.name || '',
+        sort_order: Number.isFinite(item.sort_order) ? item.sort_order : 0,
+        pdf_url: item.pdf_url || '',
+        pdf_name: item.pdf_name || '',
+        pdf_size: item.pdf_size || '',
+        is_active: item.is_active !== false,
+        created_by: item.created_by || window.syncConfig?.engineerName || '',
+        is_deleted: isDeleted,
+        created_at: item.created_at || item.createdAt || nowIso,
+        updated_at: nowIso,
+        version: Number.isFinite(item.version) ? item.version : 1
+    };
+    if (isDeleted) payload.deleted_at = item.deleted_at || nowIso;
+    return payload;
+}
+
+window.prepareLocationNodeForCloud = prepareLocationNodeForCloud;
+window.prepareFloorPlanForCloud = prepareFloorPlanForCloud;

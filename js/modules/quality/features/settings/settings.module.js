@@ -43,6 +43,9 @@ import {
     startDemoMode,
     exitDemoMode
 } from './features/app-mode-utils.js';
+import { mountContractorDirectoryUI, ContractorDirectoryUI } from './features/contractor-directory-ui.js';
+import { mountLocationDirectoryUI, LocationDirectoryUI } from './features/location-directory-ui.js';
+import { mountContractorIdBackfillUI, ContractorIdBackfillUI } from './features/contractor-id-backfill-ui.js';
 
 // Публикация имён 3 features-файлов на window.* — единственная точка модуля settings,
 // имеющая право на это (см. _ai/ARCHITECTURE_BRIEF.md, «Публичная граница модуля»).
@@ -159,6 +162,11 @@ export const SettingsModule = {
 
     _renderRequestedUnsubscribe: null,
     _settingsChangedBound: false,
+    _contractorsChangedBound: false,
+    _locationsChangedBound: false,
+    ContractorDirectoryUI,
+    LocationDirectoryUI,
+    ContractorIdBackfillUI,
 
     /**
      * Инициализация: подписка на события платформы.
@@ -181,6 +189,21 @@ export const SettingsModule = {
         const settingsSvc = ctx.settings;
         if (settingsSvc && typeof settingsSvc.load === 'function') {
             await settingsSvc.load();
+        }
+
+        // Справочник подрядчиков: перерисовка при изменении через сервис
+        if (ctx && ctx.events && typeof ctx.events.on === 'function' && !SettingsModule._contractorsChangedBound) {
+            SettingsModule._contractorsChangedBound = true;
+            ctx.events.on('contractors:changed', () => {
+                mountContractorDirectoryUI().catch(() => {});
+            });
+        }
+
+        if (ctx && ctx.events && typeof ctx.events.on === 'function' && !SettingsModule._locationsChangedBound) {
+            SettingsModule._locationsChangedBound = true;
+            ctx.events.on('locations:changed', () => {
+                mountLocationDirectoryUI().catch(() => {});
+            });
         }
 
         // settings:changed нужен на всё приложение (тема с любой вкладки) —

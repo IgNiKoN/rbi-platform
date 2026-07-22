@@ -130,6 +130,13 @@ window.AppViews = {
     },
 
     renderAnalytics() {
+        // Re-entry во время sync на уже открытой Аналитике → только dirty (§5).
+        if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('analytics')) {
+            if (window.RBI?.utils?.syncUi?.markDirty) window.RBI.utils.syncUi.markDirty('analytics');
+            else if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = true;
+            return;
+        }
+
         if (AppModeManager.currentMode !== 'quality') AppModeManager.changeMode('quality');
         switchViewNode('tab-analytics', false); // Шапка скрыта
         if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
@@ -164,12 +171,23 @@ window.AppViews = {
             if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
         }
 
+        // Были ли данные уже в памяти на входе — если да, retry не должен
+        // второй раз full-render'ить (схлопывает аккордеоны при параллельном sync).
+        var _hadDataOnOpen = false;
+        try {
+            var _inspections0 = window.RBI && window.RBI.services && window.RBI.services.inspections
+                ? window.RBI.services.inspections.getAllForAnalyticsSync()
+                : [];
+            _hadDataOnOpen = Array.isArray(_inspections0) && _inspections0.length > 0;
+        } catch (_) { _hadDataOnOpen = false; }
+
         // Первый рендер сразу (данные могут уже быть, если переключаем вкладки)
         _doRender();
 
         // Страховочный повторный рендер после загрузки данных из IndexedDB.
         // При F5 app.js заполняет contractorArray асинхронно (await restoreSession).
         // Опрашиваем каждые 200 мс, пока данные не появятся или не истечёт 5 сек.
+        // Повторный _doRender — ТОЛЬКО если на входе данных ещё не было.
         var _retryCount = 0;
         var _retryMax = 25; // 25 × 200 мс = 5 сек максимум
         var _retryTimer = setInterval(function () {
@@ -180,12 +198,13 @@ window.AppViews = {
                 clearInterval(_retryTimer);
                 return;
             }
-            // Данные появились — рендерим и останавливаем опрос
             var _inspections = window.RBI.services.inspections.getAllForAnalyticsSync();
             if (_inspections.length > 0) {
                 clearInterval(_retryTimer);
-                if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
-                _doRender();
+                if (!_hadDataOnOpen) {
+                    if (typeof updateAnalyticsFilters === 'function') updateAnalyticsFilters();
+                    _doRender();
+                }
                 return;
             }
             // Превысили таймаут — останавливаем

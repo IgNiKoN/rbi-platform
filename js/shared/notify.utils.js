@@ -35,8 +35,23 @@ function showToast(message) {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
+    const kind = typeof window.rbiClassifyToastMessage === 'function'
+        ? window.rbiClassifyToastMessage(message)
+        : '';
+    if (kind === 'ok') toast.classList.add('toast-ok');
+    if (kind === 'err') toast.classList.add('toast-err');
     toast.innerText = message;
     container.appendChild(toast);
+
+    // Лёгкий flash рядом со статусом синка / шапкой при ok/err
+    if (kind && typeof window.rbiFlashFeedback === 'function') {
+        const flashTarget =
+            document.getElementById('analytics-status-icon-container') ||
+            document.getElementById('sync-status-icon') ||
+            document.querySelector('.header-fixed');
+        if (flashTarget) window.rbiFlashFeedback(flashTarget, kind === 'err' ? 'error' : 'ok');
+    }
+
     setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3000);
 }
 

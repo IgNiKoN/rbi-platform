@@ -15,6 +15,7 @@ import { SKManifest }           from './quality/features/sk/sk.manifest.js';
 import { SettingsManifest }     from './quality/features/settings/settings.manifest.js';
 import { KnowledgeManifest }    from './quality/features/knowledge/knowledge.manifest.js';
 import { ConstructionManifest } from './construction/construction.manifest.js';
+import { ConstructionV2Manifest } from './construction-v2/construction-v2.manifest.js';
 import { GameManifest }         from './quality/features/gamification/game.manifest.js';
 import { AIManifest }           from './quality/features/ai/ai.manifest.js';
 
@@ -24,6 +25,7 @@ export const ModulesManifest = [
     SettingsManifest,
     KnowledgeManifest,
     ConstructionManifest,
+    ConstructionV2Manifest,
     GameManifest,
     AIManifest
 ];

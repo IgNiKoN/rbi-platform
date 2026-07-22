@@ -132,7 +132,7 @@ window.ConstAcceptance = {
         }
 
         if (baseReqs.length === 0) {
-            container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm mt-4 mx-1">Заявок пока нет</div>`;
+            container.innerHTML = `<div class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-[var(--card-bg)] rounded-xl border border-dashed border-[var(--card-border)] shadow-sm mt-4">Заявок пока нет</div>`;
             return;
         }
 
@@ -409,6 +409,16 @@ window.ConstAcceptance = {
         const bld = window.ConstManager.buildings.find(b => b.id === bldId);
         const loc = [bld?.name, `Этаж ${floor?.name}`, rm].filter(Boolean).join(', ');
 
+        const contractorName = window.syncConfig?.engineerName || 'Подрядчик';
+        let contractorId = '';
+        const contractorsSvc = window.RBI?.services?.contractors || window.ContractorDirectory;
+        if (contractorsSvc && typeof contractorsSvc.resolveIdFromNormalized === 'function') {
+            contractorId = contractorsSvc.resolveIdFromNormalized({
+                display_name: contractorName,
+                contractor_name: contractorName
+            }) || '';
+        }
+
         const newReq = {
             id: 'acc_' + Date.now().toString(36),
             objectId: objId,
@@ -423,7 +433,8 @@ window.ConstAcceptance = {
             volume: vol,
             requestedDate: dateStr,
             requestedTime: timeStr,
-            contractor: window.syncConfig?.engineerName || 'Подрядчик',
+            contractor: contractorName,
+            contractorId: contractorId,
             status: 'pending',
             created_at: new Date().toISOString(),
             _deleted: false

@@ -407,7 +407,7 @@
         } else {
             contentUiHtml = `
                 <div class="p-3 min-[400px]:p-4">
-                    <div class="text-[12px] font-bold mb-4 leading-relaxed" style="color: ${mainColor};">${emoji} Качество работ подрядчика "${contractorName}" по виду "${templateTitle}" оценивается как ${qualText} (${c.finalC}%). Погрешность: ±${c.ci95_margin.toFixed(1)}%.</div>
+                    <div class="text-[12px] font-bold mb-4 leading-relaxed" style="color: ${mainColor};">${emoji} Качество работ подрядчика "${contractorName}" по виду "${templateTitle}" оценивается как ${qualText} (${c.finalC}%).</div>
                     ${b3Text ? `<div class="border border-red-200 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg mb-3 text-red-800 dark:text-red-400 text-[11px] font-bold leading-snug shadow-sm">${b3Text}</div>` : ''}
                     <div class="border border-[var(--card-border)] bg-[var(--hover-bg)] p-3 rounded-lg mb-3 shadow-sm">
                         <div class="text-[10px] font-black text-slate-500 uppercase mb-2">🔍 Выявленные проблемы</div>
@@ -427,7 +427,7 @@
             pdfHtml = `
                 <div style="margin-top: 20px; margin-bottom: 25px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; padding: 15px; page-break-inside: avoid;">
                     <h3 style="margin-top: 0; font-size: 14px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px;">🧠 ЭКСПЕРТНОЕ ЗАКЛЮЧЕНИЕ ИИ</h3>
-                    <div style="font-size: 13px; font-weight: bold; margin-bottom: 15px; line-height: 1.4; color: ${mainColor};">${emoji} Качество работ подрядчика "${contractorName}" оценивается как ${qualText} (${c.finalC}%). Доверительный интервал: ±${c.ci95_margin.toFixed(1)}%.</div>
+                    <div style="font-size: 13px; font-weight: bold; margin-bottom: 15px; line-height: 1.4; color: ${mainColor};">${emoji} Качество работ подрядчика "${contractorName}" оценивается как ${qualText} (${c.finalC}%).</div>
                     ${b3Text ? `<div style="border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 10px;">${b3Text}</div>` : ''}
                     <div style="border: 1px solid #e2e8f0; background: white; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
                         <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 5px;">🔍 Выявленные проблемы</div>
@@ -604,6 +604,40 @@
         return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     }
 
+    // Фильтр периода аналитики: D7/D14/D30/D90/D180/ALL/CUSTOM (+ алиасы WEEK/MONTH/DAY).
+    var ANALYTICS_PERIOD_DAYS = { D7: 7, D14: 14, D30: 30, D90: 90, D180: 180 };
+    function normalizeAnalyticsPeriod(sel) {
+        var s = sel || 'D30';
+        if (s === 'WEEK' || s === 'DAY') return 'D7';
+        if (s === 'MONTH') return 'D30';
+        if (s === 'ALL' || s === 'CUSTOM' || ANALYTICS_PERIOD_DAYS[s]) return s;
+        return 'D30';
+    }
+    /** Число дней окна; ALL/CUSTOM → null (без отсечения по дате / свой диапазон). */
+    function getAnalyticsPeriodDays(sel) {
+        var n = normalizeAnalyticsPeriod(sel);
+        return ANALYTICS_PERIOD_DAYS[n] || null;
+    }
+    /** Границы текущего и предыдущего скользящего окна (для Δ). ALL/CUSTOM → null. */
+    function getAnalyticsPrevPeriodBounds(sel, now) {
+        var days = getAnalyticsPeriodDays(sel);
+        if (!days) return null;
+        var endCurr = now ? new Date(now) : new Date();
+        var startCurr = new Date(endCurr);
+        startCurr.setDate(endCurr.getDate() - days);
+        var startPrev = new Date(startCurr);
+        startPrev.setDate(startCurr.getDate() - days);
+        return {
+            days: days,
+            startCurr: startCurr,
+            endCurr: endCurr,
+            startPrev: startPrev,
+            endPrev: startCurr,
+            trendLabel: 'к прош. ' + days + ' дн.',
+            hint: days + ' дней'
+        };
+    }
+
     /* Публикация в window.* — обратная совместимость для потребителей вне RBI.utils.math */
     window.getProductMetrics = getProductMetrics;
     window.getContractorMetrics = getContractorMetrics;
@@ -614,6 +648,9 @@
     window.getProductAggregated = getProductAggregated;
     window.getStageMetrics = getStageMetrics;
     window.getWeekNumber = getWeekNumber;
+    window.normalizeAnalyticsPeriod = normalizeAnalyticsPeriod;
+    window.getAnalyticsPeriodDays = getAnalyticsPeriodDays;
+    window.getAnalyticsPrevPeriodBounds = getAnalyticsPrevPeriodBounds;
 
     window.RBI.utils.math = {
         getProductMetrics: getProductMetrics,
@@ -624,6 +661,9 @@
         getExpertConclusion: getExpertConclusion,
         getProductAggregated: getProductAggregated,
         getStageMetrics: getStageMetrics,
+        normalizeAnalyticsPeriod: normalizeAnalyticsPeriod,
+        getAnalyticsPeriodDays: getAnalyticsPeriodDays,
+        getAnalyticsPrevPeriodBounds: getAnalyticsPrevPeriodBounds,
         clearCache: function () { window.clearMetricsCache(); }
     };
 

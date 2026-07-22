@@ -704,6 +704,15 @@ window.ConstDefectForm = {
         const existingIndex = window.ConstManager.defects.findIndex(d => d.id === id);
         const prevDefect = existingIndex !== -1 ? window.ConstManager.defects[existingIndex] : null;
 
+        let contractorId = '';
+        const contractorsSvc = window.RBI?.services?.contractors || window.ContractorDirectory;
+        if (contractorsSvc && typeof contractorsSvc.resolveIdFromNormalized === 'function') {
+            contractorId = contractorsSvc.resolveIdFromNormalized({
+                display_name: contractor,
+                contractor_name: contractor
+            }) || '';
+        }
+
         const defectData = {
             id: id,
             floorId: floorId,
@@ -717,6 +726,7 @@ window.ConstDefectForm = {
             category: category,
             deadline: deadline,
             contractor: contractor,
+            contractorId: contractorId,
             description: description,
             photo: photo,
             status: prevDefect?.status || 'issued',

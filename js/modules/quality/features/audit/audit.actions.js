@@ -575,7 +575,8 @@
           contractor_raw_name: contrInput.value.trim(),
           contractor_name: contrInput.value.trim(),
           contractor_canonical_key: '',
-          contractor_normalization_status: 'pending'
+          contractor_normalization_status: 'pending',
+          contractorId: ''
         };
 
       var _appMode = (AuditActions._ctx && AuditActions._ctx.appMode)
@@ -601,6 +602,7 @@
         contractor_raw_name: contractorNormalized.contractor_raw_name || contrInput.value.trim(),
         contractor_canonical_key: contractorNormalized.contractor_canonical_key || '',
         contractor_normalization_status: contractorNormalized.contractor_normalization_status || 'pending',
+        contractorId: contractorNormalized.contractorId || '',
         templateKey: AuditState.currentTemplateKey,
         templateTitle: tTitle,
         section: secInput.value.trim(),
@@ -677,6 +679,7 @@
               category: category,
               deadline: defaultDeadline,
               contractor: contractorNormalized.contractor_name || contrInput.value.trim(),
+              contractorId: contractorNormalized.contractorId || '',
               description: desc,
               photo: defectPhoto,
               status: 'issued',

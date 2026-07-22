@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.223';
+const SW_VERSION = '18.57.255';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -64,6 +64,7 @@ const urlsToCache = [
   './js/shared/pwa-update.utils.js',
   './js/shared/fab-export.utils.js',
   './js/shared/layout.utils.js',
+  './js/shared/sync-ui-defer.utils.js',
   './js/shared/notify.utils.js',
   './js/shared/error-log.utils.js',
   './js/shared/touch-gestures.utils.js',
@@ -116,7 +117,14 @@ const urlsToCache = [
   './js/modules/quality/features/settings/features/app-mode-utils.js',
   './js/modules/quality/features/settings/features/changelog.js',
   './js/modules/quality/features/settings/features/feedback.js',
+  './js/modules/quality/features/settings/features/contractor-directory-ui.js',
+  './js/modules/quality/features/settings/features/contractor-id-backfill-ui.js',
+  './js/modules/quality/features/settings/features/location-directory-ui.js',
   './js/modules/quality/features/settings/index.js',
+  './js/dist/rbi-locations.js',
+  './js/dist/construction-v2.js',
+  './js/modules/construction-v2/construction-v2.manifest.js',
+  './js/modules/construction-v2/index.js',
 
   // Фаза 9 — Knowledge Module
   './js/modules/quality/features/knowledge/knowledge.manifest.js',
@@ -174,6 +182,7 @@ const urlsToCache = [
   './js/modules/quality/features/reports/reports.state.js',
   './js/modules/quality/features/reports/reports.actions.js',
   './js/modules/quality/features/reports/reports.render.js',
+  './js/modules/quality/features/reports/report-preview.js',
 
   // Фаза 17 — Game Module
   './js/modules/quality/features/gamification/game.module.js',

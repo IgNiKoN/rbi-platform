@@ -364,21 +364,18 @@ function sk_renderDashboard() {
         activeRecords = activeRecords.filter(function (r) { return r.source === 'cloud' || r.syncStatus === 'synced' || r.sync_status === 'synced'; });
     }
 
-    var selPeriod = document.getElementById('global-filter-period') && document.getElementById('global-filter-period').value || 'ALL';
+    var selPeriod = document.getElementById('global-filter-period') && document.getElementById('global-filter-period').value || 'D30';
     var now = new Date();
-    if (selPeriod === 'DAY') {
-        activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString(); });
-    } else if (selPeriod === 'WEEK') {
-        var w = new Date(); w.setDate(now.getDate() - 7);
-        activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= w; });
-    } else if (selPeriod === 'MONTH') {
-        var m = new Date(); m.setDate(now.getDate() - 30);
-        activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= m; });
-    } else if (selPeriod === 'CUSTOM') {
+    var periodNorm = typeof window.normalizeAnalyticsPeriod === 'function' ? window.normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+    var periodDays = typeof window.getAnalyticsPeriodDays === 'function' ? window.getAnalyticsPeriodDays(selPeriod) : null;
+    if (periodNorm === 'CUSTOM') {
         var dFrom = document.getElementById('filter-date-from') && document.getElementById('filter-date-from').value;
         var dTo = document.getElementById('filter-date-to') && document.getElementById('filter-date-to').value;
         if (dFrom) activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= new Date(dFrom); });
         if (dTo) { var tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999); activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) <= tDate; }); }
+    } else if (periodDays) {
+        var fromP = new Date(now); fromP.setDate(now.getDate() - periodDays);
+        activeRecords = activeRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= fromP; });
     }
 
     if (_analyticsFilters().project.length > 0) {
@@ -881,29 +878,22 @@ function sk_renderHrTab() {
         baseRecords = baseRecords.filter(function (r) { return fTmpl.includes((r.category || '').toLowerCase()); });
     }
 
-    var selPeriod = document.getElementById('global-filter-period') && document.getElementById('global-filter-period').value || 'ALL';
+    var selPeriod = document.getElementById('global-filter-period') && document.getElementById('global-filter-period').value || 'D30';
     var currentRecords = baseRecords, prevRecords = [];
     var now = new Date();
-    if (selPeriod === 'DAY') {
-        currentRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued).toDateString() === now.toDateString(); });
-        var prevDay = new Date(now); prevDay.setDate(now.getDate() - 1);
-        prevRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued).toDateString() === prevDay.toDateString(); });
-    } else if (selPeriod === 'WEEK') {
-        var startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-        var startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-        currentRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= startCurr; });
-        prevRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= startPrev && new Date(r.date_issued) < startCurr; });
-    } else if (selPeriod === 'MONTH') {
-        var startCurr2 = new Date(now); startCurr2.setDate(now.getDate() - 30);
-        var startPrev2 = new Date(startCurr2); startPrev2.setDate(startCurr2.getDate() - 30);
-        currentRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= startCurr2; });
-        prevRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= startPrev2 && new Date(r.date_issued) < startCurr2; });
-    } else if (selPeriod === 'CUSTOM') {
+    var periodNorm2 = typeof window.normalizeAnalyticsPeriod === 'function' ? window.normalizeAnalyticsPeriod(selPeriod) : selPeriod;
+    var bounds = typeof window.getAnalyticsPrevPeriodBounds === 'function' ? window.getAnalyticsPrevPeriodBounds(selPeriod, now) : null;
+    if (periodNorm2 === 'CUSTOM') {
         var dFrom = document.getElementById('filter-date-from') && document.getElementById('filter-date-from').value;
         var dTo = document.getElementById('filter-date-to') && document.getElementById('filter-date-to').value;
         currentRecords = baseRecords;
         if (dFrom) currentRecords = currentRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= new Date(dFrom); });
         if (dTo) { var tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999); currentRecords = currentRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) <= tDate; }); }
+    } else if (bounds) {
+        currentRecords = baseRecords.filter(function (r) { return r.date_issued && new Date(r.date_issued) >= bounds.startCurr; });
+        prevRecords = baseRecords.filter(function (r) {
+            return r.date_issued && new Date(r.date_issued) >= bounds.startPrev && new Date(r.date_issued) < bounds.endPrev;
+        });
     } else {
         currentRecords = baseRecords;
     }

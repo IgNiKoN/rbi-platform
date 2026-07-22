@@ -150,6 +150,12 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
         };
+        {
+            const cid = String(data.contractorId || data.contractor_id || '').trim();
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cid)) {
+                payload.contractorId = cid;
+            }
+        }
     } else if (objectType === 'const_acceptance') {
         payload = {
             id: id,
@@ -172,6 +178,12 @@ window.pushCloudObject = async function (objectType, id, data, bucketName = 'cus
             created_at: data.created_at || new Date().toISOString(),
             updated_at: updatedAt
         };
+        {
+            const cid = String(data.contractorId || data.contractor_id || '').trim();
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cid)) {
+                payload.contractorId = cid;
+            }
+        }
     } else if (objectType === 'const_unit') {
         payload = {
             id: id,

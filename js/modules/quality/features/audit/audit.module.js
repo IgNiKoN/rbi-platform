@@ -178,4 +178,28 @@ if (window.RBI && window.RBI.registry) {
 }
 
 window.AuditModule = AuditModule;
+
+// templates:changed → обновить селектор чек-листов (без full-render аудита).
+// Подписка на верхнем уровне (как bootstrap:selectorReady): событие может прийти
+// до/после AuditModule.init(); ctx не требуется.
+(function bindAuditTemplatesChanged() {
+  function onTemplatesChanged() {
+    if (window.AuditRender && typeof window.AuditRender.renderSelector === 'function') {
+      window.AuditRender.renderSelector();
+      return;
+    }
+    var fn = window['renderSelector'];
+    if (typeof fn === 'function') fn();
+  }
+  function tryBind() {
+    var events = window.RBI && window.RBI.events;
+    if (!events || typeof events.on !== 'function') return false;
+    events.on('templates:changed', onTemplatesChanged);
+    return true;
+  }
+  if (!tryBind()) {
+    document.addEventListener('rbi:ready', function () { tryBind(); }, { once: true });
+  }
+}());
+
 export default AuditModule;

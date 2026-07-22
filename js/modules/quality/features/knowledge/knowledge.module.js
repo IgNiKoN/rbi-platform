@@ -2333,7 +2333,7 @@ window.renderTwiList = function () {
         for (var checklistName in grouped) {
             html += `
         <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
-            <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+            <summary class="py-2.5 px-2 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none rounded-lg hover:bg-[var(--hover-bg)] transition-colors active:opacity-70">
                 <span class="truncate pr-4">${checklistName} <span class="text-[10px] text-slate-400 ml-1">(${grouped[checklistName].length})</span></span>
                 <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
@@ -2895,7 +2895,7 @@ window.renderDocsList = function () {
     Object.keys(grouped).sort().forEach(function (type) {
         html += `
     <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
-        <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+        <summary class="py-2.5 px-2 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none rounded-lg hover:bg-[var(--hover-bg)] transition-colors active:opacity-70">
             <span class="truncate pr-4">${type} <span class="text-[10px] text-slate-400 ml-1">(${grouped[type].length})</span></span>
             <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
@@ -3577,7 +3577,7 @@ window.renderNodesList = function () {
     for (var cat in grouped) {
         html += `
     <details class="mb-4 bg-transparent group [&_summary::-webkit-details-marker]:hidden">
-        <summary class="py-3 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none active:opacity-70 transition-opacity">
+        <summary class="py-2.5 px-2 font-black text-slate-800 dark:text-white text-[12px] uppercase tracking-wider mb-1 border-b border-slate-200 dark:border-slate-700 cursor-pointer flex justify-between items-center select-none rounded-lg hover:bg-[var(--hover-bg)] transition-colors active:opacity-70">
             <span class="truncate pr-4">${cat} <span class="text-[10px] text-slate-400 ml-1">(${grouped[cat].length})</span></span>
             <span class="text-slate-400 shrink-0 transition-transform duration-300 group-open:rotate-180">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>

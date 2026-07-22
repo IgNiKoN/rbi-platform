@@ -18,9 +18,10 @@ var MODULE_BASE_URLS = {
     'sk':           './js/modules/quality/features/sk/',
     'settings':     './js/modules/quality/features/settings/',
     'knowledge':    './js/modules/quality/features/knowledge/',
-    'construction': './js/modules/construction/',
-    'game':         './js/modules/quality/features/gamification/',
-    'ai':           './js/modules/quality/features/ai/'
+    'construction':    './js/modules/construction/',
+    'construction-v2': './js/modules/construction-v2/',
+    'game':            './js/modules/quality/features/gamification/',
+    'ai':              './js/modules/quality/features/ai/'
 };
 
 window.RBI.moduleLoader = {

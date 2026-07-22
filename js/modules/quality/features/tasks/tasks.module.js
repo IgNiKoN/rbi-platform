@@ -957,9 +957,14 @@ function _restoreTasksUiState(state) {
 }
 
 function _isTasksViewActive() {
+    if (typeof window.shouldDeferFullRender === 'function' || (window.RBI && window.RBI.utils && window.RBI.utils.syncUi)) {
+        var syncUi = window.RBI && window.RBI.utils && window.RBI.utils.syncUi;
+        if (syncUi && typeof syncUi.isViewActive === 'function') {
+            return syncUi.isViewActive('tasks');
+        }
+    }
     var engTab = document.getElementById('tab-engineer');
     var tasksSub = document.getElementById('eng-sub-tasks');
-    // view-section uses .active; engineer sub-tabs use .hidden to hide
     if (engTab && engTab.classList.contains('active')) {
         return !!(tasksSub && !tasksSub.classList.contains('hidden'));
     }
@@ -1923,13 +1928,12 @@ export const TasksModule = {
         }
 
         if (events && typeof events.on === 'function') {
-            // no full-render on active view (PLATFORM_TARGET_ARCHITECTURE §5):
-            // данные + автозакрытие; paint только если сигнатура задач изменилась.
+            // §5 via sync-ui-defer: на активных Задачах — без full-render;
+            // допускаем точечный refresh только если сигнатура списка изменилась.
             var handler = async function () {
-                var beforeSig = _isTasksViewActive() ? _tasksListSignature() : null;
+                var tasksOnScreen = _isTasksViewActive();
+                var beforeSig = tasksOnScreen ? _tasksListSignature() : null;
                 await _loadData();
-                // Пока смотрим Задачи — пересчитываем прогресс/закрытие здесь
-                // (sync-engine специально НЕ вызывает gameForceUpdatePlan на активной вкладке).
                 window._rbiSuppressTasksRefresh = true;
                 try {
                     if (typeof window.gameUpdatePlanProgress === 'function') {
@@ -1941,8 +1945,27 @@ export const TasksModule = {
                 } finally {
                     window._rbiSuppressTasksRefresh = false;
                 }
-                if (!_isTasksViewActive()) {
-                    if (window.syncDirtyFlags) window.syncDirtyFlags.tasks = true;
+                if (!tasksOnScreen) {
+                    if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
+                        window.RBI.utils.syncUi.markDirty('tasks');
+                    } else if (window.syncDirtyFlags) {
+                        window.syncDirtyFlags.tasks = true;
+                    }
+                    return;
+                }
+                // Активный экран + sync-defer: не трогаем DOM, даже если данные чуть изменились
+                // (цифры/прогресс уже обновлены выше без пересборки списка).
+                if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('tasks')) {
+                    var afterSigQuiet = _tasksListSignature();
+                    if (beforeSig !== afterSigQuiet) {
+                        if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
+                            window.RBI.utils.syncUi.markDirty('tasks');
+                        } else if (window.syncDirtyFlags) {
+                            window.syncDirtyFlags.tasks = true;
+                        }
+                    } else if (window.syncDirtyFlags) {
+                        window.syncDirtyFlags.tasks = false;
+                    }
                     return;
                 }
                 var afterSig = _tasksListSignature();

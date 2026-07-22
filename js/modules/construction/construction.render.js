@@ -14,7 +14,7 @@ const ConstructionRender = {
         <div id="tab-construction-defects" class="view-section">
 
             <!-- Панель выбора объекта и этажа -->
-            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mt-2">
                 <div class="flex justify-between items-center mb-3">
                     <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Выбор
                         плана</h2>
@@ -57,7 +57,7 @@ const ConstructionRender = {
             </div>
             <!-- НОВОЕ: Переключатель видов и фильтры -->
             <!-- НОВОЕ: Переключатель видов и фильтры -->
-            <div class="flex flex-col gap-3 mb-3 mx-1">
+            <div class="flex flex-col gap-3 mb-3">
                 <!-- Верхний ряд: Тумблер, Категория, Экспорт -->
                 <div class="flex justify-between items-center w-full">
                     <div
@@ -97,7 +97,7 @@ const ConstructionRender = {
             </div>
             <!-- Контейнер для отображения PDF плана -->
             <div id="const-plan-container"
-                class="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl h-[65vh] flex flex-col items-center justify-center relative overflow-hidden mx-1">
+                class="bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl h-[65vh] flex flex-col items-center justify-center relative overflow-hidden">
                 <div class="text-center text-slate-400" id="const-plan-placeholder">
                     <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"
                         stroke-width="1.5">
@@ -113,14 +113,14 @@ const ConstructionRender = {
                 </div>
             </div>
             <!-- НОВОЕ: Контейнер для Реестра дефектов (Скрыт по умолчанию) -->
-            <div id="const-list-container" class="hidden mx-1 pb-8 space-y-3">
+            <div id="const-list-container" class="hidden pb-8 space-y-3">
                 <!-- Сюда JS будет рендерить карточки дефектов -->
             </div>
         </div>
         <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ШАХМАТКА (ПОМЕЩЕНИЯ) === -->
         <!-- === ВКЛАДКА: ПЕРЕДАЧА КВАРТИР === -->
         <div id="tab-transfer" class="view-section">
-            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mt-2">
                 <div class="flex justify-between items-center mb-3">
                     <h2 class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight">Шахматка
                         объекта</h2>
@@ -145,7 +145,7 @@ const ConstructionRender = {
                 </div>
             </div>
 
-            <div id="transfer-grid-container" class="mx-1 pb-8">
+            <div id="transfer-grid-container" class="pb-8">
                 <div
                     class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                     Выберите корпус для просмотра шахматки</div>
@@ -154,7 +154,7 @@ const ConstructionRender = {
 
         <!-- === ВКЛАДКА: СТРОЙКОНТРОЛЬ - ПРИЁМКА РАБОТ === -->
         <div id="tab-construction-acceptance" class="view-section">
-            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mx-1 mt-2">
+            <div class="bg-[var(--card-bg)] rounded-xl p-4 shadow-sm border border-[var(--card-border)] mb-4 mt-2">
                 <div class="flex justify-between items-center mb-3">
                     <h2
                         class="text-[13px] font-black uppercase text-slate-800 dark:text-white tracking-tight flex items-center gap-1.5">
@@ -183,7 +183,7 @@ const ConstructionRender = {
                 </div>
             </div>
 
-            <div id="acceptance-list-container" class="mx-1 pb-8">
+            <div id="acceptance-list-container" class="pb-8">
                 <div
                     class="text-center py-10 text-slate-400 text-[11px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                     Загрузка данных...</div>

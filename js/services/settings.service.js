@@ -32,6 +32,12 @@
         navPosition: 'auto',
         swipeEnabled: false,
         autoCollapseOk: false,
+        /** Панели фильтров аналитики/истории: 'auto' (скролл) | 'manual' (только клик) */
+        autoCollapseFilters: 'auto',
+        /** Микровзаимодействия UI (hover/skeleton/toast spring); false = выкл */
+        uiMotionEnabled: true,
+        /** Жёсткая блокировка pull-to-refresh (Android): overscroll none + touch preventDefault */
+        hardOverscrollLock: false,
         defaultGroupsCollapsed: false,
         fastMode: false,
         soundEnabled: true,

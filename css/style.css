@@ -184,6 +184,16 @@
     --color-yellow: #f59e0b;
     --color-orange: #f97316;
     --color-blue: #3b82f6;
+
+    /* Motion / interactive lightness */
+    --motion-fast: 150ms;
+    --motion-med: 200ms;
+    --motion-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    --interactive-lift: -1px;
+    --interactive-scale: 1.015;
+    --interactive-press: 0.98;
+    --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+    --shadow-card-hover: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
 }
 
 /* === ТЕМНАЯ ТЕМА === */
@@ -384,7 +394,8 @@ body {
     font-family: 'Inter', sans-serif;
     background-color: var(--bg-main);
     color: var(--text-main);
-    padding-top: 140px;
+    /* + safe-area-top: текст/шапка не залезают под часы/Dynamic Island на iPhone */
+    padding-top: calc(140px + env(safe-area-inset-top, 0px));
     padding-bottom: 90px;
     transition: background 0.3s, color 0.3s;
     /* ИСПРАВЛЕНИЕ: Используем clip вместо hidden, чтобы липкие панели работали! */
@@ -392,8 +403,8 @@ body {
     width: 100vw;
     max-width: 100%;
 
-    /* НОВОЕ: Отключаем pull-to-refresh и свайп "назад" в браузере */
-    overscroll-behavior-y: auto;
+    /* contain: без pull-to-refresh (Android Chrome), пружина/glow по краям сохраняется */
+    overscroll-behavior-y: contain;
     overscroll-behavior-x: auto;
 }
 
@@ -401,14 +412,16 @@ body {
 body.nav-pos-top .bottom-nav {
     top: 0;
     bottom: auto;
+    padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-top, 0px));
     border-top: none;
     border-bottom: 1px solid var(--card-border);
 }
 
 body.nav-pos-top .header-fixed {
-    top: 60px;
+    top: calc(60px + env(safe-area-inset-top, 0px));
+    padding-top: 0;
 }
 
 body.nav-pos-top {
@@ -425,6 +438,7 @@ body.nav-pos-bottom .bottom-nav {
 
 body.nav-pos-bottom .header-fixed {
     top: 0;
+    padding-top: env(safe-area-inset-top, 0px);
 }
 
 body.nav-pos-bottom {
@@ -435,14 +449,16 @@ body.nav-pos-bottom {
     body.nav-pos-auto .bottom-nav {
         top: 0;
         bottom: auto;
+        padding-top: env(safe-area-inset-top, 0px);
         padding-bottom: 0;
-        height: 60px;
+        height: calc(60px + env(safe-area-inset-top, 0px));
         border-top: none;
         border-bottom: 1px solid var(--card-border);
     }
 
     body.nav-pos-auto .header-fixed {
-        top: 60px;
+        top: calc(60px + env(safe-area-inset-top, 0px));
+        padding-top: 0;
     }
 
     body.nav-pos-auto {
@@ -480,14 +496,16 @@ body.nav-pos-bottom {
 body.force-nav-top .bottom-nav {
     top: 0;
     bottom: auto;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: 0;
     border-top: none;
     border-bottom: 1px solid var(--card-border);
 }
 
 body.force-nav-top .header-fixed {
-    top: 60px;
+    top: calc(60px + env(safe-area-inset-top, 0px));
+    padding-top: 0;
 }
 
 body.force-nav-top {
@@ -528,7 +546,10 @@ body.modal-open {
     background: var(--header-bg);
     border-bottom: 1px solid var(--card-border);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-    backdrop-filter: blur(8px);
+    /* Blur под статус-баром (iPhone notch / Dynamic Island); отступ — чтобы логотип не лез под часы */
+    padding-top: env(safe-area-inset-top, 0px);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     transition: all 0.3s;
 }
 
@@ -628,14 +649,16 @@ body.modal-open {
     .bottom-nav.nav-auto {
         top: 0;
         bottom: auto;
-        height: 60px;
+        height: calc(60px + env(safe-area-inset-top, 0px));
+        padding-top: env(safe-area-inset-top, 0px);
         padding-bottom: 0;
         border-top: none;
         border-bottom: 1px solid var(--card-border);
     }
 
     .bottom-nav.nav-auto~.header-fixed {
-        top: 60px;
+        top: calc(60px + env(safe-area-inset-top, 0px));
+        padding-top: 0;
     }
 }
 
@@ -1194,12 +1217,23 @@ body.modal-open {
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
     backdrop-filter: blur(12px) saturate(150%);
     -webkit-backdrop-filter: blur(12px) saturate(150%);
-    animation: toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.15) forwards, toastOut 0.4s ease forwards 2.5s;
+    animation: toastIn 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards, toastOut 0.4s ease forwards 2.5s;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     letter-spacing: 0.02em;
+}
+
+.toast.toast-ok {
+    box-shadow: 0 10px 25px -5px rgba(34, 197, 94, 0.35), 0 0 0 1px rgba(134, 239, 172, 0.35) inset;
+}
+
+.toast.toast-err {
+    box-shadow: 0 10px 25px -5px rgba(239, 68, 68, 0.35), 0 0 0 1px rgba(252, 165, 165, 0.4) inset;
+    animation: toastIn 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+        toastShake 0.35s ease 0.05s,
+        toastOut 0.4s ease forwards 2.5s;
 }
 
 [data-theme="dark"] .toast {
@@ -1230,6 +1264,14 @@ body.modal-open {
         opacity: 0;
         transform: translateY(20px) scale(0.95);
     }
+}
+
+@keyframes toastShake {
+    0%, 100% { transform: translateY(0) translateX(0) scale(1); }
+    20% { transform: translateY(0) translateX(-4px) scale(1); }
+    40% { transform: translateY(0) translateX(4px) scale(1); }
+    60% { transform: translateY(0) translateX(-3px) scale(1); }
+    80% { transform: translateY(0) translateX(2px) scale(1); }
 }
 
 /* === МОДАЛЬНЫЕ ОКНА === */
@@ -1372,9 +1414,9 @@ body.demo-mode #demo-banner {
     transform: scale(0.96);
 }
 
-/* Анимация появления модальных окон (Fade + Scale) */
+/* Анимация появления модальных окон (Fade + Spring) */
 .modal-overlay {
-    transition: opacity 0.3s ease;
+    transition: opacity 0.28s ease;
     opacity: 0;
 }
 
@@ -1383,9 +1425,8 @@ body.demo-mode #demo-banner {
 }
 
 .modal-content {
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.15), opacity 0.3s ease;
-    /* Эффект небольшого "выпрыгивания" */
-    transform: scale(0.9) translateY(20px);
+    transition: transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+    transform: scale(0.92) translateY(18px);
     opacity: 0;
 }
 
@@ -1511,14 +1552,14 @@ body.nav-pos-bottom .sticky-subnav {
 /* === ПЛАВАЮЩАЯ КНОПКА СКАЧАТЬ (FAB) === */
 #fab-download-btn {
     bottom: 80px;
-    right: 16px;
+    right: 8px;
 }
 
 
 /* На широких экранах (ПК) — прижимаем к правому краю контейнера */
 @media (min-width: 896px) {
     #fab-download-btn {
-        right: calc(50vw - 26rem + 16px);
+        right: calc(50vw - 26rem + 8px);
     }
 }
 
@@ -1540,19 +1581,22 @@ body.nav-pos-bottom .sticky-subnav {
     }
 }
 
-/* === ПЛАВНЫЕ ПЕРЕХОДЫ ДЛЯ СВОРАЧИВАЕМЫХ ПАНЕЛЕЙ ПОИСКА === */
+/* === iOS spring (cubic-bezier) для сворачиваемых панелей фильтров === */
 #hist-panel-body,
-#ref-panel-body {
-    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-        opacity 0.3s ease,
-        margin 0.3s ease;
+#ref-panel-body,
+#analytics-panel-body {
+    transition:
+        max-height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+        opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+        margin 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Иконка-стрелка поворачивается при сворачивании */
+/* Иконка-стрелка — та же пружина */
+#analytics-panel-toggle-icon,
 #hist-panel-toggle-icon,
 #ref-panel-toggle-icon {
     display: inline-block;
-    transition: transform 0.3s ease;
+    transition: transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     font-style: normal;
 }
 
@@ -1667,7 +1711,8 @@ body.nav-pos-top #contractor-detail-header {
     left: 0;
     right: 0;
     z-index: 45 !important;
-    padding: 0 16px;
+    /* Совпадает с #app-root px-2 (8px) */
+    padding: 0 8px;
 }
 
 body.nav-pos-top #analytics-subtabs-block,
@@ -1723,13 +1768,6 @@ body.nav-pos-top #tab-reference {
     }
 }
 
-/* Плавная iOS-анимация сворачивания фильтров при нажатии на заголовок */
-#hist-panel-body,
-#ref-panel-body,
-#analytics-panel-body {
-    transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease, margin 0.3s ease;
-}
-
 /* ИСПРАВЛЕНИЕ: Кнопка PDF не должна перекрывать нижнее меню подвкладок */
 body.nav-pos-bottom #fab-download-btn {
     /* Навигация (65px) + Подвкладки (около 50px) + Зазоры */
@@ -1773,10 +1811,10 @@ body.nav-pos-bottom .sticky-top-panel {
         /* ИСПРАВЛЕНО: чтобы padding не растягивал шапку */
     }
 
-    /* ИСПРАВЛЕНО: Внутренний контейнер шапки не должен вылезать за края */
+    /* Совпадает с #app-root px-2 (8px) */
     #header-inner {
-        padding-left: 20px;
-        padding-right: 20px;
+        padding-left: 8px;
+        padding-right: 8px;
         box-sizing: border-box;
     }
 
@@ -2158,11 +2196,19 @@ body.read-only-mode .swipe-bg-fail {
 
 }
 
-/* === RBI BLOCK ANDROID PULL TO REFRESH ONLY v17.8.209 === */
+/* === RBI: без pull-to-refresh, с пружиной по краям ===
+   contain — по умолчанию: PTR выкл., bounce/glow остаётся.
+   .hard-overscroll-lock — настройка «жёсткая блокировка» (Android): none + JS preventDefault. */
 html,
 body {
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: contain;
     overscroll-behavior-x: auto;
+}
+
+html.hard-overscroll-lock,
+html.hard-overscroll-lock body,
+body.hard-overscroll-lock {
+    overscroll-behavior-y: none;
 }
 
 body {
@@ -2615,5 +2661,586 @@ body {
 [data-theme="rbi-light-v2"] .accent-indigo-600,
 [data-theme="rbi-dark-v2"] .accent-indigo-600 {
     accent-color: var(--primary) !important;
+}
+
+/* === RBI interactive lightness ===
+   Hover lift/tint — только мышь/трекпад; на тач — active press.
+   Не трогаем print/PDF. */
+
+[data-theme="dark"],
+[data-theme="rbi-dark"],
+[data-theme="rbi-dark-v2"] {
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.22);
+    --shadow-card-hover: 0 6px 16px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Чуть легче типовые sticky-панели фильтров */
+.sticky-top-panel.shadow-sm,
+#analytics-filters-block.shadow-sm,
+#hist-sticky-panel.shadow-sm {
+    box-shadow: var(--shadow-card) !important;
+}
+
+/* Интерактивы: единый motion (без широкого [onclick] — ломает вложенность) */
+button:not(:disabled),
+a.nav-item,
+.nav-item,
+.sub-tab-btn,
+.contr-chip,
+.hub-filter-btn,
+.btn-status,
+[role="button"]:not(input):not(textarea):not(select),
+.cursor-pointer {
+    transition:
+        transform var(--motion-med) var(--motion-spring),
+        background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease,
+        box-shadow var(--motion-med) ease,
+        color var(--motion-fast) ease,
+        opacity var(--motion-fast) ease;
+}
+
+/* Поля — только подсветка, без lift */
+.input-base,
+input.input-base,
+select.input-base,
+textarea.input-base {
+    transition:
+        background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease,
+        color var(--motion-fast) ease;
+}
+
+/* Press на всех указателях */
+button:not(:disabled):active,
+a.nav-item:active,
+.nav-item:active,
+.sub-tab-btn:active,
+.contr-chip:active,
+.hub-filter-btn:active,
+.btn-status:active,
+[role="button"]:not(input):not(textarea):not(select):active,
+.cursor-pointer:active {
+    transform: scale(var(--interactive-press));
+}
+
+/* Hover только мышь/трекпад */
+@media (hover: hover) and (pointer: fine) {
+    button:not(:disabled):hover,
+    a.nav-item:hover,
+    .nav-item:hover,
+    .sub-tab-btn:hover,
+    .contr-chip:hover,
+    .hub-filter-btn:hover,
+    .btn-status:hover,
+    [role="button"]:not(input):not(textarea):not(select):hover {
+        transform: translateY(var(--interactive-lift)) scale(var(--interactive-scale));
+    }
+
+    .cursor-pointer:hover {
+        transform: translateY(var(--interactive-lift));
+        box-shadow: var(--shadow-card-hover);
+    }
+
+    /* Нейтральные кнопки/чипы — лёгкая подсветка фона (не solid primary) */
+    .sub-tab-btn:hover,
+    .contr-chip:hover,
+    .hub-filter-btn:hover,
+    button.input-base:hover,
+    button.bg-white:hover,
+    button.bg-\[var\(--card-bg\)\]:hover,
+    button.bg-\[var\(--hover-bg\)\]:hover,
+    button.bg-slate-100:hover,
+    button.dark\:bg-slate-800:hover {
+        background-color: var(--hover-bg);
+    }
+
+    .cursor-pointer:hover {
+        border-color: color-mix(in srgb, var(--primary) 22%, var(--card-border));
+    }
+
+    .input-base:hover,
+    input.input-base:hover,
+    select.input-base:hover,
+    textarea.input-base:hover {
+        border-color: color-mix(in srgb, var(--primary) 35%, var(--card-border));
+    }
+
+    .nav-item:hover {
+        color: var(--primary);
+    }
+}
+
+button:disabled,
+button[disabled],
+[aria-disabled="true"] {
+    transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    button:not(:disabled),
+    a.nav-item,
+    .nav-item,
+    .sub-tab-btn,
+    .contr-chip,
+    .hub-filter-btn,
+    .btn-status,
+    [role="button"],
+    .cursor-pointer,
+    .input-base {
+        transition: none !important;
+    }
+
+    button:not(:disabled):active,
+    a.nav-item:active,
+    .nav-item:active,
+    .sub-tab-btn:active,
+    .contr-chip:active,
+    .hub-filter-btn:active,
+    .btn-status:active,
+    [role="button"]:active,
+    .cursor-pointer:active,
+    button:not(:disabled):hover,
+    a.nav-item:hover,
+    .nav-item:hover,
+    .sub-tab-btn:hover,
+    .contr-chip:hover,
+    .hub-filter-btn:hover,
+    .btn-status:hover,
+    [role="button"]:hover,
+    .cursor-pointer:hover {
+        transform: none !important;
+    }
+}
+
+/* === RBI motion pack: focus / sticky / skeleton / flash === */
+
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 10px;
+}
+
+button:focus-visible,
+.nav-item:focus-visible,
+.sub-tab-btn:focus-visible,
+.input-base:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Sticky: в покое плоско, после скролла — лёгкая тень */
+.header-fixed,
+.sticky-top-panel,
+#analytics-filters-block,
+#hist-sticky-panel {
+    transition: box-shadow var(--motion-fast, 150ms) ease, border-color var(--motion-fast, 150ms) ease;
+}
+
+.header-fixed:not(.is-scrolled),
+.sticky-top-panel:not(.is-scrolled),
+#analytics-filters-block:not(.is-scrolled),
+#hist-sticky-panel:not(.is-scrolled) {
+    box-shadow: 0 0 0 1px var(--card-border) !important;
+}
+
+.header-fixed.is-scrolled,
+.sticky-top-panel.is-scrolled,
+#analytics-filters-block.is-scrolled,
+#hist-sticky-panel.is-scrolled {
+    box-shadow: var(--shadow-card, 0 1px 3px rgba(15, 23, 42, 0.08)) !important;
+}
+
+/* Skeleton placeholders */
+.rbi-skeleton-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 2px 16px;
+}
+
+.rbi-skeleton-line {
+    height: 12px;
+    border-radius: 8px;
+    background: linear-gradient(
+        90deg,
+        var(--hover-bg) 0%,
+        color-mix(in srgb, var(--card-border) 55%, var(--hover-bg)) 45%,
+        var(--hover-bg) 100%
+    );
+    background-size: 200% 100%;
+    animation: rbiSkeletonShimmer 1.1s ease-in-out infinite;
+}
+
+.rbi-skeleton-card {
+    height: 88px;
+    border-radius: 14px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    position: relative;
+    overflow: hidden;
+}
+
+.rbi-skeleton-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--hover-bg) 80%, transparent) 45%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: rbiSkeletonShimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes rbiSkeletonShimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+/* Flash ok / err на элементе */
+.rbi-flash-ok {
+    animation: rbiFlashOk 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.rbi-flash-err {
+    animation: rbiFlashErr 0.4s ease;
+}
+
+@keyframes rbiFlashOk {
+    0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+    40% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.18); transform: scale(1.01); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); transform: scale(1); }
+}
+
+@keyframes rbiFlashErr {
+    0%, 100% { transform: translateX(0); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    20% { transform: translateX(-3px); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(1px); }
+}
+
+/* Выключение анимаций из настроек */
+body.ui-motion-off .toast,
+body.ui-motion-off .modal-content,
+body.ui-motion-off .rbi-skeleton-line,
+body.ui-motion-off .rbi-skeleton-card::after,
+body.ui-motion-off .rbi-flash-ok,
+body.ui-motion-off .rbi-flash-err {
+    animation: none !important;
+}
+
+body.ui-motion-off button:not(:disabled),
+body.ui-motion-off .nav-item,
+body.ui-motion-off .sub-tab-btn,
+body.ui-motion-off .contr-chip,
+body.ui-motion-off .cursor-pointer,
+body.ui-motion-off .modal-content {
+    transition: none !important;
+    transform: none !important;
+}
+
+body.ui-motion-off .rbi-skeleton-wrap {
+    display: none !important;
+}
+
+body.ui-motion-off .rbi-acc {
+    transition: none !important;
+}
+
+/* === Accordion expand (история / единообразные списки) === */
+.rbi-acc {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.rbi-acc.is-open {
+    grid-template-rows: 1fr;
+}
+
+.rbi-acc-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Заголовки групп чек-листа: тот же мягкий hover-фон */
+.block-title.rounded-lg:hover,
+.block-title.cursor-pointer:hover {
+    background: var(--hover-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast,
+    .toast.toast-err,
+    .rbi-skeleton-line,
+    .rbi-skeleton-card::after,
+    .rbi-flash-ok,
+    .rbi-flash-err {
+        animation: none !important;
+    }
+
+    .modal-content {
+        transition: opacity 0.15s ease !important;
+        transform: none !important;
+    }
+
+    .rbi-acc {
+        transition: none !important;
+    }
+}
+
+/* ===== Report preview (print-first пилот) ===== */
+.rbi-report-preview {
+    position: fixed;
+    inset: 0;
+    z-index: 9500;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color, #f1f5f9);
+    color: var(--text-main, #0f172a);
+}
+.rbi-report-preview.hidden { display: none !important; }
+.rbi-report-preview-chrome {
+    flex-shrink: 0;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--card-border, #e2e8f0);
+    background: var(--card-bg, #fff);
+}
+.rbi-report-preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.rbi-report-preview-title {
+    font-size: 14px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.rbi-report-preview-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--text-muted, #64748b);
+    font-weight: 600;
+}
+.rbi-report-preview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+}
+.rbi-rp-btn {
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+.rbi-rp-btn-primary {
+    background: #0f766e;
+    color: #fff;
+}
+.rbi-rp-btn-secondary {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+.rbi-rp-btn-ghost {
+    background: var(--hover-bg, #f8fafc);
+    color: var(--text-muted, #64748b);
+    border-color: var(--card-border, #e2e8f0);
+}
+.rbi-report-preview-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.rbi-rp-chip {
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--card-border, #e2e8f0);
+    background: var(--hover-bg, #f8fafc);
+    color: var(--text-muted, #64748b);
+    cursor: pointer;
+}
+.rbi-rp-chip.is-on {
+    background: #ccfbf1;
+    border-color: #5eead4;
+    color: #0f766e;
+}
+.rbi-report-preview-scroll {
+    flex: 1;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+}
+.rbi-report-preview-sheet {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #fff;
+    color: #0f172a;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 18px 16px 28px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.rbi-report-preview-sheet-op2 {
+    max-width: 1200px;
+}
+.rbi-rp-loading {
+    padding: 48px 16px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.rbi-op2-sec {
+    margin-bottom: 8px;
+}
+.rbi-op2-preview-root img {
+    max-width: 100%;
+    height: auto;
+}
+.rbi-rp-doc-head { margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; }
+.rbi-rp-doc-title { font-size: 18px; font-weight: 900; }
+.rbi-rp-doc-meta { margin-top: 4px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.rbi-rp-section { margin-top: 18px; break-inside: avoid; }
+.rbi-rp-h { font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; color: #334155; margin-bottom: 10px; }
+.rbi-rp-h3 { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin: 12px 0 8px; }
+.rbi-rp-empty { font-size: 12px; color: #94a3b8; font-weight: 600; }
+.rbi-rp-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+.rbi-rp-kpi {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 8px;
+    background: #f8fafc;
+}
+.rbi-rp-kpi-l { font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase; }
+.rbi-rp-kpi-v { margin-top: 4px; font-size: 20px; font-weight: 900; line-height: 1; }
+.rbi-rp-kpi-v-sm { font-size: 14px; }
+.rbi-rp-chart-wrap { height: 220px; position: relative; }
+.rbi-rp-chart-wrap-sm { height: 200px; }
+.rbi-rp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.rbi-rp-table th, .rbi-rp-table td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 7px 6px;
+    text-align: left;
+    vertical-align: top;
+}
+.rbi-rp-table th { font-size: 9px; text-transform: uppercase; color: #94a3b8; font-weight: 800; }
+.rbi-rp-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+.rbi-rp-ph-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+.rbi-rp-ph {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+.rbi-rp-ph-img img { width: 100%; height: 88px; object-fit: cover; display: block; }
+.rbi-rp-ph-empty {
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+}
+.rbi-rp-ph-meta { padding: 8px; }
+.rbi-rp-badge {
+    display: inline-block;
+    font-size: 8px;
+    font-weight: 900;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #fee2e2;
+    color: #b91c1c;
+    margin-bottom: 4px;
+}
+.rbi-rp-ph-name { font-size: 10px; font-weight: 800; line-height: 1.25; }
+.rbi-rp-ph-sub { margin-top: 2px; font-size: 9px; color: #94a3b8; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbi-rp-narrative {
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 600;
+    color: #334155;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+    .rbi-rp-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rbi-rp-ph-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rbi-report-preview-head { flex-direction: column; }
+    .rbi-report-preview-actions { width: 100%; }
+}
+
+@media print {
+    @page { size: A3 landscape; margin: 8mm; }
+    body.rbi-report-preview-open > *:not(#rbi-report-preview) {
+        display: none !important;
+    }
+    body.rbi-report-preview-open {
+        background: #fff !important;
+    }
+    #rbi-report-preview {
+        position: static !important;
+        inset: auto !important;
+        display: block !important;
+        background: #fff !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+    #rbi-report-preview .rbi-report-preview-chrome {
+        display: none !important;
+    }
+    #rbi-report-preview .rbi-report-preview-scroll {
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+    #rbi-report-preview .rbi-report-preview-sheet {
+        max-width: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+    #rbi-report-preview .rbi-rp-doc-head {
+        margin-bottom: 6px;
+        padding-bottom: 4px;
+    }
+    #rbi-report-preview .rbi-op2-sec {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
 }
 

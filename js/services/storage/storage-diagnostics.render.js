@@ -23,6 +23,75 @@ function _rbiPayloadBytes(data, meta) {
     return 0;
 }
 
+/** iPhone/iPad (WebKit): estimate.usage часто занижен; quota — доля диска (процент ≈ 0%). */
+function _rbiIsAppleMobileWebKit() {
+    const ua = navigator.userAgent || '';
+    if (/iPhone|iPad|iPod/i.test(ua)) return true;
+    // iPadOS 13+ иногда как Macintosh + touch
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+    return false;
+}
+
+async function _rbiMeasureLocalFileCache() {
+    const empty = {
+        totalFiles: 0,
+        totalBytes: 0,
+        imageFiles: 0,
+        pdfFiles: 0,
+        recoverableFiles: 0,
+        recoverableBytes: 0,
+        localOnlyFiles: 0,
+        localOnlyBytes: 0,
+        reportPdfBytes: 0,
+        reportPdfCount: 0,
+        ok: false
+    };
+    if (typeof dbGetAll !== 'function' || typeof STORES === 'undefined') return empty;
+
+    try {
+        const localFiles = await dbGetAll(STORES.PHOTOS) || [];
+        const reports = (STORES.REPORTS)
+            ? (await dbGetAll(STORES.REPORTS) || [])
+            : [];
+
+        const out = { ...empty, ok: true };
+
+        for (const f of localFiles) {
+            if (!f || !f.id || !f.data) continue;
+            out.totalFiles++;
+            const id = String(f.id || '');
+            const sizeBytes = _rbiPayloadBytes(f.data, f);
+            const mime = f.mimeType || f.mime_type || '';
+            const sourceUrl = f.sourceUrl || f.source_url || f.public_url || f.publicUrl || '';
+            out.totalBytes += sizeBytes;
+            if (String(mime).includes('image')) out.imageFiles++;
+            if (String(mime).includes('pdf')) out.pdfFiles++;
+            const hasCloudSource = id.startsWith('http') || String(sourceUrl).startsWith('http');
+            const isLocalOnly = id.startsWith('local://') && !hasCloudSource;
+            if (hasCloudSource) {
+                out.recoverableFiles++;
+                out.recoverableBytes += sizeBytes;
+            } else if (isLocalOnly) {
+                out.localOnlyFiles++;
+                out.localOnlyBytes += sizeBytes;
+            }
+        }
+
+        for (const rep of reports) {
+            if (!rep || !rep.file_blob) continue;
+            const reportSize = _rbiPayloadBytes(rep.file_blob, rep);
+            out.reportPdfCount++;
+            out.reportPdfBytes += reportSize;
+            out.totalFiles++;
+            out.totalBytes += reportSize;
+            out.pdfFiles++;
+        }
+        return out;
+    } catch (_) {
+        return empty;
+    }
+}
+
 /**
  * ОТОБРАЖЕНИЕ СТАТИСТИКИ ХРАНИЛИЩА (Для вкладки Настройки)
  */
@@ -32,30 +101,64 @@ async function updateStorageInfo() {
     const sPercent = document.getElementById('storage-percent');
     const sBar = document.getElementById('storage-bar');
 
-    if (!sUsed || !navigator.storage || !navigator.storage.estimate) return;
+    if (!sUsed) return;
 
     try {
-        const estimate = await navigator.storage.estimate();
-        // Как в DevTools / console: весь origin (IndexedDB + Cache API + SW + …)
-        const usageBytes = estimate.usage || 0;
-        const quotaBytes = estimate.quota || 0;
+        const fileStats = await _rbiMeasureLocalFileCache();
+        const measuredBytes = fileStats.totalBytes || 0;
+
+        let estimate = null;
+        let estimateUsage = 0;
+        let quotaBytes = 0;
+        if (navigator.storage && typeof navigator.storage.estimate === 'function') {
+            try {
+                estimate = await navigator.storage.estimate();
+                estimateUsage = estimate.usage || 0;
+                quotaBytes = estimate.quota || 0;
+            } catch (_) { /* ignore */ }
+        }
+
+        // Как в getStorageSnapshot: файлы — нижняя граница (критично для iOS, где usage занижен)
+        const usageBytes = Math.max(measuredBytes, estimateUsage);
         const actualUsedMB = usageBytes / 1024 / 1024;
+        const measuredMB = measuredBytes / 1024 / 1024;
+        const estimateMB = estimateUsage / 1024 / 1024;
         const quotaMB = quotaBytes / 1024 / 1024;
         const freeMBNum = Math.max(0, quotaMB - actualUsedMB);
-        const percentUsed = quotaBytes > 0 ? ((usageBytes / quotaBytes) * 100) : 0;
+        let percentUsed = quotaBytes > 0 ? ((usageBytes / quotaBytes) * 100) : 0;
+
+        const appleMobile = _rbiIsAppleMobileWebKit();
+        // На iPhone квота часто = десятки ГБ → «Исп 0.1%» при реальных сотнях МБ файлов
+        const quotaLooksInflated = appleMobile && quotaMB > 4096 && percentUsed < 2 && actualUsedMB > 1;
 
         sUsed.innerText = actualUsedMB.toFixed(1);
-        sFree.innerText = freeMBNum.toFixed(1);
-        sPercent.innerText = `${percentUsed.toFixed(1)}%`;
-        sBar.style.width = `${Math.min(100, percentUsed).toFixed(1)}%`;
+        if (quotaLooksInflated || !quotaBytes) {
+            sFree.innerText = quotaBytes ? ('~' + freeMBNum.toFixed(0)) : 'н/д';
+            sPercent.innerText = quotaLooksInflated ? 'н/д*' : (quotaBytes ? `${percentUsed.toFixed(1)}%` : 'н/д');
+            // Полоска: доля от мягкого ориентира (файлы / max(512МБ, файлы×2)), не от «всего диска»
+            const softCapBytes = Math.max(512 * 1024 * 1024, usageBytes * 2);
+            const softPct = Math.min(100, (usageBytes / softCapBytes) * 100);
+            if (sBar) {
+                sBar.style.width = softPct.toFixed(1) + '%';
+                sBar.className = softPct > 80 ? 'h-full bg-red-500 transition-all'
+                    : softPct > 50 ? 'h-full bg-yellow-500 transition-all'
+                        : 'h-full bg-indigo-500 transition-all';
+            }
+            percentUsed = softPct;
+        } else {
+            sFree.innerText = freeMBNum.toFixed(1);
+            sPercent.innerText = `${percentUsed.toFixed(1)}%`;
+            if (sBar) {
+                sBar.style.width = `${Math.min(100, percentUsed).toFixed(1)}%`;
+                if (percentUsed > 80) sBar.className = 'h-full bg-red-500 transition-all';
+                else if (percentUsed > 50) sBar.className = 'h-full bg-yellow-500 transition-all';
+                else sBar.className = 'h-full bg-indigo-500 transition-all';
+            }
+        }
 
-        // Меняем цвет полоски, если места мало
-        if (percentUsed > 80) sBar.className = 'h-full bg-red-500 transition-all';
-        else if (percentUsed > 50) sBar.className = 'h-full bg-yellow-500 transition-all';
-        else sBar.className = 'h-full bg-indigo-500 transition-all';
         // --- ПАНЕЛЬ ДИАГНОСТИКИ ---
         let diagBlock = document.getElementById('rbi-diagnostics-block');
-        if (!diagBlock) {
+        if (!diagBlock && sBar) {
             const storageContainer = sBar.closest('.p-4');
             if (storageContainer) {
                 storageContainer.insertAdjacentHTML('beforeend', '<div id="rbi-diagnostics-block" class="mt-4 p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] text-slate-500 font-mono leading-relaxed"></div>');
@@ -77,99 +180,36 @@ async function updateStorageInfo() {
             const dbVersion = window.RBI_DB_VERSION || '—';
             const buildDate = versionInfo.buildDate || '—';
 
-            const details = estimate.usageDetails || {};
+            const details = (estimate && estimate.usageDetails) || {};
             const detailLine = (label, key) => {
                 if (details[key] == null) return '';
                 return `${label}: ${(details[key] / 1024 / 1024).toFixed(1)} МБ<br>`;
             };
+            const appleNote = appleMobile
+                ? `<br><span style="opacity:0.9">iOS: «Исп» = max(файлы ${(measuredMB).toFixed(1)} МБ, estimate ${(estimateMB).toFixed(1)} МБ). Квота браузера часто завышена — % может быть н/д*.</span><br>`
+                : '';
             const usageBreakdownHtml = `
-            <br><b>Занято по данным браузера (как в консоли):</b><br>
-            Всего origin: ${actualUsedMB.toFixed(1)} МБ / квота ${quotaMB.toFixed(1)} МБ<br>
+            <br><b>Занято:</b><br>
+            В дашборде: ${actualUsedMB.toFixed(1)} МБ<br>
+            Файлы (photos+отчёты): ${measuredMB.toFixed(1)} МБ<br>
+            estimate.usage: ${estimateMB.toFixed(1)} МБ / квота ${quotaMB > 0 ? quotaMB.toFixed(1) : 'н/д'} МБ<br>
             ${detailLine('IndexedDB', 'indexedDB')}
             ${detailLine('Cache API (SW)', 'caches')}
             ${detailLine('Service Worker', 'serviceWorkerRegistrations')}
+            ${appleNote}
         `;
 
             let cacheStatsHtml = '';
-
-            try {
-                const localFiles = await dbGetAll(STORES.PHOTOS) || [];
-                const reports = (STORES.REPORTS && typeof dbGetAll === 'function')
-                    ? (await dbGetAll(STORES.REPORTS) || [])
-                    : [];
-
-                let totalFiles = 0;
-                let totalBytes = 0;
-                let imageFiles = 0;
-                let pdfFiles = 0;
-                let recoverableFiles = 0;
-                let recoverableBytes = 0;
-                let localOnlyFiles = 0;
-                let localOnlyBytes = 0;
-                let reportPdfBytes = 0;
-                let reportPdfCount = 0;
-
-                for (const f of localFiles) {
-                    if (!f || !f.id || !f.data) continue;
-
-                    totalFiles++;
-
-                    const id = String(f.id || '');
-                    const sizeBytes = _rbiPayloadBytes(f.data, f);
-
-                    const mime =
-                        f.mimeType ||
-                        f.mime_type ||
-                        '';
-
-                    const sourceUrl =
-                        f.sourceUrl ||
-                        f.source_url ||
-                        f.public_url ||
-                        f.publicUrl ||
-                        '';
-
-                    totalBytes += sizeBytes;
-
-                    if (String(mime).includes('image')) imageFiles++;
-                    if (String(mime).includes('pdf')) pdfFiles++;
-
-                    const hasCloudSource =
-                        id.startsWith('http') ||
-                        String(sourceUrl).startsWith('http');
-
-                    const isLocalOnly =
-                        id.startsWith('local://') &&
-                        !hasCloudSource;
-
-                    if (hasCloudSource) {
-                        recoverableFiles++;
-                        recoverableBytes += sizeBytes;
-                    } else if (isLocalOnly) {
-                        localOnlyFiles++;
-                        localOnlyBytes += sizeBytes;
-                    }
-                }
-
-                for (const rep of reports) {
-                    if (!rep || !rep.file_blob) continue;
-                    const reportSize = _rbiPayloadBytes(rep.file_blob, rep);
-                    reportPdfCount++;
-                    reportPdfBytes += reportSize;
-                    totalFiles++;
-                    totalBytes += reportSize;
-                    pdfFiles++;
-                }
-
+            if (fileStats.ok) {
                 cacheStatsHtml = `
             <br><b>Файловый кэш (полезная нагрузка в IDB):</b><br>
-            Всего локальных файлов: ${totalFiles} шт. / ${(totalBytes / 1024 / 1024).toFixed(1)} МБ<br>
-            Фото: ${imageFiles} шт.; PDF в photos: ${pdfFiles - reportPdfCount} шт.; PDF-отчёты: ${reportPdfCount} шт. / ${(reportPdfBytes / 1024 / 1024).toFixed(1)} МБ<br>
-            Можно безопасно очистить: ${recoverableFiles} шт. / ${(recoverableBytes / 1024 / 1024).toFixed(1)} МБ<br>
-            Только локальные, не удаляются: ${localOnlyFiles} шт. / ${(localOnlyBytes / 1024 / 1024).toFixed(1)} МБ<br>
+            Всего локальных файлов: ${fileStats.totalFiles} шт. / ${measuredMB.toFixed(1)} МБ<br>
+            Фото: ${fileStats.imageFiles} шт.; PDF в photos: ${fileStats.pdfFiles - fileStats.reportPdfCount} шт.; PDF-отчёты: ${fileStats.reportPdfCount} шт. / ${(fileStats.reportPdfBytes / 1024 / 1024).toFixed(1)} МБ<br>
+            Можно безопасно очистить: ${fileStats.recoverableFiles} шт. / ${(fileStats.recoverableBytes / 1024 / 1024).toFixed(1)} МБ<br>
+            Только локальные, не удаляются: ${fileStats.localOnlyFiles} шт. / ${(fileStats.localOnlyBytes / 1024 / 1024).toFixed(1)} МБ<br>
             <span style="opacity:0.85">Разница «браузер − файлы» ≈ оверхед IDB, записи проверок и кэш SW.</span><br>
         `;
-            } catch (e) {
+            } else {
                 cacheStatsHtml = '<br><b>Файловый кэш:</b><br>Статистика временно недоступна<br>';
             }
 

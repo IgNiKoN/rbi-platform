@@ -3,7 +3,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 21; // БЫЛО 20, СТАЛО 21 — индексы by_date/by_contractor на app_history
+const DB_VERSION = 23; // БЫЛО 22, СТАЛО 23 — location_nodes + construction_floors_v2 (справочник локаций)
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -48,6 +48,10 @@ const STORES = {
     CONTRACTOR_DIRECTORY: 'contractor_directory',
     CONTRACTOR_ALIASES: 'contractor_aliases',
     CONTRACTOR_QUEUE: 'contractor_normalization_queue',
+    CONTRACTS: 'contracts',
+    LOCATION_NODES: 'location_nodes',
+    LOCATION_NODE_ALIASES: 'location_node_aliases',
+    CONST_FLOORS_V2: 'construction_floors_v2',
     PROJECT_OBJECTS: 'project_objects',
     OBJECT_ALIASES: 'object_aliases',
     BACKUP_LOGS: 'backup_logs',

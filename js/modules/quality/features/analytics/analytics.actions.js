@@ -364,7 +364,7 @@ export const AnalyticsActions = {
     // вкладок аналитики.
     // =========================================================================
     getFilteredAnalyticsData() {
-        const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+        const selPeriod = document.getElementById('global-filter-period')?.value || 'D30';
 
         const fProj = _analyticsFilters('analytics').project;
         const fContr = _analyticsFilters('analytics').contractor;
@@ -376,15 +376,14 @@ export const AnalyticsActions = {
         // Жёстко отсекаем проверки Стройконтроля из аналитики качества.
         arr = arr.filter(i => i.inspection_type !== 'sk_acceptance');
 
-        if (selPeriod === 'DAY') {
-            arr = arr.filter(i => new Date(i.date).toDateString() === now.toDateString());
-        } else if (selPeriod === 'MONTH') {
-            const m = new Date(); m.setDate(now.getDate() - 30);
-            arr = arr.filter(i => new Date(i.date) >= m);
-        } else if (selPeriod === 'WEEK') {
-            const w = new Date(); w.setDate(now.getDate() - 7);
-            arr = arr.filter(i => new Date(i.date) >= w);
-        } else if (selPeriod === 'CUSTOM') {
+        const periodNorm = typeof window.normalizeAnalyticsPeriod === 'function'
+            ? window.normalizeAnalyticsPeriod(selPeriod)
+            : selPeriod;
+        const periodDays = typeof window.getAnalyticsPeriodDays === 'function'
+            ? window.getAnalyticsPeriodDays(selPeriod)
+            : null;
+
+        if (periodNorm === 'CUSTOM') {
             const dFrom = document.getElementById('filter-date-from')?.value;
             const dTo = document.getElementById('filter-date-to')?.value;
             if (dFrom) {
@@ -395,6 +394,10 @@ export const AnalyticsActions = {
                 const tDate = new Date(dTo); tDate.setHours(23, 59, 59, 999);
                 arr = arr.filter(i => new Date(i.date) <= tDate);
             }
+        } else if (periodDays) {
+            const from = new Date(now);
+            from.setDate(now.getDate() - periodDays);
+            arr = arr.filter(i => new Date(i.date) >= from);
         }
 
         if (fProj.length > 0) {
@@ -456,6 +459,20 @@ export const AnalyticsActions = {
 
         // Обновляем кнопку FAB
         if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
+
+        // Скелетон контента при смене подвкладки (пока идёт рендер)
+        if (typeof window.rbiShowContentSkeleton === 'function') {
+            const skeletonTargets = {
+                'sub-contractors': 'contractors-list-container',
+                'sub-onepager': 'onepager-content-container',
+                'sub-history': 'history-list',
+                'sub-schedule': 'schedule-container',
+                'sub-sk': 'sk-main-container'
+            };
+            const elId = skeletonTargets[tabId];
+            const el = elId ? document.getElementById(elId) : null;
+            if (el) window.rbiShowContentSkeleton(el, { cards: tabId === 'sub-history' ? 5 : 4 });
+        }
 
         // Единый безопасный рендер активной подвкладки аналитики.
         // ПК СК должен запускаться через renderCurrentAnalyticsTab(), т.к. там

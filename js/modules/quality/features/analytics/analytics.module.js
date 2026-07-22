@@ -107,16 +107,15 @@ export const AnalyticsModule = {
             if (savedTab) AnalyticsState.setActiveSubTab(savedTab);
         } catch (_) {}
 
-        // 3. sync:completed — обновить данные в памяти, НЕ делать full-render
-        // активного экрана (PLATFORM_TARGET_ARCHITECTURE §5). Paint — при
-        // следующем переключении подвкладки / заходе на вкладку (dirty).
+        // 3. sync:completed — данные в память; full-render запрещён на активном
+        // экране (единый хелпер §5: shouldDeferFullRender).
         const events = ctx && ctx.events;
         if (events && typeof events.on === 'function') {
             const handler = async () => {
                 await AnalyticsActions.loadData();
-                if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = true;
-                const analyticsTab = document.getElementById('tab-analytics');
-                if (analyticsTab && analyticsTab.classList.contains('active')) {
+                if (window.RBI?.utils?.syncUi?.markDirty) window.RBI.utils.syncUi.markDirty('analytics');
+                else if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = true;
+                if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('analytics')) {
                     return;
                 }
             };

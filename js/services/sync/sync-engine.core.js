@@ -52,6 +52,9 @@ window.triggerSync = async function (mode = 'silent') {
     let referencePullErrors = 0;
 
     window.isSyncing = true;
+    // §5: единый defer full-render активного экрана (js/shared/sync-ui-defer.utils.js).
+    if (typeof window.rbiBeginSyncUiDefer === 'function') window.rbiBeginSyncUiDefer();
+    else window._rbiDeferActiveViewFullRender = true;
     window.syncChannel.postMessage('sync_started');
     let hasNewCriticalData = false;
 
@@ -65,6 +68,8 @@ window.triggerSync = async function (mode = 'silent') {
     if (window.syncTimeout) clearTimeout(window.syncTimeout);
     window.syncTimeout = setTimeout(() => {
         window.isSyncing = false;
+        if (typeof window.rbiEndSyncUiDefer === 'function') window.rbiEndSyncUiDefer(0);
+        else window._rbiDeferActiveViewFullRender = false;
         window.renderSyncUI();
         safeToast("⚠️ Синхронизация прервана (слабый интернет). Попробуйте позже.");
         console.log("[Sync] Timeout. Снята блокировка.");
@@ -285,20 +290,15 @@ window.triggerSync = async function (mode = 'silent') {
                     if (typeof renderSyncUI === 'function') renderSyncUI();
                     if (typeof ObjectDirectory !== 'undefined') ObjectDirectory.initUI();
 
-                    // --- НОВОЕ: Очистка кэша и перерисовка интерфейса при смене роли ---
+                    // --- НОВОЕ: Очистка кэша при смене роли; UI — только dirty (§5) ---
                     if (typeof window.clearMetricsCache === 'function') window.clearMetricsCache();
                     if (typeof gameGenerateWeeklyPlan === 'function') gameGenerateWeeklyPlan(true);
-                    // no full-render on active analytics/history (PLATFORM_TARGET_ARCHITECTURE §5):
-                    // иначе схлопываются раскрытые аккордеоны Истории/Аналитики.
-                    const anaTabActive = !!(document.getElementById('tab-analytics')?.classList.contains('active'));
-                    if (anaTabActive) {
-                        if (window.syncDirtyFlags) {
-                            window.syncDirtyFlags.analytics = true;
-                            window.syncDirtyFlags.history = true;
-                            window.syncDirtyFlags.sk = true;
-                        }
-                    } else if (typeof renderCurrentAnalyticsTab === 'function') {
-                        renderCurrentAnalyticsTab();
+                    if (window.RBI?.utils?.syncUi?.markDirty) {
+                        window.RBI.utils.syncUi.markDirty(['analytics', 'history', 'sk', 'tasks', 'reference']);
+                    } else if (window.syncDirtyFlags) {
+                        window.syncDirtyFlags.analytics = true;
+                        window.syncDirtyFlags.history = true;
+                        window.syncDirtyFlags.sk = true;
                     }
                     // ------------------------------------------------------------------
                 }
@@ -625,8 +625,8 @@ if (window.RbiStorageManager) {
                 groups = window.SYSTEM_TEMPLATES[key].groups || [];
             }
 
-            if (type === 'user' && typeof userTemplates !== 'undefined' && userTemplates[key]) {
-                groups = userTemplates[key].groups || [];
+            if (type === 'user' && window.userTemplates && window.userTemplates[key]) {
+                groups = window.userTemplates[key].groups || [];
             }
 
             const flat = groups.flatMap(g => g.items || []);
@@ -906,6 +906,7 @@ if (window.RbiStorageManager) {
 
                     inspectorName: h.engineer_name || '',
                     contractorName: h.contractor_name || '',
+                    contractorId: h.contractorId || h.contractor_id || '',
                     templateKey: h.template_key || '',
                     templateTitle: h.template_title || '',
                     location: h.location || '',
@@ -1473,6 +1474,84 @@ if (window.RbiStorageManager) {
                         }
                     }
 
+                    // 4. Платформенная таблица contractors → merge legal_* в локальный directory (тот же UUID)
+                    try {
+                        const { data: platformContractors, error: platformContrErr } = await window.supabaseClient
+                            .from('contractors')
+                            .select('*');
+
+                        if (platformContrErr) throw platformContrErr;
+
+                        if (Array.isArray(platformContractors)) {
+                            for (const pc of platformContractors) {
+                                if (!pc || !pc.id) continue;
+                                const local = await dbGet(STORES.CONTRACTOR_DIRECTORY, pc.id);
+                                if (!local) continue; // identity остаётся за pull contractor_directory
+
+                                const legalFields = [
+                                    'legal_name', 'legal_form', 'legal_address',
+                                    'contact_person', 'contact_phone', 'contact_email'
+                                ];
+                                let changed = false;
+                                for (const field of legalFields) {
+                                    if (pc[field] !== undefined && pc[field] !== null && String(local[field] || '') !== String(pc[field] || '')) {
+                                        local[field] = pc[field] || '';
+                                        changed = true;
+                                    }
+                                }
+                                if (pc.inn !== undefined && pc.inn !== null && String(local.inn || '') !== String(pc.inn || '')) {
+                                    local.inn = pc.inn || '';
+                                    changed = true;
+                                }
+                                if (pc.displayName && String(local.display_name || '') !== String(pc.displayName || '')) {
+                                    // Не перетираем локально грязную карточку
+                                    const localDirty = (local.syncStatus || local.sync_status) === 'not_synced' || local.source === 'local';
+                                    if (!localDirty) {
+                                        local.display_name = pc.displayName;
+                                        changed = true;
+                                    }
+                                }
+                                if (changed) {
+                                    local.updatedAt = pc.updated_at || new Date().toISOString();
+                                    local.updated_at = local.updatedAt;
+                                    await dbPut(STORES.CONTRACTOR_DIRECTORY, local);
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('[Sync][Подрядчики] Не удалось подтянуть platform contractors:', e.message || e);
+                    }
+
+                    // 5. Платформенная таблица contracts → IDB + память сервиса
+                    if (STORES.CONTRACTS) {
+                        try {
+                            const { data: cloudContracts, error: contractsErr } = await window.supabaseClient
+                                .from('contracts')
+                                .select('*');
+
+                            if (contractsErr) throw contractsErr;
+
+                            if (Array.isArray(cloudContracts)) {
+                                for (const c of cloudContracts) {
+                                    if (!c || !c.id) continue;
+                                    await dbPut(STORES.CONTRACTS, {
+                                        ...c,
+                                        contractorId: c.contractorId || c.contractor_id,
+                                        _deleted: c.is_deleted === true,
+                                        source: 'cloud',
+                                        syncStatus: 'synced',
+                                        sync_status: 'synced',
+                                        syncBlockReason: '',
+                                        sync_block_reason: '',
+                                        updatedAt: c.updated_at || new Date().toISOString()
+                                    });
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[Sync][Подрядчики] Не удалось подтянуть contracts:', e.message || e);
+                        }
+                    }
+
                     // Обновляем кэш ContractorDirectory после pull
                     if (window.ContractorDirectory && typeof window.ContractorDirectory.init === 'function') {
                         await window.ContractorDirectory.init();
@@ -1481,10 +1560,71 @@ if (window.RbiStorageManager) {
                     console.warn('[Sync][Подрядчики] Не удалось подтянуть справочник подрядчиков:', e.message || e);
                 }
             }
+
+            // --- Справочник локаций v2 (location_nodes + construction_floors_v2) ---
+            if (STORES.LOCATION_NODES && window.supabaseClient) {
+                try {
+                    const { data: cloudNodes, error: locErr } = await window.supabaseClient
+                        .from('location_nodes')
+                        .select('*');
+                    if (locErr) throw locErr;
+                    if (Array.isArray(cloudNodes)) {
+                        for (const n of cloudNodes) {
+                            if (!n || !n.id) continue;
+                            await dbPut(STORES.LOCATION_NODES, {
+                                ...n,
+                                nodeType: n.nodeType || n.node_type || null,
+                                parentId: n.parentId !== undefined ? n.parentId : (n.parent_id ?? null),
+                                displayName: n.displayName || n.display_name || '',
+                                _deleted: n.is_deleted === true,
+                                source: 'cloud',
+                                syncStatus: 'synced',
+                                sync_status: 'synced',
+                                updatedAt: n.updated_at || new Date().toISOString()
+                            });
+                        }
+                    }
+                    if (STORES.CONST_FLOORS_V2) {
+                        const { data: cloudPlans, error: planErr } = await window.supabaseClient
+                            .from('construction_floors_v2')
+                            .select('*');
+                        if (planErr) throw planErr;
+                        if (Array.isArray(cloudPlans)) {
+                            for (const p of cloudPlans) {
+                                if (!p || !p.id) continue;
+                                await dbPut(STORES.CONST_FLOORS_V2, {
+                                    ...p,
+                                    locationId: p.locationId || p.location_id,
+                                    _deleted: p.is_deleted === true,
+                                    source: 'cloud',
+                                    syncStatus: 'synced',
+                                    sync_status: 'synced',
+                                    updatedAt: p.updated_at || new Date().toISOString()
+                                });
+                            }
+                        }
+                    }
+                    const locSvc = window.RBI && window.RBI.services && window.RBI.services.locations;
+                    if (locSvc && typeof locSvc.init === 'function') {
+                        await locSvc.init();
+                    }
+                } catch (e) {
+                    console.warn('[Sync][Локации] Не удалось подтянуть location_nodes/floors_v2:', e.message || e);
+                }
+            }
             // Пользовательские Чек-листы (Объекты)
             const templatePullSince = needFullReferencePull ? '' : lastPullAt;
             const templateObjects = await window.pullCloudObjects('user_template', templatePullSince, mode);
-            if (templateObjects && templateObjects.length > 0 && typeof userTemplates !== 'undefined') {
+            if (templateObjects && templateObjects.length > 0) {
+                if (!window.userTemplates || typeof window.userTemplates !== 'object') {
+                    const templatesSvc = window.RBI && window.RBI.services && window.RBI.services.templates;
+                    if (templatesSvc && typeof templatesSvc.replaceUserTemplates === 'function') {
+                        templatesSvc.replaceUserTemplates({});
+                    } else {
+                        window.userTemplates = {};
+                    }
+                }
+                let templatesChanged = false;
                 for (const obj of templateObjects) {
                     const localExisting = await dbGet('user_templates', obj.id);
                     const localTime = localExisting?.data ? new Date(localExisting.data.updatedAt || 0).getTime() : 0;
@@ -1492,13 +1632,17 @@ if (window.RbiStorageManager) {
 
                     if (!localExisting || cloudTime > localTime) {
                         if (obj._deleted) {
-                            delete userTemplates[obj.id];
+                            delete window.userTemplates[obj.id];
                             await dbDelete('user_templates', obj.id);
                         } else {
-                            userTemplates[obj.id] = obj;
+                            window.userTemplates[obj.id] = obj;
                             await dbPut('user_templates', { slug: obj.id, data: obj });
                         }
+                        templatesChanged = true;
                     }
+                }
+                if (templatesChanged && window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
+                    window.RBI.events.emit('templates:changed', {});
                 }
             }
         } catch (e) {
@@ -1683,7 +1827,8 @@ if (window.RbiStorageManager) {
                     }
 
                     // Формируем пакет самой проверки
-                    inspectionsBatch.push({
+                    const inspContractorId = String(c.contractorId || '').trim();
+                    const inspPayload = {
                         id: inspectionId, project_code: pCode,
                         project_name: c.project_display_name || c.projectName || '', project_canonical_key: c.project_canonical_key || c.projectName || '', project_display_name: c.project_display_name || c.projectName || '',
                         engineer_name: c.inspectorName || iName, inspector_name: c.inspectorName || iName, contractor_name: c.contractorName || '',
@@ -1692,7 +1837,11 @@ if (window.RbiStorageManager) {
                         metrics: c.metrics || {}, is_completed: c.isCompleted !== false, is_deleted: isDeleted, deleted_at: isDeleted ? (c._deletedAt || new Date().toISOString()) : null,
                         inspection_type: c.inspection_type || 'rbi_audit',
                         source: 'cloud', sync_status: 'synced', sync_block_reason: '', updated_at: new Date().toISOString()
-                    });
+                    };
+                    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(inspContractorId)) {
+                        inspPayload.contractorId = inspContractorId;
+                    }
+                    inspectionsBatch.push(inspPayload);
 
                     // Формируем пакет нарушений
                     for (const itemId of Object.keys(c.state || {})) {
@@ -2597,6 +2746,17 @@ if (window.RbiStorageManager) {
 
                                     if (error) throw error;
 
+                                    // Dual-write в платформенную таблицу contractors (тот же UUID)
+                                    if (typeof window.preparePlatformContractorForCloud === 'function') {
+                                        const platformItem = window.preparePlatformContractorForCloud(item);
+                                        if (platformItem) {
+                                            const { error: platformErr } = await window.supabaseClient
+                                                .from('contractors')
+                                                .upsert(platformItem, { onConflict: 'id' });
+                                            if (platformErr) throw platformErr;
+                                        }
+                                    }
+
                                     item.source = 'cloud';
                                     item.syncStatus = 'synced';
                                     item.sync_status = 'synced';
@@ -2611,6 +2771,99 @@ if (window.RbiStorageManager) {
                                 console.warn('[Sync][Подрядчики] Ошибка отправки contractor_directory:', e);
                                 pushErrors++;
                                 localStorage.setItem('rbi_cloud_dirty', '1');
+                            }
+
+                            // Push договоров (после contractors — FK contractorId → contractors.id)
+                            if (STORES.CONTRACTS && typeof window.prepareContractForCloud === 'function') {
+                                try {
+                                    const contractItems = await dbGetAll(STORES.CONTRACTS) || [];
+                                    const contractsToPush = contractItems.filter(c => {
+                                        const status = c.syncStatus || c.sync_status || '';
+                                        const source = c.source || '';
+                                        return status === 'not_synced' || status === 'blocked' || source === 'local';
+                                    });
+
+                                    for (const item of contractsToPush) {
+                                        const cloudItem = window.prepareContractForCloud(item);
+                                        if (!cloudItem) continue;
+
+                                        const { error } = await window.supabaseClient
+                                            .from('contracts')
+                                            .upsert(cloudItem, { onConflict: 'id' });
+
+                                        if (error) throw error;
+
+                                        item.source = 'cloud';
+                                        item.syncStatus = 'synced';
+                                        item.sync_status = 'synced';
+                                        item.syncBlockReason = '';
+                                        item.sync_block_reason = '';
+                                        item.updatedAt = new Date().toISOString();
+                                        item.updated_at = item.updatedAt;
+
+                                        await dbPut(STORES.CONTRACTS, item);
+                                    }
+                                } catch (e) {
+                                    console.warn('[Sync][Подрядчики] Ошибка отправки contracts:', e);
+                                    pushErrors++;
+                                    localStorage.setItem('rbi_cloud_dirty', '1');
+                                }
+                            }
+
+                            // Push справочника локаций v2
+                            if (STORES.LOCATION_NODES && typeof window.prepareLocationNodeForCloud === 'function') {
+                                try {
+                                    const nodeItems = await dbGetAll(STORES.LOCATION_NODES) || [];
+                                    const nodesToPush = nodeItems.filter(n => {
+                                        const status = n.syncStatus || n.sync_status || '';
+                                        const source = n.source || '';
+                                        return status === 'not_synced' || status === 'blocked' || source === 'local';
+                                    });
+                                    for (const item of nodesToPush) {
+                                        const cloudItem = window.prepareLocationNodeForCloud(item);
+                                        if (!cloudItem) continue;
+                                        const { error } = await window.supabaseClient
+                                            .from('location_nodes')
+                                            .upsert(cloudItem, { onConflict: 'id' });
+                                        if (error) throw error;
+                                        item.source = 'cloud';
+                                        item.syncStatus = 'synced';
+                                        item.sync_status = 'synced';
+                                        item.updatedAt = new Date().toISOString();
+                                        item.updated_at = item.updatedAt;
+                                        await dbPut(STORES.LOCATION_NODES, item);
+                                    }
+                                    if (STORES.CONST_FLOORS_V2 && typeof window.prepareFloorPlanForCloud === 'function') {
+                                        const planItems = await dbGetAll(STORES.CONST_FLOORS_V2) || [];
+                                        const plansToPush = planItems.filter(p => {
+                                            const status = p.syncStatus || p.sync_status || '';
+                                            const source = p.source || '';
+                                            return status === 'not_synced' || status === 'blocked' || source === 'local';
+                                        });
+                                        for (const item of plansToPush) {
+                                            const cloudItem = window.prepareFloorPlanForCloud(item);
+                                            if (!cloudItem) continue;
+                                            const { error } = await window.supabaseClient
+                                                .from('construction_floors_v2')
+                                                .upsert(cloudItem, { onConflict: 'id' });
+                                            if (error) throw error;
+                                            item.source = 'cloud';
+                                            item.syncStatus = 'synced';
+                                            item.sync_status = 'synced';
+                                            item.updatedAt = new Date().toISOString();
+                                            item.updated_at = item.updatedAt;
+                                            await dbPut(STORES.CONST_FLOORS_V2, item);
+                                        }
+                                    }
+                                    const locSvc = window.RBI && window.RBI.services && window.RBI.services.locations;
+                                    if (locSvc && typeof locSvc.init === 'function') {
+                                        await locSvc.init();
+                                    }
+                                } catch (e) {
+                                    console.warn('[Sync][Локации] Ошибка отправки location_nodes/floors_v2:', e);
+                                    pushErrors++;
+                                    localStorage.setItem('rbi_cloud_dirty', '1');
+                                }
                             }
 
                             try {
@@ -2726,11 +2979,11 @@ if (window.RbiStorageManager) {
                                 updated.sync_status = 'synced';
                                 await dbPut('user_templates', { slug: updated.id, data: updated });
 
-                                if (typeof userTemplates !== 'undefined') {
+                                if (window.userTemplates && typeof window.userTemplates === 'object') {
                                     if (updated._deleted || updated.is_deleted) {
-                                        delete userTemplates[updated.id];
+                                        delete window.userTemplates[updated.id];
                                     } else {
-                                        userTemplates[updated.id] = updated;
+                                        window.userTemplates[updated.id] = updated;
                                     }
                                 }
                             }
@@ -2986,10 +3239,10 @@ if (window.RbiStorageManager) {
         // Запускаем пересчет только если не открыто модальное окно
         const isModalOpen = document.body.classList.contains('modal-open');
 
-        // ПРОВЕРКА: Смотрит ли юзер прямо сейчас на вкладку "Задачи"?
-        const engineerTabEl = document.getElementById('tab-engineer');
-        const tasksSubTabEl = document.getElementById('eng-sub-tasks');
-        const isTasksTabActive = !!(engineerTabEl?.classList.contains('active') && tasksSubTabEl && !tasksSubTabEl.classList.contains('hidden'));
+        // Смотрит ли юзер на Задачи / Инженер (единый хелпер §5)?
+        const isTasksTabActive = (typeof window.shouldDeferFullRender === 'function')
+            ? window.shouldDeferFullRender(['tasks', 'engineer'])
+            : !!(document.getElementById('tab-engineer')?.classList.contains('active'));
 
         // Если открыта модалка ИЛИ открыта вкладка Задач — запрещаем перерисовку!
         if (!isModalOpen && !isTasksTabActive) {
@@ -3032,16 +3285,19 @@ if (window.RbiStorageManager) {
         if (typeof rbi_renderFeedbackTab === 'function') rbi_renderFeedbackTab();
         if (typeof rbi_renderDevFeedbackTab === 'function') rbi_renderDevFeedbackTab();
 
-        // RBI FIX: практики и эталоны после pull должны появляться без перезагрузки страницы.
+        // RBI FIX: практики и эталоны после pull — paint только если Справочник не на экране (§5).
         if ((pulledPracticesChanged || pulledEtalonsChanged) && !document.body.classList.contains('modal-open')) {
             setTimeout(async () => {
                 try {
+                    const deferRef = (typeof window.shouldDeferFullRender === 'function')
+                        ? window.shouldDeferFullRender('reference')
+                        : false;
+
                     if (pulledPracticesChanged) {
                         if (typeof rbi_loadPractices === 'function') {
                             await rbi_loadPractices();
                         }
-
-                        if (typeof rbi_renderPracticesTab === 'function') {
+                        if (!deferRef && typeof rbi_renderPracticesTab === 'function') {
                             await rbi_renderPracticesTab();
                         }
                     }
@@ -3052,16 +3308,23 @@ if (window.RbiStorageManager) {
                                 .filter(x => !x._deleted && !x.is_deleted);
                         }
 
-                        // У разных сборок функция отрисовки эталонов могла называться по-разному.
-                        // Вызываем только те, которые реально существуют.
-                        if (typeof renderEtalonActs === 'function') renderEtalonActs();
-                        if (typeof renderEtalonsList === 'function') renderEtalonsList();
-                        if (typeof renderEtalonList === 'function') renderEtalonList();
-                        if (typeof renderEtalons === 'function') renderEtalons();
-                        if (typeof renderReferenceTab === 'function') renderReferenceTab();
+                        if (!deferRef) {
+                            if (typeof renderEtalonActs === 'function') renderEtalonActs();
+                            if (typeof renderEtalonsList === 'function') renderEtalonsList();
+                            if (typeof renderEtalonList === 'function') renderEtalonList();
+                            if (typeof renderEtalons === 'function') renderEtalons();
+                            if (typeof renderReferenceTab === 'function') renderReferenceTab();
+                        }
                     }
 
-                    if (window.syncDirtyFlags) {
+                    if (deferRef) {
+                        if (window.RBI?.utils?.syncUi?.markDirty) {
+                            window.RBI.utils.syncUi.markDirty(['reference', 'analytics']);
+                        } else if (window.syncDirtyFlags) {
+                            window.syncDirtyFlags.reference = true;
+                            window.syncDirtyFlags.analytics = true;
+                        }
+                    } else if (window.syncDirtyFlags) {
                         window.syncDirtyFlags.reference = false;
                         window.syncDirtyFlags.analytics = true;
                     }
@@ -3081,15 +3344,17 @@ if (window.RbiStorageManager) {
             if (typeof updateAllDynamicFilters === 'function') updateAllDynamicFilters();
             if (typeof renderSelector === 'function') renderSelector();
 
-            // Память справочника обновляем всегда; full-render списков — только
-            // если вкладка Справочник сейчас НЕ активна (иначе сброс UI).
-            const refTab = document.getElementById('tab-reference');
-            const refActive = !!(refTab && refTab.classList.contains('active'));
+            // Память справочника обновляем всегда; full-render — только если
+            // Справочник НЕ на экране (единый хелпер §5).
+            const refDeferred = (typeof window.shouldDeferFullRender === 'function')
+                ? window.shouldDeferFullRender('reference')
+                : !!(document.getElementById('tab-reference')?.classList.contains('active'));
             if (typeof window.rbi_reloadReferenceMemory === 'function') {
                 await window.rbi_reloadReferenceMemory();
             }
-            if (refActive) {
-                if (window.syncDirtyFlags) window.syncDirtyFlags.reference = true;
+            if (refDeferred) {
+                if (window.RBI?.utils?.syncUi?.markDirty) window.RBI.utils.syncUi.markDirty('reference');
+                else if (window.syncDirtyFlags) window.syncDirtyFlags.reference = true;
             } else {
                 if (typeof renderTwiList === 'function') renderTwiList();
                 if (typeof renderDocsList === 'function') renderDocsList();
@@ -3099,15 +3364,17 @@ if (window.RbiStorageManager) {
 
             if (!pulledPracticesChanged && typeof rbi_loadPractices === 'function') {
                 await rbi_loadPractices();
-                if (!refActive && typeof rbi_renderPracticesTab === 'function') {
+                if (!refDeferred && typeof rbi_renderPracticesTab === 'function') {
                     await rbi_renderPracticesTab();
                 } else if (window.syncDirtyFlags) {
                     window.syncDirtyFlags.reference = true;
                 }
             }
 
-            // no full-render on active analytics/history (см. §5 архитектуры)
-            if (window.syncDirtyFlags) {
+            // dirty для аналитики/истории — paint при следующем заходе
+            if (window.RBI?.utils?.syncUi?.markDirty) {
+                window.RBI.utils.syncUi.markDirty(['analytics', 'history']);
+            } else if (window.syncDirtyFlags) {
                 window.syncDirtyFlags.analytics = true;
                 window.syncDirtyFlags.history = true;
             }
@@ -3151,6 +3418,12 @@ if (window.RbiStorageManager) {
         window.isSyncing = false;
         window.syncChannel.postMessage('sync_done');
         window.renderSyncUI();
+
+        // Снимаем defer после тика: sync:completed-хендлеры и late UI уже отработали.
+        if (typeof window.rbiEndSyncUiDefer === 'function') window.rbiEndSyncUiDefer(400);
+        else {
+            setTimeout(function () { window._rbiDeferActiveViewFullRender = false; }, 400);
+        }
 
         // Если во время этого цикла sync был запрошен повторно (и отброшен из-за isSyncing),
         // не теряем его — запускаем отложенный повторный проход.

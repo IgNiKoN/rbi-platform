@@ -1,1 +1,17 @@
-{}
+{
+  "name": "rbi-platform",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build:ts": "vite build",
+    "build:locations": "vite build --config vite.locations.config.ts",
+    "build:construction-v2": "vite build --config vite.construction-v2.config.ts",
+    "build:modules": "npm run build:locations && npm run build:construction-v2",
+    "check:ts": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

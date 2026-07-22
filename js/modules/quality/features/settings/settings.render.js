@@ -8,6 +8,9 @@
  */
 
 import { SettingsActions } from './settings.actions.js';
+import { mountContractorDirectoryUI } from './features/contractor-directory-ui.js';
+import { mountLocationDirectoryUI } from './features/location-directory-ui.js';
+import { mountContractorIdBackfillUI } from './features/contractor-id-backfill-ui.js';
 
 var SettingsRender = {
     // =====================================================================
@@ -65,6 +68,60 @@ var SettingsRender = {
                         <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
                     </summary>
                     <div id="sync-settings-block"></div>
+                </details>
+
+                <!-- СПРАВОЧНИК ЛОКАЦИЙ / ПЛАНОВ (v2, параллельно legacy construction) -->
+                <details id="location-directory-section"
+                    class="bg-[var(--card-bg)] border border-teal-200 dark:border-teal-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3 hidden">
+                    <summary
+                        class="p-4 font-black text-[12px] text-teal-700 dark:text-teal-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-teal-50 dark:bg-teal-900/20 transition-colors select-none group-open:border-b border-teal-200 dark:border-teal-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4">
+                                </path>
+                            </svg>
+                            Объекты и планы
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-teal-400">▼</span>
+                    </summary>
+                    <div id="location-directory-root"></div>
+                </details>
+
+                <!-- СПРАВОЧНИК ПОДРЯДЧИКОВ -->
+                <details id="contractor-directory-section"
+                    class="bg-[var(--card-bg)] border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3 hidden">
+                    <summary
+                        class="p-4 font-black text-[12px] text-indigo-700 dark:text-indigo-400 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 transition-colors select-none group-open:border-b border-indigo-200 dark:border-indigo-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z">
+                                </path>
+                            </svg>
+                            Справочник подрядчиков
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-indigo-400">▼</span>
+                    </summary>
+                    <div id="contractor-directory-root"></div>
+                </details>
+
+                <!-- МИГРАЦИЯ ДАННЫХ: backfill contractorId (только admin) -->
+                <details id="contractor-id-backfill-section"
+                    class="bg-[var(--card-bg)] border border-amber-200 dark:border-amber-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden mb-3 hidden">
+                    <summary
+                        class="p-4 font-black text-[12px] text-amber-800 dark:text-amber-300 uppercase tracking-tight cursor-pointer flex justify-between items-center bg-amber-50 dark:bg-amber-900/20 transition-colors select-none group-open:border-b border-amber-200 dark:border-amber-800 rounded-2xl group-open:rounded-b-none">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4">
+                                </path>
+                            </svg>
+                            Миграция данных
+                        </span>
+                        <span class="transition-transform group-open:rotate-180 text-amber-400">▼</span>
+                    </summary>
+                    <div id="contractor-id-backfill-root"></div>
                 </details>
 
                 <!-- AI АССИСТЕНТ -->
@@ -340,6 +397,37 @@ var SettingsRender = {
                                 <option value="expanded">Развернутый</option>
                                 <option value="hidden">Отключить</option>
                             </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center gap-3">
+                            <div class="min-w-0">
+                                <div class="font-bold text-sm">Фильтры при скролле</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Авто: свернуть в середине, развернуть у верха и у низа страницы. Ручное — только по клику</div>
+                            </div>
+                            <select id="set-auto-collapse-filters" class="input-base w-36 shrink-0"
+                                data-settings-action="toggleSetting" data-settings-action-key="autoCollapseFilters" data-settings-action-val-type="element" data-action-event="change">
+                                <option value="auto">Авто</option>
+                                <option value="manual">Ручное</option>
+                            </select>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Анимации интерфейса</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Hover, пружины тостов/модалок, скелетоны. Система «уменьшить движение» тоже учитывается
+                                </div>
+                            </div>
+                            <label class="toggle-switch"><input type="checkbox" id="set-ui-motion"
+                                    data-settings-action="toggleSetting" data-settings-action-key="uiMotionEnabled" data-settings-action-val-type="element" data-action-event="change"><span
+                                    class="toggle-slider"></span></label>
+                        </div>
+                        <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
+                            <div>
+                                <div class="font-bold text-sm">Блокировка обновления свайпом</div>
+                                <div class="text-[10px] text-[var(--text-muted)] mt-1">Для Android: жёстко режет pull-to-refresh у верхнего края. Пружина/свечение по краям пропадёт
+                                </div>
+                            </div>
+                            <label class="toggle-switch"><input type="checkbox" id="set-hard-overscroll"
+                                    data-settings-action="toggleSetting" data-settings-action-key="hardOverscrollLock" data-settings-action-val-type="element" data-action-event="change"><span
+                                    class="toggle-slider"></span></label>
                         </div>
 
                         <!-- Настройки поведения -->
@@ -1260,6 +1348,11 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         if (document.getElementById('set-fontsize')) document.getElementById('set-fontsize').value = _getSetting('fontSize') || 'medium';
         if (document.getElementById('set-navpos')) document.getElementById('set-navpos').value = _getSetting('navPosition') || 'auto';
         if (document.getElementById('set-dashmode')) document.getElementById('set-dashmode').value = _getSetting('dashboardMode') || 'compact';
+        if (document.getElementById('set-auto-collapse-filters')) {
+            var acf = _getSetting('autoCollapseFilters');
+            document.getElementById('set-auto-collapse-filters').value =
+                (acf === false || acf === 'manual') ? 'manual' : 'auto';
+        }
         var _kbViewGet = window.getKnowledgeViewMode;
         var _kbViewFallback = _getSetting('knowledgeViewMode') || 'cards';
         var _kbViewVal = function (scope, key) {
@@ -1277,6 +1370,8 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         // 2. Переключатели логики
         if (document.getElementById('set-swipe')) document.getElementById('set-swipe').checked = _getSetting('swipeEnabled');
         if (document.getElementById('set-collapse')) document.getElementById('set-collapse').checked = _getSetting('autoCollapseOk');
+        if (document.getElementById('set-ui-motion')) document.getElementById('set-ui-motion').checked = _getSetting('uiMotionEnabled') !== false;
+        if (document.getElementById('set-hard-overscroll')) document.getElementById('set-hard-overscroll').checked = !!_getSetting('hardOverscrollLock');
         if (document.getElementById('set-groups-col')) document.getElementById('set-groups-col').checked = _getSetting('defaultGroupsCollapsed');
         if (document.getElementById('set-fast')) document.getElementById('set-fast').checked = _getSetting('fastMode');
 
@@ -1364,6 +1459,21 @@ console.log('[SettingsRender] settings.render.js markup mounted');
         }
 
         if (typeof window.renderSyncUI === 'function') window.renderSyncUI();
+        if (typeof mountLocationDirectoryUI === 'function') {
+            mountLocationDirectoryUI().catch(function (e) {
+                console.warn('[settings] location-directory UI:', e);
+            });
+        }
+        if (typeof mountContractorDirectoryUI === 'function') {
+            mountContractorDirectoryUI().catch(function (e) {
+                console.warn('[settings] contractor-directory UI:', e);
+            });
+        }
+        if (typeof mountContractorIdBackfillUI === 'function') {
+            mountContractorIdBackfillUI().catch(function (e) {
+                console.warn('[settings] contractor-id-backfill UI:', e);
+            });
+        }
 
         var brandControls = document.getElementById('corp-branding-controls');
         if (brandControls) {
@@ -1419,6 +1529,16 @@ console.log('[SettingsRender] settings.render.js markup mounted');
 
         if (_getSetting('fastMode')) document.body.classList.add('fast-mode');
         else document.body.classList.remove('fast-mode');
+
+        if (typeof window.rbiApplyUiMotionSetting === 'function') window.rbiApplyUiMotionSetting();
+        else document.body.classList.toggle('ui-motion-off', _getSetting('uiMotionEnabled') === false);
+
+        if (typeof window.rbiApplyHardOverscrollLock === 'function') window.rbiApplyHardOverscrollLock();
+        else {
+            var hol = !!_getSetting('hardOverscrollLock');
+            document.documentElement.classList.toggle('hard-overscroll-lock', hol);
+            document.body.classList.toggle('hard-overscroll-lock', hol);
+        }
 
         document.documentElement.classList.remove('font-small', 'font-medium', 'font-large', 'font-xlarge');
         document.documentElement.classList.add('font-' + (_getSetting('fontSize') || 'medium'));

@@ -503,7 +503,7 @@ export const AnalyticsRender = {
             <!-- БЛОК ПОДВКЛАДОК (Прыгает вниз на смартфонах, прилипает наверх на ПК) -->
             <div id="analytics-subtabs-block" class="z-[45] transition-all duration-300 w-full max-w-4xl mx-auto py-2">
                 <div
-                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)] mx-1">
+                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)]">
                     <button data-analytics-action="switchAnalyticsSubTab" data-action-arg="sub-contractors" data-analytics-action-arg2-type="element"
                         class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md bg-white shadow-sm text-indigo-600 flex flex-col items-center gap-1 active">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -554,20 +554,25 @@ export const AnalyticsRender = {
 
             <!-- БЛОК ФИЛЬТРОВ (Прилипает всегда) -->
             <div id="analytics-filters-block"
-                class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2 no-print mx-1">
+                class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-2 no-print">
                 <div id="analytics-panel-header"
-                    class="text-[10px] font-black text-slate-400 uppercase mb-2 flex justify-between items-center cursor-pointer">
-                    <span class="flex items-center gap-1"><span id="analytics-panel-toggle-icon"
-                            style="display:inline-block; transition: transform 0.3s">▾</span> Глобальные фильтры</span>
+                    class="text-[10px] font-black text-slate-400 uppercase mb-2 flex justify-between items-center gap-2 cursor-pointer">
+                    <span class="flex items-center gap-1 min-w-0 flex-1">
+                        <span id="analytics-panel-toggle-icon"
+                            style="display:inline-block; transition: transform 0.3s">▾</span>
+                        <span class="shrink-0">Глобальные фильтры</span>
+                        <span data-panel-filter-summary
+                            class="hidden normal-case font-bold text-indigo-500 truncate tracking-normal"></span>
+                    </span>
 
                     <!-- Правый блок: Тумблер + Иконка облака -->
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 shrink-0" data-no-panel-toggle>
                         <div id="analytics-global-mode-toggle" class="hidden"></div>
                         <div id="analytics-status-icon-container"></div>
                     </div>
                 </div>
                 <div id="analytics-panel-body"
-                    style="transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease; max-height: 200px; overflow: hidden;">
+                    style="transition: max-height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), margin 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275); max-height: 200px; overflow: hidden;">
 
                     <!-- СТРОКА 1: Объект, Подрядчик, Инспектор (Мультивыбор) -->
                     <div class="grid grid-cols-3 gap-2 mb-2">
@@ -607,15 +612,17 @@ export const AnalyticsRender = {
                             <select id="global-filter-period"
                                 class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 data-analytics-action="toggleDateRange,renderCurrentAnalyticsTab" data-action-event="change">
+                                <option value="D7">За 7 дней</option>
+                                <option value="D14">За 14 дней</option>
+                                <option value="D30" selected>За 30 дней</option>
+                                <option value="D90">За 90 дней</option>
+                                <option value="D180">За 180 дней</option>
                                 <option value="ALL">Всё время</option>
-                                <option value="DAY">Сегодня</option>
-                                <option value="WEEK">За 7 дней</option>
-                                <option value="MONTH">За 30 дней</option>
                                 <option value="CUSTOM">Свой период...</option>
                             </select>
                             <button id="btn-ana-period-label"
                                 class="input-base text-[10px] !py-2 text-left flex justify-between items-center bg-white dark:bg-slate-800 shadow-sm w-full"><span
-                                    class="truncate">Всё время</span><svg class="w-3 h-3 opacity-50 shrink-0"
+                                    class="truncate">За 30 дней</span><svg class="w-3 h-3 opacity-50 shrink-0"
                                     fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
                                 </svg></button>
@@ -647,10 +654,10 @@ export const AnalyticsRender = {
             <div id="sub-contractors" class="analytics-sub-section">
                 <!-- Главный экран вкладки (Сводка + Список) -->
                 <div id="contractors-main-view">
-                    <div id="contractors-top-summary" class="mx-1 mb-4 space-y-4"></div>
+                    <div id="contractors-top-summary" class="mb-4 space-y-4"></div>
 
                     <!-- Фильтры-чипсы над списком -->
-                    <div class="mx-1 mb-3 flex gap-2 overflow-x-auto no-scrollbar pb-1"
+                    <div class="mb-3 flex gap-2 overflow-x-auto no-scrollbar pb-1"
                         id="contractors-chips-container">
                         <button data-analytics-action="filterContractorsList" data-action-arg="ALL" data-analytics-action-arg2-type="element"
                             class="contr-chip px-3 py-1.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white shadow-sm active:scale-95 whitespace-nowrap transition-colors">Все</button>
@@ -668,13 +675,13 @@ export const AnalyticsRender = {
                             Новые (Сбор)</button>
                     </div>
 
-                    <div id="contractors-list-container" class="mx-1 pb-8 space-y-3"></div>
+                    <div id="contractors-list-container" class="pb-8 space-y-3"></div>
                 </div>
 
                 <!-- Режим детализации подрядчика (Скрыт по умолчанию) -->
                 <div id="contractor-detail-view" class="hidden">
                     <div id="contractor-detail-header"
-                        class="z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-[var(--card-border)] p-3 mx-1 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
+                        class="z-30 bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-[var(--card-border)] p-3 mt-2 mb-4 rounded-xl shadow-sm flex items-center justify-between">
                         <button data-analytics-action="hideContractorDetailView"
                             class="text-[11px] font-bold text-slate-500 flex items-center gap-1 active:scale-95 px-2 py-1 bg-[var(--hover-bg)] rounded-lg">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -685,29 +692,31 @@ export const AnalyticsRender = {
                         <div class="font-black text-[12px] uppercase text-indigo-600 dark:text-indigo-400 truncate max-w-[60%] text-right"
                             id="detail-view-title">Подрядчик</div>
                     </div>
-                    <div id="contractor-detail-content" class="mx-1 pb-8 space-y-4"></div>
+                    <div id="contractor-detail-content" class="pb-8 space-y-4"></div>
                 </div>
             </div>
             <div id="sub-onepager" class="analytics-sub-section hidden">
                 <div id="onepager-content-container" class="pb-8"></div>
             </div>
             <!-- ИСТОРИЯ ПЕРЕНЕСЕНА СЮДА -->
-            <div id="sub-history" class="analytics-sub-section hidden mx-1 mt-2">
+            <div id="sub-history" class="analytics-sub-section hidden mt-2">
 
                 <!-- ОБЩАЯ "ЛИПКАЯ" ПАНЕЛЬ ФИЛЬТРОВ (ТЕПЕРЬ СНАРУЖИ ВЬЮХ) -->
                 <div id="hist-sticky-panel"
                     class="bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-2xl border border-[var(--card-border)] mb-4 shadow-sm">
 
                     <!-- Заголовок с встроенным тумблером (iOS Style) -->
-                    <div id="hist-panel-header" class="flex justify-between items-center mb-2">
+                    <div id="hist-panel-header" class="flex justify-between items-center gap-2 mb-2">
                         <span
-                            class="text-[11px] font-black text-[var(--text-muted)] uppercase tracking-wide flex items-center gap-1 cursor-pointer">
+                            class="text-[11px] font-black text-[var(--text-muted)] uppercase tracking-wide flex items-center gap-1 cursor-pointer min-w-0 flex-1">
                             <span id="hist-panel-toggle-icon">▾</span>
-                            База и Отчеты
+                            <span class="shrink-0">База и Отчеты</span>
+                            <span data-panel-filter-summary
+                                class="hidden normal-case font-bold text-indigo-500 truncate tracking-normal"></span>
                         </span>
 
-                        <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-full shadow-inner cursor-pointer border border-slate-300 dark:border-slate-600"
-                            onclick="event.stopPropagation();">
+                        <div class="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-full shadow-inner cursor-pointer border border-slate-300 dark:border-slate-600 shrink-0"
+                            data-no-panel-toggle onclick="event.stopPropagation();">
                             <div id="btn-hist-checks" data-analytics-action="switchHistoryView" data-action-arg="checks"
                                 class="px-3 py-1 rounded-full text-[9px] font-black uppercase transition-all duration-300 bg-white dark:bg-slate-800 text-indigo-600 shadow-sm">
                                 Проверки</div>
@@ -719,7 +728,7 @@ export const AnalyticsRender = {
 
                     <!-- Тело панели фильтров (сворачиваемое) -->
                     <div id="hist-panel-body"
-                        style="transition: max-height 0.3s ease, opacity 0.3s ease; max-height: 400px; overflow: hidden;">
+                        style="transition: max-height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), margin 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275); max-height: 400px; overflow: hidden;">
                         <!-- Строка поиска -->
                         <div class="relative mb-2">
                             <span class="absolute left-3 top-2.5 text-[12px] text-[var(--text-muted)]">
@@ -760,14 +769,16 @@ export const AnalyticsRender = {
                                 <select id="hist-filter-period"
                                     class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                     data-history-action="applyHistoryFilters" data-action-event="change">
+                                    <option value="D7">За 7 дней</option>
+                                    <option value="D14">За 14 дней</option>
+                                    <option value="D30" selected>За 30 дней</option>
+                                    <option value="D90">За 90 дней</option>
+                                    <option value="D180">За 180 дней</option>
                                     <option value="ALL">Всё время</option>
-                                    <option value="DAY">Сегодня</option>
-                                    <option value="WEEK">Неделя</option>
-                                    <option value="MONTH">Месяц</option>
                                 </select>
                                 <button id="btn-hist-period-label"
                                     class="input-base text-[10px] !py-2 text-left flex justify-between items-center bg-white dark:bg-slate-800 shadow-sm w-full"><span
-                                        class="truncate">Всё время</span><svg class="w-3 h-3 opacity-50 shrink-0"
+                                        class="truncate">За 30 дней</span><svg class="w-3 h-3 opacity-50 shrink-0"
                                         fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path>
                                     </svg></button>
@@ -848,14 +859,14 @@ export const AnalyticsRender = {
             </div>
 
             <!-- НОВЫЙ БЛОК: ГРАФИК РАБОТ -->
-            <div id="sub-schedule" class="analytics-sub-section hidden mx-1 mt-2">
+            <div id="sub-schedule" class="analytics-sub-section hidden mt-2">
                 <div id="schedule-container">
                     <!-- Сюда JS загрузит интерфейс -->
                 </div>
             </div>
             <!-- КОНЕЦ БЛОКА: РЕЙТИНГ ИНЖЕНЕРА -->
             <!-- НОВЫЙ БЛОК: ПК СТРОЙКОНТРОЛЬ -->
-            <div id="sub-sk" class="analytics-sub-section hidden mx-1 mt-2">
+            <div id="sub-sk" class="analytics-sub-section hidden mt-2">
                 <div id="sk-main-container" class="pb-8"></div>
             </div>
         </div>
@@ -891,6 +902,16 @@ export const AnalyticsRender = {
     // Перенесено из analytics.legacy.js: главный рендер текущей вкладки.
     // =========================================================================
     renderCurrentAnalyticsTab() {
+        // Единый хелпер §5 (sync-ui-defer): sync не full-render'ит открытую Аналитику.
+        if (typeof window.shouldDeferFullRender === 'function'
+            ? window.shouldDeferFullRender('analytics')
+            : (!!(document.getElementById('tab-analytics')?.classList.contains('active'))
+                && !!(window.isSyncing || window._rbiDeferActiveViewFullRender))) {
+            if (window.RBI?.utils?.syncUi?.markDirty) window.RBI.utils.syncUi.markDirty('analytics');
+            else if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = true;
+            return;
+        }
+
         // Инвалидируем in-flight canvas-превью предыдущего фильтра.
         _analyticsRenderGen += 1;
         for (const key in _chartInstances()) { if (_chartInstances()[key]) _chartInstances()[key].destroy(); }
@@ -1333,6 +1354,7 @@ export const AnalyticsRender = {
         AnalyticsRender.renderContractorsListOnly(data);
     },
 
+
     // =========================================================================
     // Перенесено из analytics.legacy.js: список Подрядчиков (Мини-карточки
     // сеткой 2 и 3 в ряд).
@@ -1393,16 +1415,6 @@ export const AnalyticsRender = {
 
             // Защита от поломки HTML из-за кавычек в названиях
             const safeName = c.name.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-            // Короткая плашка достоверности: на 2-колоночной сетке телефона
-            // полное «Предварительный» ломало выравнивание цифр.
-            const confFull = String(m.confStatus || '');
-            let confShort = confFull;
-            if (/сбор/i.test(confFull)) confShort = 'Сбор';
-            else if (/предварительн/i.test(confFull)) confShort = 'Предв.';
-            else if (/базов/i.test(confFull)) confShort = 'Базов.';
-            else if (/уверен/i.test(confFull)) confShort = 'Увер.';
-            else if (/стабил/i.test(confFull)) confShort = 'Стаб.';
-            else if (/эталон/i.test(confFull)) confShort = 'Эталон';
 
             html += `
             <div class="bg-[var(--card-bg)] border ${borderClass} rounded-xl p-2.5 sm:p-3 shadow-sm relative overflow-hidden cursor-pointer active:scale-[0.98] transition-transform flex flex-col justify-between min-w-0" onclick="showContractorDetailView('${safeName}')">
@@ -1416,16 +1428,12 @@ export const AnalyticsRender = {
                         <div class="min-w-0 flex flex-col">
                             <div class="text-[7px] sm:text-[8px] uppercase text-slate-400 font-bold truncate">Надежность</div>
                             <div class="text-xl sm:text-2xl font-black leading-none tabular-nums" style="color:${relColor}">${isPrelim ? '--' : m.finalC}<span class="text-xs sm:text-sm">%</span></div>
-                            <div class="text-[7px] sm:text-[8px] text-slate-400 font-bold mt-0.5 h-3 tabular-nums">± ${isPrelim ? '-' : m.ci95_margin.toFixed(1)}%</div>
-                            <div class="h-4 mt-1 min-w-0">
-                                <span class="inline-block max-w-full truncate text-[7px] ${m.confCls} border rounded px-1 font-bold uppercase leading-4" title="Достоверность рейтинга (N=${m.count}): ${confFull}">${confShort}</span>
-                            </div>
+                            <div class="text-[7px] sm:text-[8px] text-slate-400 font-bold mt-0.5 h-3 tabular-nums" title="Окно ≤15 в периоде">N ${m.count}</div>
                         </div>
                         <div class="min-w-0 flex flex-col border-l border-[var(--card-border)] pl-2">
                             <div class="text-[7px] sm:text-[8px] uppercase text-slate-400 font-bold truncate">Ур. качества</div>
                             <div class="text-xl sm:text-2xl font-black leading-none tabular-nums" style="color:${urkColor}">${m.baseUrkContrPerc}<span class="text-xs sm:text-sm">%</span></div>
                             <div class="text-[8px] sm:text-[10px] font-bold mt-0.5 h-3 truncate tabular-nums" style="color:${hasDoc ? docColor : 'transparent'}">${hasDoc ? `Док ${m.documentaryC}%${docGapWarn}` : '&nbsp;'}</div>
-                            <div class="h-4 mt-1" aria-hidden="true"></div>
                         </div>
                     </div>
                 </div>
@@ -1481,7 +1489,7 @@ export const AnalyticsRender = {
             return AnalyticsRender.renderGlobalOnePager(data, container);
         }
         if (data.length === 0) {
-            container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm mx-1">Нет данных для анализа</div>`;
+            container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm">Нет данных для анализа</div>`;
             return;
         }
 
@@ -1531,27 +1539,26 @@ export const AnalyticsRender = {
             ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50'
             : 'bg-[var(--card-bg)] border-[var(--card-border)]';
 
-        const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+        const selPeriod = document.getElementById('global-filter-period')?.value || 'D30';
         let prevData = [];
         const now = new Date();
-        let trendLabel = "к 1-й пол. базы";
-
-        if (selPeriod === 'WEEK') {
-            const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-            const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-            prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-            trendLabel = "к прош. нед.";
-        } else if (selPeriod === 'MONTH') {
-            const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-            const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-            prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-            trendLabel = "к прош. мес.";
+        let trendLabel = 'к пред. периоду';
+        const prevBounds = typeof getAnalyticsPrevPeriodBounds === 'function'
+            ? getAnalyticsPrevPeriodBounds(selPeriod, now)
+            : null;
+        if (prevBounds) {
+            prevData = _allInspections.filter(i => {
+                const d = new Date(i.date);
+                return d >= prevBounds.startPrev && d < prevBounds.endPrev;
+            });
+            trendLabel = prevBounds.trendLabel;
         } else if (selPeriod === 'CUSTOM') {
-            trendLabel = "к пред. периоду";
+            trendLabel = 'к пред. периоду';
         } else {
             const half = Math.floor(data.length / 2);
             const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
             prevData = sortedData.slice(0, half);
+            trendLabel = 'к 1-й пол. базы';
         }
 
         // Динамика рейтинга подрядчика к предыдущему периоду (та же база, что у KPI).
@@ -1681,7 +1688,7 @@ export const AnalyticsRender = {
             </div>`;
         };
 
-        let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
+        let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'За 30 дней';
         if (document.getElementById('global-filter-period')?.value === 'CUSTOM') {
             const dFrom = document.getElementById('filter-date-from')?.value;
             const dTo = document.getElementById('filter-date-to')?.value;
@@ -1796,7 +1803,7 @@ export const AnalyticsRender = {
         // СБОРКА ИТОГОВОГО HTML (ОДИН СПИСОК АККОРДЕОНОВ - iOS STYLE)
         // ==========================================
         container.innerHTML = `
-            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 flex justify-between items-center">
+            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mt-2 flex justify-between items-center">
                 <div>
                     <h2 class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
                         <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
@@ -1806,7 +1813,7 @@ export const AnalyticsRender = {
                 </div>
             </div>
             
-            <div class="space-y-3 mx-1">
+            <div class="space-y-3">
                 
                 <!-- АККОРДЕОН 1: ГЛАВНЫЕ МЕТРИКИ И РЕЙТИНГ -->
                 <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
@@ -2066,27 +2073,25 @@ export const AnalyticsRender = {
     renderGlobalOnePager(data, container) {
         var _allInspections = _inspections();
         if (data.length === 0) {
-            container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm mx-1">Нет данных для анализа компании</div>`;
+            container.innerHTML = `<div class="text-center text-slate-500 text-sm py-10 border border-[var(--card-border)] rounded-xl bg-[var(--card-bg)] shadow-sm">Нет данных для анализа компании</div>`;
             return;
         }
 
-        let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'Всё время';
+        let periodText = document.getElementById('btn-ana-period-label')?.innerText.trim() || 'За 30 дней';
 
         // --- 1. РАСЧЕТ ПРЕДЫДУЩЕГО ПЕРИОДА ДЛЯ ТРЕНДОВ ---
-        const selPeriod = document.getElementById('global-filter-period')?.value || 'ALL';
+        const selPeriod = document.getElementById('global-filter-period')?.value || 'D30';
         let prevData = [];
         const now = new Date();
-
-        if (selPeriod === 'WEEK') {
-            const startCurr = new Date(now); startCurr.setDate(now.getDate() - 7);
-            const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 7);
-            prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
-        } else if (selPeriod === 'MONTH') {
-            const startCurr = new Date(now); startCurr.setDate(now.getDate() - 30);
-            const startPrev = new Date(startCurr); startPrev.setDate(startCurr.getDate() - 30);
-            prevData = _allInspections.filter(i => new Date(i.date) >= startPrev && new Date(i.date) < startCurr);
+        const prevBoundsG = typeof getAnalyticsPrevPeriodBounds === 'function'
+            ? getAnalyticsPrevPeriodBounds(selPeriod, now)
+            : null;
+        if (prevBoundsG) {
+            prevData = _allInspections.filter(i => {
+                const d = new Date(i.date);
+                return d >= prevBoundsG.startPrev && d < prevBoundsG.endPrev;
+            });
         } else {
-            // Если "Все время" или кастомный - берем первую половину базы как "прошлое"
             const half = Math.floor(data.length / 2);
             const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
             prevData = sortedData.slice(0, half);
@@ -2142,8 +2147,8 @@ export const AnalyticsRender = {
 
         projectsArray.sort((a, b) => parseFloat(b.IKO) - parseFloat(a.IKO)); // Худшие по ИКО наверх
 
-        // --- 3. КАРТОЧКИ ОБЪЕКТОВ С ТРЕНДАМИ ---
-        let cardsHtml = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4 mx-1">';
+        // --- 3. КАРТОЧКИ ОБЪЕКТОВ С ТРЕНДАМИ (сетка как у подрядчиков: 2 на телефоне) ---
+        let cardsHtml = '<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">';
         projectsArray.forEach(p => {
             const ikoColor = parseFloat(p.IKO) >= 0.6 ? 'text-red-600 bg-red-50 border-red-200' : (parseFloat(p.IKO) >= 0.3 ? 'text-orange-600 bg-orange-50 border-orange-200' : 'text-green-600 bg-green-50 border-green-200');
             const urkColor = _urkGradientColor(p.avgUrk);
@@ -2153,29 +2158,30 @@ export const AnalyticsRender = {
             const docGapWarn = (hasDoc && docGap > 30) ? ` <span title="Большой разрыв между физикой и документацией (>30%)">⚠️</span>` : '';
 
             cardsHtml += `
-            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-2xl shadow-sm p-4 flex flex-col justify-between hover:border-indigo-300 transition-colors cursor-pointer active:scale-[0.98]" onclick="
+            <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-2.5 sm:p-3 shadow-sm flex flex-col justify-between hover:border-indigo-300 transition-colors cursor-pointer active:scale-[0.98] min-w-0" onclick="
                 window.rbi_setAnalyticsProjectFilter('${p.name}');
                 updateFilterButtonLabels();
                 window.onepagerMode = 'local';
                 renderCurrentAnalyticsTab();
             ">
-                <div class="flex justify-between items-start mb-3">
-                    <div class="text-[13px] font-black uppercase text-slate-800 dark:text-white leading-tight pr-2 break-words">${p.name}</div>
-                    <div class="text-[10px] font-black px-2 py-0.5 rounded border ${ikoColor} shadow-sm shrink-0 flex items-center">
-                        ИКО ${p.IKO} ${formatTrendInline(p.IKO, p.prevIKO, true)}
+                <div class="min-w-0 mb-2">
+                    <div class="text-[10px] sm:text-[12px] font-black uppercase text-slate-800 dark:text-white leading-snug line-clamp-2 break-words mb-1.5">${p.name}</div>
+                    <div class="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded border ${ikoColor} shadow-sm inline-flex items-center max-w-full">
+                        <span class="truncate">ИКО ${p.IKO}</span>
+                        <span class="shrink-0 ml-0.5">${formatTrendInline(p.IKO, p.prevIKO, true)}</span>
                     </div>
                 </div>
-                <div class="flex justify-between items-stretch mt-auto pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <div class="flex-1">
-                        <div class="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ур. качества (физика)</div>
-                        <div class="text-2xl font-black leading-none flex items-center" style="color:${urkColor}">
+                <div class="mt-auto pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                    <div class="min-w-0">
+                        <div class="text-[7px] sm:text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 truncate">Ур. качества</div>
+                        <div class="text-xl sm:text-2xl font-black leading-none flex items-center tabular-nums" style="color:${urkColor}">
                             ${p.avgUrk}% ${formatTrendInline(p.avgUrk, p.prevAvgUrk, false)}
                         </div>
-                        <div class="text-[10px] font-bold mt-0.5" style="color:${hasDoc ? docColor : 'transparent'}">${hasDoc ? `Док ${p.avgDoc}%${docGapWarn}` : '&nbsp;'}</div>
+                        <div class="text-[8px] sm:text-[10px] font-bold mt-0.5 truncate" style="color:${hasDoc ? docColor : 'transparent'}">${hasDoc ? `Док ${p.avgDoc}%${docGapWarn}` : '&nbsp;'}</div>
                     </div>
-                    <div class="text-right shrink-0">
-                        <div class="text-[9px] font-bold text-slate-500 uppercase">Проверок: ${p.count}</div>
-                        <div class="text-[9px] font-bold ${p.b3Found > 0 ? 'text-red-500' : 'text-slate-400'} uppercase mt-1">Крит. деф. (B3): ${p.b3Found}</div>
+                    <div class="flex flex-wrap justify-between gap-1 text-[8px] sm:text-[9px] font-bold uppercase">
+                        <span class="text-slate-500">Пров. ${p.count}</span>
+                        <span class="${p.b3Found > 0 ? 'text-red-500' : 'text-slate-400'}">B3 ${p.b3Found}</span>
                     </div>
                 </div>
             </div>`;
@@ -2264,7 +2270,7 @@ export const AnalyticsRender = {
 
         // --- 6. СБОРКА HTML (Аккордеоны) ---
         container.innerHTML = `
-            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mx-1 mt-2 flex justify-between items-center">
+            <div class="bg-[var(--card-bg)] p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 mt-2 flex justify-between items-center">
                 <div>
                     <h2 class="text-[12px] font-black uppercase tracking-tight text-slate-800 dark:text-white flex items-center gap-1.5">
                         <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -2276,7 +2282,7 @@ export const AnalyticsRender = {
 
             ${cardsHtml}
 
-            <div class="space-y-3 mx-1 pb-4">
+            <div class="space-y-3 pb-4">
                 
                 <!-- АНАЛИЗ ИИ -->
                 <details class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-2xl shadow-sm group [&_summary::-webkit-details-marker]:hidden" open>
@@ -2442,6 +2448,14 @@ export const AnalyticsRender = {
         if (data.length === 0) { container.innerHTML = 'Ошибка данных'; return; }
 
         const m = getContractorMetrics(data, _templates().getUserTemplates());
+        // Исторический контур: все проверки подрядчика+объекта без фильтра периода и без окна 15.
+        const histData = (_inspections() || []).filter(c => {
+            const projectLabel = c.project_display_name || c.projectName || c.project_canonical_key || 'Без объекта';
+            return c.contractorName + ' [' + projectLabel + ']' === contractorName;
+        });
+        const mHist = histData.length
+            ? getContractorMetrics(histData, _templates().getUserTemplates(), false)
+            : null;
         const workType = data[0].templateTitle;
 
         let cStageData = {}; let cFailCounts = {}; let cB3Counts = {};
@@ -2557,9 +2571,45 @@ export const AnalyticsRender = {
         const pB2 = totalDefects > 0 ? Math.round((sumB2 / totalDefects) * 100) : 0;
         const pB3 = totalDefects > 0 ? Math.round((sumB3 / totalDefects) * 100) : 0;
 
+        const histAccordionHtml = mHist ? `
+            <details class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
+                <summary class="p-3 font-black text-[11px] text-[var(--text-muted)] uppercase tracking-widest cursor-pointer flex justify-between items-center hover:bg-[var(--hover-bg)] transition-colors rounded-xl">
+                    <span class="flex items-center gap-2">📚 История (все проверки)</span>
+                    <span class="transition-transform group-open:rotate-180">▼</span>
+                </summary>
+                <div class="border-t border-[var(--card-border)] p-3 space-y-3">
+                    <p class="text-[10px] text-slate-500 font-bold leading-snug">За всё время по этому подрядчику на объекте, <b>без</b> скользящего окна ≤15 и <b>без</b> фильтра периода. Здесь — доверительный интервал и достоверность.</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="bg-[var(--hover-bg)] p-2.5 rounded-lg border border-[var(--card-border)]">
+                            <div class="text-[8px] text-slate-400 uppercase font-bold">Надёжность (история)</div>
+                            <div class="text-2xl font-black ${mHist.finalC < 70 ? 'text-red-600' : (mHist.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${mHist.count < 7 ? '—' : mHist.finalC + '%'}</div>
+                        </div>
+                        <div class="bg-[var(--hover-bg)] p-2.5 rounded-lg border border-[var(--card-border)]">
+                            <div class="text-[8px] text-slate-400 uppercase font-bold">Ср. УрК (история)</div>
+                            <div class="text-2xl font-black text-slate-800 dark:text-white">${mHist.baseUrkContrPerc}%</div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
+                            <div class="text-[8px] text-slate-400 uppercase font-bold">N полное</div>
+                            <div class="font-black text-sm">${mHist.count}</div>
+                        </div>
+                        <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
+                            <div class="text-[8px] text-slate-400 uppercase font-bold">±E (95%)</div>
+                            <div class="font-black text-sm">${mHist.count >= 2 ? ('±' + mHist.ci95_margin.toFixed(1) + '%') : '—'}</div>
+                        </div>
+                        <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]">
+                            <div class="text-[8px] text-slate-400 uppercase font-bold">Достоверность</div>
+                            <div class="text-[9px] font-black uppercase mt-0.5 ${mHist.confCls}">${mHist.confStatus}</div>
+                        </div>
+                    </div>
+                    <div class="text-[10px] font-bold text-slate-500">Стабильность: <span class="${mHist.stabColor}">${mHist.stabilityIndex} (${mHist.stabText})</span></div>
+                </div>
+            </details>` : '';
+
         let mathBreakdown = `
             <div class="text-[11px] space-y-2 text-slate-700 dark:text-slate-300">
-                <p>Система рассчитала Интегральный УрК на основе ${data.length} последних проверок.</p>
+                <p>Операционный Интегральный УрК: окно последних до 15 проверок внутри текущего фильтра периода (в срезе ${data.length} проверок).</p>
                 <div class="bg-slate-50 dark:bg-slate-900 p-2 rounded border border-slate-200 dark:border-slate-700 font-mono text-[10px]">
                     Средний балл по изделиям (до штрафов): <b>${m.baseUrkContrPerc}%</b>
                 </div>
@@ -2626,6 +2676,7 @@ export const AnalyticsRender = {
             </button>
 
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow-sm mb-4">
+                <div class="text-[9px] font-bold text-indigo-500 uppercase tracking-widest mb-2">Оперативно · период + окно ≤15</div>
                 <div class="flex justify-between items-start mb-3 border-b border-[var(--card-border)] pb-3">
                     <div class="bg-[var(--hover-bg)] p-2 rounded-xl border border-[var(--card-border)] shadow-sm flex flex-col justify-center min-h-[70px]">
                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">Надежность (ИУрК)</div>
@@ -2635,16 +2686,15 @@ export const AnalyticsRender = {
             }
                     </div>
                     <div class="text-right">
-                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest block border border-[var(--card-border)] px-1.5 py-0.5 rounded mb-1 ${m.confCls}">${m.confStatus}</span>
                         <span class="text-[12px] font-black text-slate-700 dark:text-slate-300 block">Ср. УрК Изд: ${m.baseUrkContrPerc}%</span>
                         ${(m.documentaryC !== null && m.documentaryC !== undefined) ? `<span class="text-[12px] font-black text-indigo-500 block">УрК Докум: ${m.documentaryC}%</span>` : ''}
-                        <div class="text-[10px] font-bold text-slate-500 mt-1">Погрешность: ± ${m.ci95_margin.toFixed(1)}%</div>
+                        <div class="text-[10px] font-bold text-slate-500 mt-1">N в окне: ${m.count}</div>
                     </div>
                 </div>
                 ${(m.count >= 7 && m.documentaryC !== null && m.documentaryC !== undefined && Math.abs(m.finalC - m.documentaryC) > 30) ? `<div class="bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-[10px] font-bold p-2 rounded-lg border border-orange-200 dark:border-orange-800 mb-3 flex items-center gap-1.5">⚠️ Разрыв между физикой (${m.finalC}%) и документацией (${m.documentaryC}%) — ${Math.abs(m.finalC - m.documentaryC)} п.п.</div>` : ''}
                 
                 <div class="grid grid-cols-4 gap-2 mb-3 text-center">
-                    <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]"><div class="text-[8px] text-slate-400 uppercase font-bold">Выборка</div><div class="font-black text-sm">${m.count}</div></div>
+                    <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]"><div class="text-[8px] text-slate-400 uppercase font-bold" title="Последние до 15 в периоде">Окно</div><div class="font-black text-sm">${m.count}</div></div>
                     <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]"><div class="text-[8px] text-slate-400 uppercase font-bold">Стаб-ть</div><div class="font-black text-sm ${m.stabColor}">${m.stabilityIndex}</div></div>
                     <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]"><div class="text-[8px] text-slate-400 uppercase font-bold">Ks</div><div class="font-black text-sm ${m.ks < 1 ? 'text-red-500' : 'text-slate-700'}">${m.ks.toFixed(2)}</div></div>
                     <div class="bg-[var(--hover-bg)] p-2 rounded-lg border border-[var(--card-border)]"><div class="text-[8px] text-slate-400 uppercase font-bold">Kcrit</div><div class="font-black text-sm ${m.kcritC < 1 ? 'text-red-500' : 'text-slate-700'}">${m.kcritC.toFixed(2)}</div></div>
@@ -2661,6 +2711,8 @@ export const AnalyticsRender = {
                     <span class="bg-red-50 text-red-700 px-2 rounded border border-red-100">B3: ${sumB3}</span>
                 </div>
             </div>
+
+            ${histAccordionHtml}
             
             <!-- НОВЫЙ БЛОК: ПРЕДИКТИВНЫЙ ИИ ПРОГНОЗ -->
             <details class="bg-[var(--card-bg)] border-2 border-indigo-200 dark:border-indigo-800 rounded-xl shadow-sm mb-4 group [&_summary::-webkit-details-marker]:hidden">
@@ -2847,7 +2899,7 @@ export const AnalyticsRender = {
                     <div class="w-10 h-10 rounded-xl flex items-center justify-center font-black text-xl shadow-inner shrink-0 border ${rankClass}">${index + 1}</div>
                     <div class="flex-1 min-w-0">
                         <div class="text-[14px] font-black leading-tight truncate text-slate-800 dark:text-white">${r.name}</div>
-                        <span class="${r.metrics.confCls} mt-1 inline-block px-1.5 py-0.5 rounded border text-[8px] uppercase tracking-wide">${r.metrics.confStatus} (Выборка: ${r.metrics.count})</span>
+                        <span class="mt-1 inline-block px-1.5 py-0.5 rounded border border-[var(--card-border)] text-[8px] uppercase tracking-wide text-slate-500 font-bold">Окно N=${r.metrics.count}</span>
                     </div>
                     <div class="text-right shrink-0">
                         <div class="text-3xl font-black leading-none ${r.metrics.finalC < 70 ? 'text-red-600' : (r.metrics.finalC < 85 ? 'text-orange-500' : 'text-green-600')}">${r.metrics.finalC}%</div>
@@ -2940,7 +2992,7 @@ export const AnalyticsRender = {
 
         // Считываем текущие глобальные фильтры
         const fSearch = document.getElementById('hist-search-text')?.value.toLowerCase() || '';
-        const fPeriod = document.getElementById('hist-filter-period')?.value || 'ALL';
+        const fPeriod = document.getElementById('hist-filter-period')?.value || 'D30';
 
         // ИСПРАВЛЕНИЕ (см. current_plan.md, блок "UI вкладки «Отчёты»", баг
         // "глобальные фильтры не действуют на вкладке Отчёты"): _historyFilters()
@@ -2985,9 +3037,16 @@ export const AnalyticsRender = {
             filteredArr = filteredArr.filter(r => fInsp.includes(r.created_by));
         }
 
-        if (fPeriod === 'DAY') filteredArr = filteredArr.filter(i => new Date(i.generated_at).toDateString() === now.toDateString());
-        else if (fPeriod === 'WEEK') { const w = new Date(); w.setDate(now.getDate() - 7); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= w); }
-        else if (fPeriod === 'MONTH') { const m = new Date(); m.setDate(now.getDate() - 30); filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= m); }
+        if (fPeriod !== 'ALL') {
+            const histDays = typeof getAnalyticsPeriodDays === 'function'
+                ? getAnalyticsPeriodDays(fPeriod)
+                : null;
+            if (histDays) {
+                const from = new Date(now);
+                from.setDate(now.getDate() - histDays);
+                filteredArr = filteredArr.filter(i => new Date(i.generated_at) >= from);
+            }
+        }
 
         // Чипсы doc_kind — считаем набор значений, реально встречающихся среди
         // отчётов, ПОСЛЕ применения остальных фильтров, но ДО фильтра по самому
@@ -3097,9 +3156,7 @@ export const AnalyticsRender = {
 
         const chip = (label, value, count, active) => `
             <button onclick="AnalyticsRender._setReportsDocKindFilter('${value.replace(/'/g, "\\'")}')"
-                class="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wide border transition-colors whitespace-nowrap ${active
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                : 'bg-[var(--card-bg)] text-slate-500 dark:text-slate-400 border-[var(--card-border)]'}">
+                class="shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wide border transition-colors whitespace-nowrap ${active ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-[var(--card-bg)] text-slate-500 dark:text-slate-400 border-[var(--card-border)]'}">
                 ${label} <span class="opacity-70">${count}</span>
             </button>`;
 

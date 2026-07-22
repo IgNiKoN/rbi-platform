@@ -684,6 +684,16 @@ async function sk_finalizeImport() {
         var cleanContractor = (contractorMatch && contractorMatch.display_name) || sk_cleanContractorName(rawContractor);
         var contractorKey = (contractorMatch && contractorMatch.canonical_key) || '';
         var contractorNormStatus = (contractorMatch && contractorMatch.status && contractorMatch.status.includes('matched')) ? 'matched' : 'pending';
+        var contractorId = '';
+        if (contractorNormStatus === 'matched') {
+            var resolveSvc = (window.RBI && window.RBI.services && window.RBI.services.contractors) || window.ContractorDirectory;
+            if (resolveSvc && typeof resolveSvc.resolveIdFromNormalized === 'function') {
+                contractorId = resolveSvc.resolveIdFromNormalized(contractorMatch) || '';
+            } else if (resolveSvc && typeof resolveSvc.getByCanonicalKey === 'function' && contractorKey) {
+                var matchedCard = resolveSvc.getByCanonicalKey(contractorKey);
+                contractorId = (matchedCard && matchedCard.id) ? String(matchedCard.id) : '';
+            }
+        }
 
         var rawStructure = getVal('structure') ? String(getVal('structure')).trim() : '';
         var rawProjectLoc = getVal('project_loc') ? String(getVal('project_loc')).trim() : '';
@@ -716,6 +726,7 @@ async function sk_finalizeImport() {
             contractor: cleanContractor, contractorName: cleanContractor, contractor_name: cleanContractor,
             raw_contractor: rawContractor, contractor_raw: rawContractor,
             contractor_canonical_key: contractorKey, contractor_normalization_status: contractorNormStatus,
+            contractorId: contractorId,
             contractor_representative: getVal('contractor_representative') ? String(getVal('contractor_representative')).trim() : '',
             deadline: sk_parseExcelDate(getVal('deadline')),
             status: statusInfo.raw, status_raw: statusInfo.raw, status_normalized: statusInfo.normalized,
@@ -980,21 +991,34 @@ async function sk_saveContractorLink() {
             return;
         }
 
-        var contractor = {
-            id: 'contractor_' + projectCode + '_' + canonicalKey, project_code: projectCode,
-            canonical_key: canonicalKey, display_name: displayName, synonyms: [rawName], inn: '',
-            created_by: currentUser, is_deleted: false, _deleted: false,
-            created_at: nowIso, updated_at: nowIso, updatedAt: nowIso,
-            source: 'local', syncStatus: 'not_synced', sync_status: 'not_synced', syncBlockReason: '', sync_block_reason: ''
-        };
-        var alias = {
-            id: 'contractor_alias_' + projectCode + '_' + Date.now().toString(36), project_code: projectCode,
-            raw_name: rawName, canonical_key: canonicalKey, created_by: currentUser,
-            created_at: nowIso, updated_at: nowIso, updatedAt: nowIso,
-            source: 'local', syncStatus: 'not_synced', sync_status: 'not_synced', syncBlockReason: '', sync_block_reason: ''
-        };
-        await _storage().put(_storage().stores().CONTRACTOR_DIRECTORY, contractor);
-        await _storage().put(_storage().stores().CONTRACTOR_ALIASES, alias);
+        var contractorsSvc = (window.RBI && window.RBI.services && window.RBI.services.contractors) || null;
+        var directoryApi = window.ContractorDirectory || contractorsSvc;
+        if (!directoryApi || typeof directoryApi.create !== 'function') {
+            showToast('❌ Сервис справочника подрядчиков недоступен');
+            return;
+        }
+        var existingCard = typeof directoryApi.getByCanonicalKey === 'function'
+            ? directoryApi.getByCanonicalKey(canonicalKey)
+            : null;
+        var linkedCard = existingCard;
+        if (existingCard) {
+            if (typeof directoryApi.saveAlias === 'function') {
+                await directoryApi.saveAlias(rawName, canonicalKey);
+            } else if (contractorsSvc && typeof contractorsSvc.saveAlias === 'function') {
+                await contractorsSvc.saveAlias(rawName, canonicalKey);
+            }
+        } else {
+            linkedCard = await directoryApi.create({
+                display_name: displayName,
+                canonical_key: canonicalKey,
+                synonyms: [rawName],
+                inn: ''
+            });
+        }
+        if (!linkedCard && typeof directoryApi.getByCanonicalKey === 'function') {
+            linkedCard = directoryApi.getByCanonicalKey(canonicalKey);
+        }
+        var linkedContractorId = (linkedCard && linkedCard.id) ? String(linkedCard.id) : '';
 
         var allQueue2 = await _storage().getAll(_storage().stores().CONTRACTOR_QUEUE) || [];
         for (var q2 of allQueue2) {
@@ -1014,6 +1038,7 @@ async function sk_saveContractorLink() {
                 r2.contractor = displayName; r2.contractorName = displayName; r2.contractor_name = displayName;
                 r2.contractor_raw = rawName; r2.raw_contractor = rawName;
                 r2.contractor_canonical_key = canonicalKey; r2.contractor_normalization_status = 'matched';
+                r2.contractorId = linkedContractorId;
                 r2.source = 'local'; r2.syncStatus = 'not_synced'; r2.sync_status = 'not_synced';
                 r2.syncBlockReason = ''; r2.sync_block_reason = '';
                 r2.updated_at = nowIso; r2.updatedAt = nowIso; r2._updatedAt = nowIso;

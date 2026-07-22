@@ -23,7 +23,7 @@
             <!-- Блок подвкладок Инженера (Липкий) -->
             <div id="engineer-subtabs-block" class="z-[45] transition-all duration-300 w-full max-w-4xl mx-auto py-2">
                 <div
-                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)] mx-1">
+                    class="flex gap-1 p-1 bg-[var(--card-border)]/80 backdrop-blur-md rounded-xl overflow-x-auto no-scrollbar whitespace-nowrap text-center shadow-sm border border-[var(--card-border)]">
                     <button data-tasks-action="rbi_switchEngineerSubTab" data-action-arg="eng-sub-badges" data-tasks-action-arg2-type="element"
                         class="sub-tab-btn flex-1 min-w-[60px] py-2 text-[9px] sm:text-[10px] font-bold uppercase rounded-md text-[var(--text-muted)] flex flex-col items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,7 +69,7 @@
 
             <!-- Подвкладка: ЗАДАЧИ -->
              
-            <div id="eng-sub-tasks" class="eng-sub-section mx-1 mt-2">
+            <div id="eng-sub-tasks" class="eng-sub-section mt-2">
                 <div
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
@@ -99,7 +99,7 @@
             </div>
 
             <!-- Подвкладка: СОВЕЩАНИЯ -->
-            <div id="eng-sub-meetings" class="eng-sub-section hidden mx-1 mt-2">
+            <div id="eng-sub-meetings" class="eng-sub-section hidden mt-2">
                 <div
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
@@ -131,7 +131,7 @@
             </div>
 
             <!-- Подвкладка: ЭФФЕКТИВНОСТЬ -->
-            <div id="eng-sub-impact" class="eng-sub-section hidden mx-1 mt-2">
+            <div id="eng-sub-impact" class="eng-sub-section hidden mt-2">
                 <div
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex justify-between items-center w-full">
                     <div>
@@ -160,12 +160,12 @@
             </div>
 
             <!-- Подвкладка: FMEA АНАЛИЗ -->
-            <div id="eng-sub-fmea" class="eng-sub-section hidden mx-1 mt-2">
+            <div id="eng-sub-fmea" class="eng-sub-section hidden mt-2">
                 <div id="rbi-fmea-container" class="pb-8"></div>
             </div>
 
             <!-- Подвкладка: ДОСТИЖЕНИЯ (ПРОФИЛЬ) -->
-            <div id="eng-sub-badges" class="eng-sub-section hidden mx-1 mt-2">
+            <div id="eng-sub-badges" class="eng-sub-section hidden mt-2">
                 <div
                     class="sticky-top-panel bg-[var(--card-border)]/80 backdrop-blur-md p-3 rounded-xl border border-[var(--card-border)] shadow-sm mb-4 z-40 flex flex-col">
                     <div class="flex justify-between items-center w-full">

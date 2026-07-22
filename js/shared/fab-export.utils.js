@@ -118,6 +118,9 @@ function handleFabDownload() {
         contentHtml += createRow('poster', 'Плакат качества', 'Рейтинги и фото (А3)', 'bg-orange-50 dark:bg-orange-900/30', 'text-orange-600 dark:text-orange-400', iconPoster);
         contentHtml += createRow('tender', 'Тендерный отчет', 'Левая кнопка: PDF | Правая: Excel CSV', 'bg-purple-50 dark:bg-purple-900/30', 'text-purple-600 dark:text-purple-400', iconTable);
     } else if (ctx === 'sub-onepager') {
+        // Пилот: HTML-превью с тумблерами секций → системная печать (без html2pdf).
+        // Обе кнопки открывают одно превью (mode игнорируется).
+        contentHtml += createRow('onepager_preview', 'Сводка к печати (OP2)', 'One-Pager 2.0 в HTML · секции on/off → Печать', 'bg-teal-50 dark:bg-teal-900/30', 'text-teal-600 dark:text-teal-400', iconDoc);
         contentHtml += createRow('onepager', 'Сводный статус объекта', 'Классический One-Pager (А3)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconChart);
         contentHtml += createRow('onepager_v2', 'One-Pager 2.0', 'Метрики + ПК СК + рейтинги на 1 листе А3', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconPoster);
         contentHtml += createRow('onepager_v3', 'One-Pager 3.0', 'То же, что 2.0, укрупнённо на A1 альбом', 'bg-fuchsia-50 dark:bg-fuchsia-900/30', 'text-fuchsia-600 dark:text-fuchsia-400', iconPoster);
