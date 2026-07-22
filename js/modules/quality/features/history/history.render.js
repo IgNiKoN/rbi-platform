@@ -137,11 +137,11 @@ function _renderHistoryRowHtml(item) {
                     <div class="flex-1 min-w-0 overflow-hidden bg-white dark:bg-slate-800 border border-[var(--card-border)] rounded-xl p-2.5 shadow-sm cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors active:scale-[0.98]" onclick="showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')">
                         <div class="flex justify-between items-start gap-2 min-w-0">
                             <div class="min-w-0 flex-1 overflow-hidden">
-                                <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight">${item.location || ''}${photoIcon ? ' ' + photoIcon : ''}</div>
-                                <div class="flex items-center gap-1 mt-0.5 min-w-0">
-                                    <div class="text-[8px] text-slate-400 truncate font-medium min-w-0 flex-1">${metaLine}</div>
-                                    <div class="shrink-0">${syncBadge}</div>
+                                <div class="flex items-center gap-1 min-w-0">
+                                    <div class="text-[10px] font-bold text-slate-800 dark:text-white truncate leading-tight min-w-0 flex-1">${item.location || ''}${photoIcon ? ' ' + photoIcon : ''}</div>
+                                    <div class="shrink-0 self-center">${syncBadge}</div>
                                 </div>
+                                <div class="text-[8px] text-slate-400 truncate font-medium mt-0.5 min-w-0">${metaLine}</div>
                             </div>
                             <div class="flex flex-col items-end gap-0.5 shrink-0">
                                 <span class="status-tag ${statusCls} !text-[9px] !px-1.5 !py-0.5 shadow-sm">${finalPct}%</span>
