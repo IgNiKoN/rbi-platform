@@ -70,12 +70,51 @@ export const HistoryActions = {
                 return;
             }
             HistoryState.resetPagination();
-            const page = await svc.getPage({ limit: HistoryState.pageSize });
-            HistoryState.setRecords(page.items || []);
+
+            // Первая прогрузка: добираем страницы, пока не наберём
+            // initialObjectTarget уникальных объектов (площадок) или не кончатся
+            // записи — чтобы верхний список открывался сразу с ~20 объектами
+            // без ручной пагинации.
+            const targetObjects = HistoryState.initialObjectTarget || 20;
+            const maxPages = 12;
+            let collected = [];
+            let cursorKey = null;
+            let cursorPrimaryKey = null;
+            let hasMore = false;
+
+            const uniqueObjectCount = (arr) => {
+                const names = Object.create(null);
+                let n = 0;
+                for (let i = 0; i < arr.length; i++) {
+                    const p = (arr[i] && (arr[i].projectName || arr[i].project_display_name)) || 'Без объекта';
+                    if (!names[p]) {
+                        names[p] = true;
+                        n++;
+                    }
+                }
+                return n;
+            };
+
+            for (let pageNo = 0; pageNo < maxPages; pageNo++) {
+                const page = await svc.getPage({
+                    limit: HistoryState.pageSize,
+                    cursorKey: cursorKey,
+                    cursorPrimaryKey: cursorPrimaryKey
+                });
+                const items = page.items || [];
+                if (items.length) collected = collected.concat(items);
+                cursorKey = page.nextCursorKey;
+                cursorPrimaryKey = page.nextCursorPrimaryKey;
+                hasMore = !!page.hasMore;
+                if (!hasMore) break;
+                if (uniqueObjectCount(collected) >= targetObjects) break;
+            }
+
+            HistoryState.setRecords(collected);
             HistoryState.setPageState({
-                pageCursorKey: page.nextCursorKey,
-                pageCursorPrimaryKey: page.nextCursorPrimaryKey,
-                pageHasMore: page.hasMore
+                pageCursorKey: cursorKey,
+                pageCursorPrimaryKey: cursorPrimaryKey,
+                pageHasMore: hasMore
             });
 
             const events = this._ctx && this._ctx.events;

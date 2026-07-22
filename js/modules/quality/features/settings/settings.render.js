@@ -293,12 +293,14 @@ var SettingsRender = {
                                 <div class="font-bold text-sm">Тема приложения</div>
                                 <div class="text-[10px] text-[var(--text-muted)] mt-1">Цветовая схема</div>
                             </div>
-                            <select id="set-theme" class="input-base w-32" data-settings-action="toggleSetting" data-settings-action-key="theme" data-settings-action-val-type="element" data-action-event="change">
+                            <select id="set-theme" class="input-base w-40" data-settings-action="toggleSetting" data-settings-action-key="theme" data-settings-action-val-type="element" data-action-event="change">
                                 <option value="auto">Системная</option>
                                 <option value="light">Светлая</option>
                                 <option value="dark">Тёмная</option>
                                 <option value="rbi-light">RBI Светлая</option>
                                 <option value="rbi-dark">RBI Тёмная</option>
+                                <option value="rbi-light-v2">RBI Светлая v2</option>
+                                <option value="rbi-dark-v2">RBI Тёмная v2</option>
                             </select>
                         </div>
                         <div class="p-4 border-b border-[var(--card-border)] flex justify-between items-center">
@@ -1399,15 +1401,15 @@ console.log('[SettingsRender] settings.render.js markup mounted');
             theme = prefersDark ? 'dark' : 'light';
         }
 
-        if (!['light', 'dark', 'rbi-light', 'rbi-dark'].includes(theme)) {
+        if (!['light', 'dark', 'rbi-light', 'rbi-dark', 'rbi-light-v2', 'rbi-dark-v2'].includes(theme)) {
             theme = 'light';
         }
 
         document.documentElement.setAttribute('data-theme', theme);
-        document.documentElement.classList.remove('light', 'dark', 'rbi-light', 'rbi-dark');
+        document.documentElement.classList.remove('light', 'dark', 'rbi-light', 'rbi-dark', 'rbi-light-v2', 'rbi-dark-v2');
         document.documentElement.classList.add(theme);
 
-        if (theme === 'dark' || theme === 'rbi-dark') {
+        if (theme === 'dark' || theme === 'rbi-dark' || theme === 'rbi-dark-v2') {
             document.documentElement.classList.add('dark');
             document.documentElement.classList.remove('light');
         } else {

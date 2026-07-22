@@ -20,7 +20,7 @@ export const HistoryState = {
         searchText: ''
     },
 
-    visibleGroupCount: 15,
+    visibleGroupCount: 20,
     hasMore: false,
 
     // Постраничная (курсорная) загрузка Журнала (см. отчёт по оптимизации
@@ -31,11 +31,14 @@ export const HistoryState = {
     // недостаточно при совпадающих датах у нескольких записей).
     // pageHasMore — есть ли ещё записи в базе за текущим курсором.
     // isLoadingPage — защита от повторного параллельного запроса следующей страницы.
+    // initialObjectTarget — сколько верхнеуровневых объектов (площадок) набрать
+    // при первом заходе, докручивая страницы без участия пользователя.
     pageCursorKey: null,
     pageCursorPrimaryKey: null,
     pageHasMore: false,
     isLoadingPage: false,
     pageSize: 50,
+    initialObjectTarget: 20,
 
     /* ── Сеттеры ─────────────────────────────────────────────────────── */
 
@@ -84,7 +87,7 @@ export const HistoryState = {
     },
 
     setVisibleGroupCount(n) {
-        this.visibleGroupCount = typeof n === 'number' && n > 0 ? n : 15;
+        this.visibleGroupCount = typeof n === 'number' && n > 0 ? n : 20;
     }
 };
 

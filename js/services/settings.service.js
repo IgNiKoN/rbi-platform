@@ -8,7 +8,7 @@
     window.RBI.services = window.RBI.services || {};
 
     var SETTINGS_KEY = 'user_prefs';
-    var ALLOWED_THEMES = ['auto', 'light', 'dark', 'rbi-light', 'rbi-dark'];
+    var ALLOWED_THEMES = ['auto', 'light', 'dark', 'rbi-light', 'rbi-dark', 'rbi-light-v2', 'rbi-dark-v2'];
 
     /* Владение appSettings (Реальная изоляция модулей, часть 3, Группа B):
        перенесено 1:1 из js/core/bootstrap.js — сервис теперь единственный

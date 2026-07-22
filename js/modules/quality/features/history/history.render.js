@@ -48,6 +48,9 @@ function _templates() {
  * Сохраняет раскрытые аккордеоны Объект/Подрядчик до перерисовки списка.
  * Ключи — отображаемые имена (стабильнее index-based id hist-group-N).
  */
+// Сколько проверок у подрядчика показывать сразу (без «Показать еще»).
+const HIST_CONTRACTOR_VISIBLE = 10;
+
 function _escAttr(s) {
     return String(s ?? '')
         .replace(/&/g, '&amp;')
@@ -159,8 +162,8 @@ function _renderContractorBlockHtml(safeGroupName, cName, cIndex, items) {
         ? `<span class="status-tag ${_avgUrkStatusCls(contrAvgUrk)} !text-[9px] !px-1.5 !py-0.5 shadow-sm" data-hist-urk-contr title="Средний УрК по подрядчику">${contrAvgUrk}%</span>`
         : `<span class="hidden" data-hist-urk-contr></span>`;
     const reversed = [...items].sort((a, b) => new Date(b.date) - new Date(a.date));
-    const visibleItems = reversed.slice(0, 10);
-    const hiddenItems = reversed.slice(10);
+    const visibleItems = reversed.slice(0, HIST_CONTRACTOR_VISIBLE);
+    const hiddenItems = reversed.slice(HIST_CONTRACTOR_VISIBLE);
     const cEsc = _escAttr(cName);
     const hiddenGroupId = `${safeGroupName}-hidden-${String(cName).replace(/\W/g, '')}`;
 
@@ -311,7 +314,7 @@ function _enforceContractorVisibleLimit(cBody) {
     let hiddenWrap = cBody.querySelector('[data-hist-hidden]');
     let showMoreBtn = cBody.querySelector('[data-hist-show-more]');
 
-    if (rows.length <= 10) {
+    if (rows.length <= HIST_CONTRACTOR_VISIBLE) {
         rows.forEach((row) => cBody.insertBefore(row, hiddenWrap || showMoreBtn || null));
         if (hiddenWrap) hiddenWrap.remove();
         if (showMoreBtn) showMoreBtn.remove();
@@ -337,12 +340,12 @@ function _enforceContractorVisibleLimit(cBody) {
         cBody.appendChild(showMoreBtn);
     }
 
-    rows.slice(0, 10).forEach((row) => cBody.insertBefore(row, hiddenWrap));
-    rows.slice(10).forEach((row) => hiddenWrap.appendChild(row));
+    rows.slice(0, HIST_CONTRACTOR_VISIBLE).forEach((row) => cBody.insertBefore(row, hiddenWrap));
+    rows.slice(HIST_CONTRACTOR_VISIBLE).forEach((row) => hiddenWrap.appendChild(row));
     cBody.appendChild(hiddenWrap);
     cBody.appendChild(showMoreBtn);
     const wasExpanded = !hiddenWrap.classList.contains('hidden') || showMoreBtn.style.display === 'none';
-    showMoreBtn.textContent = 'Показать еще проверки (' + (rows.length - 10) + ')';
+    showMoreBtn.textContent = 'Показать еще проверки (' + (rows.length - HIST_CONTRACTOR_VISIBLE) + ')';
     if (wasExpanded) {
         hiddenWrap.classList.remove('hidden');
         showMoreBtn.style.display = 'none';

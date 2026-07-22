@@ -15,7 +15,7 @@
 
     // ─── Вспомогательные константы ───────────────────────────────────────────
 
-    var RBI_ALLOWED_THEMES_LOCAL = ['auto', 'light', 'dark', 'rbi-light', 'rbi-dark'];
+    var RBI_ALLOWED_THEMES_LOCAL = ['auto', 'light', 'dark', 'rbi-light', 'rbi-dark', 'rbi-light-v2', 'rbi-dark-v2'];
 
     // ─── Вспомогательные функции изоляции ────────────────────────────────────
 
