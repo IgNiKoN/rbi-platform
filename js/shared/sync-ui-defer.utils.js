@@ -122,6 +122,123 @@
         window._rbiDeferActiveViewFullRender = true;
     }
 
+    /**
+     * Нужен ли full-paint после sync: только скелетон / пустой первый кадр.
+     * Уже отрисованный экран НЕ пересобираем — иначе схлопываются аккордеоны,
+     * прыгает скролл (тихая sync должна быть как iCloud: данные в память,
+     * UI без скачка; обновление — при смене вкладки / точечно).
+     */
+    function _viewNeedsFirstPaint(hostIds, emptyTextRe) {
+        var ids = Array.isArray(hostIds) ? hostIds : [hostIds];
+        var host = null;
+        for (var i = 0; i < ids.length; i++) {
+            var el = document.getElementById(ids[i]);
+            if (el) { host = el; break; }
+        }
+        if (!host) return true;
+        if (host.querySelector && host.querySelector('.rbi-skeleton-wrap, .animate-spin')) return true;
+        var html = (host.innerHTML || '').trim();
+        if (html.length < 80) return true;
+        var text = host.innerText || '';
+        if (emptyTextRe && emptyTextRe.test(text) && html.length < 800) return true;
+        if (/Чтение базы/i.test(text)) return true;
+        return false;
+    }
+
+    function _analyticsNeedsFlushPaint() {
+        var tab = (window.AnalyticsState && window.AnalyticsState.activeSubTab)
+            || window.currentActiveAnalyticsTab
+            || 'sub-contractors';
+        if (tab === 'sub-contractors') {
+            return _viewNeedsFirstPaint(
+                ['contractors-list-container', 'sub-contractors'],
+                /Нет данных/i
+            );
+        }
+        if (tab === 'sub-onepager') {
+            return _viewNeedsFirstPaint(['sub-onepager'], /Нет данных/i);
+        }
+        if (tab === 'sub-sk') {
+            if (!document.getElementById('sk-view-dashboard')) return true;
+            return _viewNeedsFirstPaint(['sk-main-container', 'sub-sk'], /Чтение базы|Нет данных/i);
+        }
+        if (tab === 'sub-schedule') {
+            return _viewNeedsFirstPaint(['schedule-container', 'sub-schedule'], /Нет данных/i);
+        }
+        if (tab === 'sub-history') {
+            return _viewNeedsFirstPaint(['history-list-container', 'sub-history'], /Нет записей|Нет данных/i);
+        }
+        if (tab === 'sub-reports' || tab === 'sub-data' || tab === 'sub-rating') {
+            return _viewNeedsFirstPaint([tab], /Нет данных/i);
+        }
+        return _viewNeedsFirstPaint(['tab-analytics'], /Нет данных/i);
+    }
+
+    /**
+     * После снятия defer: full-paint только если активный экран ещё не собран
+     * (скелетон / пусто). Иначе dirty остаётся — обновится при навигации.
+     */
+    function flushDirtyActiveViews() {
+        if (isDeferred()) return;
+        var flags = window.syncDirtyFlags;
+        if (!flags) return;
+
+        if (flags.analytics && isViewActive('analytics')) {
+            if (!_analyticsNeedsFlushPaint()) {
+                // Живой DOM — не трогаем (аккордеоны/скролл/детали подрядчика).
+                return;
+            }
+            if (typeof window.renderCurrentAnalyticsTab === 'function') {
+                try { window.renderCurrentAnalyticsTab(); } catch (e) {
+                    console.warn('[syncUi] flush analytics failed', e);
+                }
+            }
+            return;
+        }
+
+        if (flags.history && isViewActive('history')) {
+            if (!_viewNeedsFirstPaint(['history-list-container', 'sub-history'], /Нет записей|Нет данных/i)) {
+                return;
+            }
+            if (window.HistoryActions && typeof window.HistoryActions.loadRecords === 'function') {
+                try {
+                    Promise.resolve(window.HistoryActions.loadRecords()).then(function () {
+                        if (typeof window.renderHistoryTab === 'function') window.renderHistoryTab();
+                    });
+                } catch (e) {
+                    console.warn('[syncUi] flush history failed', e);
+                }
+            } else if (typeof window.renderHistoryTab === 'function') {
+                try { window.renderHistoryTab(); } catch (e2) { /* ignore */ }
+            }
+            return;
+        }
+
+        if (flags.sk && isViewActive('sk')) {
+            if (!_viewNeedsFirstPaint(['sk-main-container', 'sk-view-dashboard', 'sub-sk'], /Чтение базы|Нет данных/i)) {
+                return;
+            }
+            if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') {
+                try { window.RBI.events.emit('sk:renderRequested', { view: 'mainTab' }); } catch (e) { /* ignore */ }
+            }
+        }
+
+        if (flags.construction && isViewActive('construction')) {
+            // ConstManager.init — тяжёлый full-render; только если экран пуст/скелетон.
+            if (!_viewNeedsFirstPaint(
+                ['tab-construction-defects', 'tab-construction-acceptance', 'tab-transfer'],
+                /Нет данных|Загрузка/i
+            )) {
+                return;
+            }
+            if (window.ConstructionActions && typeof window.ConstructionActions.init === 'function') {
+                try { window.ConstructionActions.init(); } catch (e) {
+                    console.warn('[syncUi] flush construction failed', e);
+                }
+            }
+        }
+    }
+
     var _endTimer = null;
     function endDefer(delayMs) {
         if (_endTimer) {
@@ -131,11 +248,13 @@
         var ms = (delayMs === 0 || delayMs) ? delayMs : DEFER_END_MS;
         if (ms <= 0) {
             window._rbiDeferActiveViewFullRender = false;
+            flushDirtyActiveViews();
             return;
         }
         _endTimer = setTimeout(function () {
             _endTimer = null;
             window._rbiDeferActiveViewFullRender = false;
+            flushDirtyActiveViews();
         }, ms);
     }
 
@@ -155,7 +274,8 @@
         isDeferred: isDeferred,
         isViewActive: isViewActive,
         shouldDeferFullRender: shouldDeferFullRender,
-        markDirty: markDirty
+        markDirty: markDirty,
+        flushDirtyActiveViews: flushDirtyActiveViews
     };
 
     window.RBI.utils.syncUi = api;

@@ -683,9 +683,9 @@ window.ConstManager = {
             const photoRef = d.photo || '';
             const needsHydrate = photoRef.startsWith('local://') || photoRef.startsWith('cloud://');
             const photoSrc = photoRef ? (typeof window.getPhotoSrc === 'function' ? window.getPhotoSrc(photoRef) : photoRef) : '';
-            const localAttr = needsHydrate ? ` data-local-src="${photoRef}"` : '';
+            const localAttr = needsHydrate ? ` data-local-src="${photoRef}" data-prefer-thumb="1"` : '';
             const photoHtml = photoSrc ?
-                `<img src="${photoSrc}"${localAttr} class="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer shadow-sm shrink-0" onclick="event.stopPropagation(); window.ConstDefectForm.openDefectPhoto('${d.id}')">` :
+                `<img src="${photoSrc}"${localAttr} loading="lazy" class="w-16 h-16 object-cover rounded-lg border border-slate-200 cursor-pointer shadow-sm shrink-0" onclick="event.stopPropagation(); window.ConstDefectForm.openDefectPhoto('${d.id}')">` :
                 `<div class="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-[8px] text-slate-400 font-bold uppercase shrink-0 text-center leading-tight">Нет<br>фото</div>`;
 
             let catColor = 'bg-blue-500';

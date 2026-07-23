@@ -69,11 +69,32 @@ function _getAllInspections() {
     return Array.isArray(window.contractorArray) ? window.contractorArray : [];
 }
 
-let activeMultiFilters = {
-    history: { project: [], contractor: [], inspector: [] },
-    analytics: { project: [], contractor: [], inspector: [], template: [] }
-};
-window.activeMultiFilters = activeMultiFilters;
+// Единственный источник — window.activeMultiFilters. Лексический let в ES-модуле
+// расходился с window после analytics.resetAnalyticsFilters() (кнопка обновлялась,
+// данные — нет). Все чтения/записи идут через getActiveMultiFilters().
+function getActiveMultiFilters() {
+    let af = window.activeMultiFilters;
+    if (!af || typeof af !== 'object') {
+        af = {
+            history: { project: [], contractor: [], inspector: [] },
+            analytics: { project: [], contractor: [], inspector: [], template: [] }
+        };
+        window.activeMultiFilters = af;
+    }
+    if (!af.history || typeof af.history !== 'object') {
+        af.history = { project: [], contractor: [], inspector: [] };
+    }
+    if (!af.analytics || typeof af.analytics !== 'object') {
+        af.analytics = { project: [], contractor: [], inspector: [], template: [] };
+    }
+    ['project', 'contractor', 'inspector'].forEach((k) => {
+        if (!Array.isArray(af.history[k])) af.history[k] = [];
+        if (!Array.isArray(af.analytics[k])) af.analytics[k] = [];
+    });
+    if (!Array.isArray(af.analytics.template)) af.analytics.template = [];
+    return af;
+}
+window.activeMultiFilters = getActiveMultiFilters();
 let currentFilterContext = ''; // 'history' или 'analytics'
 let currentFilterType = '';    // 'project', 'contractor' и т.д.
 
@@ -168,6 +189,7 @@ function openMultiFilterModal(type, title, context) {
     let accessibleSk = _getSkRecords();
 
     // 3. ПРИМЕНЯЕМ ПРАВА ДОСТУПА (Если не админ — режем массивы по закрепленным объектам)
+    let emptyBecauseNoAssignments = false;
     if (!isManager && role !== 'guest') {
         if (assignedProjects.length > 0) {
             accessibleRbi = accessibleRbi.filter(i => {
@@ -183,6 +205,7 @@ function openMultiFilterModal(type, title, context) {
             // показывать полный список объектов компании (было доступно всё).
             accessibleRbi = [];
             accessibleSk = [];
+            emptyBecauseNoAssignments = true;
         }
     }
 
@@ -192,6 +215,12 @@ function openMultiFilterModal(type, title, context) {
     // 4. КАСКАДНАЯ ФИЛЬТРАЦИЯ (Связываем Объект, Подрядчика и Инспектора)
     let filteredRbi = accessibleRbi;
     let filteredSk = accessibleSk;
+
+    const activeMultiFilters = getActiveMultiFilters();
+    if (!activeMultiFilters[context]) {
+        console.warn('[multi-filter] unknown context:', context);
+        return;
+    }
 
     // Если открыт НЕ фильтр Объектов, но Объект уже выбран — сужаем базу
     if (type !== 'project' && activeMultiFilters[context].project && activeMultiFilters[context].project.length > 0) {
@@ -240,7 +269,13 @@ function openMultiFilterModal(type, title, context) {
     const listEl = document.getElementById('multi-filter-list');
 
     if (uniqueValues.length === 0) {
-        listEl.innerHTML = `<div class="p-8 text-center flex flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500"><svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg><span class="text-xs font-bold uppercase tracking-wider">Нет данных</span></div>`;
+        const emptyTitle = emptyBecauseNoAssignments
+            ? 'Нет закреплённых объектов'
+            : 'Нет данных';
+        const emptyHint = emptyBecauseNoAssignments
+            ? 'Обратитесь к администратору — без назначенных объектов список фильтра пуст'
+            : '';
+        listEl.innerHTML = `<div class="p-8 text-center flex flex-col items-center justify-center gap-2 text-slate-400 dark:text-slate-500"><svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg><span class="text-xs font-bold uppercase tracking-wider">${emptyTitle}</span>${emptyHint ? `<span class="text-[10px] font-medium normal-case tracking-normal px-3 leading-snug">${emptyHint}</span>` : ''}</div>`;
     } else {
         // Клик по тексту — applyMultiFilterSingle (один выбор, сразу применить и закрыть).
         // Чекбокс — мультивыбор; применение по «Применить» / «Выбрать всё».
@@ -301,6 +336,8 @@ function _scheduleAnalyticsRenderFromFilter() {
         }
     }, 200);
 }
+// Период/даты и мультифильтры — одна точка debounce (data-analytics-action).
+window.scheduleRenderCurrentAnalyticsTab = _scheduleAnalyticsRenderFromFilter;
 
 function filterMultiModalList() {
     const term = document.getElementById('multi-filter-search').value.toLowerCase();
@@ -323,6 +360,8 @@ function applyMultiFilter() {
     const checkboxes = document.querySelectorAll('.filter-modal-cb');
     const total = checkboxes.length;
     const checkedValues = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+    const activeMultiFilters = getActiveMultiFilters();
+    if (!activeMultiFilters[currentFilterContext]) return;
 
     // Если выбраны все или не выбран ни один -> сбрасываем фильтр (означает "Все")
     if (checkedValues.length === total || checkedValues.length === 0) {
@@ -350,6 +389,8 @@ window.applyMultiFilter = applyMultiFilter;
 // т.к. читает не DOM-чекбоксы (это же действие может быть вызвано при любом
 // текущем состоянии чекбоксов), а сам переданный value.
 function applyMultiFilterSingle(val) {
+    const activeMultiFilters = getActiveMultiFilters();
+    if (!activeMultiFilters[currentFilterContext]) return;
     activeMultiFilters[currentFilterContext][currentFilterType] = [val];
 
     updateFilterButtonLabels();
@@ -375,8 +416,9 @@ function updateFilterButtonLabels() {
             // Если выбран 1, показываем его имя (для шаблона придется искать имя)
             let display = arr[0];
             if (btnId.includes('template')) {
-                const sample = _getAllInspections().find(i => i.templateKey === arr[0]);
-                if (sample) display = sample.templateTitle;
+                // В фильтр кладётся templateTitle (см. openMultiFilterModal) — не key.
+                const sample = _getAllInspections().find(i => i.templateTitle === arr[0] || i.templateKey === arr[0]);
+                if (sample) display = sample.templateTitle || arr[0];
             }
             textEl.innerText = display;
             textEl.classList.add('text-indigo-600', 'font-black');
@@ -386,6 +428,7 @@ function updateFilterButtonLabels() {
         }
     };
 
+    const activeMultiFilters = getActiveMultiFilters();
     updateBtn('btn-hist-project', activeMultiFilters.history.project, 'Все объекты');
     updateBtn('btn-hist-contractor', activeMultiFilters.history.contractor, 'Все подрядчики');
     updateBtn('btn-hist-inspector', activeMultiFilters.history.inspector, 'Все инспекторы');

@@ -189,7 +189,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                         const src = img.getAttribute('data-local-src');
                         if (src) {
                             observer.unobserve(img); // Перестаем следить после загрузки
-                            const realUrl = await PhotoManager.getAsyncUrl(src);
+                            const preferThumb = img.getAttribute('data-prefer-thumb') === '1';
+                            const realUrl = await PhotoManager.getAsyncUrl(
+                                src,
+                                preferThumb ? { preferThumb: true } : undefined
+                            );
                             if (realUrl) {
                                 img.src = realUrl;
                                 img.removeAttribute('data-local-src');

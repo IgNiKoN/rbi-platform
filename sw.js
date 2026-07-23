@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.258';
+const SW_VERSION = '18.57.278';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -34,6 +34,9 @@ const urlsToCache = [
   './libs/chart.umd.min.js',
   './libs/xlsx.full.min.js',
   './libs/html2pdf.bundle.min.js',
+  './libs/pptxgenjs.bundle.js',
+  './libs/pptxviewjs.min.js',
+  './libs/docx.bundle.js',
   './libs/pdfjs/pdf.min.js',
   './libs/pdfjs/pdf.worker.min.js',
   './libs/qrcode.min.js',
@@ -146,6 +149,7 @@ const urlsToCache = [
   './js/modules/quality/features/analytics/analytics.state.js',
   './js/modules/quality/features/analytics/analytics.actions.js',
   './js/modules/quality/features/analytics/analytics.render.js',
+  './js/modules/quality/features/analytics/analytics.pptx-export.js',
 
   // Фаза 12 — History Module
   './js/modules/quality/features/history/history.module.js',
@@ -183,6 +187,8 @@ const urlsToCache = [
   './js/modules/quality/features/reports/reports.actions.js',
   './js/modules/quality/features/reports/reports.render.js',
   './js/modules/quality/features/reports/report-preview.js',
+  './js/modules/quality/features/reports/reports.pptx-export.js',
+  './js/modules/quality/features/reports/reports.pptx-viewer.js',
 
   // Фаза 17 — Game Module
   './js/modules/quality/features/gamification/game.module.js',
@@ -229,6 +235,7 @@ const urlsToCache = [
   './js/modules/quality/features/meetings/meetings.actions.js',
   './js/modules/quality/features/meetings/meetings.render.js',
   './js/modules/quality/features/meetings/meetings.protocol.js',
+  './js/modules/quality/features/meetings/meetings.docx-export.js',
 
   // Compact Module Restructure, шаг 1 — агрегирующий platform module quality
   './js/modules/quality/manifest.js',

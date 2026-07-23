@@ -218,6 +218,10 @@ async function sk_renderMainTab() {
     if (typeof sk_renderDashboard === 'function') sk_renderDashboard();
     if (targetTab === 'hr' && typeof sk_renderHrTab === 'function') sk_renderHrTab();
     sk_switchView(targetTab);
+    // Аналитика B4: shell готов — можно reuse при возврате на подвкладку без смены фильтра.
+    if (typeof window.analyticsMarkTabPainted === 'function') {
+        window.analyticsMarkTabPainted('sub-sk');
+    }
 }
 
 function sk_renderVolumes() {

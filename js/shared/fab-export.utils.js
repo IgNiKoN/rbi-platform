@@ -16,7 +16,7 @@
     <div id="fab-export-menu-overlay"
         class="fixed inset-0 bg-slate-900/60 z-[9000] hidden items-end justify-center p-2 sm:p-4 backdrop-blur-sm transition-opacity duration-300 opacity-0"
         data-fab-export-action="closeFabExportMenu">
-        <div class="bg-[var(--card-bg)] w-full max-w-md rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[80px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col max-h-[80vh]"
+        <div class="bg-[var(--card-bg)] w-full max-w-xl rounded-3xl shadow-2xl transition-transform duration-300 transform translate-y-full mb-[80px] sm:mb-0 border border-slate-200/50 dark:border-slate-700/50 overflow-hidden flex flex-col max-h-[80vh]"
             id="fab-export-menu-content" onclick="event.stopPropagation()">
 
             <div class="p-4 border-b border-slate-100 dark:border-slate-800 bg-[var(--hover-bg)] shrink-0">
@@ -89,8 +89,10 @@ function handleFabDownload() {
     const iconChart = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg>`;
     const iconPoster = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg>`;
     const iconTable = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125-.504 1.125-1.125M3.375 8.25v-1.5c0-.621.504-1.125 1.125-1.125m17.25 2.625v-1.5c0-.621-.504-1.125-1.125-1.125m-17.25 0h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0v1.5c0 .621.504 1.125 1.125 1.125"></path></svg>`;
+    const iconPptx = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M9 8h6M9 12h6M9 16h4"></path></svg>`;
 
-    const createRow = (action, title, desc, iconBg, iconColor, mainIcon) => `
+    // withPptx: третья кнопка PowerPoint (PDF / Печать / PPTX).
+    const createRow = (action, title, desc, iconBg, iconColor, mainIcon, withPptx = false) => `
         <div class="w-full flex items-center justify-between p-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
             <div class="flex items-center gap-3 min-w-0 pr-2">
                 <div class="w-10 h-10 ${iconBg} ${iconColor} rounded-xl flex items-center justify-center shrink-0 shadow-sm border border-slate-100 dark:border-slate-700">${mainIcon}</div>
@@ -106,6 +108,9 @@ function handleFabDownload() {
                 <button onclick="handleFabExportAction('${action}', 'browser')" class="w-10 h-10 bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 rounded-lg flex items-center justify-center shadow-sm active:scale-90 transition-all border border-slate-200 dark:border-slate-700" title="Напечатать">
                     ${iconPrint}
                 </button>
+                ${withPptx ? `<button onclick="closeFabExportMenu(); handleFabExportAction('${action}', 'pptx')" class="w-10 h-10 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 rounded-lg flex items-center justify-center shadow-sm active:scale-90 transition-all border border-orange-100 dark:border-orange-800" title="PowerPoint">
+                    ${iconPptx}
+                </button>` : ''}
             </div>
         </div>`;
 
@@ -113,19 +118,18 @@ function handleFabDownload() {
 
     if (ctx === 'sub-contractors') {
         contentHtml += createRow('current', 'Текущий экран', 'Детализация или список (А4)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconDoc);
-        contentHtml += createRow('full_report', 'Отчёт по объекту', 'Паспорта подрядчиков (А3)', 'bg-emerald-50 dark:bg-emerald-900/30', 'text-emerald-600 dark:text-emerald-400', iconChart);
-        contentHtml += createRow('defect_remediation', 'Повторяющиеся дефекты', 'Брак / устранение, ≥3 повтора (А3 альбом)', 'bg-rose-50 dark:bg-rose-900/30', 'text-rose-600 dark:text-rose-400', iconPoster);
-        contentHtml += createRow('poster', 'Плакат качества', 'Рейтинги и фото (А3)', 'bg-orange-50 dark:bg-orange-900/30', 'text-orange-600 dark:text-orange-400', iconPoster);
+        contentHtml += createRow('full_report', 'Отчёт по объекту', 'Паспорта подрядчиков (А3)', 'bg-emerald-50 dark:bg-emerald-900/30', 'text-emerald-600 dark:text-emerald-400', iconChart, true);
+        contentHtml += createRow('defect_remediation', 'Повторяющиеся дефекты', 'Брак / устранение, ≥3 повтора (А3 альбом)', 'bg-rose-50 dark:bg-rose-900/30', 'text-rose-600 dark:text-rose-400', iconPoster, true);
+        contentHtml += createRow('poster', 'Плакат качества', 'Рейтинги и фото (А3)', 'bg-orange-50 dark:bg-orange-900/30', 'text-orange-600 dark:text-orange-400', iconPoster, true);
         contentHtml += createRow('tender', 'Тендерный отчет', 'Левая кнопка: PDF | Правая: Excel CSV', 'bg-purple-50 dark:bg-purple-900/30', 'text-purple-600 dark:text-purple-400', iconTable);
     } else if (ctx === 'sub-onepager') {
-        // Пилот: HTML-превью с тумблерами секций → системная печать (без html2pdf).
-        // Обе кнопки открывают одно превью (mode игнорируется).
+        // HTML-превью с тумблерами секций → системная печать (без html2pdf).
         contentHtml += createRow('onepager_preview', 'Сводка к печати (OP2)', 'One-Pager 2.0 в HTML · секции on/off → Печать', 'bg-teal-50 dark:bg-teal-900/30', 'text-teal-600 dark:text-teal-400', iconDoc);
         contentHtml += createRow('onepager', 'Сводный статус объекта', 'Классический One-Pager (А3)', 'bg-indigo-50 dark:bg-indigo-900/30', 'text-indigo-600 dark:text-indigo-400', iconChart);
-        contentHtml += createRow('onepager_v2', 'One-Pager 2.0', 'Метрики + ПК СК + рейтинги на 1 листе А3', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconPoster);
+        contentHtml += createRow('onepager_v2', 'One-Pager 2.0', 'Метрики + ПК СК + рейтинги на 1 листе А3', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconPoster, true);
         contentHtml += createRow('onepager_v3', 'One-Pager 3.0', 'То же, что 2.0, укрупнённо на A1 альбом', 'bg-fuchsia-50 dark:bg-fuchsia-900/30', 'text-fuchsia-600 dark:text-fuchsia-400', iconPoster);
-        contentHtml += createRow('defect_remediation', 'Повторяющиеся дефекты', 'Брак / устранение, ≥3 повтора (А3 альбом)', 'bg-rose-50 dark:bg-rose-900/30', 'text-rose-600 dark:text-rose-400', iconPoster);
-        contentHtml += createRow('global_onepager_v2', 'Сводный отчет по компании 2.0', 'Титул с KPI + One-Pager 2.0 по каждому объекту (А3)', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconDoc);
+        contentHtml += createRow('defect_remediation', 'Повторяющиеся дефекты', 'Брак / устранение, ≥3 повтора (А3 альбом)', 'bg-rose-50 dark:bg-rose-900/30', 'text-rose-600 dark:text-rose-400', iconPoster, true);
+        contentHtml += createRow('global_onepager_v2', 'Сводный отчет по компании 2.0', 'Титул с KPI + One-Pager 2.0 по каждому объекту (А3)', 'bg-violet-50 dark:bg-violet-900/30', 'text-violet-600 dark:text-violet-400', iconDoc, true);
         contentHtml += createRow('global_onepager_v3', 'Сводный отчет по компании 3.0', 'То же, что 2.0, укрупнённо на A1 альбом', 'bg-fuchsia-50 dark:bg-fuchsia-900/30', 'text-fuchsia-600 dark:text-fuchsia-400', iconDoc);
         contentHtml += createRow('global_onepager', 'Глобальная сводка', 'Все объекты компании (А3)', 'bg-blue-50 dark:bg-blue-900/30', 'text-blue-600 dark:text-blue-400', iconDoc);
 

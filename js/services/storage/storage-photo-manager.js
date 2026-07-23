@@ -46,12 +46,72 @@ const PhotoManager = {
         }
     },
 
+    // Canvas-превью ~150px (JPEG) из dataURL/ArrayBuffer — для списков.
+    // Старые фото без thumbData получают превью при первом getAsyncUrl(..., { preferThumb:true }).
+    async _makeThumbFromDataUrl(dataUrl, maxEdge = 150) {
+        if (!dataUrl || !String(dataUrl).startsWith('data:')) return null;
+        try {
+            const img = await new Promise((resolve, reject) => {
+                const el = new Image();
+                el.onload = () => resolve(el);
+                el.onerror = reject;
+                el.src = dataUrl;
+            });
+            let w = img.width || maxEdge;
+            let h = img.height || maxEdge;
+            if (w > h && w > maxEdge) { h = Math.round(h * maxEdge / w); w = maxEdge; }
+            else if (h > maxEdge) { w = Math.round(w * maxEdge / h); h = maxEdge; }
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, w);
+            canvas.height = Math.max(1, h);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            const thumbUrl = canvas.toDataURL('image/jpeg', 0.72);
+            return base64ToArrayBuffer(thumbUrl);
+        } catch (e) {
+            console.warn('[PhotoManager] thumb failed', e);
+            return null;
+        }
+    },
+
+    async _makeThumbFromBuffer(buffer, mimeType, maxEdge = 150) {
+        if (!buffer) return null;
+        const blob = arrayBufferToBlob(buffer, mimeType || 'image/webp');
+        const tmpUrl = URL.createObjectURL(blob);
+        try {
+            const img = await new Promise((resolve, reject) => {
+                const el = new Image();
+                el.onload = () => resolve(el);
+                el.onerror = reject;
+                el.src = tmpUrl;
+            });
+            let w = img.width || maxEdge;
+            let h = img.height || maxEdge;
+            if (w > h && w > maxEdge) { h = Math.round(h * maxEdge / w); w = maxEdge; }
+            else if (h > maxEdge) { w = Math.round(w * maxEdge / h); h = maxEdge; }
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, w);
+            canvas.height = Math.max(1, h);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            return base64ToArrayBuffer(canvas.toDataURL('image/jpeg', 0.72));
+        } catch (e) {
+            console.warn('[PhotoManager] thumb-from-buffer failed', e);
+            return null;
+        } finally {
+            try { URL.revokeObjectURL(tmpUrl); } catch (_) { /* ignore */ }
+        }
+    },
+
+    _thumbCacheKey(id) {
+        return id ? (String(id) + '#thumb') : '';
+    },
+
     async saveLocal(base64Data, prefix = 'img', meta = {}) {
         if (!base64Data || !base64Data.startsWith('data:')) return base64Data;
 
         const id = 'local://' + prefix + '_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1000);
         const mimeType = base64Data.match(/data:(.*?);/)?.[1] || 'image/webp';
         const buffer = await base64ToArrayBuffer(base64Data);
+        const thumbBuffer = await this._makeThumbFromDataUrl(base64Data, 150);
         const now = new Date().toISOString();
 
         await dbPut(STORES.PHOTOS, {
@@ -59,6 +119,10 @@ const PhotoManager = {
             data: buffer,
             mimeType,
             mime_type: mimeType,
+            thumbData: thumbBuffer || null,
+            thumb_data: thumbBuffer || null,
+            thumbMimeType: thumbBuffer ? 'image/jpeg' : '',
+            thumb_mime_type: thumbBuffer ? 'image/jpeg' : '',
             sizeBytes: buffer.byteLength,
             size_bytes: buffer.byteLength,
             createdAt: now,
@@ -82,6 +146,10 @@ const PhotoManager = {
         const blob = arrayBufferToBlob(buffer, mimeType);
         const url = URL.createObjectURL(blob);
         this._rememberObjectUrl(id, url);
+        if (thumbBuffer) {
+            const tBlob = arrayBufferToBlob(thumbBuffer, 'image/jpeg');
+            this._rememberObjectUrl(this._thumbCacheKey(id), URL.createObjectURL(tBlob));
+        }
 
         return id;
     },
@@ -106,13 +174,36 @@ const PhotoManager = {
         return url;
     },
 
-    async getAsyncUrl(localIdOrHttp) {
+    /** Sync: blob: превью если уже в RAM, иначе как getSrc (placeholder для local://). */
+    getThumbSrc(url) {
+        if (!url) return '';
+        if (Array.isArray(url)) url = url[0];
+        if (!url) return '';
+        const tKey = this._thumbCacheKey(url);
+        if (tKey && this.cache[tKey]) {
+            this._touchLru(tKey);
+            return this.cache[tKey];
+        }
+        return this.getSrc(url);
+    },
+
+    async getAsyncUrl(localIdOrHttp, opts) {
         if (!localIdOrHttp) return null;
         // photos[itemId] может быть массивом — String([u1,u2]) даёт "u1,u2" → Storage 400.
         if (Array.isArray(localIdOrHttp)) localIdOrHttp = localIdOrHttp[0];
         if (!localIdOrHttp) return null;
+        const preferThumb = !!(opts && opts.preferThumb);
+        const thumbKey = this._thumbCacheKey(localIdOrHttp);
 
-        if (this.cache[localIdOrHttp]) {
+        if (preferThumb && this.cache[thumbKey]) {
+            this._touchLru(thumbKey);
+            return this.cache[thumbKey];
+        }
+        if (!preferThumb && this.cache[localIdOrHttp]) {
+            this._touchLru(localIdOrHttp);
+            return this.cache[localIdOrHttp];
+        }
+        if (this.cache[localIdOrHttp] && !preferThumb) {
             this._touchLru(localIdOrHttp);
             return this.cache[localIdOrHttp];
         }
@@ -125,7 +216,31 @@ const PhotoManager = {
 
                 record.lastAccessedAt = now;
                 record.last_accessed_at = now;
-                await dbPut(STORES.PHOTOS, record);
+
+                if (preferThumb) {
+                    let thumbBuf = record.thumbData || record.thumb_data;
+                    if (!thumbBuf) {
+                        thumbBuf = await this._makeThumbFromBuffer(
+                            record.data,
+                            record.mimeType || record.mime_type || 'image/webp',
+                            150
+                        );
+                        if (thumbBuf) {
+                            record.thumbData = thumbBuf;
+                            record.thumb_data = thumbBuf;
+                            record.thumbMimeType = 'image/jpeg';
+                            record.thumb_mime_type = 'image/jpeg';
+                        }
+                    }
+                    await dbPut(STORES.PHOTOS, record);
+                    if (thumbBuf) {
+                        const tUrl = URL.createObjectURL(arrayBufferToBlob(thumbBuf, 'image/jpeg'));
+                        this._rememberObjectUrl(thumbKey, tUrl);
+                        return tUrl;
+                    }
+                } else {
+                    await dbPut(STORES.PHOTOS, record);
+                }
 
                 if (window.RbiStorageManager && typeof window.RbiStorageManager.markCloudFileCached === 'function') {
                     await window.RbiStorageManager.markCloudFileCached(
@@ -438,6 +553,7 @@ window.PhotoManager = PhotoManager;
 
 // Глобальная функция для HTML разметки
 window.getPhotoSrc = (url) => PhotoManager.getSrc(url);
+window.getPhotoThumbSrc = (url) => PhotoManager.getThumbSrc(url);
 
 // Обновленная функция авто-миграции
 async function runPhotoMigration(historyArray) {

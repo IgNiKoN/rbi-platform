@@ -326,27 +326,33 @@ function renderRbiPracticeModalMarkup() {
                     <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Ключевой вывод (для презентации)</label>
                     <textarea id="rbi-prac-takeaway" class="input-base h-14 resize-none text-[11px]"
                         placeholder="1–2 предложения: чему учит эта практика на объекте"></textarea>
-                    <div class="text-[9px] text-slate-400 font-medium mt-1">Попадёт на слайд A3. Фото: лучше 1–2 «Было» и 1–2 «Стало».</div>
+                    <div class="text-[9px] text-slate-400 font-medium mt-1">На печати A3 фото в режиме contain (без обрезки). Было/Стало — до 4, Процесс — до 6.</div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div class="grid grid-cols-3 gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Фото:
-                            Было</label>
-                        <button onclick="document.getElementById('rbi-prac-photo-before').click()"
-                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-slate-400 active:scale-95 overflow-hidden"
-                            id="rbi-prac-btn-before">➕ Фото</button>
-                        <input type="file" id="rbi-prac-photo-before" accept="image/*" class="hidden"
-                            data-interventions-action="rbi_handlePracticePhoto" data-interventions-action-val-type="event" data-interventions-action-arg2="before" data-action-event="change">
+                        <label class="text-[9px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Было</label>
+                        <div id="rbi-prac-photos-before" class="grid grid-cols-2 gap-1 mb-1"></div>
+                        <button type="button" onclick="document.getElementById('rbi-prac-photo-before').click()"
+                            class="w-full h-14 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center text-slate-400 active:scale-95 text-[9px] font-bold">➕</button>
+                        <input type="file" id="rbi-prac-photo-before" accept="image/*" multiple class="hidden"
+                            data-interventions-action="rbi_handlePracPhotoMulti" data-interventions-action-val-type="event" data-interventions-action-arg2="before" data-action-event="change">
                     </div>
                     <div>
-                        <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Фото:
-                            Стало</label>
-                        <button onclick="document.getElementById('rbi-prac-photo-after').click()"
-                            class="w-full h-24 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl bg-[var(--hover-bg)] flex items-center justify-center text-slate-400 active:scale-95 overflow-hidden"
-                            id="rbi-prac-btn-after">➕ Фото</button>
-                        <input type="file" id="rbi-prac-photo-after" accept="image/*" class="hidden"
-                            data-interventions-action="rbi_handlePracticePhoto" data-interventions-action-val-type="event" data-interventions-action-arg2="after" data-action-event="change">
+                        <label class="text-[9px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Процесс</label>
+                        <div id="rbi-prac-photos-process" class="grid grid-cols-2 gap-1 mb-1"></div>
+                        <button type="button" onclick="document.getElementById('rbi-prac-photo-process').click()"
+                            class="w-full h-14 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center text-slate-400 active:scale-95 text-[9px] font-bold">➕</button>
+                        <input type="file" id="rbi-prac-photo-process" accept="image/*" multiple class="hidden"
+                            data-interventions-action="rbi_handlePracPhotoMulti" data-interventions-action-val-type="event" data-interventions-action-arg2="process" data-action-event="change">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-[var(--text-muted)] uppercase mb-1 block text-center">Стало</label>
+                        <div id="rbi-prac-photos-after" class="grid grid-cols-2 gap-1 mb-1"></div>
+                        <button type="button" onclick="document.getElementById('rbi-prac-photo-after').click()"
+                            class="w-full h-14 border border-dashed border-slate-300 dark:border-slate-600 rounded-lg bg-[var(--hover-bg)] flex items-center justify-center text-slate-400 active:scale-95 text-[9px] font-bold">➕</button>
+                        <input type="file" id="rbi-prac-photo-after" accept="image/*" multiple class="hidden"
+                            data-interventions-action="rbi_handlePracPhotoMulti" data-interventions-action-val-type="event" data-interventions-action-arg2="after" data-action-event="change">
                     </div>
                 </div>
 
@@ -424,7 +430,7 @@ function renderManualPracticeModalMarkup() {
                         <label class="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Ключевой вывод (для презентации)</label>
                         <textarea id="man-prac-takeaway" class="input-base h-14 resize-none text-[11px]"
                             placeholder="Чему учит практика: что закрепить на других участках"></textarea>
-                        <div class="text-[9px] text-slate-400 font-medium mt-1">Для A3-презентации: 1–2 фото «Было/Стало», процесс — до 4 кадров.</div>
+                        <div class="text-[9px] text-slate-400 font-medium mt-1">На печати A3 — object-fit contain. Было/Стало до 4, Процесс до 6.</div>
                     </div>
                 </div>
 
@@ -1039,6 +1045,98 @@ window.rbi_renderPracticesTab = async function () {
     }
 };
 
+/** Prefill для выбора версии Акт-Эталона (задача / FAB). */
+window._etalonChooserPrefill = { contractor: '', templateKey: '', workTitle: '', project: '', statusKey: '' };
+
+function _etalonVersionButtonsHtml() {
+    return `
+            <button type="button" onclick="window._etalonChooserOpen('classic')" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg></div>
+                <div>
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Акт-Эталон</div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Классический конструктор с фото узлов</div>
+                </div>
+            </button>
+            <button type="button" onclick="window._etalonChooserOpen('v18')" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+                <div class="flex-1">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 px-1.5 py-0.5 rounded uppercase">Бета</span></div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Полный юридический акт (11 разделов, участники, испытания)</div>
+                </div>
+            </button>
+            <button type="button" onclick="window._etalonChooserOpen('v18b')" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
+                <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></div>
+                <div class="flex-1">
+                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded uppercase">Бета 2 · ПК</span></div>
+                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Точная копия исходной формы — только компьютер (≥768px)</div>
+                </div>
+            </button>`;
+}
+
+window._etalonChooserOpen = function (kind) {
+    const p = window._etalonChooserPrefill || {};
+    if (typeof closeModal === 'function') closeModal();
+    if (kind === 'classic') {
+        if (typeof openEtalonConstructor === 'function') {
+            openEtalonConstructor(p.contractor || '', p.templateKey || '', p.workTitle || '', p.project || '', p.statusKey || '');
+        }
+        return;
+    }
+    if (kind === 'v18') {
+        if (typeof openEtalonV18Constructor === 'function') {
+            openEtalonV18Constructor({
+                contractor: p.contractor || '',
+                templateKey: p.templateKey || '',
+                templateTitle: p.workTitle || '',
+                projectName: p.project || '',
+                statusKey: p.statusKey || ''
+            });
+        }
+        return;
+    }
+    if (kind === 'v18b') {
+        if (typeof openEtalonV18BConstructor === 'function') {
+            openEtalonV18BConstructor({
+                contractor: p.contractor || '',
+                templateKey: p.templateKey || '',
+                templateTitle: p.workTitle || '',
+                projectName: p.project || ''
+            });
+        }
+    }
+};
+
+/** Выбор версии Акт-Эталона (задача «Снять Эталон», FAB). */
+window.openEtalonVersionChooser = function (prefill) {
+    const p = prefill || {};
+    window._etalonChooserPrefill = {
+        contractor: p.contractor || '',
+        templateKey: p.templateKey || '',
+        workTitle: p.workTitle || p.templateTitle || '',
+        project: p.project || p.projectName || '',
+        statusKey: p.statusKey || ''
+    };
+    const modal = document.getElementById('modal-overlay');
+    if (!modal) return;
+    document.getElementById('modal-icon').innerHTML = '';
+    document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Какой Акт-Эталон открыть?</div>`;
+    document.getElementById('modal-body').innerHTML = `<div class="space-y-3 mb-2">${_etalonVersionButtonsHtml()}</div>`;
+    document.body.classList.add('modal-open');
+    modal.style.display = 'flex';
+};
+
+window.openEtalonVersionChooserFromTask = function (taskId) {
+    const task = (window.rbi_tasksData || []).find(function (t) { return t.id === taskId; });
+    if (!task) return;
+    window.openEtalonVersionChooser({
+        contractor: task.contractor || '',
+        templateKey: task.templateKey || '',
+        workTitle: task.workTitle || task.templateTitle || '',
+        project: task.project || '',
+        statusKey: task.statusKey || ''
+    });
+};
+
 // Вспомогательная модалка выбора "Что создать?"
 window.rbi_openKbCreateChoice = function () {
     const modal = document.getElementById('modal-overlay');
@@ -1053,49 +1151,36 @@ window.rbi_openKbCreateChoice = function () {
                     <div class="text-[10px] text-slate-500 font-bold mt-0.5">Поделиться решением проблемы</div>
                 </div>
             </button>
-            <button onclick="closeModal(); openEtalonConstructor('', '', '', '', '')" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
-                <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg></div>
-                <div>
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide">Акт-Эталон</div>
-                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Зафиксировать идеальный образец СМР</div>
-                </div>
-            </button>
-            <button onclick="closeModal(); openEtalonV18Constructor({})" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
-                <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
-                <div class="flex-1">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 px-1.5 py-0.5 rounded uppercase">Бета</span></div>
-                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Полный юридический акт (11 разделов, участники, испытания)</div>
-                </div>
-            </button>
-            <button onclick="closeModal(); openEtalonV18BConstructor({})" class="w-full text-left p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center gap-3 active:scale-95 transition-transform shadow-sm">
-                <div class="w-10 h-10 bg-amber-50 text-amber-600 rounded-lg flex items-center justify-center shrink-0"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></div>
-                <div class="flex-1">
-                    <div class="text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-wide flex items-center gap-1.5">Акт-Эталон <span class="text-[8px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-1.5 py-0.5 rounded uppercase">Бета 2 · ПК</span></div>
-                    <div class="text-[10px] text-slate-500 font-bold mt-0.5">Точная копия исходной формы (справка, языки, печать) — только компьютер</div>
-                </div>
-            </button>
+            ${_etalonVersionButtonsHtml()}
         </div>
     `;
+    // FAB без prefill задачи — пустой контекст
+    window._etalonChooserPrefill = { contractor: '', templateKey: '', workTitle: '', project: '', statusKey: '' };
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
 };
 
 function _rbiCollectIntPracticeDraft() {
+    const st = window._manPracState || { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
     const p = {
         intId: document.getElementById('rbi-prac-int-id')?.value || '',
         title: document.getElementById('rbi-prac-title')?.value || '',
         problem: document.getElementById('rbi-prac-problem')?.value || '',
         solution: document.getElementById('rbi-prac-solution')?.value || '',
         takeaway: document.getElementById('rbi-prac-takeaway')?.value || '',
-        photoBefore: document.getElementById('rbi-prac-btn-before')?.dataset?.base64 || '',
-        photoAfter: document.getElementById('rbi-prac-btn-after')?.dataset?.base64 || ''
+        photosBefore: (st.photosBefore || []).slice(),
+        photosProcess: (st.photosProcess || []).slice(),
+        photosAfter: (st.photosAfter || []).slice(),
+        // legacy draft keys
+        photoBefore: (st.photosBefore && st.photosBefore[0]) || '',
+        photoAfter: (st.photosAfter && st.photosAfter[0]) || ''
     };
-    // Не писать черновик, если остались только автоподставленные problem/solution
     const base = window._rbiIntPracBaseline || {};
     const changed = !!(
         (p.title || '').trim() ||
-        p.photoBefore ||
-        p.photoAfter ||
+        (p.photosBefore && p.photosBefore.length) ||
+        (p.photosProcess && p.photosProcess.length) ||
+        (p.photosAfter && p.photosAfter.length) ||
         (p.takeaway || '') !== (base.takeaway || '') ||
         (p.problem || '') !== (base.problem || '') ||
         (p.solution || '') !== (base.solution || '')
@@ -1110,18 +1195,21 @@ function _rbiApplyIntPracticeDraft(p) {
     if (p.solution != null) document.getElementById('rbi-prac-solution').value = p.solution;
     const takeawayEl = document.getElementById('rbi-prac-takeaway');
     if (takeawayEl && p.takeaway != null) takeawayEl.value = p.takeaway;
-    ['before', 'after'].forEach(function (type) {
-        const url = type === 'before' ? p.photoBefore : p.photoAfter;
-        const btn = document.getElementById('rbi-prac-btn-' + type);
-        if (!btn) return;
-        if (url) {
-            btn.dataset.base64 = url;
-            btn.innerHTML = `<img src="${window.getPhotoSrc(url)}" class="w-full h-full object-cover">`;
-        } else {
-            btn.dataset.base64 = '';
-            btn.innerHTML = '➕ Фото';
-        }
-    });
+    const before = Array.isArray(p.photosBefore) && p.photosBefore.length
+        ? p.photosBefore.slice()
+        : (p.photoBefore ? [p.photoBefore] : []);
+    const after = Array.isArray(p.photosAfter) && p.photosAfter.length
+        ? p.photosAfter.slice()
+        : (p.photoAfter ? [p.photoAfter] : []);
+    window._manPracState = {
+        photosBefore: before,
+        photosProcess: Array.isArray(p.photosProcess) ? p.photosProcess.slice() : [],
+        photosAfter: after,
+        docs: Array.isArray(p.docs) ? p.docs.slice() : []
+    };
+    rbi_renderPracPhotosUI('before');
+    rbi_renderPracPhotosUI('process');
+    rbi_renderPracPhotosUI('after');
 }
 
 window.rbi_openCreatePracticeModal = function (intId) {
@@ -1144,13 +1232,12 @@ window.rbi_openCreatePracticeModal = function (intId) {
     if (takeawayEl) takeawayEl.value = '';
     window._rbiIntPracBaseline = { problem: autoProblem, solution: autoSolution, takeaway: '' };
 
-    // Сброс фото
-    document.getElementById('rbi-prac-photo-before').value = '';
-    document.getElementById('rbi-prac-photo-after').value = '';
-    document.getElementById('rbi-prac-btn-before').innerHTML = '➕ Фото';
-    document.getElementById('rbi-prac-btn-after').innerHTML = '➕ Фото';
-    document.getElementById('rbi-prac-btn-before').dataset.base64 = '';
-    document.getElementById('rbi-prac-btn-after').dataset.base64 = '';
+    window._manPracState = { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
+    ['before', 'process', 'after'].forEach(function (stage) {
+        const inp = document.getElementById('rbi-prac-photo-' + stage);
+        if (inp) inp.value = '';
+        rbi_renderPracPhotosUI(stage);
+    });
 
     if (FD && draftKey) {
         const decision = FD.askRestore(draftKey, 'Практика по вмешательству');
@@ -1181,17 +1268,7 @@ window.rbi_closePracticeModal = function () {
 };
 
 window.rbi_handlePracticePhoto = function (event, type) {
-    const file = event.target.files[0];
-    if (!file) return;
-    window.compressImageToBase64(file, 800, 0.8, async (base64) => {
-        const localUrl = await PhotoManager.saveLocal(base64, 'prac');
-        const btn = document.getElementById(`rbi-prac-btn-${type}`);
-        btn.dataset.base64 = localUrl;
-        btn.innerHTML = `<img src="${window.getPhotoSrc(localUrl)}" class="w-full h-full object-cover">`;
-        const FD = window.RBIFormDraft;
-        const intId = document.getElementById('rbi-prac-int-id')?.value;
-        if (FD && intId) FD.saveNow(FD.practiceIntKey(intId), _rbiCollectIntPracticeDraft);
-    });
+    return window.rbi_handlePracPhotoMulti(event, type);
 };
 
 window.rbi_savePractice = async function () {
@@ -1200,6 +1277,7 @@ window.rbi_savePractice = async function () {
 
     const intId = document.getElementById('rbi-prac-int-id').value;
     const intItem = window.rbi_interventionsData.find(i => i.id === intId);
+    const st = window._manPracState || { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
 
     const practice = {
         id: 'prac_' + Date.now().toString(36),
@@ -1215,8 +1293,12 @@ window.rbi_savePractice = async function () {
         problem: document.getElementById('rbi-prac-problem').value.trim(),
         solution: document.getElementById('rbi-prac-solution').value.trim(),
         takeaway: (document.getElementById('rbi-prac-takeaway')?.value || '').trim(),
-        photoBefore: document.getElementById('rbi-prac-btn-before').dataset.base64 || null,
-        photoAfter: document.getElementById('rbi-prac-btn-after').dataset.base64 || null,
+        photosBefore: (st.photosBefore || []).slice(),
+        photosProcess: (st.photosProcess || []).slice(),
+        photosAfter: (st.photosAfter || []).slice(),
+        docs: (st.docs || []).slice(),
+        photoBefore: (st.photosBefore && st.photosBefore[0]) || null,
+        photoAfter: (st.photosAfter && st.photosAfter[0]) || null,
         isPublished: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -1387,18 +1469,50 @@ window.rbi_handleManualPracticePhoto = function (event, type) {
 };
 
 const _manPracStageKeyMap = { before: 'photosBefore', process: 'photosProcess', after: 'photosAfter' };
+const _pracPhotoLimits = { before: 4, process: 6, after: 4 };
+
+function _pracPhotoContainers(stage) {
+    return [
+        document.getElementById('man-prac-photos-' + stage),
+        document.getElementById('rbi-prac-photos-' + stage)
+    ].filter(Boolean);
+}
+
+function _pracSavePhotoDraft() {
+    const FD = window.RBIFormDraft;
+    if (!FD) return;
+    const manModal = document.getElementById('manual-practice-modal');
+    if (manModal && manModal.style.display === 'flex') {
+        FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
+        return;
+    }
+    const intId = document.getElementById('rbi-prac-int-id')?.value;
+    if (intId) FD.saveNow(FD.practiceIntKey(intId), _rbiCollectIntPracticeDraft);
+}
 
 window.rbi_handlePracPhotoMulti = function (event, stage) {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
+    if (!window._manPracState) {
+        window._manPracState = { photosBefore: [], photosProcess: [], photosAfter: [], docs: [] };
+    }
     const stateKey = _manPracStageKeyMap[stage] || 'photosBefore';
-    files.forEach((file) => {
+    const limit = _pracPhotoLimits[stage] || 4;
+    const current = window._manPracState[stateKey] || [];
+    const room = Math.max(0, limit - current.length);
+    if (room === 0) {
+        showToast('Лимит фото: ' + limit + ' для этапа «' + stage + '»');
+        event.target.value = '';
+        return;
+    }
+    const toAdd = files.slice(0, room);
+    if (files.length > room) showToast('Добавлено ' + room + ' из ' + files.length + ' (лимит ' + limit + ')');
+    toAdd.forEach((file) => {
         window.compressImageToBase64(file, 1000, 0.8, async (base64) => {
             const localUrl = await PhotoManager.saveLocal(base64, 'prac');
             window._manPracState[stateKey].push(localUrl);
             rbi_renderPracPhotosUI(stage);
-            const FD = window.RBIFormDraft;
-            if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
+            _pracSavePhotoDraft();
         });
     });
     event.target.value = '';
@@ -1406,23 +1520,24 @@ window.rbi_handlePracPhotoMulti = function (event, stage) {
 
 window.rbi_renderPracPhotosUI = function (stage) {
     const stateKey = _manPracStageKeyMap[stage] || 'photosBefore';
-    const container = document.getElementById(`man-prac-photos-${stage}`);
-    if (!container) return;
-    const photos = window._manPracState[stateKey] || [];
-    container.innerHTML = photos.map((url, idx) => `
+    const containers = _pracPhotoContainers(stage);
+    if (!containers.length) return;
+    const photos = (window._manPracState && window._manPracState[stateKey]) || [];
+    const html = photos.map((url, idx) => `
         <div class="relative w-full h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900">
             <img src="${window.getPhotoSrc(url)}" class="w-full h-full object-cover">
-            <button onclick="rbi_removePracPhoto('${stage}', ${idx})" class="absolute top-0.5 right-0.5 bg-red-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shadow-sm active:scale-90">✕</button>
+            <button type="button" onclick="rbi_removePracPhoto('${stage}', ${idx})" class="absolute top-0.5 right-0.5 bg-red-500 text-white w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black shadow-sm active:scale-90">✕</button>
         </div>
     `).join('');
+    containers.forEach(function (container) { container.innerHTML = html; });
 };
 
 window.rbi_removePracPhoto = function (stage, idx) {
     const stateKey = _manPracStageKeyMap[stage] || 'photosBefore';
+    if (!window._manPracState || !window._manPracState[stateKey]) return;
     window._manPracState[stateKey].splice(idx, 1);
     rbi_renderPracPhotosUI(stage);
-    const FD = window.RBIFormDraft;
-    if (FD) FD.saveNow(FD.KEYS.PRACTICE_MANUAL, _rbiCollectManualPracticeDraft);
+    _pracSavePhotoDraft();
 };
 
 window.rbi_handlePracDocMulti = function (event) {

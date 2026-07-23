@@ -533,6 +533,34 @@ async function handleFabExportAction(actionType, mode = 'script') {
     const data = getFilteredAnalyticsData();
     if (data.length === 0) return showToast('Нет данных для выгрузки');
 
+    // PPTX: третья кнопка FAB — не PDF/print-пайплайн.
+    if (mode === 'pptx') {
+        const pptxActions = {
+            onepager_v2: 1,
+            full_report: 1,
+            global_onepager_v2: 1,
+            poster: 1,
+            defect_remediation: 1
+        };
+        if (!pptxActions[actionType]) {
+            return showToast('PPTX для этого отчёта пока не поддерживается');
+        }
+        showToast('⏳ Формируем PowerPoint…');
+        setTimeout(async () => {
+            try {
+                if (typeof window.exportReportPptx === 'function') {
+                    await window.exportReportPptx(actionType, data);
+                } else {
+                    showToast('Модуль PPTX ещё не загружен');
+                }
+            } catch (e) {
+                console.error('[pptx]', e);
+                showToast('Ошибка экспорта PPTX');
+            }
+        }, 200);
+        return;
+    }
+
     // Пилот print-first: интерактивное HTML-превью (секции on/off + window.print).
     // Старые onepager / html2pdf-ветки не трогаем.
     if (actionType === 'onepager_preview') {
@@ -1593,6 +1621,7 @@ async function printPdfShell(title, content, formatSize = 'A4', orientation = 'p
     .pdf-print-root img { max-width: 100% !important; display: block !important; }
     .pdf-print-root table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
     .pdf-print-root .no-break,
+    .pdf-print-root tr.no-break,
     .pdf-print-root tr,
     .pdf-print-root td,
     .pdf-print-root img {
@@ -2246,8 +2275,14 @@ async function saveReportToLocal(reportData, htmlContent) {
         if (found) canonicalKey = found.canonical_key;
     }
 
-    // 1. ИСПРАВЛЕНИЕ: СНАЧАЛА генерируем HTML-снимок
-    const publicHtmlContent = await preparePublicReportHtml(htmlContent);
+    // 1. HTML-снимок: для PPTX — короткая заглушка (публичная HTML-ссылка не цель);
+    //    для PDF — полный preparePublicReportHtml как раньше.
+    const isPptx = reportData.type === 'pptx'
+        || (reportData.mimeType && String(reportData.mimeType).includes('presentation'))
+        || (reportData.mime_type && String(reportData.mime_type).includes('presentation'));
+    const publicHtmlContent = isPptx
+        ? String(htmlContent || ('<div>PPTX: ' + String(reportData.title || '').replace(/</g, '') + '</div>'))
+        : await preparePublicReportHtml(htmlContent);
 
     // 2. ЗАТЕМ создаем запись отчета
     const reportRecord = {
@@ -2265,7 +2300,7 @@ async function saveReportToLocal(reportData, htmlContent) {
         file_blob: reportData.blob,
         file_size: reportData.blob ? reportData.blob.size : 0,
         file_url: reportData.file_url || '',
-        mime_type: 'application/pdf',
+        mime_type: reportData.mimeType || reportData.mime_type || 'application/pdf',
 
         metadata: {
             project: reportData.project,
@@ -8760,7 +8795,7 @@ async function buildInspectionActHtml(item) {
             : '';
 
         rows.push(
-            '<tr>'
+            '<tr class="no-break">'
             + '<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;width:52px;text-align:center;font-size:10px;font-weight:800;color:#64748b;">'
             + (idx + 1) + '</td>'
             + '<td style="padding:8px 10px;border:1px solid #e2e8f0;vertical-align:top;">'
@@ -9119,7 +9154,8 @@ export const ReportsActions = {
             const d = record.date ? new Date(record.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
             printPdfShell(`Акт-Эталон: ${record.contractorName}`, content, "A4", "portrait", mode, {
                 author: record.inspectorName || record.author || _getSetting('engineerName') || 'Инженер',
-                period: `с ${d} по ${d}`
+                period: `с ${d} по ${d}`,
+                allowFlowPages: true
             });
         }
     },
@@ -9140,30 +9176,30 @@ export const ReportsActions = {
         const decision = a.decision || {};
 
         const rowsHtml = (rows, cols, emptyLabel) => {
-            if (!rows || !rows.length) return `<tr><td colspan="${cols.length + 1}" style="padding:8px;color:#94a3b8;text-align:center;font-size:11px;">${emptyLabel}</td></tr>`;
-            return rows.map((r, i) => `<tr>
+            if (!rows || !rows.length) return `<tr class="no-break"><td colspan="${cols.length + 1}" style="padding:8px;color:#94a3b8;text-align:center;font-size:11px;">${emptyLabel}</td></tr>`;
+            return rows.map((r, i) => `<tr class="no-break">
                 <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;">${i + 1}</td>
                 ${cols.map(c => `<td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;white-space:pre-wrap;">${r[c] || ''}</td>`).join('')}
             </tr>`).join('');
         };
 
-        const controlsHtml = (a.controls || []).map((c, i) => `<tr>
+        const controlsHtml = (a.controls || []).map((c, i) => `<tr class="no-break">
             <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;">${i + 1}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${c.criterion || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${c.basis || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${c.requirement || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${c.actual || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;text-align:center;">${c.compliance === 'yes' ? 'да' : c.compliance === 'no' ? 'нет' : c.compliance === 'na' ? 'н/п' : '—'}</td>
-        </tr>`).join('') || `<tr><td colspan="6" style="padding:8px;color:#94a3b8;text-align:center;font-size:11px;">Не заполнено</td></tr>`;
+        </tr>`).join('') || `<tr class="no-break"><td colspan="6" style="padding:8px;color:#94a3b8;text-align:center;font-size:11px;">Не заполнено</td></tr>`;
 
-        const participantsHtml = (a.participants || []).map((p, i) => `<tr>
+        const participantsHtml = (a.participants || []).map((p, i) => `<tr class="no-break">
             <td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;font-size:11px;">${i + 1}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${p.organization || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${p.position || ''}</td>
             <td style="padding:6px 8px;border:1px solid #cbd5e1;font-size:11px;">${p.name || ''}</td>
         </tr>`).join('');
 
-        const signaturesHtml = (a.participants || []).map(p => `<tr>
+        const signaturesHtml = (a.participants || []).map(p => `<tr class="no-break">
             <td style="padding:8px;border:1px solid #cbd5e1;font-size:11px;">${p.organization || ''}</td>
             <td style="padding:8px;border:1px solid #cbd5e1;font-size:11px;">${p.position || ''}</td>
             <td style="padding:8px;border:1px solid #cbd5e1;font-size:11px;">${p.name || ''}</td>
@@ -9209,7 +9245,7 @@ export const ReportsActions = {
             </table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">1. Участники рассмотрения</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Организация</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Должность</th>
@@ -9218,28 +9254,28 @@ export const ReportsActions = {
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">2. Состав, границы и область применения эталона</h2>
             <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:11px;">
-                <tr><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;width:30%;">Состав и границы</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.sampleComposition || '—'}</td></tr>
-                <tr><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Область применения</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.applicationZone || '—'}</td></tr>
-                <tr><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Размер / объём образца</td><td style="padding:6px 8px;border:1px solid #cbd5e1;">${scope.sampleSize || '—'}</td></tr>
-                <tr><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Исключения из согласования</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.notIncluded || '—'}</td></tr>
+                <tr class="no-break"><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;width:30%;">Состав и границы</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.sampleComposition || '—'}</td></tr>
+                <tr class="no-break"><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Область применения</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.applicationZone || '—'}</td></tr>
+                <tr class="no-break"><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Размер / объём образца</td><td style="padding:6px 8px;border:1px solid #cbd5e1;">${scope.sampleSize || '—'}</td></tr>
+                <tr class="no-break"><td style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-weight:bold;">Исключения из согласования</td><td style="padding:6px 8px;border:1px solid #cbd5e1;white-space:pre-wrap;">${scope.notIncluded || '—'}</td></tr>
             </table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">3. Исходные документы</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Документ</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Обозначение / номер / дата</th>
             </tr></thead><tbody>${rowsHtml(a.documents, ['doc', 'designation'], 'Документы не указаны')}</tbody></table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">4. Согласованное техническое и визуальное решение</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Элемент / параметр</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Согласованное решение</th>
             </tr></thead><tbody>${rowsHtml(a.solutions, ['element', 'solution'], 'Решения не указаны')}</tbody></table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">5. Примененные материалы, комплектующие и изделия</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Наименование</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Марка/тип</th>
@@ -9249,7 +9285,7 @@ export const ReportsActions = {
             </tr></thead><tbody>${rowsHtml(a.materials, ['name', 'mark', 'manufacturer', 'qualityDoc', 'color'], 'Материалы не указаны')}</tbody></table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">6. Контрольные параметры эталона</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Критерий</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Основание</th>
@@ -9259,7 +9295,7 @@ export const ReportsActions = {
             </tr></thead><tbody>${controlsHtml}</tbody></table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">7. Результаты осмотра и испытаний</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Вид проверки</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Метод / средство</th>
@@ -9267,7 +9303,7 @@ export const ReportsActions = {
             </tr></thead><tbody>${rowsHtml(a.tests, ['type', 'method', 'result'], 'Испытания не проводились')}</tbody></table>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">8. Замечания и обязательные корректировки</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Замечание</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Ответственный</th>
@@ -9282,7 +9318,7 @@ export const ReportsActions = {
             <div style="font-size:11px;color:#334155;margin-bottom:10px;"><strong>Сохранность эталона:</strong> ${storageLabels[decision.storage] || 'не указано'}${decision.storagePlace ? '. Место: ' + decision.storagePlace : ''}</div>
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">10. Приложения</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">№</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Наименование приложения</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Кол-во листов/файлов</th>
@@ -9292,7 +9328,7 @@ export const ReportsActions = {
             ${photosHtml ? `<h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">Приложение. Лист фотофиксации</h2><div>${photosHtml}</div>` : ''}
 
             <h2 style="font-size:14px;color:#0f172a;text-transform:uppercase;border-bottom:2px solid #e2e8f0;padding-bottom:4px;margin:16px 0 8px;">11. Подписи сторон</h2>
-            <table class="no-break" style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><thead><tr class="no-break">
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Организация</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Должность</th>
                 <th style="padding:6px 8px;border:1px solid #cbd5e1;background:#f8fafc;font-size:10px;">Ф.И.О.</th>
@@ -9304,7 +9340,8 @@ export const ReportsActions = {
             const d = record.date ? new Date(record.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
             printPdfShell(`Акт-Эталон (Бета): ${record.contractorName}`, content, "A4", "portrait", mode, {
                 author: record.inspectorName || record.author || _getSetting('engineerName') || 'Инженер',
-                period: `с ${d} по ${d}`
+                period: `с ${d} по ${d}`,
+                allowFlowPages: true
             });
         }
     },
@@ -9881,7 +9918,7 @@ export const ReportsActions = {
     },
 
     /**
-     * Печать практики — A3 альбом, умная нарезка на 1–3 слайда-презентации.
+     * Печать практики — A3 landscape, 1–3 слайда без клипа, фото object-fit:contain.
      */
     async printPractice(id, mode = 'browser') {
         const p = _getPractices().find(x => x.id === id);
@@ -9898,11 +9935,9 @@ export const ReportsActions = {
         const processUrls = (p.photosProcess || []).filter(Boolean);
         const afterUrls = (p.photosAfter && p.photosAfter.length) ? p.photosAfter.filter(Boolean) : (p.photoAfter ? [p.photoAfter] : []);
         const docs = Array.isArray(p.docs) ? p.docs : [];
-        const takeaway = String(p.takeaway || '').trim()
-            || clip(p.solution, 220);
+        const takeaway = String(p.takeaway || '').trim() || clip(p.solution, 220);
 
-        const manySidePhotos = beforeUrls.length > 2 || afterUrls.length > 2;
-        const needProcessPage = processUrls.length > 0 || manySidePhotos;
+        const needProcessPage = processUrls.length > 0 || beforeUrls.length > 2 || afterUrls.length > 2;
         const needClosingPage = docs.length > 0 || !!String(p.takeaway || '').trim();
 
         const resolveUrl = async (url) => {
@@ -9910,21 +9945,27 @@ export const ReportsActions = {
             return (await PhotoManager.getAsyncUrl(url)) || window.getPhotoSrc(url) || url;
         };
 
+        const photoFrame = async (url, height) => {
+            const real = await resolveUrl(url);
+            if (!real) {
+                return `<div style="height:${height}px;border:1px dashed #cbd5e1;border-radius:10px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:12px;font-weight:700;">Нет фото</div>`;
+            }
+            return `<div style="height:${height}px;background:#e2e8f0;border-radius:10px;border:1px solid #cbd5e1;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                <img src="${esc(real)}" style="max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;" alt="">
+            </div>`;
+        };
+
         const renderPhotoStack = async (urls, opts = {}) => {
             const max = opts.max || 2;
-            const height = opts.height || (urls.length > 1 ? 220 : 360);
+            const height = opts.height || 320;
             const list = (urls || []).slice(0, max);
             if (!list.length) {
-                return `<div style="height:${Math.min(height, 200)}px;border:1px dashed #cbd5e1;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;font-weight:700;">Нет фото</div>`;
+                return `<div style="height:${Math.min(height, 160)}px;border:1px dashed #cbd5e1;border-radius:10px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:13px;font-weight:700;">Нет фото</div>`;
             }
             const parts = [];
+            const cellH = list.length > 1 ? Math.max(140, Math.floor(height / list.length) - 6) : height;
             for (let i = 0; i < list.length; i++) {
-                const real = await resolveUrl(list[i]);
-                const h = list.length > 1 ? Math.floor(height / list.length) - 4 : height;
-                parts.push(`
-                    <div style="height:${h}px;background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;margin-bottom:${i < list.length - 1 ? '8px' : '0'};">
-                        <img src="${esc(real)}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">
-                    </div>`);
+                parts.push(`<div style="margin-bottom:${i < list.length - 1 ? '8px' : '0'};">${await photoFrame(list[i], cellH)}</div>`);
             }
             return parts.join('');
         };
@@ -9933,16 +9974,10 @@ export const ReportsActions = {
             const list = (urls || []).slice(0, 6);
             if (!list.length) return '';
             const cols = list.length === 1 ? 1 : (list.length <= 4 ? 2 : 3);
-            const cellH = list.length <= 2 ? 320 : (list.length <= 4 ? 240 : 180);
+            const cellH = list.length <= 2 ? 280 : (list.length <= 4 ? 220 : 170);
             const cells = [];
             for (let i = 0; i < list.length; i++) {
-                const real = await resolveUrl(list[i]);
-                cells.push(`
-                    <td style="width:${Math.floor(100 / cols)}%;padding:4px;vertical-align:top;">
-                        <div style="height:${cellH}px;background:#f8fafc;border-radius:10px;overflow:hidden;border:1px solid #bfdbfe;">
-                            <img src="${esc(real)}" style="width:100%;height:100%;object-fit:cover;display:block;" alt="">
-                        </div>
-                    </td>`);
+                cells.push(`<td style="width:${Math.floor(100 / cols)}%;padding:6px;vertical-align:top;">${await photoFrame(list[i], cellH)}</td>`);
             }
             let rows = '';
             for (let i = 0; i < cells.length; i += cols) {
@@ -9953,40 +9988,38 @@ export const ReportsActions = {
 
         const dateLabel = p.date ? new Date(p.date).toLocaleDateString('ru-RU') : new Date().toLocaleDateString('ru-RU');
         const badge = Number(p.deltaUrk) > 0
-            ? `<span style="display:inline-block;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:900;">+${Number(p.deltaUrk)}% УрК</span>`
-            : `<span style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:900;">Опыт с площадки</span>`;
+            ? `<span style="display:inline-block;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:900;">+${Number(p.deltaUrk)}% УрК</span>`
+            : `<span style="display:inline-block;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:900;">Опыт с площадки</span>`;
 
         const pageShell = (inner, pageNo, total) => `
-            <div class="no-break" style="font-family:'Bricolage Grotesque',Verdana,sans-serif;max-height:980px;overflow:hidden;box-sizing:border-box;">
+            <div style="font-family:'Bricolage Grotesque',Verdana,sans-serif;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;">
                 ${inner}
-                <div style="font-size:10px;color:#94a3b8;font-weight:700;text-align:right;margin-top:8px;">Слайд ${pageNo}/${total} · Лучшие практики</div>
+                <div style="font-size:10px;color:#94a3b8;font-weight:700;text-align:right;margin-top:10px;">Слайд ${pageNo}/${total} · Лучшие практики</div>
             </div>`;
 
         const titleBand = `
-            <div style="margin-bottom:12px;">
+            <div style="margin-bottom:14px;">
                 <div style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">
                     ${esc(p.templateTitle || 'Практика')} · ${esc(p.projectName || 'Объект')} · ${esc(dateLabel)}
                 </div>
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
-                    <div style="font-size:26px;font-weight:900;color:#0f172a;line-height:1.15;text-transform:uppercase;flex:1;">${esc(p.title)}</div>
-                    <div style="shrink:0;">${badge}</div>
+                    <div style="font-size:24px;font-weight:900;color:#0f172a;line-height:1.15;text-transform:uppercase;flex:1;">${esc(p.title)}</div>
+                    <div style="flex-shrink:0;">${badge}</div>
                 </div>
             </div>`;
 
-        // Лист 1: Было | Стало (крупно)
         const beforeMain = beforeUrls.slice(0, 2);
         const afterMain = afterUrls.slice(0, 2);
-        const beforeExtra = beforeUrls.slice(2);
-        const afterExtra = afterUrls.slice(2);
+        const beforeExtra = beforeUrls.slice(2, 4);
+        const afterExtra = afterUrls.slice(2, 4);
 
-        const photoH = needClosingPage || needProcessPage ? 400 : 340;
+        const photoH = needClosingPage || needProcessPage ? 360 : 300;
         const imgBeforeHtml = await renderPhotoStack(beforeMain, { max: 2, height: photoH });
         const imgAfterHtml = await renderPhotoStack(afterMain, { max: 2, height: photoH });
 
         const total = 1 + (needProcessPage ? 1 : 0) + (needClosingPage ? 1 : 0);
-        // На одном листе — полоска вывода внизу; при отдельном закрывающем слайде не дублируем
         const takeawayOnPage1 = !needClosingPage
-            ? `<div style="margin-top:12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:12px 14px;">
+            ? `<div style="margin-top:14px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:12px 14px;">
                     <div style="font-size:11px;font-weight:900;color:#3730a3;text-transform:uppercase;margin-bottom:4px;">Ключевой вывод</div>
                     <div style="font-size:14px;font-weight:700;color:#0f172a;line-height:1.35;">${esc(clip(takeaway, 280))}</div>
                </div>`
@@ -10015,11 +10048,9 @@ export const ReportsActions = {
 
         if (needProcessPage) {
             pageNo += 1;
-            const processHtml = processUrls.length
-                ? await renderProcessGrid(processUrls)
-                : '';
-            const extraBefore = beforeExtra.length ? await renderPhotoStack(beforeExtra, { max: 4, height: 200 }) : '';
-            const extraAfter = afterExtra.length ? await renderPhotoStack(afterExtra, { max: 4, height: 200 }) : '';
+            const processHtml = processUrls.length ? await renderProcessGrid(processUrls) : '';
+            const extraBefore = beforeExtra.length ? await renderPhotoStack(beforeExtra, { max: 2, height: 180 }) : '';
+            const extraAfter = afterExtra.length ? await renderPhotoStack(afterExtra, { max: 2, height: 180 }) : '';
             const extraBlock = (beforeExtra.length || afterExtra.length) ? `
                 <table style="width:100%;border-collapse:separate;border-spacing:10px 0;table-layout:fixed;margin-top:10px;">
                     <tr>
@@ -10032,7 +10063,7 @@ export const ReportsActions = {
                     </tr>
                 </table>` : '';
 
-            content += '<div class="pdf-page-break page-break-before"></div>' + pageShell(`
+            content += '<div class="pdf-page-break page-break-before" style="page-break-before:always;break-before:page;"></div>' + pageShell(`
                 ${titleBand}
                 <div style="font-size:14px;font-weight:900;color:#1e40af;text-transform:uppercase;margin-bottom:10px;">
                     ${processUrls.length ? 'Ход работ · процесс на площадке' : 'Дополнительные кадры'}
@@ -10051,7 +10082,7 @@ export const ReportsActions = {
             const docsHtml = docs.length
                 ? docs.map((d) => `<div style="font-size:13px;font-weight:600;color:#1e293b;padding:6px 0;border-bottom:1px solid #f1f5f9;">• ${esc(d.name)}${d.desc ? ` — ${esc(d.desc)}` : ''}</div>`).join('')
                 : `<div style="font-size:12px;color:#94a3b8;font-weight:600;">Документы не прикреплены</div>`;
-            content += '<div class="pdf-page-break page-break-before"></div>' + pageShell(`
+            content += '<div class="pdf-page-break page-break-before" style="page-break-before:always;break-before:page;"></div>' + pageShell(`
                 ${titleBand}
                 <table style="width:100%;border-collapse:separate;border-spacing:12px 0;table-layout:fixed;">
                     <tr>
@@ -10075,6 +10106,7 @@ export const ReportsActions = {
             printPdfShell(`Практика: ${p.title}`, content, 'A3', 'landscape', mode, {
                 author: p.author || _getSetting('engineerName') || 'Инженер',
                 period: `с ${dateLabel} по ${dateLabel}`,
+                allowFlowPages: true
             });
         }
     },

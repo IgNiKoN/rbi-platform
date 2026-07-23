@@ -47,19 +47,28 @@ export var ConstructionModule = {
     }
 
     // sync:completed → данные в память; full-render ConstManager.init только
-    // если Стройконтроль сейчас НЕ на экране (единый хелпер §5).
+    // вне активного экрана. На активном — markDirty, paint через flush только
+    // если DOM ещё скелетон/пуст (см. sync-ui-defer.flushDirtyActiveViews).
     on(document, 'sync:completed', function () {
       if (window.ConstructionState && typeof window.ConstructionState.syncFromLegacy === 'function') {
         window.ConstructionState.syncFromLegacy();
       }
+      if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
+        window.RBI.utils.syncUi.markDirty('construction');
+      } else if (window.syncDirtyFlags) {
+        window.syncDirtyFlags.construction = true;
+      }
       if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('construction')) {
-        if (window.RBI && window.RBI.utils && window.RBI.utils.syncUi && window.RBI.utils.syncUi.markDirty) {
-          window.RBI.utils.syncUi.markDirty('construction');
-        }
         return;
       }
-      if (window.ConstructionActions) {
+      // Экран не активен — можно тихо пересобрать off-screen.
+      var syncUi = window.RBI && window.RBI.utils && window.RBI.utils.syncUi;
+      var constructionActive = syncUi && typeof syncUi.isViewActive === 'function'
+        ? syncUi.isViewActive('construction')
+        : false;
+      if (!constructionActive && window.ConstructionActions) {
         window.ConstructionActions.init();
+        if (window.syncDirtyFlags) window.syncDirtyFlags.construction = false;
       }
     });
 

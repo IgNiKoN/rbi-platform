@@ -52,15 +52,20 @@
             }
         },
 
-        /* Сбрасывает фильтры аналитики (namespace 'analytics' и 'history') до начального пустого состояния */
+        /* Сбрасывает фильтры аналитики (namespace 'analytics' и 'history') до начального пустого состояния.
+         * Мутируем существующий объект window.activeMultiFilters — не подменяем ссылку,
+         * чтобы ES-модуль multi-filter.js и сервисы не расходились (current_plan B1). */
         resetAnalyticsFilters: function () {
-            if (typeof activeMultiFilters !== 'undefined') {
-                activeMultiFilters = {
+            var af = window.activeMultiFilters;
+            if (!af || typeof af !== 'object') {
+                window.activeMultiFilters = {
                     history: { project: [], contractor: [], inspector: [] },
                     analytics: { project: [], contractor: [], inspector: [], template: [] }
                 };
-                window.activeMultiFilters = activeMultiFilters;
+                return;
             }
+            af.history = { project: [], contractor: [], inspector: [] };
+            af.analytics = { project: [], contractor: [], inspector: [], template: [] };
         },
 
         /* Возвращает текущий режим источника данных ('local' | 'cloud') */

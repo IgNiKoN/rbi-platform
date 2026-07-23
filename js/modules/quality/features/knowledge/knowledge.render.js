@@ -176,7 +176,7 @@ export const KnowledgeRender = {
                 previewHtml = '<div class="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 relative"><div class="w-10 h-12 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between p-1.5 relative overflow-hidden"><div class="absolute top-0 left-0 right-0 h-3.5 bg-red-500 flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">PDF</span></div><div class="space-y-1 mt-4"><div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-full"></div><div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div><div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-4/6"></div></div></div></div>';
             } else {
                 previewHtml = previewImg
-                    ? '<img src="' + window.getPhotoSrc(previewImg) + '" class="w-full h-full object-cover">'
+                    ? '<img src="' + (window.getPhotoThumbSrc || window.getPhotoSrc)(previewImg) + '" class="w-full h-full object-cover" loading="lazy">'
                     : '<div class="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 ' + typeColor + '">' + typeIcon + '</div>';
             }
 

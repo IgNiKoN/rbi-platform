@@ -22,16 +22,102 @@ import {
     collectAgendaFromDom,
     collectMeetingDraftFromDom
 } from './meetings.protocol.js';
+import './meetings.docx-export.js'; // side-effect: публикует exportMeetingDocx / rbi_exportMeetingDocx
 
 /* ── хелперы storage / sync ──────────────────────────────────────────────────── */
 
 let _ctx = null;
-/** baseline memo открытой карточки архива (dirty-check перед печатью) */
+/** baseline snapshot редактора протокола (dirty-check перед PDF/Word/выходом) */
 let _savedMeetingBaselineMemo = '';
+let _savedMeetingEditorBaseline = '';
 /** последний черновик для preview/print без save */
 let _meetingPreviewDraft = null;
 /** не пересохранять черновик при закрытии после успешного save */
 let _meetingDraftSkipSave = false;
+
+function _escTa(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function _ensureMeetingProtocolEditorView() {
+    if (document.getElementById('meeting-protocol-editor-view')) return;
+    const root = (window.RBI && window.RBI.services && window.RBI.services.shell
+        && typeof window.RBI.services.shell.getModalsRoot === 'function')
+        ? window.RBI.services.shell.getModalsRoot()
+        : (document.getElementById('app-modals') || document.body);
+    if (!root) return;
+    root.insertAdjacentHTML('beforeend', `
+    <div id="meeting-protocol-editor-view"
+        class="hidden bg-[var(--bg-main)] fixed inset-0 z-[3000] h-screen overflow-y-auto custom-scrollbar">
+        <div class="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 p-3 sm:p-4 mb-4 shadow-sm sticky top-0 z-40 flex justify-between items-center gap-2">
+            <button type="button" onclick="rbi_closeMeetingProtocolEditor()"
+                class="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1 active:scale-95 bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-lg transition-colors shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
+                Назад
+            </button>
+            <div id="meeting-protocol-editor-title"
+                class="text-[11px] sm:text-[12px] font-black text-slate-800 dark:text-white uppercase tracking-widest text-center flex-1 truncate px-1">
+                Протокол
+            </div>
+            <div class="flex gap-1 sm:gap-1.5 shrink-0 flex-wrap justify-end">
+                <button type="button" onclick="rbi_saveEditedMeeting()"
+                    class="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2.5 sm:px-3 py-2 rounded-lg active:scale-95 shadow-sm">Сохранить</button>
+                <button type="button" onclick="rbi_printSavedMeetingDirty(window.currentEditingMeetingId,'script')"
+                    class="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 sm:px-3 py-2 rounded-lg active:scale-95 shadow-sm">PDF</button>
+                <button type="button" onclick="rbi_printSavedMeetingDirty(window.currentEditingMeetingId,'browser')"
+                    class="text-[10px] font-bold text-slate-700 bg-white border border-slate-200 px-2.5 sm:px-3 py-2 rounded-lg active:scale-95 shadow-sm hidden sm:inline-flex">Печать</button>
+                <button type="button" onclick="rbi_exportMeetingDocxDirty(window.currentEditingMeetingId)"
+                    class="text-[10px] font-bold text-white bg-sky-600 px-2.5 sm:px-3 py-2 rounded-lg active:scale-95 shadow-md">Word</button>
+            </div>
+        </div>
+        <div id="meeting-protocol-editor-body" class="space-y-4 px-3 pb-28 max-w-3xl mx-auto"></div>
+        <div class="fixed bottom-0 inset-x-0 z-40 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200 dark:border-slate-700 backdrop-blur-md px-3 py-3 sm:hidden">
+            <div class="max-w-3xl mx-auto flex gap-2">
+                <button type="button" onclick="rbi_printSavedMeetingDirty(window.currentEditingMeetingId,'browser')"
+                    class="flex-1 bg-slate-100 text-slate-700 border border-slate-200 py-3 rounded-xl font-bold text-[10px] uppercase">Печать</button>
+                <button type="button" onclick="rbi_exportMeetingDocxDirty(window.currentEditingMeetingId)"
+                    class="flex-1 bg-sky-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase shadow-md">Word</button>
+                <button type="button" onclick="copyExpertText('btn-copy-saved','saved-memo-text')" id="btn-copy-saved-mobile"
+                    class="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold text-[10px] uppercase shadow-md">Копир.</button>
+            </div>
+        </div>
+    </div>`);
+}
+
+function _collectMeetingEditorSnapshot() {
+    const memo = document.getElementById('saved-memo-text')?.value || '';
+    const notes = document.getElementById('saved-notes-text')?.value || '';
+    const agenda = [];
+    document.querySelectorAll('[data-agenda-idx]').forEach(function (row) {
+        const idx = parseInt(row.getAttribute('data-agenda-idx'), 10);
+        if (Number.isNaN(idx)) return;
+        agenda.push({
+            idx: idx,
+            comment: row.querySelector('.mpe-comment')?.value || '',
+            resp: (row.querySelector('.mpe-resp')?.value || '').trim(),
+            date: row.querySelector('.mpe-date')?.value || '',
+            isDone: !!row.querySelector('.mpe-done')?.checked
+        });
+    });
+    agenda.sort(function (a, b) { return a.idx - b.idx; });
+    return JSON.stringify({ memo: memo, notes: notes, agenda: agenda });
+}
+
+function _meetingEditorIsDirty() {
+    if (!document.getElementById('meeting-protocol-editor-view')) return false;
+    if (!document.getElementById('saved-memo-text')) return false;
+    return _collectMeetingEditorSnapshot() !== _savedMeetingEditorBaseline;
+}
+
+async function _flushMeetingEditorIfDirty(promptMsg) {
+    if (!_meetingEditorIsDirty()) return true;
+    if (!confirm(promptMsg || 'Сохранить правки перед продолжением?')) return true;
+    await saveEditedMeeting();
+    return true;
+}
 
 function _rbiCollectMeetingWsDraft() {
     const notesEl = document.getElementById('rbi-meeting-notes');
@@ -659,16 +745,30 @@ export async function openSavedMeeting(id) {
             } else {
                 defectHtml = String(a.defect || '').replace(/</g, '&lt;').replace(/\n/g, '<br>');
             }
+            const aIdx = meet.agenda.indexOf(a);
+            const dateVal = a.date ? String(a.date).slice(0, 10) : '';
             return `
-            <div class="border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-2 bg-slate-50/50 dark:bg-slate-900/30">
-                <div class="text-[11px] text-slate-700 dark:text-slate-300 font-medium mb-2 leading-snug">${defectHtml}</div>
-                <div class="flex flex-wrap gap-2 text-[9px] font-bold">
-                    <span class="${a.isDone ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-700 border-orange-200'} px-2 py-1 rounded border uppercase tracking-widest flex items-center gap-1">${a.isDone ? '✅ Решено' : '⏳ В работе'}</span>
-                    ${reopen}
-                    ${a.date ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200">Срок: ${new Date(a.date).toLocaleDateString('ru-RU')}</span>` : ''}
-                    ${a.resp ? `<span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded border border-slate-200">Отв: ${a.resp}</span>` : ''}
+            <div class="border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-2 bg-white dark:bg-slate-900/40" data-agenda-idx="${aIdx}">
+                <div class="text-[11px] text-slate-700 dark:text-slate-300 font-medium mb-3 leading-snug">${defectHtml}</div>
+                ${reopen ? `<div class="mb-2">${reopen}</div>` : ''}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                    <label class="block">
+                        <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Ответственный</span>
+                        <input type="text" class="mpe-resp input-base text-[11px] mt-1" value="${_escTa(a.resp || '')}" placeholder="ФИО / роль">
+                    </label>
+                    <label class="block">
+                        <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Срок</span>
+                        <input type="date" class="mpe-date input-base text-[11px] mt-1" value="${_escTa(dateVal)}">
+                    </label>
                 </div>
-                ${a.comment ? `<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-2 italic bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100">💬 ${a.comment}</div>` : ''}
+                <label class="block mb-2">
+                    <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Решение / комментарий</span>
+                    <textarea class="mpe-comment input-base text-[11px] mt-1 h-20 resize-none custom-scrollbar" placeholder="Решение по пункту...">${_escTa(a.comment || '')}</textarea>
+                </label>
+                <label class="inline-flex items-center gap-2 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" class="mpe-done w-4 h-4 rounded border-slate-300" ${a.isDone ? 'checked' : ''}>
+                    Решено
+                </label>
             </div>`;
         };
 
@@ -695,76 +795,124 @@ export async function openSavedMeeting(id) {
         agendaHtml = `<div class="text-[10px] text-slate-400 italic text-center py-4 bg-white rounded-xl border border-dashed border-slate-300">Детальная повестка не сохранена</div>`;
     }
 
-    let notesHtml = meet.notes ? `
-        <div class="mt-3 text-[11px] bg-yellow-50 text-yellow-800 border border-yellow-200 p-3 rounded-xl shadow-sm leading-relaxed">
-            <span class="font-black uppercase mb-1 block">📌 Дополнительные тезисы:</span>
-            ${meet.notes}
-        </div>` : '';
-
-    document.getElementById('modal-icon').innerHTML = ``;
-    document.getElementById('modal-title').innerHTML = `
-        <div class="flex justify-between items-center w-full">
-            <span class="text-[14px] uppercase font-black text-slate-800 dark:text-white flex items-center gap-2">📅 Протокол</span>
-            <button onclick="closeModal()" class="text-slate-400 hover:text-red-500 active:scale-90 px-2 text-lg">✕</button>
-        </div>
-    `;
-
     const projectLabel = String(meet.projectName || meet.project || meet.project_display_name || '').trim() || 'Без объекта';
     const canBind = _meetingCanBindMeeting(meet);
     const bindBtn = canBind
-        ? `<button onclick="rbi_openMeetingBindModal('${String(meet.id).replace(/'/g, "\\'")}')" class="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-1 rounded-lg text-[9px] font-black uppercase active:scale-95 shrink-0">Изменить объект</button>`
+        ? `<button type="button" onclick="rbi_openMeetingBindModal('${String(meet.id).replace(/'/g, "\\'")}')" class="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-1 rounded-lg text-[9px] font-black uppercase active:scale-95 shrink-0">Изменить объект</button>`
         : '';
+    const dateLabel = new Date(meet.date).toLocaleString('ru-RU', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
 
-    document.getElementById('modal-body').innerHTML = `
-        <div class="text-[10px] text-slate-500 mb-3 border-b border-slate-200 dark:border-slate-700 pb-3 flex flex-wrap justify-between items-center gap-2">
-            <span>Автор: <b>${meet.author}</b></span>
-            <span>Составлено: <b>${new Date(meet.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b></span>
-        </div>
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
-            <div class="min-w-0 text-[11px] font-bold text-slate-700 dark:text-slate-200">
-                <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest mr-1.5">Объект</span>
-                <span class="truncate">${projectLabel.replace(/</g, '&lt;')}</span>
+    _ensureMeetingProtocolEditorView();
+    const view = document.getElementById('meeting-protocol-editor-view');
+    const body = document.getElementById('meeting-protocol-editor-body');
+    const titleEl = document.getElementById('meeting-protocol-editor-title');
+    if (!view || !body) return;
+
+    if (titleEl) {
+        titleEl.textContent = projectLabel === 'Без объекта'
+            ? ('Протокол · ' + dateLabel)
+            : projectLabel;
+    }
+
+    body.innerHTML = `
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm space-y-3">
+            <div class="text-[12px] font-black uppercase text-indigo-600 dark:text-indigo-400 border-b border-slate-100 dark:border-slate-700 pb-2">
+                Реквизиты протокола
             </div>
-            ${bindBtn}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                <div><span class="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Автор</span>
+                    <span class="font-bold text-slate-800 dark:text-slate-100">${_escTa(meet.author || '—')}</span></div>
+                <div><span class="text-[9px] font-black uppercase text-slate-400 tracking-widest block mb-1">Составлено</span>
+                    <span class="font-bold text-slate-800 dark:text-slate-100">${_escTa(dateLabel)}</span></div>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2">
+                <div class="min-w-0 text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                    <span class="text-[9px] font-black uppercase text-slate-400 tracking-widest mr-1.5">Объект</span>
+                    <span>${projectLabel.replace(/</g, '&lt;')}</span>
+                </div>
+                ${bindBtn}
+            </div>
         </div>
 
         ${photoHtml}
 
-        <div class="mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-700 max-h-[30vh] overflow-y-auto custom-scrollbar shadow-inner">
-            <div class="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-3 pl-1">📋 Повестка и решения</div>
-            ${agendaHtml}
-            ${notesHtml}
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+            <div class="text-[12px] font-black uppercase text-green-600 dark:text-green-400 border-b border-slate-100 dark:border-slate-700 pb-2 mb-3">
+                1. Итоговое решение (мемо)
+            </div>
+            <textarea id="saved-memo-text"
+                class="w-full text-[12px] leading-relaxed text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-900/50 p-3 sm:p-4 rounded-xl border border-slate-300 dark:border-slate-600 shadow-inner whitespace-pre-wrap font-medium min-h-[220px] resize-y outline-none focus:ring-2 focus:ring-indigo-300 custom-scrollbar"
+                placeholder="Текст итогового решения...">${_escTa(meet.memoText || '')}</textarea>
+            <div class="mt-2 flex justify-end">
+                <button type="button" onclick="copyExpertText('btn-copy-saved','saved-memo-text')" id="btn-copy-saved"
+                    class="hidden sm:inline-flex text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg active:scale-95">Копировать мемо</button>
+            </div>
         </div>
 
-        <div class="text-[11px] font-black uppercase tracking-widest text-green-600 dark:text-green-500 mb-2 pl-1 flex justify-between items-center">
-            <span>Итоговый протокол (Мемо)</span>
-            <button onclick="rbi_saveEditedMeeting()" class="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded text-[9px] font-bold active:scale-95">💾 Сохранить правки</button>
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+            <div class="text-[12px] font-black uppercase text-amber-600 dark:text-amber-400 border-b border-slate-100 dark:border-slate-700 pb-2 mb-3">
+                2. Дополнительные тезисы
+            </div>
+            <textarea id="saved-notes-text"
+                class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-100 bg-amber-50/60 dark:bg-slate-900/50 p-3 rounded-xl border border-amber-200 dark:border-slate-600 shadow-inner whitespace-pre-wrap min-h-[110px] resize-y outline-none focus:ring-2 focus:ring-amber-300 custom-scrollbar"
+                placeholder="Дополнительные тезисы (необязательно)...">${_escTa(meet.notes || '')}</textarea>
         </div>
-        <textarea id="saved-memo-text" class="w-full text-[11px] leading-relaxed text-slate-800 dark:text-slate-200 bg-white p-3 sm:p-4 rounded-xl border border-slate-300 shadow-inner whitespace-pre-wrap font-medium h-48 resize-none outline-none custom-scrollbar mb-4">${meet.memoText || ''}</textarea>
 
-        <div class="flex gap-2">
-            <button onclick="rbi_printSavedMeetingDirty('${meet.id}', 'script')" class="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path></svg> PDF</button>
-            <button onclick="rbi_printSavedMeetingDirty('${meet.id}', 'browser')" class="flex-1 bg-slate-100 text-slate-700 border border-slate-200 py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-sm active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Печать</button>
-            <button onclick="copyExpertText('btn-copy-saved', 'saved-memo-text')" id="btn-copy-saved" class="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-bold text-[10px] uppercase shadow-md active:scale-95 transition-colors flex items-center justify-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg> Копировать</button>
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm">
+            <div class="text-[12px] font-black uppercase text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 pb-2 mb-3">
+                3. Повестка и решения
+            </div>
+            <div class="space-y-1">${agendaHtml}</div>
         </div>
     `;
 
+    // закрыть обычную модалку, если была открыта
     const modal = document.getElementById('modal-overlay');
+    if (modal) modal.style.display = 'none';
+
+    view.classList.remove('hidden');
     document.body.classList.add('modal-open');
-    modal.style.display = 'flex';
+    view.scrollTo(0, 0);
+    _savedMeetingBaselineMemo = meet.memoText || '';
+    _savedMeetingEditorBaseline = _collectMeetingEditorSnapshot();
 }
 
-/** Печать/PDF из карточки архива с dirty-check мемо. */
-export async function printSavedMeetingDirty(id, mode = 'browser') {
-    const memoEl = document.getElementById('saved-memo-text');
-    if (memoEl && memoEl.value !== _savedMeetingBaselineMemo) {
-        if (confirm('Сохранить правки перед печатью?')) {
+/** Закрыть полноэкранный редактор протокола. */
+export async function closeMeetingProtocolEditor() {
+    const view = document.getElementById('meeting-protocol-editor-view');
+    if (!view || view.classList.contains('hidden')) return;
+    if (_meetingEditorIsDirty()) {
+        if (confirm('Сохранить изменения перед выходом?')) {
             await saveEditedMeeting();
-            _savedMeetingBaselineMemo = memoEl.value;
         }
     }
+    view.classList.add('hidden');
+    const body = document.getElementById('meeting-protocol-editor-body');
+    if (body) body.innerHTML = '';
+    document.body.classList.remove('modal-open');
+    window.currentEditingMeetingId = null;
+    _savedMeetingEditorBaseline = '';
+    _savedMeetingBaselineMemo = '';
+}
+
+/** Печать/PDF из редактора с dirty-check. */
+export async function printSavedMeetingDirty(id, mode = 'browser') {
+    await _flushMeetingEditorIfDirty('Сохранить правки перед печатью?');
     if (typeof window.rbi_printMeetingPdf === 'function') {
         return window.rbi_printMeetingPdf(id, mode);
+    }
+}
+
+/** Word (.docx) из редактора с dirty-check. */
+export async function exportMeetingDocxDirty(id) {
+    await _flushMeetingEditorIfDirty('Сохранить правки перед экспортом Word?');
+    if (typeof window.rbi_exportMeetingDocx === 'function') {
+        return window.rbi_exportMeetingDocx(id);
+    }
+    if (typeof window.exportMeetingDocx === 'function') {
+        return window.exportMeetingDocx(id);
     }
 }
 
@@ -775,7 +923,24 @@ export async function saveEditedMeeting() {
     const meet = window.rbi_meetingsData.find(m => m.id === window.currentEditingMeetingId);
     if (!meet) return;
 
-    meet.memoText = document.getElementById('saved-memo-text').value;
+    const memoEl = document.getElementById('saved-memo-text');
+    const notesEl = document.getElementById('saved-notes-text');
+    if (memoEl) meet.memoText = memoEl.value;
+    if (notesEl) meet.notes = notesEl.value;
+
+    if (Array.isArray(meet.agenda)) {
+        document.querySelectorAll('[data-agenda-idx]').forEach(function (row) {
+            const idx = parseInt(row.getAttribute('data-agenda-idx'), 10);
+            if (Number.isNaN(idx) || !meet.agenda[idx]) return;
+            const item = meet.agenda[idx];
+            item.comment = row.querySelector('.mpe-comment')?.value || '';
+            item.resp = (row.querySelector('.mpe-resp')?.value || '').trim();
+            item.date = row.querySelector('.mpe-date')?.value || '';
+            item.isDone = !!row.querySelector('.mpe-done')?.checked;
+            item.resolvedAt = item.isDone ? (item.resolvedAt || new Date().toISOString()) : null;
+        });
+    }
+
     meet.updatedAt = new Date().toISOString();
     meet.updated_at = meet.updatedAt;
 
@@ -789,8 +954,9 @@ export async function saveEditedMeeting() {
     localStorage.setItem('rbi_cloud_dirty', '1');
     _meetingsSync('silent');
     _savedMeetingBaselineMemo = meet.memoText || '';
+    _savedMeetingEditorBaseline = _collectMeetingEditorSnapshot();
 
-    showToast("✅ Правки протокола сохранены");
+    showToast('Правки протокола сохранены');
 }
 
 /* ── Привязка протокола к объекту (админ — любые, инженер — свои) ───────────── */
@@ -2181,6 +2347,8 @@ if (typeof window !== 'undefined') {
     window.rbi_previewMeetingProtocol = previewMeetingProtocol;
     window.rbi_printMeetingDraftBrowser = printMeetingDraftBrowser;
     window.rbi_printSavedMeetingDirty = printSavedMeetingDirty;
+    window.rbi_exportMeetingDocxDirty = exportMeetingDocxDirty;
+    window.rbi_closeMeetingProtocolEditor = closeMeetingProtocolEditor;
     window.rbi_closeMeetingPreviewModal = _closeMeetingPreviewModal;
 }
 

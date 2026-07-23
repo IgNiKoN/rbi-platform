@@ -38,8 +38,40 @@
     var _cache = {};
     var _initialized = false;
 
+    // Кэш метрик по отфильтрованным срезам (D30 и др.): ключ = idsSignature.
+    // Без него getMetricsForGroupMatching при любом периоде ≠ ALL на каждый
+    // рендер/смену вкладки заново гоняет getContractorMetrics по всем группам
+    // (current_plan B5). Инвалидируется вместе с полным кэшем.
+    var _sliceCache = {};
+    var _sliceCacheKeys = [];
+    var SLICE_CACHE_MAX = 250;
+
     function idsSignatureOf(records) {
         return records.map(function (i) { return i && i.id; }).sort().join('_');
+    }
+
+    function clearSliceCache() {
+        _sliceCache = {};
+        _sliceCacheKeys = [];
+    }
+
+    function getSliceCached(sig) {
+        if (!sig || !_sliceCache[sig]) return null;
+        return _sliceCache[sig];
+    }
+
+    function setSliceCached(sig, metrics) {
+        if (!sig || !metrics) return;
+        if (_sliceCache[sig]) {
+            var idx = _sliceCacheKeys.indexOf(sig);
+            if (idx >= 0) _sliceCacheKeys.splice(idx, 1);
+        }
+        _sliceCache[sig] = metrics;
+        _sliceCacheKeys.push(sig);
+        while (_sliceCacheKeys.length > SLICE_CACHE_MAX) {
+            var oldest = _sliceCacheKeys.shift();
+            if (oldest) delete _sliceCache[oldest];
+        }
     }
 
     function projectLabelOf(item) {
@@ -107,6 +139,7 @@
         // Разовый полный пересчёт всех групп — вызывается один раз при старте
         // приложения (после restoreSession()), НЕ при каждом открытии вкладки.
         recalcAll: function () {
+            clearSliceCache();
             var grouped = groupByKey(sourceRecords());
             var nextCache = {};
             for (var key in grouped) {
@@ -124,6 +157,8 @@
         // или массив записей (после pull — по затронутым записям).
         recalcTouched: function (recordOrRecords) {
             if (!_initialized) return this.recalcAll();
+            // База группы изменилась — срезовые ответы (D30 и т.п.) невалидны.
+            clearSliceCache();
             if (Array.isArray(recordOrRecords)) {
                 var seenKeys = {};
                 recordOrRecords.forEach(function (r) {
@@ -168,10 +203,17 @@
                 if (entry === undefined) return recalced;
             }
             var records = Array.isArray(filteredRecords) ? filteredRecords : [];
-            if (entry.idsSignature === idsSignatureOf(records)) return entry.metrics;
-            return typeof window.getContractorMetrics === 'function'
+            var sig = idsSignatureOf(records);
+            if (entry.idsSignature === sig) return entry.metrics;
+            // Срез (D30/фильтры): не пересчитывать одну и ту же выборку
+            // при каждом переключении подвкладки аналитики.
+            var sliced = getSliceCached(sig);
+            if (sliced) return sliced;
+            var computed = typeof window.getContractorMetrics === 'function'
                 ? window.getContractorMetrics(records, userTemplates())
                 : null;
+            if (computed) setSliceCached(sig, computed);
+            return computed;
         },
 
         // Метрики для конкретной записи (удобный шорткат — вычисляет groupKey сам).

@@ -632,7 +632,7 @@ function openNodeSelectorModal() {
         }
 
         const imgHtml = previewSrc
-            ? `<img src="${previewSrc}" class="w-12 h-12 object-cover rounded-lg border border-slate-100 bg-white dark:bg-slate-900">`
+            ? `<img src="${previewSrc}" class="w-12 h-12 object-cover rounded-lg border border-slate-100 bg-white dark:bg-slate-900" loading="lazy">`
             : `<div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-[8px] font-black text-slate-400 uppercase">📄 PDF</div>`;
 
         return `
@@ -819,7 +819,7 @@ function removeTwiPdf() {
 // =====================================================================
 function renderTwiStepPhotoRow(stepId, photosArr) {
     const thumbsHtml = photosArr.map(function (src, idx) {
-        return `<div class="relative shrink-0"><img src="${window.getPhotoSrc(src)}" class="w-20 h-20 rounded-lg border border-slate-200 shadow-sm object-cover" onclick="openPhotoViewer('${src}')"><button onclick="removeTwiPhoto('${stepId}', ${idx})" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold shadow-md border border-white z-10">✕</button></div>`;
+        return `<div class="relative shrink-0"><img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(src)}" class="w-20 h-20 rounded-lg border border-slate-200 shadow-sm object-cover" loading="lazy" onclick="openPhotoViewer('${src}')"><button onclick="removeTwiPhoto('${stepId}', ${idx})" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold shadow-md border border-white z-10">✕</button></div>`;
     }).join('');
 
     const addBtnHtml = `<button onclick="triggerTwiPhotoUpload('${stepId}')" class="w-20 h-20 shrink-0 bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 font-bold text-[9px] uppercase active:scale-95 transition-colors flex flex-col items-center justify-center gap-1" title="${photosArr.length ? 'Добавить ещё' : 'Прикрепить фото/схему'}">📸<span>${photosArr.length ? 'Ещё' : 'Фото'}</span></button>`;
@@ -2382,7 +2382,7 @@ window.renderTwiList = function () {
                 </div>`;
                 } else {
                     previewHtml = previewImg
-                        ? `<img src="${window.getPhotoSrc(previewImg)}" class="w-full h-full object-cover">`
+                        ? `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(previewImg)}" class="w-full h-full object-cover" loading="lazy">`
                         : `<div class="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 ${typeColor}">${typeIcon}</div>`;
                 }
 
@@ -2392,7 +2392,7 @@ window.renderTwiList = function () {
 
                 if (isListView) {
                     var thumb = previewImg
-                        ? `<img src="${window.getPhotoSrc(previewImg)}" class="w-full h-full object-cover">`
+                        ? `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(previewImg)}" class="w-full h-full object-cover" loading="lazy">`
                         : `<div class="w-full h-full flex items-center justify-center ${typeColor}">${typeIcon.replace('w-8 h-8', 'w-5 h-5').replace(' mb-1', '')}</div>`;
                     html += `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm flex items-center gap-2.5 p-2 active:scale-[0.99] transition-transform relative cursor-pointer" onclick="openTwiViewer('${card.id}')">
@@ -3611,11 +3611,11 @@ window.renderNodesList = function () {
                 </div>`;
                 listThumb = '<span class="text-[8px] font-black text-red-500">PDF</span>';
             } else if (node.attachments && node.attachments.length > 0 && node.attachments[0].type === 'image') {
-                previewHtml = `<img src="${window.getPhotoSrc(node.attachments[0].url)}" class="w-full h-full object-contain p-2">`;
-                listThumb = `<img src="${window.getPhotoSrc(node.attachments[0].url)}" class="w-full h-full object-cover">`;
+                previewHtml = `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(node.attachments[0].url)}" class="w-full h-full object-contain p-2" loading="lazy">`;
+                listThumb = `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(node.attachments[0].url)}" class="w-full h-full object-cover" loading="lazy">`;
             } else if (node.img) {
-                previewHtml = `<img src="${window.getPhotoSrc(node.img)}" class="w-full h-full object-contain p-2">`;
-                listThumb = `<img src="${window.getPhotoSrc(node.img)}" class="w-full h-full object-cover">`;
+                previewHtml = `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(node.img)}" class="w-full h-full object-contain p-2" loading="lazy">`;
+                listThumb = `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(node.img)}" class="w-full h-full object-cover" loading="lazy">`;
             } else {
                 previewHtml = `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-100 dark:bg-slate-900"><svg class="w-8 h-8 opacity-40 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"></path></svg></div>`;
                 listThumb = '<span class="text-[8px] font-black text-slate-400">УЗЕЛ</span>';

@@ -40,7 +40,13 @@ function bindPdfViewerActionDelegation() {
 
     document.addEventListener('click', function (e) {
         var el = resolveActionElement(e.target);
-        if (el) dispatch(el);
+        if (!el) return;
+        // Не даём всплыть/дойти до legacy btn.onclick — иначе toggleAddMode
+        // вызывается дважды за один клик (capture + onclick) и режим сразу сбрасывается.
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        dispatch(el);
     }, true);
 }
 
@@ -299,6 +305,11 @@ window.UniversalPdfViewer = {
         this.setAddMode(!this.isAddMode);
     },
 
+    /** Выход из режима штампа — только через data-pdf-viewer-action (без btn.onclick). */
+    endCopyMode() {
+        this.setCopyMode(false);
+    },
+
     setAddMode(isActive) {
         this.isAddMode = isActive;
         this.isCopyMode = false;
@@ -307,11 +318,16 @@ window.UniversalPdfViewer = {
         const hintAdd = document.getElementById('pdf-add-hint');
         const hintNorm = document.getElementById('pdf-normal-hint');
         const container = document.getElementById('universal-pdf-container');
+        if (!btn) return;
+
+        // Единственный путь клика — делегирование data-pdf-viewer-action.
+        // btn.onclick здесь раньше давал double-toggle с capture-listener.
+        btn.onclick = null;
+        btn.setAttribute('data-pdf-viewer-action', 'toggleAddMode');
 
         if (isActive) {
             btn.className = 'bg-red-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
             btn.innerHTML = 'Отмена';
-            btn.onclick = () => this.toggleAddMode();
             hintNorm.classList.add('hidden');
             hintAdd.classList.remove('hidden');
             hintAdd.innerText = 'Кликните на чертеж ➔';
@@ -320,7 +336,6 @@ window.UniversalPdfViewer = {
         } else {
             btn.className = 'bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
             btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg> Добавить дефект';
-            btn.onclick = () => this.toggleAddMode();
             hintNorm.classList.remove('hidden');
             hintAdd.classList.add('hidden');
             if (container) container.style.cursor = 'grab';
@@ -336,11 +351,14 @@ window.UniversalPdfViewer = {
         const hintAdd = document.getElementById('pdf-add-hint');
         const hintNorm = document.getElementById('pdf-normal-hint');
         const container = document.getElementById('universal-pdf-container');
+        if (!btn) return;
+
+        btn.onclick = null;
 
         if (isActive) {
+            btn.setAttribute('data-pdf-viewer-action', 'endCopyMode');
             btn.className = 'bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 shadow-sm transition-colors flex items-center gap-1.5';
             btn.innerHTML = 'Завершить штамп';
-            btn.onclick = () => this.setCopyMode(false);
             hintNorm.classList.add('hidden');
             hintAdd.classList.remove('hidden');
             hintAdd.innerText = 'Кликайте для вставки копий ➔';

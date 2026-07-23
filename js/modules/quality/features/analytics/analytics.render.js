@@ -211,8 +211,140 @@ function _setPhotoThumbCache(photoRef, thumb) {
 }
 
 // Поколение рендера аналитики: при смене фильтра старые async-превью
-// (_hydratePhotoThumbnails) не должны трогать DOM / грузить фото.
+// (_hydrateGalleryPhotos) не должны трогать DOM / грузить фото.
 let _analyticsRenderGen = 0;
+
+// B4: при смене только подвкладки не пересобираем фильтр/HTML уже
+// отрисованной секции (DOM остаётся под .hidden). Сбрасывается при смене
+// фильтра, sync-dirty, смене режима или изменении объёма данных (иначе
+// пустой первый paint «залипал» навсегда — данные пришли, skip сработал).
+let _analyticsFilterFp = '';
+let _analyticsDataSig = '';
+let _analyticsFilteredCache = null;
+const _analyticsRenderedTabs = new Set();
+
+function _analyticsFilterFingerprint() {
+    const period = document.getElementById('global-filter-period')?.value || 'D30';
+    const dFrom = document.getElementById('filter-date-from')?.value || '';
+    const dTo = document.getElementById('filter-date-to')?.value || '';
+    const f = (window.activeMultiFilters && window.activeMultiFilters.analytics) || {};
+    const mode = _analyticsMode();
+    // onepagerMode (Объект/Компания) — иначе B4 skip после paint «съедает» тумблер.
+    const onepagerMode = window.onepagerMode || 'local';
+    return [
+        mode,
+        onepagerMode,
+        period,
+        dFrom,
+        dTo,
+        (f.project || []).join('\u0001'),
+        (f.contractor || []).join('\u0001'),
+        (f.inspector || []).join('\u0001'),
+        (f.template || []).join('\u0001')
+    ].join('|');
+}
+
+function _analyticsSourceDataSignature() {
+    let arr = [];
+    try {
+        if (window.RBI && window.RBI.services && window.RBI.services.inspections) {
+            arr = window.RBI.services.inspections.getAllForAnalyticsSync() || [];
+        } else if (Array.isArray(window.contractorArray)) {
+            arr = window.contractorArray;
+        }
+    } catch (_) { arr = []; }
+    if (!arr.length) return '0';
+    // length + края id: ловит restoreSession/pull без полного хеша массива.
+    const a = arr[0] && arr[0].id;
+    const b = arr[arr.length - 1] && arr[arr.length - 1].id;
+    return arr.length + ':' + String(a || '') + ':' + String(b || '');
+}
+
+function _analyticsSectionLooksPainted(tabId) {
+    const hostIds = {
+        // Список обязателен: скелетон ставится в list-container и затирает карточки,
+        // а top-summary при этом может остаться «живым» — одного KPI мало для reuse.
+        'sub-contractors': ['contractors-list-container', 'contractors-top-summary'],
+        'sub-onepager': ['onepager-content-container'],
+        'sub-schedule': ['schedule-container'],
+        // shell ПК СК: без #sk-view-dashboard это ещё спиннер «Чтение базы…».
+        'sub-sk': ['sk-main-container'],
+        'sub-data': ['data-sub-container', 'sub-data']
+    };
+    const ids = hostIds[tabId] || [];
+    const els = ids.map((id) => document.getElementById(id)).filter(Boolean);
+    if (!els.length) return false;
+    for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        if (el.querySelector && el.querySelector('.rbi-skeleton-wrap')) return false;
+    }
+    const primary = els[0];
+    const html = (primary.innerHTML || '').trim();
+    if (html.length < 80) return false;
+    const text = primary.innerText || '';
+    // Пустой первый рендер («Нет данных…») нельзя считать готовым — иначе
+    // приход contractorArray через retry/views.js пропускается skip'ом.
+    if (/Нет данных/i.test(text) && html.length < 800) return false;
+    if (tabId === 'sub-sk') {
+        if (!document.getElementById('sk-view-dashboard')) return false;
+        if (/Чтение базы/i.test(text)) return false;
+    }
+    return true;
+}
+
+/** Можно ли показать подвкладку без скелетона и без полного re-render (B4). */
+function analyticsTabCanReusePaint(tabId) {
+    if (!tabId || tabId === 'sub-history') return false;
+    if (typeof window.shouldDeferFullRender === 'function' && window.shouldDeferFullRender('analytics')) {
+        return false;
+    }
+    if (window.syncDirtyFlags && window.syncDirtyFlags.analytics) return false;
+    // ПК СК: отдельный dirty после sync — не reuse, пока данные не перечитаны.
+    if (tabId === 'sub-sk' && window.syncDirtyFlags && window.syncDirtyFlags.sk) return false;
+    if (_analyticsFilterFingerprint() !== _analyticsFilterFp) return false;
+    if (_analyticsSourceDataSignature() !== _analyticsDataSig) return false;
+    if (!_analyticsRenderedTabs.has(tabId)) return false;
+    return _analyticsSectionLooksPainted(tabId);
+}
+window.analyticsTabCanReusePaint = analyticsTabCanReusePaint;
+
+/** Пометить подвкладку как отрисованную (async-пайплайны вроде ПК СК / График). */
+function analyticsMarkTabPainted(tabId) {
+    if (!tabId) return;
+    _analyticsRenderedTabs.add(tabId);
+}
+window.analyticsMarkTabPainted = analyticsMarkTabPainted;
+
+// Локальная мемоизация getObjectIntegralMetrics только внутри аналитики
+// (разные срезы data/prevData/по объектам — не трогаем math.utils и другие модули).
+const _ikoMemo = new Map();
+const IKO_MEMO_MAX = 48;
+
+function _ikoIdsSignature(arr) {
+    if (!arr || !arr.length) return '0';
+    let s = String(arr.length) + ':';
+    for (let i = 0; i < arr.length; i++) {
+        s += (arr[i] && arr[i].id) ? String(arr[i].id) : String(i);
+        s += ',';
+    }
+    return s;
+}
+
+function _getObjectIntegralMetricsCached(data) {
+    if (typeof getObjectIntegralMetrics !== 'function') return null;
+    if (!data || !data.length) return null;
+    let templates = {};
+    try { templates = _templates().getUserTemplates() || {}; } catch (_) { templates = {}; }
+    const sig = _ikoIdsSignature(data);
+    if (_ikoMemo.has(sig)) return _ikoMemo.get(sig);
+    const metrics = getObjectIntegralMetrics(data, templates);
+    _ikoMemo.set(sig, metrics);
+    while (_ikoMemo.size > IKO_MEMO_MAX) {
+        const oldest = _ikoMemo.keys().next().value;
+        _ikoMemo.delete(oldest);
+    }
+    return metrics;
+}
 
 // =========================================================================
 // UI вкладки «Отчёты» (группировка по объекту + чипсы doc_kind + клиентская
@@ -308,26 +440,11 @@ async function _resolvePhotoRealSrc(photoRef) {
     return ref;
 }
 
-function _downscalePhotoToDataUrl(imgEl, maxSide = 300, quality = 0.6) {
-    const srcWidth = imgEl.naturalWidth || imgEl.width;
-    const srcHeight = imgEl.naturalHeight || imgEl.height;
-    if (!srcWidth || !srcHeight) return null;
-    const scale = Math.min(1, maxSide / Math.max(srcWidth, srcHeight));
-    const w = Math.max(1, Math.round(srcWidth * scale));
-    const h = Math.max(1, Math.round(srcHeight * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', quality);
-}
-
-// Возвращает Promise<string|null> — готовое canvas-превью (~300px по
-// длинной стороне, jpeg q=0.6). Не блокирует вызывающий синхронный insert:
-// вызывающий код (initPhotoGallery/loadMorePhotos) подставляет результат
-// в img.src по завершении, изначально показывая placeholder/уже готовый кэш.
-async function _getPhotoThumbnail(photoRef) {
+// Полное фото для галереи аналитики/подрядчика (не ~150px preferThumb).
+// Кэш — готовые blob:/data:-URL, без даунскейла в canvas.
+async function _getGalleryPhotoSrc(photoRef) {
+    if (!photoRef) return null;
+    if (Array.isArray(photoRef)) photoRef = photoRef[0];
     if (!photoRef) return null;
     if (_photoThumbCache.has(photoRef)) {
         const cached = _photoThumbCache.get(photoRef);
@@ -336,38 +453,36 @@ async function _getPhotoThumbnail(photoRef) {
         return cached;
     }
 
-    let realSrc;
+    let realSrc = null;
     try {
         realSrc = await _resolvePhotoRealSrc(photoRef);
     } catch (e) {
         realSrc = null;
     }
     if (!realSrc) return null;
-
-    try {
-        const imgEl = await new Promise((resolve, reject) => {
-            const el = new Image();
-            el.onload = () => resolve(el);
-            el.onerror = reject;
-            el.src = realSrc;
-        });
-        const thumb = _downscalePhotoToDataUrl(imgEl, 300, 0.6);
-        if (thumb) _setPhotoThumbCache(photoRef, thumb);
-        return thumb;
-    } catch (e) {
-        return null;
-    }
+    _setPhotoThumbCache(photoRef, realSrc);
+    return realSrc;
 }
 
 // Генерирует HTML одной карточки галереи. i — индекс в исходном
 // (полном, неотфильтрованном по странице) photosArray — нужен для
 // устойчивого сопоставления превью↔оригинал и для «Показать ещё».
 function _renderPhotoCardHtml(d, i, galleryId, badgeColor, badgeText) {
-    const cachedThumb = _photoThumbCache.get(d.photo);
-    const initialSrc = cachedThumb || (window.rbiPhotoPlaceholder || '');
+    let photoRef = d.photo;
+    if (Array.isArray(photoRef)) photoRef = photoRef[0];
+    const safePhoto = (typeof window.rbiEscapeAttr === 'function')
+        ? window.rbiEscapeAttr(photoRef)
+        : String(photoRef || '').replace(/"/g, '&quot;');
+    const placeholder = window.rbiPhotoPlaceholder || '';
+    const cached = _photoThumbCache.get(photoRef) || '';
+    const initialSrc = cached || placeholder;
+    // Полный файл (без data-prefer-thumb) — hydrator / _hydrateGalleryPhotos.
+    const localAttrs = (!cached || cached === placeholder)
+        ? ` data-local-src="${safePhoto}"`
+        : '';
     return `
             <div class="snap-start shrink-0 w-36 sm:w-48 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl overflow-hidden flex flex-col shadow-sm">
-                <img src="${initialSrc}" data-photo-idx="${i}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${d.photo}')" loading="lazy">
+                <img src="${initialSrc}"${localAttrs} data-photo-idx="${i}" class="w-full h-24 sm:h-32 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95 transition-transform" onclick="openPhotoViewer('${safePhoto}')" loading="lazy">
                 <div class="p-2 flex-1 flex flex-col justify-between">
                     <div class="text-[9px] font-bold text-slate-800 dark:text-slate-200 leading-tight line-clamp-2 mb-1.5" title="${d.name}">${d.name}</div>
                     <div>
@@ -382,20 +497,35 @@ function _renderPhotoCardHtml(d, i, galleryId, badgeColor, badgeText) {
         `;
 }
 
-// Запускает генерацию превью для набора карточек уже вставленной (в DOM)
-// порции галереи, без блокировки самого insert — по завершении каждого
-// превью точечно обновляет img.src через data-photo-idx.
-function _hydratePhotoThumbnails(galleryId, entries, renderGen) {
+// Подтягивает полные фото для порции галереи (не thumb-превью).
+function _hydrateGalleryPhotos(galleryId, entries, renderGen) {
     const gen = (renderGen === undefined) ? _analyticsRenderGen : renderGen;
+    const wrap = document.getElementById(`gallery-wrap-${galleryId}`);
+    if (wrap && typeof window.rbiHydrateLocalImages === 'function') {
+        Promise.resolve(window.rbiHydrateLocalImages(wrap)).then(() => {
+            if (gen !== _analyticsRenderGen || !wrap) return;
+            wrap.querySelectorAll('img[data-photo-idx]').forEach((img) => {
+                const idx = Number(img.getAttribute('data-photo-idx'));
+                const entry = entries.find((e) => e.idx === idx);
+                if (!entry) return;
+                const ph = window.rbiPhotoPlaceholder || '';
+                if (img.src && img.src !== ph && !img.getAttribute('data-local-src')) {
+                    _setPhotoThumbCache(entry.photoRef, img.src);
+                }
+            });
+        }).catch(() => {});
+    }
+    const placeholder = window.rbiPhotoPlaceholder || '';
     entries.forEach(({ photoRef, idx }) => {
-        if (_photoThumbCache.has(photoRef)) return; // уже подставлено синхронно при рендере карточки
-        _getPhotoThumbnail(photoRef).then((thumb) => {
-            if (!thumb) return;
-            // Фильтр уже сменился — этот рендер устарел, не трогаем DOM и не
-            // тратим время на подстановку (мобильный freeze при быстрых тапах).
+        if (_photoThumbCache.has(photoRef)) return;
+        _getGalleryPhotoSrc(photoRef).then((src) => {
+            if (!src) return;
             if (gen !== _analyticsRenderGen) return;
             const img = document.querySelector(`#gallery-wrap-${galleryId} img[data-photo-idx="${idx}"]`);
-            if (img) img.src = thumb;
+            if (!img) return;
+            img.src = src;
+            img.removeAttribute('data-local-src');
+            if (img.src === placeholder) return;
         });
     });
 }
@@ -433,7 +563,7 @@ function _loadMorePhotosImpl(galleryId) {
         btn.remove();
     }
 
-    _hydratePhotoThumbnails(galleryId, nextPage.map((d, i) => ({ photoRef: d.photo, idx: shown + i })), _analyticsRenderGen);
+    _hydrateGalleryPhotos(galleryId, nextPage.map((d, i) => ({ photoRef: d.photo, idx: shown + i })), _analyticsRenderGen);
 }
 
 // Перенесено из app.js 1:1 (текстуально идентична приватной копии в
@@ -611,7 +741,7 @@ export const AnalyticsRender = {
                         <div class="relative w-full">
                             <select id="global-filter-period"
                                 class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                data-analytics-action="toggleDateRange,renderCurrentAnalyticsTab" data-action-event="change">
+                                data-analytics-action="toggleDateRange,scheduleRenderCurrentAnalyticsTab" data-action-event="change">
                                 <option value="D7">За 7 дней</option>
                                 <option value="D14">За 14 дней</option>
                                 <option value="D30" selected>За 30 дней</option>
@@ -638,12 +768,12 @@ export const AnalyticsRender = {
                         <div class="flex items-center gap-1">
                             <span class="text-[9px] font-bold text-slate-500 uppercase">С:</span>
                             <input type="date" id="filter-date-from" class="input-base text-[10px] !py-1"
-                                data-analytics-action="renderCurrentAnalyticsTab" data-action-event="change">
+                                data-analytics-action="scheduleRenderCurrentAnalyticsTab" data-action-event="change">
                         </div>
                         <div class="flex items-center gap-1">
                             <span class="text-[9px] font-bold text-slate-500 uppercase">По:</span>
                             <input type="date" id="filter-date-to" class="input-base text-[10px] !py-1"
-                                data-analytics-action="renderCurrentAnalyticsTab" data-action-event="change">
+                                data-analytics-action="scheduleRenderCurrentAnalyticsTab" data-action-event="change">
                         </div>
                     </div>
 
@@ -912,14 +1042,6 @@ export const AnalyticsRender = {
             return;
         }
 
-        // Инвалидируем in-flight canvas-превью предыдущего фильтра.
-        _analyticsRenderGen += 1;
-        for (const key in _chartInstances()) { if (_chartInstances()[key]) _chartInstances()[key].destroy(); }
-        AnalyticsState.setChartInstances({});
-        AnalyticsRender.renderAnalyticsModeSwitcher();
-        AnalyticsRender.renderOnePagerModeToggle();
-
-        const data = getFilteredAnalyticsData();
         // В оригинале (analytics.legacy.js) `currentActiveAnalyticsTab` объявлялась
         // с дефолтом 'sub-contractors'; AnalyticsState.activeSubTab по умолчанию null
         // (до первого switchAnalyticsSubTab/восстановления из localStorage) — сохраняем
@@ -929,8 +1051,45 @@ export const AnalyticsRender = {
             AnalyticsState.setActiveSubTab('sub-contractors');
             window.currentActiveAnalyticsTab = 'sub-contractors';
         }
-        if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = false;
         const activeTab = AnalyticsState.activeSubTab;
+        const wasDirty = !!(window.syncDirtyFlags && window.syncDirtyFlags.analytics);
+        const fp = _analyticsFilterFingerprint();
+        const dataSig = _analyticsSourceDataSignature();
+        const dataChanged = dataSig !== _analyticsDataSig;
+        const filterChanged = fp !== _analyticsFilterFp || wasDirty || dataChanged;
+
+        if (filterChanged) {
+            // Инвалидируем in-flight canvas-превью и кэш отрисованных подвкладок.
+            _analyticsRenderGen += 1;
+            _ikoMemo.clear();
+            for (const key in _chartInstances()) { if (_chartInstances()[key]) _chartInstances()[key].destroy(); }
+            AnalyticsState.setChartInstances({});
+            _analyticsFilterFp = fp;
+            _analyticsDataSig = dataSig;
+            _analyticsFilteredCache = getFilteredAnalyticsData();
+            _analyticsRenderedTabs.clear();
+        }
+
+        AnalyticsRender.renderAnalyticsModeSwitcher();
+        AnalyticsRender.renderOnePagerModeToggle();
+
+        // Подвкладка уже собрана при текущем фильтре — DOM жив под .hidden, не пересобираем.
+        // history: собственный dirty / внешний пайплайн — всегда проходим ниже.
+        // ПК СК: reuse разрешён (см. analyticsTabCanReusePaint), иначе скелетон
+        // затирал shell и каждый заход снова «Чтение базы…» + полный dashboard.
+        // Не skip'аем «пустой» paint (нет данных / скелетон) — иначе залипание.
+        if (!filterChanged
+            && _analyticsRenderedTabs.has(activeTab)
+            && activeTab !== 'sub-history'
+            && !(activeTab === 'sub-sk' && window.syncDirtyFlags && window.syncDirtyFlags.sk)
+            && _analyticsSectionLooksPainted(activeTab)) {
+            if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = false;
+            return;
+        }
+
+        const data = _analyticsFilteredCache || getFilteredAnalyticsData();
+        if (!_analyticsFilteredCache) _analyticsFilteredCache = data;
+        if (window.syncDirtyFlags) window.syncDirtyFlags.analytics = false;
 
         if (activeTab === 'sub-contractors') {
             AnalyticsRender.renderContractorsSubTab(data);
@@ -938,10 +1097,31 @@ export const AnalyticsRender = {
             if (window.currentDetailedContractor) {
                 AnalyticsRender.showContractorDetailView(window.currentDetailedContractor);
             }
+            if (data.length > 0) _analyticsRenderedTabs.add(activeTab);
+            else _analyticsRenderedTabs.delete(activeTab);
         }
-        else if (activeTab === 'sub-onepager') AnalyticsRender.renderOnePagerSubTab(data);
-        else if (activeTab === 'sub-schedule') { if (typeof rbi_renderScheduleTab === 'function') rbi_renderScheduleTab(); }
-        else if (activeTab === 'sub-data') { if (typeof renderDataSubTab === 'function') renderDataSubTab(data); }
+        else if (activeTab === 'sub-onepager') {
+            AnalyticsRender.renderOnePagerSubTab(data);
+            if (data.length > 0) _analyticsRenderedTabs.add(activeTab);
+            else _analyticsRenderedTabs.delete(activeTab);
+        }
+        else if (activeTab === 'sub-schedule') {
+            // skipLoad=true если график уже поднимали в сессии — не ждём повторный IDB.
+            const skipLoad = Array.isArray(window.rbi_scheduleData);
+            if (typeof rbi_renderScheduleTab === 'function') {
+                Promise.resolve(rbi_renderScheduleTab(skipLoad)).then(() => {
+                    if (typeof window.analyticsMarkTabPainted === 'function') {
+                        window.analyticsMarkTabPainted('sub-schedule');
+                    }
+                }).catch(() => {});
+            }
+            _analyticsRenderedTabs.add(activeTab);
+        }
+        else if (activeTab === 'sub-data') {
+            if (typeof renderDataSubTab === 'function') renderDataSubTab(data);
+            if (data.length > 0) _analyticsRenderedTabs.add(activeTab);
+            else _analyticsRenderedTabs.delete(activeTab);
+        }
         else if (activeTab === 'sub-history') {
             // Если после sync стоял dirty — перезагрузить первую страницу Журнала
             // перед render (на активной вкладке sync сознательно не трогал DOM).
@@ -960,7 +1140,8 @@ export const AnalyticsRender = {
         }
         else if (activeTab === 'sub-sk') {
             if (window.syncDirtyFlags) window.syncDirtyFlags.sk = false;
-            // Гарантированно запускаем пайплайн ПК СК, он сам внутри разберется с кэшем
+            // Гарантированно запускаем пайплайн ПК СК, он сам внутри разберется с кэшем.
+            // analyticsMarkTabPainted('sub-sk') — в конце sk_renderMainTab (async).
             if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('sk:renderRequested', { view: 'mainTab' });
         }
         else if (activeTab === 'sub-rating') AnalyticsRender.renderRatingTab(); // Обратная совместимость
@@ -1515,7 +1696,7 @@ export const AnalyticsRender = {
         });
         const currContractorsCount = Object.keys(groupedC).length;
 
-        const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, _templates().getUserTemplates()) : null;
+        const currIntMetrics = _getObjectIntegralMetricsCached(data);
         const mData = currIntMetrics || { redZonePerc: 0, IKO: "0.00", ikoStatus: "Мало данных", ikoColor: "text-slate-500" };
 
         const ratingData = [];
@@ -1586,7 +1767,7 @@ export const AnalyticsRender = {
             prevAvgUrk = Math.round(pSum / prevData.length);
             const pGrouped = {}; prevData.forEach(i => pGrouped[i.contractorName] = true);
             prevContrsCount = Object.keys(pGrouped).length;
-            const pInt = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevData, _templates().getUserTemplates()) : null;
+            const pInt = _getObjectIntegralMetricsCached(prevData);
             if (pInt) prevIko = pInt.IKO;
         }
 
@@ -1669,7 +1850,10 @@ export const AnalyticsRender = {
             if (arr.length === 0) return `<div class="text-center py-6 text-[var(--text-muted)] text-[11px] bg-[var(--card-bg)] rounded-lg border border-dashed border-[var(--card-border)]">${isOk ? 'Эталонов нет' : 'Дефектов не зафиксировано'}</div>`;
             return `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                 ${arr.map(d => {
-                const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${d.photo}')">` : `<div class="w-full h-24 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[10px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
+                const safePhoto = (typeof window.rbiEscapeAttr === 'function')
+                    ? window.rbiEscapeAttr(d.photo)
+                    : String(d.photo || '').replace(/"/g, '&quot;');
+                const imgHtml = d.photo ? `<img src="${window.getPhotoSrc(d.photo)}" class="w-full h-24 object-cover border-b border-[var(--card-border)] cursor-pointer active:scale-95" onclick="openPhotoViewer('${safePhoto}')" loading="lazy" data-local-src="${safePhoto}">` : `<div class="w-full h-24 bg-[var(--hover-bg)] flex items-center justify-center text-[var(--card-border)] text-[10px] border-b border-[var(--card-border)] text-center px-1">НЕТ ФОТО</div>`;
                 let badgeColor = isCrit ? 'text-red-700 bg-red-100 border-red-200' : 'text-orange-700 bg-orange-100 border-orange-200';
                 let badgeText = isCrit ? 'B3' : 'B2';
                 if (isOk) { badgeColor = 'text-green-700 bg-green-100 border-green-200'; badgeText = 'OK'; }
@@ -2128,7 +2312,7 @@ export const AnalyticsRender = {
             });
             const pAvgUrk = pData.length > 0 ? Math.round(pSumUrk / pData.length) : 0;
             const pAvgDoc = pCntDoc > 0 ? Math.round(pSumDoc / pCntDoc) : null;
-            const pMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(pData, _templates().getUserTemplates()) : null;
+            const pMetrics = _getObjectIntegralMetricsCached(pData);
             const IKO = pMetrics ? pMetrics.IKO : "0.00";
             if (pMetrics) redZone = pMetrics.redZonePerc;
 
@@ -2138,7 +2322,7 @@ export const AnalyticsRender = {
             if (prevPData.length > 0) {
                 let ppSum = 0; prevPData.forEach(i => ppSum += (i.metrics?.final || 0));
                 pPrevAvgUrk = Math.round(ppSum / prevPData.length);
-                const ppMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(prevPData, _templates().getUserTemplates()) : null;
+                const ppMetrics = _getObjectIntegralMetricsCached(prevPData);
                 if (ppMetrics) pPrevIKO = ppMetrics.IKO;
             }
 
@@ -2949,7 +3133,7 @@ export const AnalyticsRender = {
         const renderGen = _analyticsRenderGen;
         setTimeout(() => {
             if (renderGen !== _analyticsRenderGen) return;
-            _hydratePhotoThumbnails(galleryId, page.map((d, i) => ({ photoRef: d.photo, idx: i })), renderGen);
+            _hydrateGalleryPhotos(galleryId, page.map((d, i) => ({ photoRef: d.photo, idx: i })), renderGen);
         }, 0);
 
         return `
@@ -3193,12 +3377,18 @@ export const AnalyticsRender = {
         const sizeStr = ((r.file_size || 0) / 1024 / 1024).toFixed(2) + ' MB';
         const author = AnalyticsRender._reportCardAuthor(r);
         const period = AnalyticsRender._reportCardPeriod(r);
+        const isPptx = (r.mime_type && String(r.mime_type).includes('presentation'))
+            || r.report_type === 'pptx'
+            || /\.pptx$/i.test(String(r.title || ''));
+        const fileTypeLabel = isPptx ? 'PPTX' : 'PDF';
+        const fileTypeColor = isPptx ? 'text-orange-600' : 'text-indigo-500';
+        const fileTypeBar = isPptx ? 'bg-orange-500' : 'bg-indigo-500';
 
         if (isListView) {
             return `
             <div class="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow-sm flex items-center gap-2.5 p-2 active:scale-[0.99] transition-transform relative cursor-pointer" onclick="openReport('${r.id}')">
                 <input type="checkbox" class="report-checkbox w-4 h-4 accent-indigo-600 rounded cursor-pointer shrink-0" value="${r.id}" onclick="event.stopPropagation()">
-                <div class="w-9 h-9 rounded-lg shrink-0 bg-slate-50 dark:bg-slate-900 border border-[var(--card-border)] flex items-center justify-center"><span class="text-[7px] font-black text-indigo-500">PDF</span></div>
+                <div class="w-9 h-9 rounded-lg shrink-0 bg-slate-50 dark:bg-slate-900 border border-[var(--card-border)] flex items-center justify-center"><span class="text-[7px] font-black ${fileTypeColor}">${fileTypeLabel}</span></div>
                 <div class="min-w-0 flex-1">
                     <div class="text-[12px] font-black text-slate-800 dark:text-white truncate">${r.title}</div>
                     <div class="text-[9px] font-bold text-slate-400 truncate mt-0.5">${docKind !== 'Прочее' ? docKind + ' · ' : ''}Автор: ${author} · ${dateStr}</div>
@@ -3217,7 +3407,7 @@ export const AnalyticsRender = {
                 <input type="checkbox" class="report-checkbox absolute top-2 left-2 w-5 h-5 accent-indigo-600 rounded cursor-pointer z-10" value="${r.id}" onclick="event.stopPropagation()">
                 <div class="h-24 border-b border-[var(--card-border)] bg-slate-50 dark:bg-slate-900 flex items-center justify-center relative">
                     <div class="w-12 h-14 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between p-1.5 relative overflow-hidden">
-                        <div class="absolute top-0 left-0 right-0 h-4 bg-indigo-500 flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">PDF</span></div>
+                        <div class="absolute top-0 left-0 right-0 h-4 ${fileTypeBar} flex items-center justify-center"><span class="text-[7px] text-white font-black tracking-widest">${fileTypeLabel}</span></div>
                         <div class="space-y-1 mt-5">
                             <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-full"></div>
                             <div class="h-0.5 bg-slate-200 dark:bg-slate-700 rounded w-5/6"></div>

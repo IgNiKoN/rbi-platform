@@ -12,6 +12,7 @@
 import { AnalyticsState }   from './analytics.state.js';
 import { AnalyticsActions } from './analytics.actions.js';
 import { AnalyticsRender }  from './analytics.render.js';
+import './analytics.pptx-export.js'; // side-effect: публикует exportOnePagerPptx
 
 // Паттерн делегирования событий для инициативы «Разбор inline onclick/onchange»
 // (см. _ai/INDEX_HTML_HANDLERS_MAP.md), namespace-per-module (data-analytics-action,

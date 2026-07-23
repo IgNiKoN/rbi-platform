@@ -821,6 +821,8 @@ export const HistoryRender = {
         <img 
             src="${window.rbiPhotoPlaceholder}"
             data-local-src="${safePhotoSrc}"
+            data-prefer-thumb="1"
+            loading="lazy"
             class="mt-2 mr-2 w-20 h-20 object-cover rounded border border-slate-200 shadow-sm cursor-pointer"
             onclick="openPhotoViewer('${safePhotoSrc}')"
         >`;

@@ -88,7 +88,7 @@ import { AuditActions } from './audit.actions.js';
   function renderPhotoRow(id, addBtnClass) {
     var photosArr = window.normalizeItemPhotos(AuditState.photos[id]);
     var thumbsHtml = photosArr.map(function (src, idx) {
-      return `<div class="relative shrink-0"><img src="${window.getPhotoSrc(src)}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border ${addBtnClass.thumbBorder} shadow-sm object-cover" onclick="openPhotoViewer('${src}')"><div onclick="removePhoto(${id}, event, ${idx})" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>`;
+      return `<div class="relative shrink-0"><img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(src)}" class="photo-thumb !w-11 !h-11 !rounded-[12px] border ${addBtnClass.thumbBorder} shadow-sm object-cover" loading="lazy" onclick="openPhotoViewer('${src}')"><div onclick="removePhoto(${id}, event, ${idx})" class="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[12px] font-bold cursor-pointer shadow-md border border-white z-10">✕</div></div>`;
     }).join('');
 
     var addBtnHtml = `<button onclick="triggerPhotoInput(${id})" class="btn-status !w-11 !h-11 !rounded-[12px] shrink-0 shadow-sm ${addBtnClass.addBtn}" title="${photosArr.length ? 'Добавить ещё фото' : addBtnClass.title}"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><circle cx="12" cy="13" r="3" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></circle></svg></button>`;
@@ -663,7 +663,7 @@ import { AuditActions } from './audit.actions.js';
           if (window.auditOriginalData.isCrossAudit) {
             var badgeColor = origState === 'ok' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200';
             var badgeText = origState === 'ok' ? 'OK' : 'FAIL';
-            var photoBlock = origPhoto ? `<img src="${window.getPhotoSrc(origPhoto)}" class="w-8 h-8 object-cover rounded cursor-pointer border border-slate-300" onclick="openPhotoViewer('${origPhoto}')">` : '';
+            var photoBlock = origPhoto ? `<img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(origPhoto)}" class="w-8 h-8 object-cover rounded cursor-pointer border border-slate-300" loading="lazy" onclick="openPhotoViewer('${origPhoto}')">` : '';
 
             auditHtml = `
                     <div class="mt-2 bg-slate-100 dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 p-2 rounded-lg flex justify-between items-center w-full">
@@ -678,7 +678,7 @@ import { AuditActions } from './audit.actions.js';
             if (origPhoto) {
               auditHtml = `
                         <div class="mt-2 bg-orange-50 dark:bg-orange-900/10 border border-dashed border-orange-200 dark:border-orange-800 p-2 rounded-lg flex items-center gap-3 w-full">
-                            <img src="${window.getPhotoSrc(origPhoto)}" class="w-12 h-12 object-cover rounded cursor-pointer border border-orange-300" onclick="openPhotoViewer('${origPhoto}')">
+                            <img src="${(window.getPhotoThumbSrc || window.getPhotoSrc)(origPhoto)}" class="w-12 h-12 object-cover rounded cursor-pointer border border-orange-300" loading="lazy" onclick="openPhotoViewer('${origPhoto}')">
                             <div>
                                 <div class="text-[9px] font-black uppercase text-orange-600 mb-0.5">📸 Было (Брак)</div>
                                 <div class="text-[9px] font-bold text-orange-800 dark:text-orange-400 leading-tight">Прикрепите новое фото "СТАЛО", чтобы зафиксировать исправление эталона.</div>

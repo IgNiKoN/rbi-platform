@@ -166,9 +166,10 @@ window.rbiHydrateLocalImages = async function (root = document) {
     for (const img of imgs) {
         const src = img.getAttribute('data-local-src');
         if (!src) continue;
+        const preferThumb = img.getAttribute('data-prefer-thumb') === '1';
 
         try {
-            const realUrl = await PhotoManager.getAsyncUrl(src);
+            const realUrl = await PhotoManager.getAsyncUrl(src, preferThumb ? { preferThumb: true } : undefined);
 
             if (
                 realUrl &&

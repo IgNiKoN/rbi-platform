@@ -15,6 +15,8 @@ import { ReportsState }  from './reports.state.js';
 import { ReportsActions } from './reports.actions.js';
 import { ReportsRender }  from './reports.render.js';
 import './report-preview.js';
+import './reports.pptx-export.js'; // side-effect: публикует exportReportPptx
+import './reports.pptx-viewer.js'; // side-effect: публикует openPptxViewer
 
 // Fallback legacy-заглушка — перезаписывается после загрузки ES-модуля.
 // Если window.RBI.registry недоступен на момент выполнения — пропускается.

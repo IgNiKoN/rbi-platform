@@ -3,7 +3,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 23; // БЫЛО 22, СТАЛО 23 — location_nodes + construction_floors_v2 (справочник локаций)
+const DB_VERSION = 24; // БЫЛО 23, СТАЛО 24 — индекс by_deleted на app_history (+ INDEX_DEFINITIONS)
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -67,6 +67,20 @@ const STORES = {
 };
 window.STORES = STORES;
 
+// Индексы Object Store → [{ name, keyPath }]. onupgradeneeded создаёт только
+// отсутствующие — безопасно для уже заполненной локальной БД (upgrade 23→24).
+// by_contractor_date не добавляем: пагинация журнала идёт по by_date (YAGNI).
+const INDEX_DEFINITIONS = {
+    [STORES.HISTORY]: [
+        { name: 'by_date', keyPath: 'date' },
+        { name: 'by_contractor', keyPath: 'contractorName' },
+        // Мягко удалённые (_deleted:true). Записи без поля в индекс не попадают —
+        // getActive() по-прежнему фильтрует после чтения; индекс для точечных выборок.
+        { name: 'by_deleted', keyPath: '_deleted' }
+    ]
+};
+window.INDEX_DEFINITIONS = INDEX_DEFINITIONS;
+
 /**
 /**
  /**
@@ -94,16 +108,16 @@ function openAppDb() {
                     }
                 });
 
-                // Индексы для журнала проверок (DB_VERSION 21): позволяют IndexedDB
-                // отдавать записи по дате/подряднику через курсор, без чтения всего
-                // стора — основа для постраничной загрузки Журнала.
-                const historyStore = upgradeTx.objectStore(STORES.HISTORY);
-                if (!historyStore.indexNames.contains('by_date')) {
-                    historyStore.createIndex('by_date', 'date');
-                }
-                if (!historyStore.indexNames.contains('by_contractor')) {
-                    historyStore.createIndex('by_contractor', 'contractorName');
-                }
+                // Индексы (DB_VERSION 21+: by_date/by_contractor; 24+: by_deleted).
+                Object.keys(INDEX_DEFINITIONS).forEach(storeName => {
+                    if (!db.objectStoreNames.contains(storeName)) return;
+                    const store = upgradeTx.objectStore(storeName);
+                    (INDEX_DEFINITIONS[storeName] || []).forEach(def => {
+                        if (!store.indexNames.contains(def.name)) {
+                            store.createIndex(def.name, def.keyPath, def.options || {});
+                        }
+                    });
+                });
             };
 
             // ЕСЛИ БАЗА ЗАБЛОКИРОВАНА СТАРОЙ ВКЛАДКОЙ

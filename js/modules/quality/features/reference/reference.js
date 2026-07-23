@@ -1341,11 +1341,6 @@ function buildCollapsibleFilterSummary(panelId) {
     return bits.slice(0, 3).join(' · ');
 }
 
-function initCollapsibleSearchPanel(panelId, bodyId, headerId) {
-    // Совместимость: тот же ручной режим, что у initCollapsiblePanel.
-    initCollapsiblePanel(panelId, bodyId, headerId, null);
-}
-
 function applyPanelState(bodyEl, collapsed) {
     const panel = bodyEl.closest('[id$="-sticky-panel"]') || bodyEl.parentElement;
     const icon = panel?.querySelector('[id$="-panel-toggle-icon"]');

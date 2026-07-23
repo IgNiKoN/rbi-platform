@@ -460,18 +460,31 @@ export const AnalyticsActions = {
         // Обновляем кнопку FAB
         if (typeof updateFabButton === 'function') updateFabButton('tab-analytics');
 
-        // Скелетон контента при смене подвкладки (пока идёт рендер)
-        if (typeof window.rbiShowContentSkeleton === 'function') {
-            const skeletonTargets = {
-                'sub-contractors': 'contractors-list-container',
-                'sub-onepager': 'onepager-content-container',
-                'sub-history': 'history-list',
-                'sub-schedule': 'schedule-container',
-                'sub-sk': 'sk-main-container'
-            };
-            const elId = skeletonTargets[tabId];
-            const el = elId ? document.getElementById(elId) : null;
-            if (el) window.rbiShowContentSkeleton(el, { cards: tabId === 'sub-history' ? 5 : 4 });
+        // Скелетон только если рендер реально пойдёт.
+        // Важно: при возврате на уже отрисованную подвкладку (Подрядчики↔Сводка)
+        // скелетон ЗАЧИЩАЛ готовый DOM → B4 не мог reuse → полная дозагрузка
+        // на несколько секунд. Не ставим скелетон, если paint можно переиспользовать.
+        const deferring = typeof window.shouldDeferFullRender === 'function'
+            && window.shouldDeferFullRender('analytics');
+        const canReuse = typeof window.analyticsTabCanReusePaint === 'function'
+            && window.analyticsTabCanReusePaint(tabId);
+        if (!deferring && !canReuse && typeof window.rbiShowContentSkeleton === 'function') {
+            // ПК СК: живой #sk-view-dashboard не затираем скелетоном — sk_renderMainTab
+            // обновит dashboard in-place (фильтры/период). Иначе каждый заход снова
+            // «Чтение базы…» и полный rebuild ~сотен KB HTML.
+            const skShellAlive = tabId === 'sub-sk' && !!document.getElementById('sk-view-dashboard');
+            if (!skShellAlive) {
+                const skeletonTargets = {
+                    'sub-contractors': 'contractors-list-container',
+                    'sub-onepager': 'onepager-content-container',
+                    'sub-history': 'history-list',
+                    'sub-schedule': 'schedule-container',
+                    'sub-sk': 'sk-main-container'
+                };
+                const elId = skeletonTargets[tabId];
+                const el = elId ? document.getElementById(elId) : null;
+                if (el) window.rbiShowContentSkeleton(el, { cards: tabId === 'sub-history' ? 5 : 4 });
+            }
         }
 
         // Единый безопасный рендер активной подвкладки аналитики.
@@ -782,11 +795,46 @@ export const AnalyticsActions = {
         const r = _reports().getAllSync().find(x => x.id === id);
         if (!r) return showToast('Файл отчета не найден');
 
+        const isPptx = (r.mime_type && String(r.mime_type).includes('presentation'))
+            || r.report_type === 'pptx'
+            || /\.pptx$/i.test(String(r.title || ''));
+        const safeName = String(r.title || 'report')
+            .replace(/[\\/:*?"<>|]+/g, '_')
+            .replace(/\s+/g, '_')
+            .slice(0, 80);
+        const downloadName = isPptx
+            ? (safeName.endsWith('.pptx') ? safeName : safeName + '.pptx')
+            : (safeName.endsWith('.pdf') ? safeName : safeName + '.pdf');
+
+        const openBlob = async (blob) => {
+            if (isPptx) {
+                // In-app viewer (PptxViewJS); при сбое — скачивание.
+                if (typeof window.openPptxViewer === 'function') {
+                    const ok = await window.openPptxViewer(blob, {
+                        title: r.title || 'Презентация',
+                        downloadName
+                    });
+                    if (ok) return;
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 15000);
+                showToast('PPTX скачан — откройте в PowerPoint');
+                return;
+            }
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        };
+
         // 1. ПРИОРИТЕТ 1: Файл физически кэширован в браузере (Blob)
         if (r.file_blob) {
-            const url = URL.createObjectURL(r.file_blob);
-            window.open(url, '_blank');
-            setTimeout(() => URL.revokeObjectURL(url), 5000); // Даем время на открытие
+            await openBlob(r.file_blob);
             return;
         }
 
@@ -805,10 +853,7 @@ export const AnalyticsActions = {
                 r.file_blob = blob;
                 await _storage().put(_storage().stores().REPORTS, r);
 
-                // Открываем
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank');
-                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                await openBlob(blob);
                 return;
             } catch (e) {
                 console.error("Ошибка скачивания отчета", e);

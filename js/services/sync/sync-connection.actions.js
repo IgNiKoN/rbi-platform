@@ -475,11 +475,14 @@ window.clearProjectLocalData = async function () {
     // Очищаем кэш автозаполнения инпутов
     localStorage.removeItem('smart_input_cache');
 
-    // Сброс мульти-фильтров
+    // Сброс мульти-фильтров (in-place через сервис — см. resetAnalyticsFilters / B1)
     if (window.RBI && window.RBI.services && window.RBI.services.analytics) {
         window.RBI.services.analytics.resetAnalyticsFilters();
-    } else if (typeof activeMultiFilters !== 'undefined') {
-        activeMultiFilters = {
+    } else if (window.activeMultiFilters && typeof window.activeMultiFilters === 'object') {
+        window.activeMultiFilters.history = { project: [], contractor: [], inspector: [] };
+        window.activeMultiFilters.analytics = { project: [], contractor: [], inspector: [], template: [] };
+    } else {
+        window.activeMultiFilters = {
             history: { project: [], contractor: [], inspector: [] },
             analytics: { project: [], contractor: [], inspector: [], template: [] }
         };
