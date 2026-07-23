@@ -300,12 +300,12 @@ async function generateSmartComment(scenario) {
     // Сценарий "Улучшить мой текст": стилистическая правка черновика инженера, без обращения к аналитике
     if (scenario === 'improve') {
         if (!originalText || !originalText.trim()) return showToast("⚠️ Сначала напишите черновик текста!");
-        inputField.value = "⏳ Нейросеть улучшает ваш текст...";
+        inputField.value = "Нейросеть улучшает ваш текст...";
         try {
             const promptSystem = `Ты — редактор технических текстов стройконтроля. Стилистически улучши текст инженера: убери воду, сделай формулировки четче и профессиональнее, сохрани структуру и все факты/цифры без изменений. Не добавляй новых утверждений. Верни только исправленный текст без пояснений.`;
             const aiResponse = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: originalText }], { temperature: 0.3, max_tokens: 600 });
             inputField.value = aiResponse;
-            showToast("✨ Текст улучшен ИИ!");
+            showToast("✅ Текст улучшен ИИ!");
             _gameLogAction('ai_generate', scenario);
         } catch (error) {
             inputField.value = originalText;
@@ -314,7 +314,7 @@ async function generateSmartComment(scenario) {
         return;
     }
 
-    inputField.value = "⏳ Нейросеть DeepSeek анализирует данные...";
+    inputField.value = "Нейросеть DeepSeek анализирует данные...";
 
     const toneDescMap = {
         strict: 'Тон: жёсткий, официально-претензионный, с указанием на риски для приемки.',
@@ -361,7 +361,7 @@ async function generateSmartComment(scenario) {
 
         const aiResponse = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.4, max_tokens: 300 });
         inputField.value = aiResponse;
-        showToast("✨ Текст сгенерирован ИИ!");
+        showToast("✅ Текст сгенерирован ИИ!");
         _gameLogAction('ai_generate', scenario);
     } catch (error) {
         inputField.value = originalText;
@@ -371,10 +371,10 @@ async function generateSmartComment(scenario) {
 
 // === 2. ONE-PAGER УПРАВЛЕНЧЕСКОЕ РЕШЕНИЕ ===
 async function generateOnePagerForecastAi(pdcaKey) {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента!");
     const data = getFilteredAnalyticsData();
-    if (data.length === 0) return showToast("Нет данных");
-    showToast("⏳ AI формирует стратегию...");
+    if (data.length === 0) return showToast("🔄 Нет данных");
+    showToast("AI формирует стратегию...");
     try {
         let sumB3 = 0; data.forEach(i => { if (i.metrics && i.metrics.n_B3_fail > 0) sumB3++; });
         const currIntMetrics = typeof getObjectIntegralMetrics === 'function' ? getObjectIntegralMetrics(data, _templates().getUserTemplates()) : null;
@@ -404,12 +404,12 @@ async function generateOnePagerForecastAi(pdcaKey) {
         _reports().setExpertConclusion(pdcaKey, response);
         if (typeof scheduleSessionSave === 'function') scheduleSessionSave();
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('analytics:renderRequested', {});
-        showToast("✨ Аналитика качества обновлена!");
+        showToast("✅ Аналитика качества обновлена!");
     } catch (e) { showToast("❌ Ошибка: " + e.message); }
 };
 
 async function generatePulseAi() {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента!");
     const container = document.getElementById('pulse-ai-text');
     container.innerHTML = `<span class="animate-pulse">⏳ AI слушает пульс объекта...</span>`;
 
@@ -501,7 +501,7 @@ function openHeatmapAiModal(opts) {
   <div class="bg-[var(--card-bg)] w-full max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[94vh] sm:max-h-[90vh]" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="heatmap-ai-modal-title">
     <div class="flex items-center justify-between gap-2 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--card-border)] shrink-0">
       <h3 id="heatmap-ai-modal-title" class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">Анализ матрицы рисков</h3>
-      <button type="button" onclick="closeHeatmapAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">✕</button>
+      <button type="button" onclick="closeHeatmapAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">❌</button>
     </div>
     <div id="heatmap-ai-modal-body" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-4 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 dark:text-slate-100"></div>
     <div class="flex gap-2 p-4 pt-3 border-t border-[var(--card-border)] shrink-0 bg-[var(--card-bg)]">
@@ -740,7 +740,7 @@ async function generateContractorForecastAi(contractorName) {
     }
 
     const m = getContractorMetrics(data, _templates().getUserTemplates());
-    const trend = data.slice(-5).map(c => c.metrics.final).join('% ➔ ') + '%';
+ const trend = data.slice(-5).map(c => c.metrics.final).join('% ') + '%';
 
     container.innerHTML = `<span class="animate-pulse font-bold text-indigo-600 flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Нейросеть вычисляет тренд...</span>`;
 
@@ -790,7 +790,7 @@ async function generateTwiDraftAi() {
 
     if (!title) return showToast("⚠️ Сначала укажите Название Карты!");
 
-    showToast("⏳ Нейросеть генерирует инструкцию...");
+    showToast("🔄 Нейросеть генерирует инструкцию...");
 
     var knowledgeSvc = (AIActions._ctx && AIActions._ctx.knowledge) || window.RBI.services.knowledge;
     let promptSystem = "";
@@ -837,7 +837,7 @@ async function generateTwiDraftAi() {
             if (lines.length === 0) addTwiStep({ text: response, time: 0, photo: null });
         }
 
-        showToast("✨ Инструкция успешно сгенерирована ИИ!");
+        showToast("✅ Инструкция успешно сгенерирована ИИ!");
     } catch (e) {
         showToast("❌ Ошибка нейросети: " + e.message);
     }
@@ -846,7 +846,7 @@ async function generateTwiDraftAi() {
 // === AI: ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ПРЕДПИСАНИЯ ===
 async function generatePrescriptionAi(inspectionId) {
     const _allInspections = _getAllInspections();
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в настройках!");
 
     // Находим проверку
     const inspection = _allInspections.find(i => i.id === inspectionId);
@@ -865,7 +865,7 @@ async function generatePrescriptionAi(inspectionId) {
         }
     });
 
-    if (defectsList.length === 0) return showToast("В этой проверке нет дефектов для предписания.");
+    if (defectsList.length === 0) return showToast("❌ В этой проверке нет дефектов для предписания.");
 
     // Показываем окно ожидания
     const modal = document.getElementById('modal-overlay');
@@ -873,7 +873,7 @@ async function generatePrescriptionAi(inspectionId) {
     document.getElementById('modal-title').innerHTML = `<div class="text-center font-black uppercase text-lg">Генерация документа...</div>`;
     document.getElementById('modal-body').innerHTML = `
         <div class="flex flex-col items-center justify-center py-6">
-            <div class="text-4xl mb-4 animate-bounce">🤖</div>
+            <div class="mb-4 animate-bounce text-indigo-500 flex justify-center">🤖</div>
             <div class="text-sm font-bold text-slate-500 text-center">Нейросеть составляет юридически грамотный текст предписания...</div>
         </div>
     `;
@@ -911,20 +911,20 @@ async function generatePrescriptionAi(inspectionId) {
         `;
     } catch (e) {
         closeModal();
-        showToast("❌ Ошибка нейросети: " + e.message);
+        showToast("Ошибка нейросети: " + e.message);
     }
 };
 
 // === AI: ПРОГНОЗ РИСКОВ В КАРТОЧКЕ ЗАДАЧИ ===
 async function generateTaskRiskAi(contractorName, templateKey, containerId) {
     const _allInspections = _getAllInspections();
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в настройках!");
 
     const container = document.getElementById(containerId);
     if (!container) return;
 
     const cData = _allInspections.filter(c => c.contractorName === contractorName && c.templateKey === templateKey).sort((a, b) => new Date(a.date) - new Date(b.date));
-    if (cData.length < 3) return showToast("Мало данных для прогноза (нужно хотя бы 3 проверки).");
+    if (cData.length < 3) return showToast("⚠️ Мало данных для прогноза (нужно хотя бы 3 проверки).");
 
     container.innerHTML = `<div class="text-center text-[10px] text-indigo-500 font-bold animate-pulse py-3">Анализирую динамику...</div>`;
 
@@ -965,12 +965,12 @@ async function generateTaskRiskAi(contractorName, templateKey, containerId) {
 // === AI: МАРШРУТИЗАТОР (ПЛАН НА ДЕНЬ) ===
 // === AI: МАРШРУТИЗАТОР И ПРИОРИТЕТЫ (ПЛАН НА ДЕНЬ) ===
 async function generateAiRoutePlan() {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в настройках!");
 
     // Берем задачи из глобального массива, фильтруя те, что в статусе "pending"
     const activeTasks = _getTasks().filter(t => t.status === 'pending' && !t._deleted);
 
-    if (activeTasks.length === 0) return showToast("Нет активных задач для маршрутизации.");
+    if (activeTasks.length === 0) return showToast("✅ Нет активных задач для маршрутизации.");
 
     const container = document.getElementById('ai-route-container');
     if (!container) return;
@@ -980,9 +980,9 @@ async function generateAiRoutePlan() {
 
     // 1. Собираем умный контекст по каждой задаче для ИИ
     const tasksContext = activeTasks.map(t => {
-        let riskFlag = t.priorityLvl === 4 ? " [🔴 КРИТИЧЕСКИЙ РИСК]" : "";
-        let overdueFlag = new Date(t.date) < new Date() ? " [⚠️ ПРОСРОЧЕНА]" : "";
-        let debtFlag = t.carryOverCount > 0 ? ` [🕰 Долг: ${t.carryOverCount} нед.]` : "";
+        let riskFlag = t.priorityLvl === 4 ? " [КРИТИЧЕСКИЙ РИСК]" : "";
+        let overdueFlag = new Date(t.date) < new Date() ? " [ПРОСРОЧЕНА]" : "";
+ let debtFlag = t.carryOverCount > 0 ? ` [ Долг: ${t.carryOverCount} нед.]` : "";
 
         return `- ${t.taskType || t.title} | Подрядчик: ${t.contractor} | Объект: ${t.project_display_name || t.project || 'Общий'}${riskFlag}${overdueFlag}${debtFlag}. (Причина: ${t.prompt})`;
     }).join('\n');
@@ -1012,7 +1012,7 @@ async function generateAiRoutePlan() {
         ], { temperature: 0.3, max_tokens: 600 });
 
         container.innerHTML = `<div class="text-[11px] leading-relaxed text-slate-800 dark:text-slate-200">${response.replace(/\n/g, '<br>')}</div>`;
-        showToast("✨ Маршрут и приоритеты расставлены!");
+        showToast("Маршрут и приоритеты расставлены!");
 
         // Логируем в геймификацию
         _gameLogAction('ai_generate', 'route_plan');
@@ -1146,7 +1146,7 @@ async function extractTextFromPdf(pdfDataUrl) {
         };
     } catch (err) {
         console.error("Ошибка парсинга PDF:", err);
-        if (typeof showToast === 'function') showToast("❌ Ошибка парсинга PDF: " + err.message);
+        if (typeof showToast === 'function') showToast("⚠️ Ошибка парсинга PDF: " + err.message);
         return null;
     }
 }
@@ -1964,7 +1964,7 @@ function _fillAiDocTemplateFilter() {
         Object.keys(user).sort((a, b) => String(user[a].title || a).localeCompare(String(user[b].title || b), 'ru'))
             .forEach(k => {
                 const title = user[k].title || k;
-                opts += `<option value="user:${safeKey(k)}">★ ${_escAiDoc(title)}</option>`;
+ opts += `<option value="user:${safeKey(k)}"> ${_escAiDoc(title)}</option>`;
             });
     } catch (e) { /* ignore */ }
     sel.innerHTML = opts;
@@ -2068,7 +2068,7 @@ function _withTimeout(promise, ms, label) {
 }
 
 function openAiDocChat() {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Сначала включите AI-ассистента в Настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Сначала включите AI-ассистента в Настройках!");
     const view = document.getElementById('ai-doc-chat-view');
     if (!view) return showToast('Экран чата не найден');
     _invalidateChecklistNormIndex();
@@ -2630,7 +2630,7 @@ async function askAiDocQuestion() {
     const loaderId = 'loader_' + Date.now();
     chatHistory.insertAdjacentHTML('beforeend', `
         <div id="${loaderId}" class="flex gap-2 w-full max-w-[95%]">
-            <div class="w-7 h-7 bg-indigo-200 rounded-full flex items-center justify-center text-[11px] shrink-0">🤖</div>
+ <div class="w-7 h-7 bg-indigo-200 rounded-full flex items-center justify-center text-[11px] shrink-0"></div>
             <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl rounded-tl-none text-[13px] text-slate-500 shadow-sm animate-pulse">
                 Ищу в чек-листах и нормативах…
             </div>
@@ -2813,7 +2813,7 @@ ${contextText}`;
         if (node) node.remove();
         chatHistory.insertAdjacentHTML('beforeend', `
             <div class="flex gap-2 w-full max-w-[95%]">
-                <div class="w-7 h-7 bg-red-200 rounded-full flex items-center justify-center text-[11px] shrink-0">❌</div>
+ <div class="w-7 h-7 bg-red-200 rounded-full flex items-center justify-center text-[11px] shrink-0"></div>
                 <div class="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 border border-red-200 dark:border-red-800 p-3 rounded-2xl rounded-tl-none text-[13px] shadow-sm">
                     ${_escAiDoc(e.message || e)}
                 </div>
@@ -2897,7 +2897,7 @@ async function rbi_generateMeetingMemo() {
         }, 100);
 
         _gameLogAction('ai_generate', 'meeting_memo');
-        showToast("✨ Протокол успешно сформирован!");
+        showToast("✅ Протокол успешно сформирован!");
     } catch (e) {
         showToast("❌ Ошибка ИИ: " + e.message);
     } finally {
@@ -2912,14 +2912,14 @@ async function rbi_generatePracticeTitleAi() {
     const prob = document.getElementById('rbi-prac-problem').value;
     const sol = document.getElementById('rbi-prac-solution').value;
 
-    showToast("⏳ Нейросеть генерирует заголовок...");
+    showToast("🔄 Нейросеть генерирует заголовок...");
     try {
         const res = await callAI([
             { role: 'system', content: 'Ты редактор бизнес-кейсов. Сделай ОДИН короткий емкий заголовок (до 6 слов) описывающий суть улучшения. Без кавычек.' },
             { role: 'user', content: `Проблема: ${prob}. Решение: ${sol}` }
         ], { temperature: 0.4, max_tokens: 30 });
         document.getElementById('rbi-prac-title').value = res;
-    } catch (e) { showToast("Ошибка AI"); }
+    } catch (e) { showToast("🔄 Ошибка AI"); }
 };
 
 async function rbi_beautifyPracticeAi() {
@@ -2932,7 +2932,7 @@ async function rbi_beautifyPracticeAi() {
 
     if (!prob && !sol) return showToast("Опишите хотя бы что-то, чтобы ИИ мог помочь!");
 
-    showToast("⏳ Нейросеть формулирует текст...");
+    showToast("Нейросеть формулирует текст...");
 
     const promptSystem = `Ты — эксперт-инженер. Твоя задача — красиво, технически грамотно и лаконично переписать текст пользователя для базы 'Лучших практик' компании.
     Верни ответ СТРОГО в таком формате:
@@ -2950,8 +2950,8 @@ async function rbi_beautifyPracticeAi() {
 
         if (pMatch) probEl.value = pMatch[1].trim();
         if (sMatch) solEl.value = sMatch[1].trim();
-        showToast("✨ Текст улучшен!");
-    } catch (e) { showToast("Ошибка AI: " + e.message); }
+        showToast("✅ Текст улучшен!");
+    } catch (e) { showToast("⚠️ Ошибка AI: " + e.message); }
 };
 
 /**
@@ -3069,7 +3069,7 @@ ${promptRules}
         const batch = list.slice(start, start + BATCH_SIZE);
         if (onProgress) onProgress(batchNum, totalBatches);
         else if (typeof showToast === 'function' && totalBatches > 1) {
-            showToast(`🤖 ИИ: пакет ${batchNum} из ${totalBatches}…`);
+            showToast(`🔄 ИИ: пакет ${batchNum} из ${totalBatches}…`);
         }
 
         const contextLines = batch
@@ -3122,7 +3122,7 @@ ${promptRules}
 
 // 3. АВТОЗАПОЛНЕНИЕ FMEA ЧЕРЕЗ DEEPSEEK
 async function rbi_fillFmeaWithAi() {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в Настройках!");
 
     const rows = document.querySelectorAll('.fmea-row');
     if (rows.length === 0) return;
@@ -3175,7 +3175,7 @@ async function rbi_fillFmeaWithAi() {
         });
 
         _gameLogAction('fmea_master', 'ai_table');
-        showToast("✨ Мега-таблица FMEA заполнена нейросетью!");
+        showToast("✅ Мега-таблица FMEA заполнена нейросетью!");
     } catch (e) {
         showToast("❌ Ошибка ИИ (попробуйте еще раз): " + e.message);
     } finally {
@@ -3190,7 +3190,7 @@ async function rbi_generateWorkshop(taskId) {
     const task = _getTasks().find(t => t.id === taskId);
     const txtArea = document.getElementById('workshop-ai-scenario');
     txtArea.classList.remove('hidden');
-    txtArea.value = "⏳ ИИ пишет сценарий...";
+    txtArea.value = "ИИ пишет сценарий...";
 
     document.getElementById('workshop-actions').classList.remove('hidden');
 
@@ -3202,13 +3202,13 @@ async function rbi_generateWorkshop(taskId) {
     ЗАПРЕЩЕНО упоминать материалы, операции или инструменты, не относящиеся к виду работ "${task.templateTitle}" — весь текст должен быть привязан только к этому виду работ.
     1. 🎯 Цель: [Обозначить проблему качества].
     2. ⚠️ Суть ошибки: [Как они косячат технологически].
-    3. 🛠 Как правильно: [Допуски из ГОСТ/СНиП].
+ 3. Как правильно: [Допуски из ГОСТ/СНиП].
     4. 💡 Итог: Мотивация.`;
 
     try {
         const res = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: `Подрядчик: ${task.contractor}. Работа: ${task.templateTitle}. ${twiContext}` }], { temperature: 0.3, max_tokens: 500 });
         txtArea.value = res;
-    } catch (e) { txtArea.value = "❌ Ошибка ИИ."; }
+ } catch (e) { txtArea.value = " Ошибка ИИ."; }
 };
 
 /* ============================================================================ */
@@ -3217,11 +3217,11 @@ async function rbi_generateWorkshop(taskId) {
 
 // 1. ВВОДНЫЙ ИНСТРУКТАЖ (Сборка регламентов и TWI)
 async function rbi_generateIntroBriefing(taskId) {
-    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("✅ Включите AI-ассистента в настройках!");
 
     const task = _getTasks().find(t => t.id === taskId);
     const btn = document.getElementById('btn-gen-intro');
-    btn.innerHTML = '⏳ AI пишет...'; btn.disabled = true;
+    btn.innerHTML = 'AI пишет...'; btn.disabled = true;
 
     // Достаем пункты чек-листа (требования)
     let checklistData = [];
@@ -3245,7 +3245,7 @@ async function rbi_generateIntroBriefing(taskId) {
         await _storage().put(_storage().stores().TASKS, task);
 
         document.getElementById('intro-result-box').classList.remove('hidden');
-        showToast("✨ Инструктаж сформирован!");
+        showToast("Инструктаж сформирован!");
     } catch (e) {
         showToast("❌ Ошибка ИИ");
     } finally {
@@ -3257,11 +3257,11 @@ async function rbi_generateIntroBriefing(taskId) {
 // 2. ФИНАЛЬНАЯ ПРИЕМКА (Анализ перед КС-2)
 async function rbi_generateFinalAcceptance(taskId) {
     const _allInspections = _getAllInspections();
-    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("✅ Включите AI-ассистента в настройках!");
 
     const task = _getTasks().find(t => t.id === taskId);
     const btn = document.getElementById('btn-gen-final');
-    btn.innerHTML = '⏳ AI пишет...'; btn.disabled = true;
+    btn.innerHTML = 'AI пишет...'; btn.disabled = true;
 
     // Собираем ВСЕ проверки по этому подрядчику и виду работ
     const cChecks = _allInspections.filter(c => c.contractorName === task.contractor && c.templateKey === task.templateKey).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -3301,7 +3301,7 @@ async function rbi_generateFinalAcceptance(taskId) {
         const text = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.3, max_tokens: 500 });
         document.getElementById('final-ai-text').value = text;
         document.getElementById('final-result-box').classList.remove('hidden');
-        showToast("✨ Справка КС-2 сформирована!");
+        showToast("Справка КС-2 сформирована!");
     } catch (e) {
         showToast("❌ Ошибка ИИ");
     } finally {
@@ -3334,7 +3334,7 @@ async function sk_aiMapColumns() {
                 const select = document.querySelector(`.sk-mapping-select[data-field="${key}"]`);
                 if (select) select.value = aiMap[key];
             });
-            showToast("✨ ИИ успешно распознал колонки!");
+            showToast("✅ ИИ успешно распознал колонки!");
         }
     } catch (e) {
         showToast("❌ Ошибка ИИ: " + e.message);
@@ -3349,7 +3349,7 @@ async function sk_aiMapColumns() {
 // Добавили второй параметр forceAll
 async function sk_autoMapCategories(silent = false, forceAll = false) {
     if (!_getSetting('aiEnabled')) {
-        if (!silent) showToast("⚠️ Включите AI для авто-распределения категорий!");
+        if (!silent) showToast("Включите AI для авто-распределения категорий!");
         return 0;
     }
 
@@ -3357,7 +3357,8 @@ async function sk_autoMapCategories(silent = false, forceAll = false) {
         if (!confirm("Внимание! ИИ заново проанализирует ВСЕ замечания в базе (кроме тех, что вы привязали вручную). Это может занять около минуты. Продолжить?")) return 0;
     }
 
-    if (!silent && !skAiRunning) showToast("🤖 ИИ запускает анализ категорий...");
+    // skAiRunning живёт на window (ставит sk.actions при автозапуске после импорта)
+    if (!silent && !window.skAiRunning) showToast("🔄 ИИ запускает анализ категорий...");
 
     const allowedCleanCats = [];
     const _stClean = _templates().getSystemTemplates();
@@ -3396,7 +3397,7 @@ async function sk_autoMapCategories(silent = false, forceAll = false) {
 
     for (let batchNum = 1; batchNum <= totalBatches; batchNum++) {
         // Визуальный прогресс
-        if (!silent) showToast(`🤖 ИИ обрабатывает пакет ${batchNum} из ${totalBatches}...`);
+        if (!silent) showToast(`🔄 ИИ обрабатывает пакет ${batchNum} из ${totalBatches}...`);
 
         const startIndex = (batchNum - 1) * BATCH_SIZE;
         const batch = uniqueTexts.slice(startIndex, startIndex + BATCH_SIZE);
@@ -3476,7 +3477,7 @@ async function sk_autoMapCategories(silent = false, forceAll = false) {
     }
 
     if (!silent && totalUpdated > 0) {
-        showToast(`✨ ИИ успешно распределил ${totalUpdated} записей!`);
+        showToast(`✅ ИИ успешно распределил ${totalUpdated} записей!`);
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('sk:renderRequested', { view: 'dashboard' }); // Перерисовываем экран
 
         localStorage.setItem('rbi_cloud_dirty', '1');
@@ -3541,10 +3542,10 @@ async function sk_generateContractorAiSummary(cName, safeId) {
         const response = await callAI([{ role: 'system', content: promptSystem }, { role: 'user', content: promptUser }], { temperature: 0.2, max_tokens: 800 });
 
         const formattedResponse = response
-            .replace(/\[ОЦЕНКА ФОРМУЛИРОВОК \(KPI\)\]/g, '<div class="text-[12px] font-black text-purple-700 uppercase mb-1 border-b border-purple-100 pb-1">📝 Качество работы инженеров СК</div>')
-            .replace(/\[ПРОГНОЗ РИСКА ПРОСРОЧКИ\]/g, '<div class="text-[12px] font-black text-red-700 uppercase mt-3 mb-1 border-b border-red-100 pb-1">🔮 AI-Прогноз рисков</div>')
-            .replace(/\[СВЯЗЬ С ЧЕК-ЛИСТАМИ RBI\]/g, '<div class="text-[12px] font-black text-indigo-700 uppercase mt-3 mb-1 border-b border-indigo-100 pb-1">🔗 Фокус для RBI Аудита</div>')
-            .replace(/\[СООБЩЕНИЕ ПРОРАБУ В WHATSAPP\]/g, '<div class="text-[12px] font-black text-green-700 uppercase mt-3 mb-1 border-b border-green-100 pb-1">💬 Сообщение прорабу (Копировать)</div>');
+ .replace(/\[ОЦЕНКА ФОРМУЛИРОВОК \(KPI\)\]/g, '<div class="text-[12px] font-black text-purple-700 uppercase mb-1 border-b border-purple-100 pb-1"> Качество работы инженеров СК</div>')
+ .replace(/\[ПРОГНОЗ РИСКА ПРОСРОЧКИ\]/g, '<div class="text-[12px] font-black text-red-700 uppercase mt-3 mb-1 border-b border-red-100 pb-1"> AI-Прогноз рисков</div>')
+ .replace(/\[СВЯЗЬ С ЧЕК-ЛИСТАМИ RBI\]/g, '<div class="text-[12px] font-black text-indigo-700 uppercase mt-3 mb-1 border-b border-indigo-100 pb-1"> Фокус для RBI Аудита</div>')
+ .replace(/\[СООБЩЕНИЕ ПРОРАБУ В WHATSAPP\]/g, '<div class="text-[12px] font-black text-green-700 uppercase mt-3 mb-1 border-b border-green-100 pb-1"> Сообщение прорабу (Копировать)</div>');
 
         resBox.innerHTML = `
             ${formattedResponse}
@@ -3601,7 +3602,7 @@ async function sk_predictRisksAi(silent = false) {
         return;
     }
 
-    if (!silent) showToast(`🔮 ИИ анализирует риски по ${openRecords.length} замечаниям...`);
+    if (!silent) showToast(`🔄 ИИ анализирует риски по ${openRecords.length} замечаниям...`);
 
     const BATCH_SIZE = 10; // Отправляем пачками по 10, чтобы ИИ не запутался
     let processed = 0;
@@ -3661,7 +3662,7 @@ async function sk_predictRisksAi(silent = false) {
         localStorage.setItem('rbi_cloud_dirty', '1');
         _triggerSync('silent');
         if (window.RBI && window.RBI.events && typeof window.RBI.events.emit === 'function') window.RBI.events.emit('sk:renderRequested', { view: 'dashboard' });
-        if (!silent) showToast(`✨ ИИ рассчитал риски для ${processed} замечаний!`);
+        if (!silent) showToast(`✅ ИИ рассчитал риски для ${processed} замечаний!`);
     }
 };
 
@@ -3672,9 +3673,9 @@ async function rbi_generateGlobalAi() {
     if (!container) return;
 
     const data = getFilteredAnalyticsData();
-    if (data.length === 0) return showToast("Нет данных для анализа");
+    if (data.length === 0) return showToast("⚠️ Нет данных для анализа");
 
-    container.innerHTML = `<span class="animate-pulse text-indigo-600 font-bold">🧠 DeepSeek анализирует весь портфель объектов...</span>`;
+    container.innerHTML = `<span class="animate-pulse text-indigo-600 font-bold">🤖 DeepSeek анализирует весь портфель объектов...</span>`;
 
     let sumB3 = 0;
     const projectsMap = {};
@@ -3722,20 +3723,20 @@ var _selfLearningRunning = false;
 
 async function runSelfLearningAi() {
     const _allInspections = _getAllInspections();
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в Настройках!");
     var permSvc = (AIActions._ctx && AIActions._ctx.permissions) || window.RBI.services.permissions;
     if (permSvc && !permSvc.isAdmin()) {
-        return showToast("⛔ Доступно только Администратору");
+        return showToast("❌ Доступно только Администратору");
     }
 
     // Защита от двойного запуска
-    if (_selfLearningRunning) return showToast("⏳ Уже выполняется...");
+    if (_selfLearningRunning) return showToast("🔄 Уже выполняется...");
     _selfLearningRunning = true;
 
     const container = document.getElementById('ai-self-learning-result');
     if (!container) {
         _selfLearningRunning = false;
-        return showToast("Контейнер #ai-self-learning-result не найден");
+        return showToast("⚠️ Контейнер #ai-self-learning-result не найден");
     }
 
     const data = _allInspections.filter(c => !c._deleted && c.metrics);
@@ -3745,7 +3746,7 @@ async function runSelfLearningAi() {
     }
 
     container.classList.remove('hidden');
-    container.innerHTML = `<span class="animate-pulse text-purple-600 font-bold">🧠 ИИ сканирует массив данных и калибрует математическую модель...</span>`;
+    container.innerHTML = `<span class="animate-pulse text-purple-600 font-bold">🤖 ИИ сканирует массив данных и калибрует математическую модель...</span>`;
 
     try {
         // 1. Собираем расширенную статистику
@@ -3811,11 +3812,11 @@ async function runSelfLearningAi() {
         // 3. Вывод результата
         container.innerHTML = `<div class="bg-white dark:bg-slate-800 p-3 rounded-xl border border-purple-200 shadow-sm mt-2">
             <div class="flex justify-between items-center mb-2">
-                <b class="text-purple-700">🧠 Рекомендации ИИ (DeepSeek)</b>
-                <button onclick="document.getElementById('ai-self-learning-result').innerHTML = ''; document.getElementById('ai-self-learning-result').classList.add('hidden')" class="text-slate-400 hover:text-red-500 text-lg leading-none">✕</button>
+                <b class="text-purple-700">🤖 Рекомендации ИИ (DeepSeek)</b>
+                <button onclick="document.getElementById('ai-self-learning-result').innerHTML = ''; document.getElementById('ai-self-learning-result').classList.add('hidden')" class="text-slate-400 hover:text-red-500 text-lg leading-none">❌</button>
             </div>
             <div class="text-sm leading-relaxed whitespace-pre-wrap">${response}</div>
-            <div class="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">ℹ️ Рекомендации носят аналитический характер. Изменить пороги можно вручную в настройках проекта (будет добавлено позже).</div>
+ <div class="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-100">ℹ Рекомендации носят аналитический характер. Изменить пороги можно вручную в настройках проекта (будет добавлено позже).</div>
         </div>`;
 
         _gameLogAction('ai_generate', 'system_optimization');
@@ -3901,7 +3902,7 @@ function openSkTutorAiModal(opts) {
   <div class="bg-[var(--card-bg)] w-full max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-[var(--card-border)] flex flex-col max-h-[94vh] sm:max-h-[90vh]" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="sk-tutor-ai-modal-title">
     <div class="flex items-center justify-between gap-2 px-4 sm:px-5 pt-4 pb-3 border-b border-[var(--card-border)] shrink-0">
       <h3 id="sk-tutor-ai-modal-title" class="font-black text-[13px] uppercase tracking-tight text-slate-800 dark:text-white">AI-Тренер: разбор формулировок</h3>
-      <button type="button" onclick="closeSkTutorAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">✕</button>
+      <button type="button" onclick="closeSkTutorAiModal()" class="text-slate-400 hover:text-red-500 px-2 text-lg leading-none" aria-label="Закрыть">❌</button>
     </div>
     <div id="sk-tutor-ai-modal-body" class="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 sm:px-5 py-4 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 dark:text-slate-100"></div>
     <div class="flex gap-2 p-4 pt-3 border-t border-[var(--card-border)] shrink-0 bg-[var(--card-bg)]">
@@ -3954,7 +3955,7 @@ function _setSkTutorAiTeaser(state) {
 }
 
 async function sk_auditTemplatesAi() {
-    if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в Настройках!");
+    if (!_getSetting('aiEnabled')) return showToast("Включите AI-ассистента в Настройках!");
 
     const resBox = document.getElementById('sk-ai-templates-res');
     if (!resBox) return;
@@ -4011,7 +4012,7 @@ async function gameAddContractorAliasInline(canonicalKey, predefinedValue = null
 
     if (!aliasName) return showToast("⚠️ Введите синоним!");
 
-    showToast("⏳ Сохранение синонима...");
+    showToast("🔄 Сохранение синонима...");
 
     try {
         const pCode = window.syncConfig?.projectCode || 'RBI';
@@ -4067,7 +4068,7 @@ async function gameAddContractorAliasInline(canonicalKey, predefinedValue = null
 async function gameGenerateContractorSynonymsAI(canonicalKey, displayName) {
     if (!_getSetting('aiEnabled')) return showToast("⚠️ Включите AI-ассистента в настройках!");
 
-    showToast("🧠 DeepSeek придумывает возможные опечатки...");
+    showToast("🔄 DeepSeek придумывает возможные опечатки...");
 
     const promptSystem = `Ты — эксперт по строительному документообороту. Твоя задача — сгенерировать 5-6 самых вероятных вариантов, как инженеры могут написать название компании "${displayName}" в отчетах (сокращения, без кавычек, без формы собственности, частые опечатки).
     Верни СТРОГО список через запятую. Никаких других слов, нумерации или приветствий.`;
@@ -4081,7 +4082,7 @@ async function gameGenerateContractorSynonymsAI(canonicalKey, displayName) {
         const aiSynonyms = response.split(',').map(s => s.trim().replace(/['"«»]/g, '')).filter(Boolean);
         if (aiSynonyms.length === 0) throw new Error("ИИ вернул пустой список");
 
-        showToast(`✨ ИИ придумал ${aiSynonyms.length} синонимов. Сохраняем...`);
+        showToast(`✅ ИИ придумал ${aiSynonyms.length} синонимов. Сохраняем...`);
 
         const pCode = window.syncConfig?.projectCode || 'RBI';
         const currentUser = window.syncConfig?.engineerName || 'Админ';
@@ -4127,7 +4128,7 @@ async function gameGenerateContractorSynonymsAI(canonicalKey, displayName) {
 
     } catch (e) {
         console.error('[gameGenerateContractorSynonymsAI]', e);
-        showToast("❌ Ошибка ИИ: " + e.message);
+ showToast(" Ошибка ИИ: " + e.message);
     }
 };
 

@@ -126,7 +126,8 @@ window.skCurrentSubTab = window.skCurrentSubTab || 'dashboard';
 window.skHrSortBy = window.skHrSortBy || 'kpi';
 window.skHrSortDesc = (typeof window.skHrSortDesc !== 'undefined') ? window.skHrSortDesc : true;
 
-var skAiRunning = false;
+// Флаг разделяется с ai.actions.js (sk_autoMapCategories) — только через window.
+if (typeof window.skAiRunning !== 'boolean') window.skAiRunning = false;
 
 var SK_FIELDS = [
     { id: 'row_number', name: '№ п/п' },
@@ -442,7 +443,7 @@ async function sk_clearData() {
     var permSvc = (SKActions._ctx && SKActions._ctx.permissions) || window.RBI.services.permissions;
     var role = permSvc ? permSvc.getCurrentRole() : 'guest';
     var canManage = permSvc ? permSvc.canManageSK() : false;
-    if (!canManage) return showToast('⛔ У вашей роли нет прав для очистки базы ПК СК');
+    if (!canManage) return showToast('❌ У вашей роли нет прав для очистки базы ПК СК');
 
     var isManager = permSvc ? permSvc.isAdmin() : false;
     var confirmText = isManager
@@ -470,10 +471,10 @@ async function sk_clearData() {
         window.skRecords = window.skRecords.filter(function (r) { return !r._deleted; });
         localStorage.setItem('rbi_cloud_dirty', '1');
         _sync('silent');
-        showToast('🗑️ Удалено замечаний: ' + deletedCount);
+        showToast('🔄 Удалено замечаний: ' + deletedCount);
         sk_renderMainTab();
     } else {
-        showToast('⚠️ Нет замечаний для удаления (или нет прав на удаление чужих).');
+        showToast('Нет замечаний для удаления (или нет прав на удаление чужих).');
     }
 }
 
@@ -533,10 +534,10 @@ async function sk_handleExcelImport(event) {
     var file = event.target.files[0];
     if (!sk_canUploadRecords()) {
         event.target.value = '';
-        return showToast('⛔ Загружать ПК СК могут только инженер, заместитель или администратор');
+        return showToast('❌ Загружать ПК СК могут только инженер, заместитель или администратор');
     }
     if (!file) return;
-    showToast('⚙️ Читаем Excel файл...');
+    showToast('🔄 Читаем Excel файл...');
     var reader = new FileReader();
     reader.onload = async function (e) {
         try {
@@ -575,7 +576,7 @@ async function sk_executeImport(autoMapping) {
     criticalFields.forEach(function (field) {
         if (currentMapping[field] === -1 || isNaN(currentMapping[field])) hasError = true;
     });
-    if (hasError) return showToast("⛔ ОШИБКА: Колонки '№ замечания', 'Ответственная организация', 'Дата выдачи' и 'Отметка об устранении' ОБЯЗАТЕЛЬНЫ! Назначьте их.");
+    if (hasError) return showToast("❌ ОШИБКА: Колонки '№ замечания', 'Ответственная организация', 'Дата выдачи' и 'Отметка об устранении' ОБЯЗАТЕЛЬНЫ! Назначьте их.");
 
     window.skMapping = currentMapping;
     await _storage().put(_storage().stores().SK_MAPPING, { id: 'main', data: currentMapping });
@@ -640,7 +641,7 @@ function sk_resolvePair(idx, isMatch) {
 }
 
 async function sk_finalizeImport() {
-    showToast('⏳ Формируем единый реестр ПК СК без дублей...');
+    showToast('🔄 Формируем единый реестр ПК СК без дублей...');
     await _storage().put(_storage().stores().SK_CONTRACTOR_MAP, { id: 'main', data: window.skContractorMap });
 
     var rows = window.skTempRawRows || [];
@@ -838,11 +839,11 @@ async function sk_finalizeImport() {
 
     setTimeout(function () { _sync('manual'); }, 500);
 
-    if (aiCandidateCount > 0 && typeof sk_autoMapCategories === 'function' && !skAiRunning) {
-        skAiRunning = true;
+    if (aiCandidateCount > 0 && typeof sk_autoMapCategories === 'function' && !window.skAiRunning) {
+        window.skAiRunning = true;
         var aiSvc = (SKActions._ctx && SKActions._ctx.ai) || window.RBI.services.ai;
         aiSvc.sk_autoMapCategories(false).finally(function () {
-            skAiRunning = false;
+            window.skAiRunning = false;
             localStorage.setItem('rbi_cloud_dirty', '1');
             setTimeout(function () { _sync('silent'); }, 1000);
             sk_renderDashboard();
@@ -874,7 +875,7 @@ async function sk_deleteRecord(recordId) {
     sk_renderDashboard();
     localStorage.setItem('rbi_cloud_dirty', '1');
     _sync('silent');
-    showToast('🗑️ Замечание ПК СК удалено');
+    showToast('🔄 Замечание ПК СК удалено');
 }
 
 async function sk_saveCategoryLink(rawCategory) {
@@ -985,7 +986,7 @@ async function sk_saveContractorLink() {
             }
             localStorage.setItem('rbi_cloud_dirty', '1');
             sk_closeContractorLinkModal();
-            showToast('📨 Заявка на подрядчика отправлена администратору');
+            showToast('🔄 Заявка на подрядчика отправлена администратору');
             setTimeout(function () { _sync('silent'); }, 500);
             await sk_renderContractorQueueBanner();
             return;
@@ -1211,8 +1212,8 @@ async function sk_evaluateIsdXpRewards(options) {
         console.warn('[ПК СК] Не удалось сохранить снимок ИСД', e);
     }
 
-    if (redCount > 0) showToast('🔴 Найден красный ИСД: +' + (redCount * 15) + ' XP');
-    else if (improvedCount > 0) showToast('📈 ИСД улучшился: +' + (improvedCount * 40) + ' XP');
+    if (redCount > 0) showToast('🔄 Найден красный ИСД: +' + (redCount * 15) + ' XP');
+    else if (improvedCount > 0) showToast('🔄 ИСД улучшился: +' + (improvedCount * 40) + ' XP');
 
     return snapshot;
 }
@@ -1268,7 +1269,7 @@ async function sk_generateAnomalyTasks() {
         if (existingTask) { existingTask.status = 'done'; existingTask.done = 1; existingTask.resultComment = 'Показатели в норме'; existingTask.updatedAt = new Date().toISOString(); await _storage().put(_storage().stores().TASKS, existingTask); window.RBI.events.emit('tasks:refresh', {}); }
     } else {
         var promptLines = [];
-        if (skIssues.open.length > 0) promptLines.push('⚠️ Много открытых замечаний:\n- ' + [...new Set(skIssues.open)].join('\n- '));
+ if (skIssues.open.length > 0) promptLines.push(' Много открытых замечаний:\n- ' + [...new Set(skIssues.open)].join('\n- '));
         if (skIssues.cmi.length > 0) promptLines.push('⏱ Низкий Индекс Зрелости (срывы сроков):\n- ' + [...new Set(skIssues.cmi)].join('\n- '));
         var fullPrompt = 'Выявлены проблемы по СВЯЗАННЫМ подрядчикам в Стройконтроле:\n\n' + promptLines.join('\n\n');
         if (existingTask) {

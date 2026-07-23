@@ -2,7 +2,7 @@
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 // ОБЯЗАТЕЛЬНО МЕНЯЕМ ВЕРСИЮ при любых изменениях в коде!
 const APP_VERSION = '18.57.0';
-const SW_VERSION = '18.57.278';
+const SW_VERSION = '18.57.283';
 const CACHE_NAME = `rbi-quality-v${SW_VERSION}`;
 
 // 1. ПРЕ-КЭШ: Локальные файлы и ВНЕШНИЕ БИБЛИОТЕКИ (для 100% офлайна)
@@ -125,6 +125,7 @@ const urlsToCache = [
   './js/modules/quality/features/settings/features/location-directory-ui.js',
   './js/modules/quality/features/settings/index.js',
   './js/dist/rbi-locations.js',
+  './js/dist/rbi-construction-defects.js',
   './js/dist/construction-v2.js',
   './js/modules/construction-v2/construction-v2.manifest.js',
   './js/modules/construction-v2/index.js',

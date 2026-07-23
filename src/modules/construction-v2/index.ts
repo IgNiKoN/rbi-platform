@@ -4,7 +4,7 @@
  */
 
 import { ConstructionV2Manifest } from './manifest';
-import { mountConstructionV2Shell, renderConstructionV2 } from './ui';
+import { mountConstructionV2Shell, refreshConstructionV2Markers, renderConstructionV2 } from './ui';
 
 let _inited = false;
 
@@ -23,16 +23,45 @@ async function init(_ctx?: Record<string, unknown>) {
     }
   });
 
+  window.RBI?.events?.on?.('construction-defects:changed', () => {
+    refreshConstructionV2Markers().catch(() => {});
+  });
+
+  _registerAppRouter();
+  if ((location.hash || '').replace(/^#/, '').startsWith('/construction-v2')) {
+    showTab();
+  }
+
   _inited = true;
   console.info('[construction-v2] init ok');
   return { ok: true };
 }
 
 function showTab() {
-  document.querySelectorAll('.view-section').forEach((el) => el.classList.add('hidden'));
+  // App Shell / AppRouter переключают вкладки через .active (не .hidden)
+  document.querySelectorAll('.view-section').forEach((el) => {
+    el.classList.remove('active');
+  });
   const tab = document.getElementById('tab-construction-v2');
-  if (tab) tab.classList.remove('hidden');
+  if (tab) {
+    tab.classList.remove('hidden');
+    tab.classList.add('active');
+  }
+  const header = document.getElementById('main-header');
+  if (header) header.style.display = 'none';
+  const navEl = document.getElementById('main-bottom-nav');
+  if (navEl) navEl.style.display = 'none';
+  if (typeof window.updateBodyPadding === 'function') {
+    setTimeout(() => window.updateBodyPadding?.(), 50);
+  }
   renderConstructionV2().catch(() => {});
+}
+
+function _registerAppRouter() {
+  const router = (window as unknown as { AppRouter?: { addRoute?: (p: string, fn: () => void) => void } }).AppRouter;
+  if (router && typeof router.addRoute === 'function') {
+    router.addRoute('#/construction-v2', () => showTab());
+  }
 }
 
 /** Регистрация модуля в registry (как classic modules). */
@@ -44,13 +73,15 @@ function registerModule() {
   }
   (window as unknown as { ConstructionV2Module?: typeof mod }).ConstructionV2Module = mod;
 
+  _registerAppRouter();
+
   // Hash-роутинг без ломки legacy #/construction
   window.addEventListener('hashchange', () => {
     const h = (location.hash || '').replace(/^#/, '');
     if (h.startsWith('/construction-v2')) showTab();
   });
   if ((location.hash || '').replace(/^#/, '').startsWith('/construction-v2')) {
-    // после mount
+    // после mount (и после возможного раннего AppRouter → 404-заглушки)
     setTimeout(() => showTab(), 0);
   }
 }

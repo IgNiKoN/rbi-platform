@@ -30,7 +30,21 @@
     <script src="./libs/html2pdf.bundle.min.js"></script>
 
     <script src="./libs/pptxgenjs.bundle.js"></script>
+    <!-- pptxviewjs подменяет window.FileReader своим static-классом и ломает
+         нативный new FileReader().readAsArrayBuffer (импорт ПК СК / Excel). -->
+    <script>window.__RBI_NativeFileReader = window.FileReader;</script>
     <script src="./libs/pptxviewjs.min.js"></script>
+    <script>
+        (function () {
+            var nativeFR = window.__RBI_NativeFileReader;
+            if (nativeFR && nativeFR.prototype && typeof nativeFR.prototype.readAsArrayBuffer === 'function'
+                && window.FileReader !== nativeFR) {
+                window.__PptxViewJS_FileReader = window.FileReader;
+                window.FileReader = nativeFR;
+            }
+            try { delete window.__RBI_NativeFileReader; } catch (_) { window.__RBI_NativeFileReader = undefined; }
+        })();
+    </script>
     <script src="./libs/docx.bundle.js"></script>
 
     <script src="./libs/pdfjs/pdf.min.js"></script>
@@ -718,8 +732,9 @@
     <script type="module" src="js/services/storage/storage-photo-manager.js"></script>
     <script type="module" src="js/services/storage/storage-file-queue.actions.js"></script>
     <script type="module" src="js/services/storage.service.js"></script>
-    <!-- service.locations (Vite/TS бандл) — после storage -->
+    <!-- service.locations + constructionDefects (Vite/TS бандлы) — после storage -->
     <script type="module" src="js/dist/rbi-locations.js"></script>
+    <script type="module" src="js/dist/rbi-construction-defects.js"></script>
     <script type="module" src="js/services/settings.service.js"></script>
     <script type="module" src="js/services/session.service.js"></script>
     <script type="module" src="js/services/inspection.service.js"></script>

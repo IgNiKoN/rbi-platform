@@ -71,6 +71,10 @@ declare global {
         storage?: RbiStorage;
         sync?: RbiSync;
         locations?: unknown;
+        constructionDefects?: unknown;
+        contractors?: {
+          list?: () => Array<{ id?: string; display_name?: string; displayName?: string }>;
+        };
         permissions?: {
           isAdmin?: () => boolean;
           canManageHierarchy?: () => boolean;
@@ -102,6 +106,8 @@ declare global {
       };
     };
     syncConfig?: { project_code?: string; engineerName?: string; enabled?: boolean };
+    updateBodyPadding?: () => void;
+    AppRouter?: { addRoute?: (path: string, fn: () => void) => void; navigate?: (path: string, replace?: boolean) => void };
   }
 }
 

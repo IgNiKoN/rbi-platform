@@ -281,6 +281,15 @@ window.AppViews = {
     renderSafety() { showModePlaceholder('safety'); }, // <-- ДОБАВИЛИ ЭТУ СТРОКУ
     renderUk() { showModePlaceholder('uk'); },
 
+    // Новый construction-v2 (Vite) — параллельный контур, не legacy #/construction/*
+    renderConstructionV2() {
+        if (window.ConstructionV2Module && typeof window.ConstructionV2Module.showTab === 'function') {
+            window.ConstructionV2Module.showTab();
+            return;
+        }
+        showModePlaceholder('construction-v2', 'Модуль «Стройконтроль (новый)» загружается… Обновите страницу, если экран не сменится.');
+    },
+
     renderNotFound() { showModePlaceholder('404'); }
 };
 
@@ -299,6 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
     AppRouter.addRoute('#/construction/reports', window.AppViews.renderConstructionReports);
     AppRouter.addRoute('#/construction/transfer', window.AppViews.renderTransfer);
     AppRouter.addRoute('#/construction/reference', window.AppViews.renderConstructionReference);
+    AppRouter.addRoute('#/construction-v2', window.AppViews.renderConstructionV2);
     
     // Заглушки
     AppRouter.addRoute('#/warranty/placeholder', window.AppViews.renderWarranty);

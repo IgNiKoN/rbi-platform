@@ -5,13 +5,13 @@
 window.triggerSync = async function (mode = 'silent') {
     // ЖЕСТКАЯ ЗАЩИТА: Запрещаем синхронизацию в демо-режиме
     if (typeof isDemoMode !== 'undefined' && isDemoMode) {
-        if (mode === 'manual') safeToast("В демо-режиме синхронизация отключена!");
+        if (mode === 'manual') safeToast("⚠️ В демо-режиме синхронизация отключена!");
         return;
     }
     if (!window.isSyncEnabled() || !window.supabaseClient) return;
     // --- НОВОЕ: Проверка интернета ---
     if (!navigator.onLine) {
-        if (mode === 'manual') safeToast("⚠️ Нет подключения к интернету. Данные сохранены локально.");
+        if (mode === 'manual') safeToast("Нет подключения к интернету. Данные сохранены локально.");
         return;
     }
     // ---------------------------------
@@ -23,7 +23,7 @@ window.triggerSync = async function (mode = 'silent') {
     // -----------------------------------------------------
 
     if (window.isSyncing) {
-        if (mode === 'manual') safeToast("⏳ Синхронизация уже идет...");
+        if (mode === 'manual') safeToast("🔄 Синхронизация уже идет...");
         // Не теряем запрос: например, OCR норматива мог обновить данные ровно во время
         // уже идущего push. Запоминаем самый "сильный" режим и перезапустим sync
         // в finally-блоке текущего цикла, когда isSyncing снова станет false.
@@ -1604,12 +1604,37 @@ if (window.RbiStorageManager) {
                             }
                         }
                     }
+                    if (STORES.CONST_DEFECTS_V2) {
+                        const { data: cloudDefects, error: defErr } = await window.supabaseClient
+                            .from('construction_defects_v2')
+                            .select('*');
+                        if (defErr) throw defErr;
+                        if (Array.isArray(cloudDefects)) {
+                            for (const d of cloudDefects) {
+                                if (!d || !d.id) continue;
+                                await dbPut(STORES.CONST_DEFECTS_V2, {
+                                    ...d,
+                                    locationId: d.locationId || d.location_id,
+                                    contractorId: d.contractorId || d.contractor_id || null,
+                                    _deleted: d.is_deleted === true,
+                                    source: 'cloud',
+                                    syncStatus: 'synced',
+                                    sync_status: 'synced',
+                                    updatedAt: d.updated_at || new Date().toISOString()
+                                });
+                            }
+                        }
+                    }
                     const locSvc = window.RBI && window.RBI.services && window.RBI.services.locations;
                     if (locSvc && typeof locSvc.init === 'function') {
                         await locSvc.init();
                     }
+                    const defSvc = window.RBI && window.RBI.services && window.RBI.services.constructionDefects;
+                    if (defSvc && typeof defSvc.init === 'function') {
+                        await defSvc.init();
+                    }
                 } catch (e) {
-                    console.warn('[Sync][Локации] Не удалось подтянуть location_nodes/floors_v2:', e.message || e);
+                    console.warn('[Sync][Локации] Не удалось подтянуть location_nodes/floors_v2/defects_v2:', e.message || e);
                 }
             }
             // Пользовательские Чек-листы (Объекты)
@@ -2962,6 +2987,49 @@ if (window.RbiStorageManager) {
                                 }
                             } catch (e) {
                                 console.warn('[Sync][Подрядчики] Ошибка отправки contractor_normalization_queue:', e);
+                                pushErrors++;
+                                localStorage.setItem('rbi_cloud_dirty', '1');
+                            }
+                        }
+
+                        // Push замечаний construction-v2 (как legacy const_defect — любой авторизованный push-capable, не только admin)
+                        if (STORES.CONST_DEFECTS_V2 && typeof window.prepareConstructionDefectV2ForCloud === 'function') {
+                            try {
+                                const defectItems = await dbGetAll(STORES.CONST_DEFECTS_V2) || [];
+                                let defectsToPush = defectItems.filter(d => {
+                                    const status = d.syncStatus || d.sync_status || '';
+                                    const source = d.source || '';
+                                    return status === 'not_synced' || status === 'blocked' || source === 'local';
+                                });
+                                const isAdminDefects = window.RBI.services.permissions
+                                    ? window.RBI.services.permissions.isAdmin()
+                                    : false;
+                                if (!isAdminDefects) {
+                                    defectsToPush = defectsToPush.filter(d => {
+                                        const owner = d.owner || d.created_by || d.author || '';
+                                        return !owner || owner === iName;
+                                    });
+                                }
+                                for (const item of defectsToPush) {
+                                    const cloudItem = window.prepareConstructionDefectV2ForCloud(item);
+                                    if (!cloudItem) continue;
+                                    const { error } = await window.supabaseClient
+                                        .from('construction_defects_v2')
+                                        .upsert(cloudItem, { onConflict: 'id' });
+                                    if (error) throw error;
+                                    item.source = 'cloud';
+                                    item.syncStatus = 'synced';
+                                    item.sync_status = 'synced';
+                                    item.updatedAt = new Date().toISOString();
+                                    item.updated_at = item.updatedAt;
+                                    await dbPut(STORES.CONST_DEFECTS_V2, item);
+                                }
+                                const defSvcPush = window.RBI && window.RBI.services && window.RBI.services.constructionDefects;
+                                if (defSvcPush && typeof defSvcPush.init === 'function') {
+                                    await defSvcPush.init();
+                                }
+                            } catch (e) {
+                                console.warn('[Sync][Стройконтроль v2] Ошибка отправки construction_defects_v2:', e);
                                 pushErrors++;
                                 localStorage.setItem('rbi_cloud_dirty', '1');
                             }

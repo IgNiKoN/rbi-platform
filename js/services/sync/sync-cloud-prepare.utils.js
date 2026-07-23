@@ -397,5 +397,41 @@ function prepareFloorPlanForCloud(item) {
     return payload;
 }
 
+function prepareConstructionDefectV2ForCloud(item) {
+    if (!item || !item.id || !item.locationId) return null;
+    const isDeleted = item.is_deleted === true || item._deleted === true;
+    const nowIso = new Date().toISOString();
+    const x = Number(item.x);
+    const y = Number(item.y);
+    const description = item.description || item.text || '';
+    const payload = {
+        id: item.id,
+        companyId: item.companyId || 'rbi',
+        locationId: item.locationId,
+        x: Number.isFinite(x) ? x : null,
+        y: Number.isFinite(y) ? y : null,
+        template_key: item.template_key || null,
+        item_id: item.item_id || null,
+        item_name: item.item_name || null,
+        norm_text: item.norm_text || null,
+        text: item.text || description || null,
+        category: item.category || null,
+        deadline: item.deadline || null,
+        contractorId: item.contractorId || null,
+        description: description || null,
+        photo: item.photo || null,
+        status: item.status || 'open',
+        history: item.history != null ? item.history : [],
+        created_by: item.created_by || window.syncConfig?.engineerName || '',
+        is_deleted: isDeleted,
+        created_at: item.created_at || item.createdAt || nowIso,
+        updated_at: nowIso,
+        version: Number.isFinite(item.version) ? item.version : 1
+    };
+    if (isDeleted) payload.deleted_at = item.deleted_at || nowIso;
+    return payload;
+}
+
 window.prepareLocationNodeForCloud = prepareLocationNodeForCloud;
 window.prepareFloorPlanForCloud = prepareFloorPlanForCloud;
+window.prepareConstructionDefectV2ForCloud = prepareConstructionDefectV2ForCloud;

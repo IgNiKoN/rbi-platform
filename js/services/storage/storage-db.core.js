@@ -3,7 +3,7 @@
 
 const DB_NAME = 'RBI_QUALITY_DB';
 // Повышаем версию только при изменении структуры IndexedDB
-const DB_VERSION = 24; // БЫЛО 23, СТАЛО 24 — индекс by_deleted на app_history (+ INDEX_DEFINITIONS)
+const DB_VERSION = 25; // БЫЛО 24, СТАЛО 25 — store construction_defects_v2 (CONST_DEFECTS_V2)
 
 // Глобально отдаём версию БД в интерфейс диагностики
 window.RBI_DB_VERSION = DB_VERSION;
@@ -52,6 +52,7 @@ const STORES = {
     LOCATION_NODES: 'location_nodes',
     LOCATION_NODE_ALIASES: 'location_node_aliases',
     CONST_FLOORS_V2: 'construction_floors_v2',
+    CONST_DEFECTS_V2: 'construction_defects_v2',
     PROJECT_OBJECTS: 'project_objects',
     OBJECT_ALIASES: 'object_aliases',
     BACKUP_LOGS: 'backup_logs',
